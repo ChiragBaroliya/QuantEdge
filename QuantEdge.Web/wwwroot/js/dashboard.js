@@ -59,6 +59,8 @@ $(document).ready(async function () {
 
 // Initialize Lightweight Charts (Dark Theme)
 function initCharts() {
+    const priceEl = document.getElementById('priceChartContainer');
+    if (!priceEl) return;
     const chartOptions = {
         layout: {
             background: { color: '#0d111e' },
@@ -249,6 +251,7 @@ async function fetchChartHistory() {
 }
 
 function bindChartData(dataList) {
+    if (!candleSeries) return;
     const priceData = [];
     const ema20Data = [];
     const ema50Data = [];
@@ -304,13 +307,15 @@ function connectSignalR() {
         const timeSec = candleUpdate.time / 1000;
 
         // Live price updates current active candle bar on the chart
-        candleSeries.update({
-            time: timeSec,
-            open: candleUpdate.open,
-            high: candleUpdate.high,
-            low: candleUpdate.low,
-            close: candleUpdate.close
-        });
+        if (candleSeries) {
+            candleSeries.update({
+                time: timeSec,
+                open: candleUpdate.open,
+                high: candleUpdate.high,
+                low: candleUpdate.low,
+                close: candleUpdate.close
+            });
+        }
 
         // Update widgets with live LTP
         $("#widgetLTP").text(candleUpdate.close.toFixed(2));
