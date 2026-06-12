@@ -1,0 +1,510 @@
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Npgsql;
+using Dapper;
+using QuantEdge.Infrastructure.Configurations;
+
+namespace QuantEdge.Infrastructure.Persistence;
+
+/// <summary>
+/// Service responsible for provisioning the PostgreSQL database and running schema.sql at startup.
+/// </summary>
+public class DatabaseInitializer
+{
+    private readonly BrokerConfig _config;
+    private readonly ILogger<DatabaseInitializer> _logger;
+
+    public DatabaseInitializer(
+        IOptions<BrokerConfig> config,
+        ILogger<DatabaseInitializer> logger)
+    {
+        _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Checks and creates the target database if it doesn't exist, and initializes the tables and stored procedures.
+    /// </summary>
+    public async Task InitializeAsync()
+    {
+        _logger.LogInformation("Starting database initialization check...");
+
+        if (string.IsNullOrWhiteSpace(_config.ConnectionString))
+        {
+            _logger.LogError("ConnectionString is not configured. Database initialization skipped.");
+            return;
+        }
+
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(_config.ConnectionString);
+            string targetDb = builder.Database ?? "quantedge";
+
+            // 1. Check if database exists, create if not
+            await EnsureDatabaseCreatedAsync(builder, targetDb);
+
+            // 2. Connect to the target database and check if tables exist
+            await EnsureSchemaInitializedAsync(targetDb);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred during database initialization.");
+            throw;
+        }
+    }
+
+    private async Task EnsureDatabaseCreatedAsync(NpgsqlConnectionStringBuilder originalBuilder, string targetDb)
+    {
+        // Copy builder and switch database to default 'postgres'
+        var systemBuilder = new NpgsqlConnectionStringBuilder(originalBuilder.ConnectionString)
+        {
+            Database = "postgres"
+        };
+
+        using var conn = new NpgsqlConnection(systemBuilder.ConnectionString);
+        await conn.OpenAsync();
+
+        bool dbExists = await conn.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = @dbName);",
+            new { dbName = targetDb }
+        );
+
+        if (!dbExists)
+        {
+            _logger.LogWarning("Database '{Database}' does not exist. Creating database...", targetDb);
+            
+            // Note: CREATE DATABASE cannot run inside a transaction block or with parameterized DB name easily,
+            // so we sanitize and string-interpolate the name directly since it is from a trusted configuration source.
+            string escapedDbName = targetDb.Replace("\"", "\"\"");
+            await conn.ExecuteAsync($"CREATE DATABASE \"{escapedDbName}\";");
+            
+            _logger.LogInformation("Database '{Database}' created successfully.", targetDb);
+        }
+        else
+        {
+            _logger.LogInformation("Database '{Database}' already exists.", targetDb);
+        }
+    }
+
+    private async Task EnsureSchemaInitializedAsync(string targetDb)
+    {
+        using var conn = new NpgsqlConnection(_config.ConnectionString);
+        await conn.OpenAsync();
+
+        // Check if market_candles_1m table exists as a proxy for schema existence
+        bool schemaExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'market_candles_1m'
+            );"
+        );
+
+        if (!schemaExists)
+        {
+            _logger.LogWarning("Schema tables not found in database '{Database}'. Provisioning tables...", targetDb);
+
+            string schemaFilePath = Path.Combine(AppContext.BaseDirectory, "Persistence", "schema.sql");
+            if (!File.Exists(schemaFilePath))
+            {
+                // Fallback for development if not in output directory yet
+                schemaFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Persistence", "schema.sql");
+            }
+
+            if (!File.Exists(schemaFilePath))
+            {
+                throw new FileNotFoundException($"Database schema file not found at '{schemaFilePath}'. Unable to initialize database.");
+            }
+
+            _logger.LogInformation("Reading schema file from: {Path}", schemaFilePath);
+            string schemaSql = await File.ReadAllTextAsync(schemaFilePath);
+
+            // Execute the schema scripts
+            await conn.ExecuteAsync(schemaSql);
+
+            _logger.LogInformation("Database tables and stored procedures provisioned successfully in '{Database}'.", targetDb);
+        }
+        else
+        {
+            _logger.LogInformation("Database schema tables are already present in '{Database}'. Skipping schema script execution.", targetDb);
+        }
+
+        // Check and provision stock_master table (supports upgrading existing databases)
+        bool stockMasterExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'stock_master'
+            );"
+        );
+
+        if (!stockMasterExists)
+        {
+            _logger.LogWarning("Table 'stock_master' not found in database '{Database}'. Provisioning and seeding table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS stock_master (
+                    id SERIAL PRIMARY KEY,
+                    symbol VARCHAR(50) UNIQUE NOT NULL,
+                    instrument_token INT NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+                
+                CREATE INDEX IF NOT EXISTS ix_stock_master_instrument_token ON stock_master (instrument_token);
+                
+                INSERT INTO stock_master (symbol, instrument_token, is_active)
+                VALUES 
+                    ('NIFTY', 256265, TRUE),
+                    ('BANKNIFTY', 260105, TRUE)
+                ON CONFLICT (symbol) DO NOTHING;
+            ");
+            _logger.LogInformation("Table 'stock_master' created and seeded successfully.");
+        }
+
+        // Check and provision trading_signals table (supports upgrading existing databases)
+        bool tradingSignalsExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'trading_signals'
+            );"
+        );
+
+        if (!tradingSignalsExists)
+        {
+            _logger.LogWarning("Table 'trading_signals' not found in database '{Database}'. Provisioning table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS trading_signals (
+                    id INT NOT NULL,
+                    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    symbol VARCHAR(50) NOT NULL,
+                    signal_type VARCHAR(20) NOT NULL,
+                    signal_strength NUMERIC(5, 2) NOT NULL,
+                    entry_price NUMERIC(18, 6) NOT NULL,
+                    reason VARCHAR(1000) NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    CONSTRAINT pk_trading_signals PRIMARY KEY (id, candle_time)
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_trading_signals_symbol_candle_time ON trading_signals (symbol, candle_time DESC);
+            ");
+            _logger.LogInformation("Table 'trading_signals' and its index created successfully.");
+        }
+
+        // Always ensure stored procedures/functions for trading_signals are provisioned/updated
+        _logger.LogInformation("Ensuring PostgreSQL procedures/functions for 'trading_signals' are provisioned...");
+        await conn.ExecuteAsync(@"
+            -- Procedure: sp_insert_trading_signal
+            CREATE OR REPLACE PROCEDURE sp_insert_trading_signal(
+                p_id INT,
+                p_symbol VARCHAR(50),
+                p_signal_type VARCHAR(20),
+                p_signal_strength NUMERIC(5, 2),
+                p_entry_price NUMERIC(18, 6),
+                p_reason VARCHAR(1000),
+                p_candle_time TIMESTAMP WITH TIME ZONE,
+                p_created_at TIMESTAMP WITH TIME ZONE
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                INSERT INTO trading_signals (id, symbol, signal_type, signal_strength, entry_price, reason, candle_time, created_at)
+                VALUES (p_id, p_symbol, p_signal_type, p_signal_strength, p_entry_price, p_reason, p_candle_time, p_created_at)
+                ON CONFLICT (id, candle_time) DO NOTHING;
+            END;
+            $$;
+
+            -- Function: sp_get_recent_trading_signals
+            CREATE OR REPLACE FUNCTION sp_get_recent_trading_signals(
+                p_limit INTEGER
+            )
+            RETURNS TABLE (
+                id INT,
+                candle_time TIMESTAMP WITH TIME ZONE,
+                symbol VARCHAR(50),
+                signal_type VARCHAR(20),
+                signal_strength NUMERIC(5, 2),
+                entry_price NUMERIC(18, 6),
+                reason VARCHAR(1000),
+                created_at TIMESTAMP WITH TIME ZONE
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RETURN QUERY
+                SELECT s.id, s.candle_time, s.symbol, s.signal_type, s.signal_strength, s.entry_price, s.reason, s.created_at
+                FROM trading_signals s
+                ORDER BY s.candle_time DESC
+                LIMIT p_limit;
+            END;
+            $$;
+        ");
+        _logger.LogInformation("PostgreSQL procedures/functions for 'trading_signals' configured successfully.");
+
+        // Always ensure stored functions for stock_master are provisioned/updated
+        _logger.LogInformation("Ensuring PostgreSQL functions for 'stock_master' are provisioned...");
+        await conn.ExecuteAsync(@"
+            -- Function: sp_get_active_stocks
+            CREATE OR REPLACE FUNCTION sp_get_active_stocks()
+            RETURNS TABLE (
+                id INT,
+                symbol VARCHAR(50),
+                instrument_token INT,
+                is_active BOOLEAN,
+                created_at TIMESTAMP WITH TIME ZONE
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RETURN QUERY
+                SELECT s.id, s.symbol, s.instrument_token, s.is_active, s.created_at
+                FROM stock_master s
+                WHERE s.is_active = TRUE;
+            END;
+            $$;
+
+            -- Function: sp_get_stock_by_symbol
+            CREATE OR REPLACE FUNCTION sp_get_stock_by_symbol(
+                p_symbol VARCHAR(50)
+            )
+            RETURNS TABLE (
+                id INT,
+                symbol VARCHAR(50),
+                instrument_token INT,
+                is_active BOOLEAN,
+                created_at TIMESTAMP WITH TIME ZONE
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RETURN QUERY
+                SELECT s.id, s.symbol, s.instrument_token, s.is_active, s.created_at
+                FROM stock_master s
+                WHERE UPPER(s.symbol) = UPPER(p_symbol)
+                LIMIT 1;
+            END;
+            $$;
+        ");
+        _logger.LogInformation("PostgreSQL functions for 'stock_master' configured successfully.");
+
+        // Check and provision zerodha_sessions table
+        bool zerodhaSessionsExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'zerodha_sessions'
+            );"
+        );
+
+        if (!zerodhaSessionsExists)
+        {
+            _logger.LogWarning("Table 'zerodha_sessions' not found in database '{Database}'. Provisioning table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS zerodha_sessions (
+                    api_key      VARCHAR(50)  PRIMARY KEY,
+                    access_token VARCHAR(255) NOT NULL,
+                    is_active    BOOLEAN      NOT NULL DEFAULT FALSE,
+                    created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+            ");
+            _logger.LogInformation("Table 'zerodha_sessions' created successfully.");
+        }
+        else
+        {
+            // Ensure is_active column exists
+            bool isActiveExists = await conn.ExecuteScalarAsync<bool>(@"
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'zerodha_sessions' AND column_name = 'is_active'
+                );"
+            );
+            if (!isActiveExists)
+            {
+                _logger.LogWarning("Column 'is_active' not found in table 'zerodha_sessions'. Provisioning column...");
+                await conn.ExecuteAsync("ALTER TABLE zerodha_sessions ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT FALSE;");
+                _logger.LogInformation("Column 'is_active' added successfully.");
+            }
+        }
+
+        // Always ensure stored procedures/functions for zerodha_sessions are provisioned/updated
+        _logger.LogInformation("Ensuring PostgreSQL procedures/functions for 'zerodha_sessions' are provisioned...");
+        await conn.ExecuteAsync(@"
+            -- Procedure: sp_upsert_zerodha_session
+            CREATE OR REPLACE PROCEDURE sp_upsert_zerodha_session(
+                p_api_key VARCHAR(50),
+                p_access_token VARCHAR(255)
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                INSERT INTO zerodha_sessions (api_key, access_token, is_active, created_at)
+                VALUES (p_api_key, p_access_token, FALSE, NOW())
+                ON CONFLICT (api_key)
+                DO UPDATE SET
+                    access_token = EXCLUDED.access_token,
+                    is_active    = FALSE,
+                    created_at   = NOW();
+            END;
+            $$;
+
+            -- Function: sp_activate_zerodha_token
+            CREATE OR REPLACE FUNCTION sp_activate_zerodha_token(
+                p_api_key VARCHAR(50)
+            )
+            RETURNS VARCHAR
+            LANGUAGE plpgsql
+            AS $$
+            DECLARE
+                v_cutoff_time     TIMESTAMP WITH TIME ZONE;
+                v_token_created   TIMESTAMP WITH TIME ZONE;
+                v_access_token    VARCHAR(255);
+            BEGIN
+                -- 6:00 AM IST = 00:30 UTC. Calculate today's 6 AM IST boundary in UTC.
+                v_cutoff_time := (DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata')
+                                 + INTERVAL '6 hours')
+                                 AT TIME ZONE 'Asia/Kolkata';
+
+                -- Find the latest token for this api_key
+                SELECT access_token, created_at
+                INTO v_access_token, v_token_created
+                FROM zerodha_sessions
+                WHERE api_key = p_api_key
+                LIMIT 1;
+
+                IF v_access_token IS NULL THEN
+                    RAISE NOTICE 'sp_activate_zerodha_token: No session found for api_key %', p_api_key;
+                    RETURN NULL;
+                END IF;
+
+                -- Only activate if token was created AFTER today's 6 AM IST
+                IF v_token_created >= v_cutoff_time THEN
+                    -- Activate this token, deactivate all others (in case of multi-key scenario)
+                    UPDATE zerodha_sessions
+                    SET is_active = TRUE
+                    WHERE api_key = p_api_key;
+
+                    RAISE NOTICE 'sp_activate_zerodha_token: Token for api_key % activated (created_at: %)', p_api_key, v_token_created;
+                    RETURN v_access_token;
+                ELSE
+                    RAISE NOTICE 'sp_activate_zerodha_token: Token for api_key % is stale (created_at: %, cutoff: %). Not activating.', p_api_key, v_token_created, v_cutoff_time;
+                    RETURN NULL;
+                END IF;
+            END;
+            $$;
+
+            -- Function: sp_get_active_zerodha_session
+            CREATE OR REPLACE FUNCTION sp_get_active_zerodha_session()
+            RETURNS TABLE (
+                api_key      VARCHAR(50),
+                access_token VARCHAR(255),
+                is_active    BOOLEAN,
+                created_at   TIMESTAMP WITH TIME ZONE
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RETURN QUERY
+                SELECT s.api_key, s.access_token, s.is_active, s.created_at
+                FROM zerodha_sessions s
+                WHERE s.is_active = TRUE
+                LIMIT 1;
+            END;
+            $$;
+        ");
+        _logger.LogInformation("PostgreSQL procedures/functions for 'zerodha_sessions' configured successfully.");
+
+        // Check and provision indian_holidays table (supports upgrading existing databases)
+        bool indianHolidaysExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'indian_holidays'
+            );"
+        );
+
+        if (!indianHolidaysExists)
+        {
+            _logger.LogWarning("Table 'indian_holidays' not found in database '{Database}'. Provisioning table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS indian_holidays (
+                    id SERIAL PRIMARY KEY,
+                    holiday_date DATE UNIQUE NOT NULL,
+                    description VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+                
+                CREATE INDEX IF NOT EXISTS ix_indian_holidays_date ON indian_holidays (holiday_date);
+            ");
+            _logger.LogInformation("Table 'indian_holidays' and index created successfully.");
+        }
+
+        // Always ensure stored functions/procedures for indian_holidays are provisioned/updated
+        _logger.LogInformation("Ensuring PostgreSQL procedures/functions for 'indian_holidays' are provisioned...");
+        await conn.ExecuteAsync(@"
+            -- Drop old function first to change return type from DATE to TIMESTAMP
+            DROP FUNCTION IF EXISTS sp_get_indian_holidays();
+
+            -- Function: sp_get_indian_holidays
+            CREATE OR REPLACE FUNCTION sp_get_indian_holidays()
+            RETURNS TABLE (
+                id INT,
+                holiday_date TIMESTAMP,
+                description VARCHAR(255),
+                created_at TIMESTAMP WITH TIME ZONE
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RETURN QUERY
+                SELECT h.id, h.holiday_date::timestamp, h.description, h.created_at
+                FROM indian_holidays h
+                ORDER BY h.holiday_date ASC;
+            END;
+            $$;
+
+            -- Procedure: sp_insert_indian_holiday
+            CREATE OR REPLACE PROCEDURE sp_insert_indian_holiday(
+                p_holiday_date DATE,
+                p_description VARCHAR(255)
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                INSERT INTO indian_holidays (holiday_date, description)
+                VALUES (p_holiday_date, p_description)
+                ON CONFLICT (holiday_date) DO UPDATE
+                SET description = EXCLUDED.description;
+            END;
+            $$;
+
+            -- Procedure: sp_delete_indian_holiday
+            CREATE OR REPLACE PROCEDURE sp_delete_indian_holiday(
+                p_id INT
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                DELETE FROM indian_holidays WHERE id = p_id;
+            END;
+            $$;
+
+            -- Function: sp_is_indian_holiday
+            CREATE OR REPLACE FUNCTION sp_is_indian_holiday(
+                p_date DATE
+            )
+            RETURNS BOOLEAN
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RETURN EXISTS (
+                    SELECT 1 FROM indian_holidays WHERE holiday_date = p_date
+                );
+            END;
+            $$;
+        ");
+        _logger.LogInformation("PostgreSQL procedures/functions for 'indian_holidays' configured successfully.");
+    }
+}

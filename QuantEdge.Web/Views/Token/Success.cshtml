@@ -1,0 +1,65 @@
+@model QuantEdge.Web.Models.TokenViewModel
+@{
+    ViewData["Title"] = "Token Created";
+    ViewData["PageTitle"] = "Authentication Successful";
+}
+
+<div class="success-container">
+    <div class="success-card">
+        <!-- Animated checkmark -->
+        <div class="success-icon-wrapper">
+            <div class="success-ring"></div>
+            <div class="success-check">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            </div>
+        </div>
+
+        <h2 class="success-title">Token Successfully Created!</h2>
+        <p class="success-subtitle">
+            Your Zerodha access token has been exchanged and saved to the database.<br />
+            The Worker service will automatically use this token for live market data.
+        </p>
+
+        @if (!string.IsNullOrEmpty(Model.UserName) || !string.IsNullOrEmpty(Model.Email))
+        {
+            <div class="success-details">
+                <h3 class="details-title">Session Details</h3>
+                <div class="details-grid">
+                    @if (!string.IsNullOrEmpty(Model.UserName))
+                    {
+                        <div class="detail-item">
+                            <span class="detail-label">Logged in as</span>
+                            <span class="detail-value">@Model.UserName</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.Email))
+                    {
+                        <div class="detail-item">
+                            <span class="detail-label">Email</span>
+                            <span class="detail-value">@Model.Email</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.ApiKey))
+                    {
+                        <div class="detail-item">
+                            <span class="detail-label">API Key</span>
+                            <span class="detail-value monospace">@Model.ApiKey</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="success-actions">
+            <a asp-controller="Token" asp-action="Index" class="btn-back">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>

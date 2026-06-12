@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="QuantEdge — Real-time AI-assisted trading platform dashboard" />
+    <title>@ViewData["Title"] — QuantEdge</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    
+    <!-- Self-executing Theme Override Script to prevent FOUC -->
+    <script>
+        (function() {
+            const theme = localStorage.getItem('theme-color') || 'blue';
+            const colors = {
+                blue: {
+                    accent: '#4f9cf9',
+                    secondary: '#7c5cfc',
+                    glow: 'rgba(79, 156, 249, 0.15)',
+                    glowSecondary: 'rgba(124, 92, 252, 0.1)',
+                    glowCard: 'rgba(79, 156, 249, 0.08)',
+                    glowHover: 'rgba(79, 156, 249, 0.35)',
+                    glowHoverStrong: 'rgba(79, 156, 249, 0.5)',
+                    border: 'rgba(79, 156, 249, 0.2)'
+                },
+                green: {
+                    accent: '#34d399',
+                    secondary: '#059669',
+                    glow: 'rgba(52, 211, 153, 0.15)',
+                    glowSecondary: 'rgba(5, 150, 105, 0.1)',
+                    glowCard: 'rgba(52, 211, 153, 0.08)',
+                    glowHover: 'rgba(52, 211, 153, 0.35)',
+                    glowHoverStrong: 'rgba(52, 211, 153, 0.5)',
+                    border: 'rgba(52, 211, 153, 0.25)'
+                },
+                red: {
+                    accent: '#f87171',
+                    secondary: '#dc2626',
+                    glow: 'rgba(248, 113, 113, 0.15)',
+                    glowSecondary: 'rgba(220, 38, 38, 0.1)',
+                    glowCard: 'rgba(248, 113, 113, 0.08)',
+                    glowHover: 'rgba(248, 113, 113, 0.35)',
+                    glowHoverStrong: 'rgba(248, 113, 113, 0.5)',
+                    border: 'rgba(248, 113, 113, 0.25)'
+                },
+                amber: {
+                    accent: '#fbbf24',
+                    secondary: '#d97706',
+                    glow: 'rgba(251, 191, 36, 0.15)',
+                    glowSecondary: 'rgba(217, 119, 6, 0.1)',
+                    glowCard: 'rgba(251, 191, 36, 0.08)',
+                    glowHover: 'rgba(251, 191, 36, 0.35)',
+                    glowHoverStrong: 'rgba(251, 191, 36, 0.5)',
+                    border: 'rgba(251, 191, 36, 0.25)'
+                },
+                purple: {
+                    accent: '#a78bfa',
+                    secondary: '#7c3aed',
+                    glow: 'rgba(167, 139, 250, 0.15)',
+                    glowSecondary: 'rgba(124, 58, 237, 0.1)',
+                    glowCard: 'rgba(167, 139, 250, 0.08)',
+                    glowHover: 'rgba(167, 139, 250, 0.35)',
+                    glowHoverStrong: 'rgba(167, 139, 250, 0.5)',
+                    border: 'rgba(167, 139, 250, 0.25)'
+                }
+            };
+            const active = colors[theme] || colors.blue;
+            document.documentElement.style.setProperty('--theme-accent', active.accent);
+            document.documentElement.style.setProperty('--theme-secondary', active.secondary);
+            document.documentElement.style.setProperty('--theme-glow', active.glow);
+            document.documentElement.style.setProperty('--theme-glow-sec', active.glowSecondary);
+            document.documentElement.style.setProperty('--theme-glow-card', active.glowCard);
+            document.documentElement.style.setProperty('--theme-glow-hover', active.glowHover);
+            document.documentElement.style.setProperty('--theme-glow-hover-strong', active.glowHoverStrong);
+            document.documentElement.style.setProperty('--theme-border', active.border);
+
+            // Backward compatibility overrides
+            document.documentElement.style.setProperty('--accent-blue', active.accent);
+            document.documentElement.style.setProperty('--glow-blue', active.glow);
+            document.documentElement.style.setProperty('--border-active', active.border);
+        })();
+    </script>
+</head>
+<body>
+
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                    <polyline points="16 7 22 7 22 13"></polyline>
+                </svg>
+            </div>
+            <span class="brand-name">QuantEdge</span>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section-label">PLATFORM</div>
+            <a asp-controller="Token" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Token" ? "active" : "")">
+                <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                Token Manager
+            </a>
+            <a asp-controller="Holiday" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Holiday" ? "active" : "")">
+                <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                Holiday Manager
+            </a>
+            <a asp-controller="Home" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" ? "active" : "")">
+                <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+                Signal Dashboard
+            </a>
+           
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="system-badge">
+                <div class="pulse-dot"></div>
+                <span>System Active</span>
+            </div>
+            <div class="version-label">v1.0.0 · .NET 10</div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-wrapper">
+        <!-- Top Header Bar -->
+        <header class="top-header">
+            <div class="header-left">
+                <h1 class="page-title">@(ViewData["PageTitle"] ?? ViewData["Title"])</h1>
+                <div class="breadcrumb">
+                    <span>QuantEdge</span>
+                    <span class="breadcrumb-sep">›</span>
+                    <span>@(ViewData["Title"])</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <!-- Color Option Theme Dropdown -->
+                <div class="theme-select-container">
+                    <span class="theme-select-label">Theme</span>
+                    <select id="themeSelector" class="theme-dropdown-select">
+                        <option value="blue">Blue</option>
+                        <option value="green">Green</option>
+                        <option value="red">Red</option>
+                        <option value="amber">Amber</option>
+                        <option value="purple">Purple</option>
+                    </select>
+                </div>
+
+                <div class="market-badge">
+                    <span class="market-dot"></span>
+                    NSE · LIVE
+                </div>
+                <div class="current-time" id="currentTime"></div>
+            </div>
+        </header>
+
+        <!-- Page Body -->
+        <main class="page-content">
+            @RenderBody()
+        </main>
+    </div>
+
+    <!-- jQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Select2 JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+    <script src="~/js/theme-selector.js" asp-append-version="true"></script>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

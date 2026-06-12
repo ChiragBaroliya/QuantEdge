@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="QuantEdge.API/QuantEdge.API.csproj" />
+  <Project Path="QuantEdge.Domain/QuantEdge.Domain.csproj" />
+  <Project Path="QuantEdge.Infrastructure/QuantEdge.Infrastructure.csproj" />
+  <Project Path="QuantEdge.Web/QuantEdge.Web.csproj" />
+  <Project Path="QuantEdge.Worker/QuantEdge.Worker.csproj" />
+</Solution>

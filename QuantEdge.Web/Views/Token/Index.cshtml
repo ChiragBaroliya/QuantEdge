@@ -1,0 +1,205 @@
+@model QuantEdge.Web.Models.TokenViewModel
+@{
+    ViewData["Title"] = "Token Manager";
+    ViewData["PageTitle"] = "Zerodha Token Manager";
+}
+
+<!-- Status Banner -->
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-@Model.StatusType" id="statusAlert" role="alert">
+        <div class="alert-icon">
+            @if (Model.StatusType == "success")
+            {
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            }
+            else if (Model.StatusType == "danger")
+            {
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+            }
+            else
+            {
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+            }
+        </div>
+        <span class="alert-text">@Model.StatusMessage</span>
+        <button class="alert-close" onclick="this.parentElement.style.display='none'" aria-label="Close">×</button>
+    </div>
+}
+
+<!-- Main Dashboard Grid -->
+<div class="dashboard-grid">
+
+    <!-- Token Creation Card -->
+    <div class="card card-primary">
+        <div class="card-header">
+            <div class="card-header-icon icon-key">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                </svg>
+            </div>
+            <div>
+                <h2 class="card-title">Create Access Token</h2>
+                <p class="card-subtitle">Authenticate with Zerodha via OAuth 2.0</p>
+            </div>
+        </div>
+
+        <div class="card-body">
+            <!-- Flow Steps Diagram -->
+            <div class="flow-steps">
+                <div class="flow-step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-title">Initiate OAuth</div>
+                        <div class="step-desc">Click button → API fetches login URL</div>
+                    </div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <div class="step-title">Zerodha Login</div>
+                        <div class="step-desc">Enter credentials + 2FA TOTP code</div>
+                    </div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <div class="step-title">Callback & Save</div>
+                        <div class="step-desc">Token exchanged & saved to database</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CTA Button -->
+            <div class="btn-wrapper">
+                <a asp-controller="Token" asp-action="CreateToken" 
+                   class="btn-create-token" 
+                   id="createTokenBtn"
+                   onclick="handleCreateTokenClick(event, this)">
+                    <div class="btn-shimmer"></div>
+                    <span class="btn-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                        </svg>
+                    </span>
+                    <span class="btn-text">Create Token</span>
+                    <span class="btn-arrow">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
+                        </svg>
+                    </span>
+                </a>
+                <div class="btn-hint">
+                    You'll be redirected to <strong>kite.zerodha.com</strong> to complete login
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Session Info Card (shown if token was just created) -->
+    @if (Model.IsSuccess && !string.IsNullOrEmpty(Model.UserName))
+    {
+        <div class="card card-success">
+            <div class="card-header">
+                <div class="card-header-icon icon-check">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="card-title">Active Session</h2>
+                    <p class="card-subtitle">Token successfully created and saved</p>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="session-info-grid">
+                    @if (!string.IsNullOrEmpty(Model.UserName))
+                    {
+                        <div class="info-row">
+                            <span class="info-label">User Name</span>
+                            <span class="info-value">@Model.UserName</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.Email))
+                    {
+                        <div class="info-row">
+                            <span class="info-label">Email</span>
+                            <span class="info-value">@Model.Email</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.ApiKey))
+                    {
+                        <div class="info-row">
+                            <span class="info-label">API Key</span>
+                            <span class="info-value monospace">@Model.ApiKey</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.AccessTokenMasked))
+                    {
+                        <div class="info-row">
+                            <span class="info-label">Access Token</span>
+                            <span class="info-value monospace token-masked">@Model.AccessTokenMasked</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- How It Works Info Card -->
+    <div class="card card-info">
+        <div class="card-header">
+            <div class="card-header-icon icon-info">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+            </div>
+            <div>
+                <h2 class="card-title">About Token Lifecycle</h2>
+                <p class="card-subtitle">Important notes about Zerodha sessions</p>
+            </div>
+        </div>
+        <div class="card-body">
+            <ul class="info-list">
+                <li>
+                    <div class="info-bullet info-bullet-amber"></div>
+                    <span>Zerodha access tokens expire <strong>daily at 6:00 AM IST</strong>. Regenerate every trading day.</span>
+                </li>
+                <li>
+                    <div class="info-bullet info-bullet-blue"></div>
+                    <span>The token is saved to the <strong>PostgreSQL database</strong> and picked up automatically by the Worker service.</span>
+                </li>
+                <li>
+                    <div class="info-bullet info-bullet-green"></div>
+                    <span>The <strong>Callback URL</strong> must be registered in Zerodha's Developer Console:
+                        <code class="inline-code">https://localhost:44370/api/zerodha/callback</code>
+                    </span>
+                </li>
+                <li>
+                    <div class="info-bullet info-bullet-purple"></div>
+                    <span>Use <strong>Headless Login</strong> via the API endpoint <code class="inline-code">POST /api/zerodha/headless-login</code> to skip manual browser login using TOTP automation.</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+    <script src="~/js/token-manager.js" asp-append-version="true"></script>
+}

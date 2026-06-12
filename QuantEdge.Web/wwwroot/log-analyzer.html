@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuantEdge - Log Analyzer</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --bg-base: #0B0F19;
+            --bg-surface: rgba(17, 24, 39, 0.7);
+            --bg-surface-hover: rgba(31, 41, 55, 0.8);
+            --border-color: rgba(255, 255, 255, 0.08);
+            
+            --color-primary: #3B82F6;       /* Neon Blue */
+            --color-accent: #08D9D6;        /* Cyberpunk Cyan */
+            --color-error: #FF2E63;         /* Neon Rose/Red */
+            --color-warning: #FFA41B;       /* Neon Gold/Orange */
+            --color-success: #00F5FF;       /* Bright Cyan/Green */
+            --color-info: #3B82F6;
+            
+            --text-main: #F3F4F6;
+            --text-muted: #9CA3AF;
+            --text-dim: #6B7280;
+            
+            --glow-error: 0 0 15px rgba(255, 46, 99, 0.4);
+            --glow-accent: 0 0 15px rgba(8, 217, 214, 0.4);
+            --glow-primary: 0 0 15px rgba(59, 130, 246, 0.4);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-base);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(255, 46, 99, 0.08) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem;
+            line-height: 1.5;
+        }
+
+        /* Webkit Scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo-section h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #FFF 30%, var(--color-accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(8, 217, 214, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-section h1 i {
+            color: var(--color-accent);
+            text-shadow: var(--glow-accent);
+        }
+
+        .logo-section p {
+            color: var(--text-muted);
+            font-size: 1rem;
+            margin-top: 0.25rem;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .btn-accent {
+            background: linear-gradient(135deg, rgba(8, 217, 214, 0.2), rgba(59, 130, 246, 0.2));
+            border-color: var(--color-accent);
+            color: var(--color-accent);
+            text-shadow: 0 0 5px rgba(8, 217, 214, 0.3);
+        }
+
+        .btn-accent:hover {
+            background: linear-gradient(135deg, rgba(8, 217, 214, 0.3), rgba(59, 130, 246, 0.3));
+            border-color: var(--color-accent);
+            box-shadow: var(--glow-accent);
+        }
+
+        /* File Upload Zone */
+        .upload-section {
+            background: var(--bg-surface);
+            backdrop-filter: blur(12px);
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 2.5rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            margin-bottom: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-section.dragover {
+            border-color: var(--color-accent);
+            background: rgba(8, 217, 214, 0.05);
+            box-shadow: inset 0 0 20px rgba(8, 217, 214, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 2.5rem;
+            color: var(--color-accent);
+            margin-bottom: 1rem;
+            text-shadow: var(--glow-accent);
+            transition: transform 0.2s ease;
+        }
+
+        .upload-section:hover .upload-icon {
+            transform: scale(1.1);
+        }
+
+        .upload-text h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .upload-text p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 1.25rem;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--bg-surface);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--color-primary);
+        }
+
+        .card.card-error::before {
+            background: var(--color-error);
+        }
+
+        .card.card-accent::before {
+            background: var(--color-accent);
+        }
+
+        .card-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            color: var(--color-primary);
+        }
+
+        .card-error .card-icon {
+            color: var(--color-error);
+            text-shadow: var(--glow-error);
+            background: rgba(255, 46, 99, 0.05);
+        }
+
+        .card-accent .card-icon {
+            color: var(--color-accent);
+            text-shadow: var(--glow-accent);
+            background: rgba(8, 217, 214, 0.05);
+        }
+
+        .card-content h4 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+        }
+
+        .card-content .value {
+            font-size: 1.6rem;
+            font-weight: 700;
+        }
+
+        .card-content .subtext {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-top: 0.1rem;
+        }
+
+        /* Filter Panel */
+        .filter-panel {
+            background: var(--bg-surface);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .filter-panel h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-main);
+        }
+
+        .filter-panel h3 i {
+            color: var(--color-accent);
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: 2fr 1.5fr 1.5fr 1fr;
+            gap: 1.25rem;
+            align-items: end;
+        }
+
+        @media (max-width: 992px) {
+            .filter-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .filter-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .input-control {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 0.95rem;
+            width: 100%;
+            transition: all 0.2s ease;
+        }
+
+        .input-control:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            box-shadow: 0 0 8px rgba(8, 217, 214, 0.2);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+            padding: 0.75rem 0;
+            user-select: none;
+        }
+
+        .checkbox-group input {
+            display: none;
+        }
+
+        .checkbox-custom {
+            width: 20px;
+            height: 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            color: transparent;
+            font-size: 0.75rem;
+        }
+
+        .checkbox-group input:checked + .checkbox-custom {
+            background: var(--color-error);
+            border-color: var(--color-error);
+            color: white;
+            box-shadow: 0 0 8px rgba(255, 46, 99, 0.3);
+        }
+
+        .checkbox-label {
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--text-main);
+        }
+
+        /* Log Table Section */
+        .log-section {
+            background: var(--bg-surface);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .log-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .log-header h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .log-header h3 span {
+            font-size: 0.85rem;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            color: var(--color-accent);
+            border: 1px solid var(--border-color);
+        }
+
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .log-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+
+        .log-table th {
+            padding: 1rem 1.5rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            background: rgba(0, 0, 0, 0.1);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .log-table td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: top;
+            transition: background 0.15s ease;
+        }
+
+        .log-row {
+            cursor: pointer;
+        }
+
+        .log-row:hover {
+            background: var(--bg-surface-hover);
+        }
+
+        .col-time {
+            width: 220px;
+            white-space: nowrap;
+            color: var(--text-muted);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+        }
+
+        .col-level {
+            width: 90px;
+        }
+
+        .badge {
+            display: inline-block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-err {
+            background: rgba(255, 46, 99, 0.1);
+            color: var(--color-error);
+            border: 1px solid rgba(255, 46, 99, 0.2);
+            text-shadow: 0 0 5px rgba(255, 46, 99, 0.2);
+        }
+
+        .badge-ftl {
+            background: rgba(255, 46, 99, 0.2);
+            color: var(--color-error);
+            border: 1px solid rgba(255, 46, 99, 0.4);
+            font-weight: 700;
+            text-shadow: var(--glow-error);
+        }
+
+        .badge-wrn {
+            background: rgba(255, 164, 27, 0.1);
+            color: var(--color-warning);
+            border: 1px solid rgba(255, 164, 27, 0.2);
+        }
+
+        .badge-inf {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--color-primary);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .col-message {
+            color: var(--text-main);
+            position: relative;
+        }
+
+        .expand-trigger {
+            margin-right: 0.5rem;
+            color: var(--text-dim);
+            transition: transform 0.2s ease;
+            display: inline-block;
+            width: 12px;
+        }
+
+        .log-row.expanded .expand-trigger {
+            transform: rotate(90deg);
+            color: var(--color-accent);
+        }
+
+        /* Detail/Stacktrace Row */
+        .detail-row {
+            display: none;
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .detail-row.show {
+            display: table-row;
+        }
+
+        .detail-cell {
+            padding: 1.25rem 1.5rem 1.5rem 3.5rem !important;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .detail-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--color-error);
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stack-trace {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            color: #E5E7EB;
+            background: #070A13;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 1rem;
+            overflow-x: auto;
+            white-space: pre;
+            line-height: 1.6;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Empty State */
+        .empty-state {
+            padding: 4rem 2rem;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            color: var(--text-dim);
+            margin-bottom: 1rem;
+        }
+
+        .empty-state p {
+            font-size: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 3rem;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        footer a {
+            color: var(--color-accent);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        footer a:hover {
+            color: var(--text-main);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        
+        <!-- Header -->
+        <header>
+            <div class="logo-section">
+                <h1><i class="fa-solid fa-triangle-exclamation"></i> QuantEdge Log Analyzer</h1>
+                <p>Interactive diagnostics and error filter utility for QuantEdge.Worker</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-accent" id="btn-sample"><i class="fa-solid fa-wand-magic-sparkles"></i> Load Sample Log</button>
+                <button class="btn" id="btn-export" disabled><i class="fa-solid fa-download"></i> Export JSON</button>
+            </div>
+        </header>
+        
+        <!-- Drag & Drop Upload Zone -->
+        <div class="upload-section" id="drop-zone">
+            <div class="upload-icon">
+                <i class="fa-solid fa-folder-open"></i>
+            </div>
+            <div class="upload-text">
+                <h3>Drag & Drop Log File Here</h3>
+                <p>Supports standard text log files (e.g. Worker_log_*.txt)</p>
+                <button class="btn" onclick="document.getElementById('file-input').click()"><i class="fa-solid fa-file-import"></i> Browse Files</button>
+            </div>
+            <input type="file" id="file-input" accept=".txt,.log">
+        </div>
+        
+        <!-- Dashboard Metrics Row -->
+        <div class="stats-grid">
+            <!-- Total Logs Card -->
+            <div class="card">
+                <div class="card-icon"><i class="fa-solid fa-list-check"></i></div>
+                <div class="card-content">
+                    <h4>Total Logs Parsed</h4>
+                    <div class="value" id="stat-total">0</div>
+                    <div class="subtext">lines parsed from file</div>
+                </div>
+            </div>
+            
+            <!-- Total Errors Card -->
+            <div class="card card-error">
+                <div class="card-icon"><i class="fa-solid fa-circle-xmark"></i></div>
+                <div class="card-content">
+                    <h4>Error Log Count</h4>
+                    <div class="value" id="stat-errors" style="color: var(--color-error);">0</div>
+                    <div class="subtext" id="stat-error-pct">0% of total logs</div>
+                </div>
+            </div>
+            
+            <!-- Date Span Card -->
+            <div class="card card-accent">
+                <div class="card-icon"><i class="fa-solid fa-clock"></i></div>
+                <div class="card-content">
+                    <h4>Time Range Scope</h4>
+                    <div class="value" id="stat-time" style="font-size: 1.15rem; font-weight: 600; padding-top: 0.4rem;">N/A</div>
+                    <div class="subtext">log start to end boundary</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Interactive Filter Panel -->
+        <div class="filter-panel">
+            <h3><i class="fa-solid fa-sliders"></i> Filter Criteria</h3>
+            <div class="filter-grid">
+                
+                <!-- Keyword Search -->
+                <div class="form-group">
+                    <label for="search-input"><i class="fa-solid fa-magnifying-glass"></i> Keyword Search</label>
+                    <input type="text" id="search-input" class="input-control" placeholder="Search error messages or details...">
+                </div>
+                
+                <!-- Start DateTime Filter -->
+                <div class="form-group">
+                    <label for="filter-start"><i class="fa-solid fa-calendar-days"></i> Start DateTime</label>
+                    <input type="datetime-local" id="filter-start" class="input-control">
+                </div>
+                
+                <!-- End DateTime Filter -->
+                <div class="form-group">
+                    <label for="filter-end"><i class="fa-solid fa-calendar-days"></i> End DateTime</label>
+                    <input type="datetime-local" id="filter-end" class="input-control">
+                </div>
+                
+                <!-- Show Only Errors Toggle -->
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="toggle-errors" checked>
+                        <span class="checkbox-custom"><i class="fa-solid fa-check"></i></span>
+                        <span class="checkbox-label">Show Only Errors</span>
+                    </label>
+                </div>
+                
+            </div>
+        </div>
+        
+        <!-- Logs List Section -->
+        <div class="log-section">
+            <div class="log-header">
+                <h3>Parsed Records <span id="log-count">0 matching</span></h3>
+                <button class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" id="btn-clear"><i class="fa-solid fa-trash-can"></i> Clear All</button>
+            </div>
+            
+            <div class="table-container">
+                <table class="log-table" id="table-logs">
+                    <thead>
+                        <tr>
+                            <th>DateTime Timestamp</th>
+                            <th>Level</th>
+                            <th>Log Message Description</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-rows-container">
+                        <!-- Dynamic content injected here -->
+                        <tr class="initial-row">
+                            <td colspan="3">
+                                <div class="empty-state">
+                                    <i class="fa-solid fa-file-invoice"></i>
+                                    <h3>No Log File Loaded</h3>
+                                    <p>Upload a worker log file or load the sample dataset to begin analysis.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <footer>
+            <p>QuantEdge Diagnostics Panel | Built for QuantEdge.Worker &copy; 2026</p>
+        </footer>
+        
+    </div>
+
+    <!-- Application Logic Javascript -->
+    <script>
+        // DOM Elements
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const btnSample = document.getElementById('btn-sample');
+        const btnExport = document.getElementById('btn-export');
+        const btnClear = document.getElementById('btn-clear');
+        const searchInput = document.getElementById('search-input');
+        const filterStart = document.getElementById('filter-start');
+        const filterend = document.getElementById('filter-end');
+        const toggleErrors = document.getElementById('toggle-errors');
+        const logRowsContainer = document.getElementById('log-rows-container');
+        const logCountBadge = document.getElementById('log-count');
+        
+        // Stats Elements
+        const statTotal = document.getElementById('stat-total');
+        const statErrors = document.getElementById('stat-errors');
+        const statErrorPct = document.getElementById('stat-error-pct');
+        const statTime = document.getElementById('stat-time');
+
+        // Application State
+        let allLogs = [];
+        let filteredLogs = [];
+
+        // Sample Log Data featuring actual worker and WebSocket exception outputs
+        const sampleLogText = `2026-06-08 11:55:56.440 +05:30 [INF] Starting QuantEdge.Worker...
+2026-06-08 11:55:56.520 +05:30 [INF] Starting database initialization check...
+2026-06-08 11:55:57.228 +05:30 [INF] Database 'quantedge' already exists.
+2026-06-08 11:55:57.404 +05:30 [INF] Database schema tables are already present in 'quantedge'. Skipping schema script execution.
+2026-06-08 11:55:57.412 +05:30 [INF] Ensuring PostgreSQL procedures/functions for 'trading_signals' are provisioned...
+2026-06-08 11:55:57.493 +05:30 [INF] PostgreSQL procedures/functions for 'trading_signals' configured successfully.
+2026-06-08 11:55:57.493 +05:30 [INF] Ensuring PostgreSQL functions for 'stock_master' are provisioned...
+2026-06-08 11:55:57.495 +05:30 [INF] PostgreSQL functions for 'stock_master' configured successfully.
+2026-06-08 11:55:57.528 +05:30 [INF] Ensuring PostgreSQL procedures/functions for 'zerodha_sessions' are provisioned...
+2026-06-08 11:55:57.532 +05:30 [INF] PostgreSQL procedures/functions for 'zerodha_sessions' configured successfully.
+2026-06-08 11:55:57.550 +05:30 [INF] Application started. Press Ctrl+C to shut down.
+2026-06-08 11:55:57.550 +05:30 [INF] Hosting environment: Development
+2026-06-08 11:55:57.550 +05:30 [INF] MarketDataFeedWorker background service is starting up...
+2026-06-08 11:55:57.554 +05:30 [INF] Starting MarketDataProcessor core routing pipeline...
+2026-06-08 11:55:57.564 +05:30 [INF] Loading dynamic instrument mappings from stock_master database table...
+2026-06-08 11:55:57.628 +05:30 [INF] Loaded 2 active stock instrument mappings from database.
+2026-06-08 11:55:57.631 +05:30 [INF] Resolving active Zerodha session from database...
+2026-06-08 11:55:57.643 +05:30 [INF] Connecting to Zerodha Kite WebSocket with API Key: p9s5nidcnb45o0lp
+2026-06-08 11:55:58.010 +05:30 [ERR] Zerodha Kite Ticker WebSocket error occurred: Error while connecting. Message: The server returned status code '403' when status code '101' was expected.
+System.Net.WebSockets.WebSocketException (0x80004005): The server returned status code '403' when status code '101' was expected.
+   at System.Net.WebSockets.WebSocketHandle.ConnectAsyncCore(Uri uri, CancellationToken cancellationToken)
+   at System.Net.WebSockets.ClientWebSocket.ConnectAsyncCore(Uri uri, CancellationToken cancellationToken)
+   at KiteConnect.Ticker.Connect() in C:\\Projects\\KiteConnect\\Ticker.cs:line 120
+   at QuantEdge.Infrastructure.Services.ZerodhaWebSocketMarketDataService.ConnectAsync(String connectionUrl, CancellationToken cancellationToken) in D:\\LearningProject\\QuantEdge\\QuantEdge.Infrastructure\\Services\\ZerodhaWebSocketMarketDataService.cs:line 100
+2026-06-08 11:55:58.011 +05:30 [INF] Zerodha Ticker connection initiated successfully.
+2026-06-08 11:55:58.013 +05:30 [INF] Subscribing to active market stream for symbol: NIFTY
+2026-06-08 11:55:58.014 +05:30 [INF] Symbol NIFTY cached. Subscription will be transmitted when connection is established.
+2026-06-08 11:55:58.014 +05:30 [INF] Subscribing to active market stream for symbol: BANKNIFTY
+2026-06-08 11:55:58.014 +05:30 [INF] Symbol BANKNIFTY cached. Subscription will be transmitted when connection is established.
+2026-06-08 12:00:00.000 +05:30 [INF] Triggering technical indicator calculations...
+2026-06-08 12:00:05.112 +05:30 [ERR] Failed to persist trading signal output for BANKNIFTY.
+Npgsql.PostgresException (0x80004005): 42P01: relation "trading_signals" does not exist
+   at Npgsql.Internal.NpgsqlConnector.<ReadMessage>g__ReadMessageLong|233_0(NpgsqlConnector connector, Boolean async, DataRowLayout layout, Boolean readingHeaders)
+   at Npgsql.NpgsqlDataReader.NextResult(Boolean async, Boolean isSingleRow, CancellationToken cancellationToken)
+   at Dapper.SqlMapper.ExecuteImplAsync(IDbConnection cnn, CommandDefinition command)
+   at QuantEdge.Infrastructure.Persistence.Repositories.TradingSignalRepository.InsertAsync(TradingSignal signal) in D:\\LearningProject\\QuantEdge\\QuantEdge.Infrastructure\\Persistence\\Repositories\\TradingSignalRepository.cs:line 45
+2026-06-08 12:00:05.120 +05:30 [INF] Candle aggregated successfully for NIFTY.
+2026-06-08 12:02:15.220 +05:30 [WRN] Keep-alive ping frame transmission delayed. Connection quality low.
+2026-06-08 12:05:00.010 +05:30 [FTL] Host terminated unexpectedly
+System.OutOfMemoryException: Exception of type 'System.OutOfMemoryException' was thrown.
+   at System.GC.Collect()
+   at QuantEdge.Worker.Program.Main(String[] args) in D:\\LearningProject\\QuantEdge\\QuantEdge.Worker\\Program.cs:line 62`;
+
+        // Event Listeners for Drag and Drop
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove('dragover');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        btnSample.addEventListener('click', () => {
+            parseLogContent(sampleLogText);
+        });
+
+        btnClear.addEventListener('click', () => {
+            resetState();
+        });
+
+        btnExport.addEventListener('click', () => {
+            exportLogsAsJson();
+        });
+
+        // Filter event listeners
+        searchInput.addEventListener('input', applyFilters);
+        filterStart.addEventListener('change', applyFilters);
+        filterend.addEventListener('change', applyFilters);
+        toggleErrors.addEventListener('change', applyFilters);
+
+        // Reset App State
+        function resetState() {
+            allLogs = [];
+            filteredLogs = [];
+            
+            // Clear inputs
+            fileInput.value = '';
+            searchInput.value = '';
+            filterStart.value = '';
+            filterend.value = '';
+            toggleErrors.checked = true;
+            
+            // Reset Stats Display
+            statTotal.innerText = '0';
+            statErrors.innerText = '0';
+            statErrorPct.innerText = '0% of total logs';
+            statTime.innerText = 'N/A';
+            logCountBadge.innerText = '0 matching';
+            btnExport.disabled = true;
+
+            // Inject Empty Row
+            logRowsContainer.innerHTML = `
+                <tr class="initial-row">
+                    <td colspan="3">
+                        <div class="empty-state">
+                            <i class="fa-solid fa-file-invoice"></i>
+                            <h3>No Log File Loaded</h3>
+                            <p>Upload a worker log file or load the sample dataset to begin analysis.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        // File Handler
+        function handleFile(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                parseLogContent(e.target.result);
+            };
+            reader.readAsText(file);
+        }
+
+        // Date Parser helper to prevent timezone parsing errors
+        function parseLogDate(dateStr) {
+            try {
+                // Input format: "2026-06-08 11:55:58.010"
+                const parts = dateStr.trim().split(/\s+/);
+                if (parts.length < 2) return null;
+                
+                const dateParts = parts[0].split('-');
+                const timeParts = parts[1].split(':');
+                
+                const year = parseInt(dateParts[0], 10);
+                const month = parseInt(dateParts[1], 10) - 1; // Month is 0-indexed in JS
+                const day = parseInt(dateParts[2], 10);
+                
+                const hour = parseInt(timeParts[0], 10);
+                const minute = parseInt(timeParts[1], 10);
+                
+                let second = 0;
+                let ms = 0;
+                if (timeParts[2]) {
+                    const secParts = timeParts[2].split('.');
+                    second = parseInt(secParts[0], 10);
+                    if (secParts[1]) {
+                        // Truncate to 3 chars for ms
+                        ms = parseInt(secParts[1].substring(0, 3).padEnd(3, '0'), 10);
+                    }
+                }
+                
+                const parsedDate = new Date(year, month, day, hour, minute, second, ms);
+                return isNaN(parsedDate.getTime()) ? null : parsedDate;
+            } catch (err) {
+                return null;
+            }
+        }
+
+        // Formats Date objects back into readable string without browser offsets
+        function formatDateTime(date) {
+            if (!date) return '';
+            const yyyy = date.getFullYear();
+            const mm = String(date.getMonth() + 1).padStart(2, '0');
+            const dd = String(date.getDate()).padStart(2, '0');
+            const hh = String(date.getHours()).padStart(2, '0');
+            const min = String(date.getMinutes()).padStart(2, '0');
+            const sec = String(date.getSeconds()).padStart(2, '0');
+            const ms = String(date.getMilliseconds()).padStart(3, '0');
+            return `${yyyy}-${mm}-${dd} ${hh}:${min}:${sec}.${ms}`;
+        }
+
+        // Regex parser logic for Serilog
+        function parseLogContent(text) {
+            allLogs = [];
+            const lines = text.split(/\r?\n/);
+            
+            // Regex to check if a line is the start of a Serilog entry
+            // Pattern matches: "2026-06-08 11:55:58.010 +05:30 [ERR] message" or similar
+            const entryHeaderRegex = /^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s*([+-]\d{2}:\d{2})?\s*\[(\w+)\]\s*(.*)$/;
+            
+            let currentEntry = null;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const match = line.match(entryHeaderRegex);
+                
+                if (match) {
+                    // Save preceding log entry before starting a new one
+                    if (currentEntry) {
+                        allLogs.push(currentEntry);
+                    }
+                    
+                    const timestampStr = match[1];
+                    const tz = match[2] || '';
+                    const rawLevel = match[3].toUpperCase();
+                    const message = match[4];
+                    
+                    const dateObj = parseLogDate(timestampStr);
+                    
+                    currentEntry = {
+                        timestamp: timestampStr,
+                        timezone: tz,
+                        level: rawLevel,
+                        message: message,
+                        details: '',
+                        dateTime: dateObj
+                    };
+                } else {
+                    // If line doesn't match, it is details/exception trace of current entry
+                    if (currentEntry) {
+                        currentEntry.details += (currentEntry.details ? '\n' : '') + line;
+                    }
+                }
+            }
+            
+            // Push final entry
+            if (currentEntry) {
+                allLogs.push(currentEntry);
+            }
+
+            if (allLogs.length === 0) {
+                alert('No valid log entries detected. Make sure the file format is standard Serilog.');
+                resetState();
+                return;
+            }
+
+            // Update stats & filters
+            updateStats();
+            setFilterDateTimeRanges();
+            applyFilters();
+            
+            btnExport.disabled = false;
+        }
+
+        // Calculates metrics
+        function updateStats() {
+            const total = allLogs.length;
+            const errors = allLogs.filter(l => l.level === 'ERR' || l.level === 'FTL' || l.level === 'ERROR' || l.level === 'FATAL').length;
+            
+            statTotal.innerText = total.toLocaleString();
+            statErrors.innerText = errors.toLocaleString();
+            
+            const pct = total > 0 ? Math.round((errors / total) * 100) : 0;
+            statErrorPct.innerText = `${pct}% of total logs`;
+            
+            // Find Date boundary
+            const validDates = allLogs.filter(l => l.dateTime).map(l => l.dateTime);
+            if (validDates.length > 0) {
+                const minDate = new Date(Math.min(...validDates));
+                const maxDate = new Date(Math.max(...validDates));
+                
+                const timeDiff = maxDate - minDate;
+                const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+                const mins = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+                
+                statTime.innerHTML = `
+                    <div style="font-size: 0.95rem; font-weight: 600;">${minDate.toLocaleDateString()} ${minDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                    <div style="font-size: 0.8rem; color: var(--text-dim); font-weight: normal; margin: 0.1rem 0;">to</div>
+                    <div style="font-size: 0.95rem; font-weight: 600;">${maxDate.toLocaleDateString()} ${maxDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                `;
+            } else {
+                statTime.innerText = 'Unknown Timeframe';
+            }
+        }
+
+        // Autofill datetime pickers based on loaded log boundaries
+        function setFilterDateTimeRanges() {
+            const validDates = allLogs.filter(l => l.dateTime).map(l => l.dateTime);
+            if (validDates.length > 0) {
+                const minDate = new Date(Math.min(...validDates));
+                const maxDate = new Date(Math.max(...validDates));
+                
+                // Format to YYYY-MM-DDTHH:mm
+                const toLocalISO = (date) => {
+                    const tzOffset = date.getTimezoneOffset() * 60000; // offset in milliseconds
+                    const localISOTime = (new Date(date - tzOffset)).toISOString().slice(0, 16);
+                    return localISOTime;
+                };
+                
+                filterStart.value = toLocalISO(minDate);
+                filterend.value = toLocalISO(maxDate);
+                
+                filterStart.min = toLocalISO(minDate);
+                filterStart.max = toLocalISO(maxDate);
+                filterend.min = toLocalISO(minDate);
+                filterend.max = toLocalISO(maxDate);
+            }
+        }
+
+        // Apply filters
+        function applyFilters() {
+            if (allLogs.length === 0) return;
+            
+            const search = searchInput.value.toLowerCase();
+            const startVal = filterStart.value;
+            const endVal = filterend.value;
+            
+            const startDate = startVal ? new Date(startVal) : null;
+            const endDate = endVal ? new Date(endVal) : null;
+            
+            const onlyErrors = toggleErrors.checked;
+
+            filteredLogs = allLogs.filter(log => {
+                // 1. Level Filter (Only Errors: ERR / FTL / ERROR / FATAL)
+                if (onlyErrors) {
+                    const isError = log.level === 'ERR' || log.level === 'FTL' || log.level === 'ERROR' || log.level === 'FATAL';
+                    if (!isError) return false;
+                }
+                
+                // 2. DateTime Filter
+                if (log.dateTime) {
+                    if (startDate && log.dateTime < startDate) return false;
+                    if (endDate && log.dateTime > endDate) return false;
+                }
+                
+                // 3. Keyword Search
+                if (search) {
+                    const matchMsg = log.message && log.message.toLowerCase().includes(search);
+                    const matchDetails = log.details && log.details.toLowerCase().includes(search);
+                    const matchLevel = log.level && log.level.toLowerCase().includes(search);
+                    if (!matchMsg && !matchDetails && !matchLevel) return false;
+                }
+
+                return true;
+            });
+
+            renderLogsTable();
+        }
+
+        // Render table records
+        function renderLogsTable() {
+            logRowsContainer.innerHTML = '';
+            logCountBadge.innerText = `${filteredLogs.length} matching`;
+
+            if (filteredLogs.length === 0) {
+                logRowsContainer.innerHTML = `
+                    <tr>
+                        <td colspan="3">
+                            <div class="empty-state">
+                                <i class="fa-solid fa-filter-circle-xmark"></i>
+                                <h3>No Logs Match Filters</h3>
+                                <p>Try relaxing your search terms, adjusting date ranges, or toggling "Show Only Errors".</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            for (let i = 0; i < filteredLogs.length; i++) {
+                const log = filteredLogs[i];
+                
+                // Determine Level Class
+                let badgeClass = 'badge-inf';
+                if (log.level === 'ERR' || log.level === 'ERROR') badgeClass = 'badge-err';
+                else if (log.level === 'FTL' || log.level === 'FATAL') badgeClass = 'badge-ftl';
+                else if (log.level === 'WRN' || log.level === 'WARNING') badgeClass = 'badge-wrn';
+
+                const hasDetails = log.details.trim().length > 0;
+                const expandableClass = hasDetails ? 'log-row' : '';
+                
+                // Construct Main Row
+                const mainRow = document.createElement('tr');
+                if (hasDetails) {
+                    mainRow.className = 'log-row';
+                    mainRow.setAttribute('data-index', i);
+                    mainRow.addEventListener('click', () => toggleRowExpand(mainRow, i));
+                }
+
+                mainRow.innerHTML = `
+                    <td class="col-time">
+                        ${hasDetails ? '<span class="expand-trigger"><i class="fa-solid fa-chevron-right"></i></span>' : ''}
+                        ${log.timestamp}
+                    </td>
+                    <td class="col-level">
+                        <span class="badge ${badgeClass}">${log.level}</span>
+                    </td>
+                    <td class="col-message">
+                        ${escapeHtml(log.message)}
+                    </td>
+                `;
+                
+                logRowsContainer.appendChild(mainRow);
+
+                // Construct collapsible stack trace row if details exist
+                if (hasDetails) {
+                    const detailRow = document.createElement('tr');
+                    detailRow.className = 'detail-row';
+                    detailRow.id = `detail-row-${i}`;
+                    
+                    detailRow.innerHTML = `
+                        <td colspan="3" class="detail-cell">
+                            <div class="detail-title"><i class="fa-solid fa-align-left"></i> Exception details / Stack trace</div>
+                            <pre class="stack-trace"><code>${escapeHtml(log.details)}</code></pre>
+                        </td>
+                    `;
+                    logRowsContainer.appendChild(detailRow);
+                }
+            }
+        }
+
+        // Toggle Details Panel
+        function toggleRowExpand(row, index) {
+            const detailRow = document.getElementById(`detail-row-${index}`);
+            if (row.classList.contains('expanded')) {
+                row.classList.remove('expanded');
+                detailRow.classList.remove('show');
+            } else {
+                row.classList.add('expanded');
+                detailRow.classList.add('show');
+            }
+        }
+
+        // Escape HTML tags to prevent injections in page
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        // Export data handler
+        function exportLogsAsJson() {
+            if (filteredLogs.length === 0) return;
+            
+            const exportData = filteredLogs.map(l => ({
+                timestamp: l.timestamp,
+                level: l.level,
+                message: l.message,
+                details: l.details
+            }));
+
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `QuantEdge_errors_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+    </script>
+</body>
+</html>
