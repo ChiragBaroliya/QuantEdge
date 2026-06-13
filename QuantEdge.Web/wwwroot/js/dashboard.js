@@ -187,6 +187,49 @@ async function loadStocksDropdown() {
     }
 }
 
+// Fetch and display single stock master details
+async function fetchStockMasterDetails(symbol) {
+    if (!symbol) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/marketdata/stock-details/${symbol}`);
+        if (!response.ok) throw new Error("Failed to load stock details.");
+        const data = await response.json();
+        
+        $("#specName").text(data.name || "-");
+        $("#specSymbol").text(data.symbol || "-");
+        $("#specInstrumentToken").text(data.instrumentToken || "-");
+        $("#specExchangeToken").text(data.exchangeToken || "-");
+        $("#specExchange").text(data.exchange || "-");
+        $("#specSegment").text(data.segment || "-");
+        $("#specInstrumentType").text(data.instrumentType || "-");
+        
+        $("#specLastPrice").text(data.lastPrice !== null && data.lastPrice !== undefined ? "₹" + parseFloat(data.lastPrice).toFixed(2) : "-");
+        $("#specLotSize").text(data.lotSize !== null && data.lotSize !== undefined ? data.lotSize : "-");
+        $("#specTickSize").text(data.tickSize !== null && data.tickSize !== undefined ? parseFloat(data.tickSize).toFixed(4) : "-");
+        $("#specStrike").text(data.strike !== null && data.strike !== undefined && parseFloat(data.strike) !== 0 ? "₹" + parseFloat(data.strike).toFixed(2) : "-");
+
+        if (data.expiry) {
+            const expiryDate = new Date(data.expiry);
+            if (!isNaN(expiryDate.getTime())) {
+                $("#specExpiry").text(expiryDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }));
+            } else {
+                $("#specExpiry").text("-");
+            }
+        } else {
+            $("#specExpiry").text("-");
+        }
+
+        const statusBadge = $("#specStatus");
+        if (data.isActive) {
+            statusBadge.text("Active").attr("class", "spec-status-badge active");
+        } else {
+            statusBadge.text("Inactive").attr("class", "spec-status-badge inactive");
+        }
+    } catch (ex) {
+        console.error("Failed to load stock details:", ex);
+    }
+}
+
 // Switch viewed stock symbol
 async function switchSymbol(symbol) {
     const oldSymbol = activeSymbol;
@@ -194,6 +237,7 @@ async function switchSymbol(symbol) {
     
     $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe})`);
     await fetchChartHistory();
+    await fetchStockMasterDetails(symbol);
 
     // Re-subscribe to SignalR groups
     if (connection && connection.state === signalR.HubConnectionState.Connected) {

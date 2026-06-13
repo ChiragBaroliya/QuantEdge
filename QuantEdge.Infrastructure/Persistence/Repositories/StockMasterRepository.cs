@@ -42,4 +42,15 @@ public class StockMasterRepository : IStockMasterRepository
             new { p_symbol = symbol }
         );
     }
+
+    /// <summary>
+    /// Retrieves all stock master records (active and inactive).
+    /// </summary>
+    public async Task<IEnumerable<StockMaster>> GetAllAsync()
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        return await connection.QueryAsync<StockMaster>(
+            "SELECT * FROM stock_master ORDER BY symbol;"
+        );
+    }
 }

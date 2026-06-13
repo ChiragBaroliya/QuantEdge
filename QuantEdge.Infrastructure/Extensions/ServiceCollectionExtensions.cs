@@ -58,6 +58,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<DatabaseInitializer>();
         services.AddSingleton<IMarketHoursService, MarketHoursService>();
 
+        // Register caching infrastructure
+        services.AddMemoryCache();
+        services.AddSingleton<ICacheService, MemoryCacheService>();
+
 
         // Register new WebSocket integration infrastructure
         services.AddSingleton<IReconnectPolicyService, ReconnectPolicyService>();
@@ -76,6 +80,7 @@ public static class ServiceCollectionExtensions
 
         // Register historical data syncing service
         services.AddSingleton<IHistoricalDataService, ZerodhaHistoricalDataService>();
+        services.AddTransient<IInstrumentSyncService, InstrumentSyncService>();
 
         // Register core thread-safe singleton services
         services.AddSingleton<ICandleBuilderService, CandleBuilderService>();

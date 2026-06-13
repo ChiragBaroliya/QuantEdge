@@ -60,6 +60,17 @@ try
         {
             builder.Services.AddHostedService<ActiveZerodhaTokenWorker>();
         }
+        else if (actualJobType.Equals("instrumentsync", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddHostedService<InstrumentSyncWorker>();
+        }
+
+        // Also run the InstrumentSyncWorker in all other job conditions to support Monday morning scheduling
+        // and immediate startup sync for testing.
+        if (!actualJobType.Equals("instrumentsync", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddHostedService<InstrumentSyncWorker>();
+        }
     }
 
     var host = builder.Build();

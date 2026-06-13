@@ -18,4 +18,9 @@ public interface IStockMasterRepository
     /// Retrieves a specific stock master record by symbol.
     /// </summary>
     Task<StockMaster?> GetBySymbolAsync(string symbol);
+
+    /// <summary>
+    /// Retrieves all stock master records (active and inactive).
+    /// </summary>
+    Task<IEnumerable<StockMaster>> GetAllAsync();
 }

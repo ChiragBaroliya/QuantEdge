@@ -142,6 +142,21 @@ CREATE TABLE IF NOT EXISTS market_candles_5m (
     CONSTRAINT pk_market_candles_5m PRIMARY KEY (id, candle_time)
 );
 
+-- Table: market_candles_15m
+CREATE TABLE IF NOT EXISTS market_candles_15m (
+    id INT NOT NULL,
+    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    timeframe VARCHAR(20) NOT NULL,
+    open NUMERIC(18, 6) NOT NULL,
+    high NUMERIC(18, 6) NOT NULL,
+    low NUMERIC(18, 6) NOT NULL,
+    close NUMERIC(18, 6) NOT NULL,
+    volume BIGINT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_market_candles_15m PRIMARY KEY (id, candle_time)
+);
+
 -- Table: market_indicators_1m
 CREATE TABLE IF NOT EXISTS market_indicators_1m (
     id INT NOT NULL,
@@ -172,6 +187,22 @@ CREATE TABLE IF NOT EXISTS market_indicators_5m (
     vwap NUMERIC(18, 6) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     CONSTRAINT pk_market_indicators_5m PRIMARY KEY (id, candle_time)
+);
+
+-- Table: market_indicators_15m
+CREATE TABLE IF NOT EXISTS market_indicators_15m (
+    id INT NOT NULL,
+    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    timeframe VARCHAR(20) NOT NULL,
+    rsi NUMERIC(18, 6) NOT NULL,
+    ema20 NUMERIC(18, 6) NOT NULL,
+    ema50 NUMERIC(18, 6) NOT NULL,
+    macd NUMERIC(18, 6) NOT NULL,
+    signal_line NUMERIC(18, 6) NOT NULL,
+    vwap NUMERIC(18, 6) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_market_indicators_15m PRIMARY KEY (id, candle_time)
 );
 
 -- Table: trading_signals
@@ -213,11 +244,17 @@ ON market_candles_1m (symbol, candle_time DESC);
 CREATE INDEX IF NOT EXISTS ix_market_candles_5m_symbol_candle_time
 ON market_candles_5m (symbol, candle_time DESC);
 
+CREATE INDEX IF NOT EXISTS ix_market_candles_15m_symbol_candle_time
+ON market_candles_15m (symbol, candle_time DESC);
+
 CREATE INDEX IF NOT EXISTS ix_market_indicators_1m_symbol_candle_time
 ON market_indicators_1m (symbol, candle_time DESC);
 
 CREATE INDEX IF NOT EXISTS ix_market_indicators_5m_symbol_candle_time
 ON market_indicators_5m (symbol, candle_time DESC);
+
+CREATE INDEX IF NOT EXISTS ix_market_indicators_15m_symbol_candle_time
+ON market_indicators_15m (symbol, candle_time DESC);
 
 CREATE INDEX IF NOT EXISTS ix_trading_signals_symbol_candle_time
 ON trading_signals (symbol, candle_time DESC);
@@ -577,7 +614,17 @@ CREATE TABLE IF NOT EXISTS stock_master (
     id SERIAL PRIMARY KEY,
     symbol VARCHAR(50) UNIQUE NOT NULL,
     instrument_token INT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+    exchange_token VARCHAR(50),
+    name VARCHAR(100),
+    last_price NUMERIC(18, 4),
+    expiry TIMESTAMP WITH TIME ZONE,
+    strike NUMERIC(18, 4),
+    tick_size NUMERIC(18, 4),
+    lot_size INT,
+    instrument_type VARCHAR(20),
+    segment VARCHAR(20),
+    exchange VARCHAR(20),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -586,9 +633,22 @@ ON stock_master (instrument_token);
 
 INSERT INTO stock_master (symbol, instrument_token, is_active)
 VALUES 
-    ('NIFTY', 256265, TRUE),
-    ('BANKNIFTY', 260105, TRUE)
+    ('NIFTYBEES', 3771393, TRUE),
+    ('INFY', 408065, TRUE),
+    ('TCS', 2953217, TRUE),
+    ('HDFCBANK', 341249, TRUE),
+    ('RELIANCE', 738561, TRUE),
+    ('SBIN', 779521, FALSE),
+    ('ICICIBANK', 417281, FALSE),
+    ('AXISBANK', 1510401, FALSE),
+    ('LT', 2939649, FALSE),
+    ('ITC', 424961, FALSE),
+    ('TATAMOTORS', 884737, FALSE)
 ON CONFLICT (symbol) DO NOTHING;
+
+DROP FUNCTION IF EXISTS sp_get_active_stocks();
+DROP FUNCTION IF EXISTS sp_get_stock_by_symbol(VARCHAR);
+DROP FUNCTION IF EXISTS sp_upsert_instruments(JSONB);
 
 -- Function: sp_get_active_stocks
 CREATE OR REPLACE FUNCTION sp_get_active_stocks()
@@ -597,13 +657,26 @@ RETURNS TABLE (
     symbol VARCHAR(50),
     instrument_token INT,
     is_active BOOLEAN,
+    exchange_token VARCHAR(50),
+    name VARCHAR(100),
+    last_price NUMERIC(18, 4),
+    expiry TIMESTAMP WITH TIME ZONE,
+    strike NUMERIC(18, 4),
+    tick_size NUMERIC(18, 4),
+    lot_size INT,
+    instrument_type VARCHAR(20),
+    segment VARCHAR(20),
+    exchange VARCHAR(20),
     created_at TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT s.id, s.symbol, s.instrument_token, s.is_active, s.created_at
+    SELECT s.id, s.symbol, s.instrument_token, s.is_active,
+           s.exchange_token, s.name, s.last_price, s.expiry,
+           s.strike, s.tick_size, s.lot_size, s.instrument_type,
+           s.segment, s.exchange, s.created_at
     FROM stock_master s
     WHERE s.is_active = TRUE;
 END;
@@ -618,16 +691,74 @@ RETURNS TABLE (
     symbol VARCHAR(50),
     instrument_token INT,
     is_active BOOLEAN,
+    exchange_token VARCHAR(50),
+    name VARCHAR(100),
+    last_price NUMERIC(18, 4),
+    expiry TIMESTAMP WITH TIME ZONE,
+    strike NUMERIC(18, 4),
+    tick_size NUMERIC(18, 4),
+    lot_size INT,
+    instrument_type VARCHAR(20),
+    segment VARCHAR(20),
+    exchange VARCHAR(20),
     created_at TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT s.id, s.symbol, s.instrument_token, s.is_active, s.created_at
+    SELECT s.id, s.symbol, s.instrument_token, s.is_active,
+           s.exchange_token, s.name, s.last_price, s.expiry,
+           s.strike, s.tick_size, s.lot_size, s.instrument_type,
+           s.segment, s.exchange, s.created_at
     FROM stock_master s
     WHERE UPPER(s.symbol) = UPPER(p_symbol)
     LIMIT 1;
+END;
+$$;
+
+-- Function: sp_upsert_instruments
+CREATE OR REPLACE FUNCTION sp_upsert_instruments(p_instruments JSONB)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO stock_master (
+        symbol, instrument_token, is_active, exchange_token, name, 
+        last_price, expiry, strike, tick_size, lot_size, 
+        instrument_type, segment, exchange
+    )
+    SELECT 
+        (rec->>'Symbol')::VARCHAR(50),
+        (rec->>'InstrumentToken')::INT,
+        (rec->>'IsActive')::BOOLEAN,
+        (rec->>'ExchangeToken')::VARCHAR(50),
+        (rec->>'Name')::VARCHAR(100),
+        (rec->>'LastPrice')::NUMERIC(18, 4),
+        CASE 
+            WHEN rec->>'Expiry' IS NOT NULL AND (rec->>'Expiry') <> '' 
+            THEN (rec->>'Expiry')::TIMESTAMP WITH TIME ZONE 
+            ELSE NULL 
+        END,
+        (rec->>'Strike')::NUMERIC(18, 4),
+        (rec->>'TickSize')::NUMERIC(18, 4),
+        (rec->>'LotSize')::INT,
+        (rec->>'InstrumentType')::VARCHAR(20),
+        (rec->>'Segment')::VARCHAR(20),
+        (rec->>'Exchange')::VARCHAR(20)
+    FROM jsonb_array_elements(p_instruments) AS rec
+    ON CONFLICT (symbol) DO UPDATE SET
+        instrument_token = EXCLUDED.instrument_token,
+        exchange_token = EXCLUDED.exchange_token,
+        name = EXCLUDED.name,
+        last_price = EXCLUDED.last_price,
+        expiry = EXCLUDED.expiry,
+        strike = EXCLUDED.strike,
+        tick_size = EXCLUDED.tick_size,
+        lot_size = EXCLUDED.lot_size,
+        instrument_type = EXCLUDED.instrument_type,
+        segment = EXCLUDED.segment,
+        exchange = EXCLUDED.exchange;
 END;
 $$;
 

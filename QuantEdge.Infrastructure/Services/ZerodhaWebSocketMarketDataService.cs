@@ -31,6 +31,7 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
     private readonly ILogger<ZerodhaWebSocketMarketDataService> _logger;
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IStockMasterRepository _stockMasterRepository;
+    private readonly ICacheService _cacheService;
 
     private Ticker? _ticker;
     private readonly ConcurrentDictionary<string, bool> _subscribedSymbols = new();
@@ -45,11 +46,13 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
         IOptions<BrokerConfig> config,
         IDbConnectionFactory connectionFactory,
         IStockMasterRepository stockMasterRepository,
+        ICacheService cacheService,
         ILogger<ZerodhaWebSocketMarketDataService> logger)
     {
         _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -124,6 +127,9 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
                 uint token = (uint)stock.InstrumentToken;
                 _symbolToTokenMap[stock.Symbol] = token;
                 _tokenToSymbolMap[token] = stock.Symbol;
+
+                await _cacheService.SetAsync($"instrument:token:{token}", stock.Symbol);
+                await _cacheService.SetAsync($"instrument:symbol:{stock.Symbol}", token);
             }
 
             _logger.LogInformation("Loaded {Count} active stock instrument mappings from database.", _symbolToTokenMap.Count);
@@ -150,7 +156,7 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
         return Task.CompletedTask;
     }
 
-    public Task SubscribeAsync(string symbol, CancellationToken cancellationToken)
+    public async Task SubscribeAsync(string symbol, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(symbol))
         {
@@ -161,7 +167,22 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
 
         if (IsConnected && _ticker != null)
         {
-            if (_symbolToTokenMap.TryGetValue(symbol, out var token))
+            uint? cachedToken = await _cacheService.GetAsync<uint?>($"instrument:symbol:{symbol}");
+            uint token = 0;
+            bool hasToken = false;
+
+            if (cachedToken.HasValue)
+            {
+                token = cachedToken.Value;
+                hasToken = true;
+            }
+            else if (_symbolToTokenMap.TryGetValue(symbol, out var localToken))
+            {
+                token = localToken;
+                hasToken = true;
+            }
+
+            if (hasToken)
             {
                 _logger.LogInformation("Subscribing to Zerodha instrument token: {Token} for symbol: {Symbol}", token, symbol);
                 _ticker.Subscribe(new uint[] { token });
@@ -176,8 +197,6 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
         {
             _logger.LogInformation("Symbol {Symbol} cached. Subscription will be transmitted when connection is established.", symbol);
         }
-
-        return Task.CompletedTask;
     }
 
     private void OnKiteTick(Tick tick)
@@ -186,20 +205,24 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
 
         if (OnTickReceived != null)
         {
-            string symbol = _tokenToSymbolMap.TryGetValue(tick.InstrumentToken, out var sym) ? sym : tick.InstrumentToken.ToString();
-            
-            var tickDto = new TickDataDto(
-                Symbol: symbol,
-                LTP: tick.LastPrice,
-                Volume: (long)tick.Volume,
-                Timestamp: tick.Timestamp ?? DateTime.UtcNow
-            );
-
             // Execute the event handler asynchronously
             _ = Task.Run(async () =>
             {
                 try
                 {
+                    string? symbol = await _cacheService.GetAsync<string>($"instrument:token:{tick.InstrumentToken}");
+                    if (string.IsNullOrEmpty(symbol))
+                    {
+                        symbol = _tokenToSymbolMap.TryGetValue(tick.InstrumentToken, out var sym) ? sym : tick.InstrumentToken.ToString();
+                    }
+
+                    var tickDto = new TickDataDto(
+                        Symbol: symbol,
+                        LTP: tick.LastPrice,
+                        Volume: (long)tick.Volume,
+                        Timestamp: tick.Timestamp ?? DateTime.UtcNow
+                    );
+
                     await OnTickReceived.Invoke(tickDto);
                 }
                 catch (Exception ex)
@@ -212,22 +235,26 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
         // Fire depth event if full mode details are available
         if (OnDepthReceived != null && tick.Bids != null && tick.Offers != null)
         {
-            string symbol = _tokenToSymbolMap.TryGetValue(tick.InstrumentToken, out var sym) ? sym : tick.InstrumentToken.ToString();
-
-            var bids = tick.Bids.Select(b => new DepthLevel(b.Price, b.Quantity)).ToList();
-            var offers = tick.Offers.Select(a => new DepthLevel(a.Price, a.Quantity)).ToList();
-
-            var depthDto = new MarketDepthDto(
-                Symbol: symbol,
-                Timestamp: tick.Timestamp ?? DateTime.UtcNow,
-                Bids: bids,
-                Asks: offers
-            );
-
             _ = Task.Run(async () =>
             {
                 try
                 {
+                    string? symbol = await _cacheService.GetAsync<string>($"instrument:token:{tick.InstrumentToken}");
+                    if (string.IsNullOrEmpty(symbol))
+                    {
+                        symbol = _tokenToSymbolMap.TryGetValue(tick.InstrumentToken, out var sym) ? sym : tick.InstrumentToken.ToString();
+                    }
+
+                    var bids = tick.Bids.Select(b => new DepthLevel(b.Price, b.Quantity)).ToList();
+                    var offers = tick.Offers.Select(a => new DepthLevel(a.Price, a.Quantity)).ToList();
+
+                    var depthDto = new MarketDepthDto(
+                        Symbol: symbol,
+                        Timestamp: tick.Timestamp ?? DateTime.UtcNow,
+                        Bids: bids,
+                        Asks: offers
+                    );
+
                     await OnDepthReceived.Invoke(depthDto);
                 }
                 catch (Exception ex)

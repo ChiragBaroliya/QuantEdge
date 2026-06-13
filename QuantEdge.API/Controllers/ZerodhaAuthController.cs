@@ -1,17 +1,19 @@
+using Dapper;
+using KiteConnect;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using QuantEdge.API.Services;
+using QuantEdge.Infrastructure.Configurations;
+using QuantEdge.Infrastructure.Persistence;
 using System;
 using System.Data;
 using System.IO;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Dapper;
-using KiteConnect;
-using QuantEdge.Infrastructure.Configurations;
-using QuantEdge.Infrastructure.Persistence;
-using QuantEdge.API.Services;
+using static KiteConnect.Constants.GTT;
+using static System.Collections.Specialized.BitVector32;
 
 namespace QuantEdge.API.Controllers;
 
@@ -162,7 +164,10 @@ public class ZerodhaAuthController : ControllerBase
     /// and persisting it securely.
     /// </summary>
     [HttpGet("callback")]
-    public async Task<IActionResult> Callback([FromQuery(Name = "request_token")] string requestToken)
+    public async Task<IActionResult> Callback([FromQuery(Name = "request_token")] string requestToken,
+        [FromQuery(Name = "action")] string action,
+        [FromQuery(Name = "type")] string type,
+        [FromQuery(Name = "status")] string status)
     {
         if (string.IsNullOrWhiteSpace(requestToken))
         {

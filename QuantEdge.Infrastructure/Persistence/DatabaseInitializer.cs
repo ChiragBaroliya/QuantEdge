@@ -149,7 +149,17 @@ public class DatabaseInitializer
                     id SERIAL PRIMARY KEY,
                     symbol VARCHAR(50) UNIQUE NOT NULL,
                     instrument_token INT NOT NULL,
-                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+                    exchange_token VARCHAR(50),
+                    name VARCHAR(100),
+                    last_price NUMERIC(18, 4),
+                    expiry TIMESTAMP WITH TIME ZONE,
+                    strike NUMERIC(18, 4),
+                    tick_size NUMERIC(18, 4),
+                    lot_size INT,
+                    instrument_type VARCHAR(20),
+                    segment VARCHAR(20),
+                    exchange VARCHAR(20),
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
                 );
                 
@@ -157,11 +167,36 @@ public class DatabaseInitializer
                 
                 INSERT INTO stock_master (symbol, instrument_token, is_active)
                 VALUES 
-                    ('NIFTY', 256265, TRUE),
-                    ('BANKNIFTY', 260105, TRUE)
+                    ('NIFTYBEES', 3771393, TRUE),
+                    ('INFY', 408065, TRUE),
+                    ('TCS', 2953217, TRUE),
+                    ('HDFCBANK', 341249, TRUE),
+                    ('RELIANCE', 738561, TRUE),
+                    ('SBIN', 779521, FALSE),
+                    ('ICICIBANK', 417281, FALSE),
+                    ('AXISBANK', 1510401, FALSE),
+                    ('LT', 2939649, FALSE),
+                    ('ITC', 424961, FALSE),
+                    ('TATAMOTORS', 884737, FALSE)
                 ON CONFLICT (symbol) DO NOTHING;
             ");
             _logger.LogInformation("Table 'stock_master' created and seeded successfully.");
+        }
+        else
+        {
+            _logger.LogInformation("Ensuring missing fields are added to 'stock_master' table in database '{Database}'...", targetDb);
+            await conn.ExecuteAsync(@"
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS exchange_token VARCHAR(50);
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS last_price NUMERIC(18, 4);
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS expiry TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS strike NUMERIC(18, 4);
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS tick_size NUMERIC(18, 4);
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS lot_size INT;
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS instrument_type VARCHAR(20);
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS segment VARCHAR(20);
+                ALTER TABLE stock_master ADD COLUMN IF NOT EXISTS exchange VARCHAR(20);
+            ");
         }
 
         // Check and provision trading_signals table (supports upgrading existing databases)
@@ -247,6 +282,12 @@ public class DatabaseInitializer
         // Always ensure stored functions for stock_master are provisioned/updated
         _logger.LogInformation("Ensuring PostgreSQL functions for 'stock_master' are provisioned...");
         await conn.ExecuteAsync(@"
+            DROP FUNCTION IF EXISTS sp_get_active_stocks();
+            DROP FUNCTION IF EXISTS sp_get_stock_by_symbol(VARCHAR);
+            DROP FUNCTION IF EXISTS sp_upsert_instruments(JSONB);
+        ");
+
+        await conn.ExecuteAsync(@"
             -- Function: sp_get_active_stocks
             CREATE OR REPLACE FUNCTION sp_get_active_stocks()
             RETURNS TABLE (
@@ -254,13 +295,26 @@ public class DatabaseInitializer
                 symbol VARCHAR(50),
                 instrument_token INT,
                 is_active BOOLEAN,
+                exchange_token VARCHAR(50),
+                name VARCHAR(100),
+                last_price NUMERIC(18, 4),
+                expiry TIMESTAMP WITH TIME ZONE,
+                strike NUMERIC(18, 4),
+                tick_size NUMERIC(18, 4),
+                lot_size INT,
+                instrument_type VARCHAR(20),
+                segment VARCHAR(20),
+                exchange VARCHAR(20),
                 created_at TIMESTAMP WITH TIME ZONE
             )
             LANGUAGE plpgsql
             AS $$
             BEGIN
                 RETURN QUERY
-                SELECT s.id, s.symbol, s.instrument_token, s.is_active, s.created_at
+                SELECT s.id, s.symbol, s.instrument_token, s.is_active,
+                       s.exchange_token, s.name, s.last_price, s.expiry,
+                       s.strike, s.tick_size, s.lot_size, s.instrument_type,
+                       s.segment, s.exchange, s.created_at
                 FROM stock_master s
                 WHERE s.is_active = TRUE;
             END;
@@ -275,16 +329,74 @@ public class DatabaseInitializer
                 symbol VARCHAR(50),
                 instrument_token INT,
                 is_active BOOLEAN,
+                exchange_token VARCHAR(50),
+                name VARCHAR(100),
+                last_price NUMERIC(18, 4),
+                expiry TIMESTAMP WITH TIME ZONE,
+                strike NUMERIC(18, 4),
+                tick_size NUMERIC(18, 4),
+                lot_size INT,
+                instrument_type VARCHAR(20),
+                segment VARCHAR(20),
+                exchange VARCHAR(20),
                 created_at TIMESTAMP WITH TIME ZONE
             )
             LANGUAGE plpgsql
             AS $$
             BEGIN
                 RETURN QUERY
-                SELECT s.id, s.symbol, s.instrument_token, s.is_active, s.created_at
+                SELECT s.id, s.symbol, s.instrument_token, s.is_active,
+                       s.exchange_token, s.name, s.last_price, s.expiry,
+                       s.strike, s.tick_size, s.lot_size, s.instrument_type,
+                       s.segment, s.exchange, s.created_at
                 FROM stock_master s
                 WHERE UPPER(s.symbol) = UPPER(p_symbol)
                 LIMIT 1;
+            END;
+            $$;
+
+            -- Function: sp_upsert_instruments
+            CREATE OR REPLACE FUNCTION sp_upsert_instruments(p_instruments JSONB)
+            RETURNS VOID
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                INSERT INTO stock_master (
+                    symbol, instrument_token, is_active, exchange_token, name, 
+                    last_price, expiry, strike, tick_size, lot_size, 
+                    instrument_type, segment, exchange
+                )
+                SELECT 
+                    (rec->>'Symbol')::VARCHAR(50),
+                    (rec->>'InstrumentToken')::INT,
+                    (rec->>'IsActive')::BOOLEAN,
+                    (rec->>'ExchangeToken')::VARCHAR(50),
+                    (rec->>'Name')::VARCHAR(100),
+                    (rec->>'LastPrice')::NUMERIC(18, 4),
+                    CASE 
+                        WHEN rec->>'Expiry' IS NOT NULL AND (rec->>'Expiry') <> '' 
+                        THEN (rec->>'Expiry')::TIMESTAMP WITH TIME ZONE 
+                        ELSE NULL 
+                    END,
+                    (rec->>'Strike')::NUMERIC(18, 4),
+                    (rec->>'TickSize')::NUMERIC(18, 4),
+                    (rec->>'LotSize')::INT,
+                    (rec->>'InstrumentType')::VARCHAR(20),
+                    (rec->>'Segment')::VARCHAR(20),
+                    (rec->>'Exchange')::VARCHAR(20)
+                FROM jsonb_array_elements(p_instruments) AS rec
+                ON CONFLICT (symbol) DO UPDATE SET
+                    instrument_token = EXCLUDED.instrument_token,
+                    exchange_token = EXCLUDED.exchange_token,
+                    name = EXCLUDED.name,
+                    last_price = EXCLUDED.last_price,
+                    expiry = EXCLUDED.expiry,
+                    strike = EXCLUDED.strike,
+                    tick_size = EXCLUDED.tick_size,
+                    lot_size = EXCLUDED.lot_size,
+                    instrument_type = EXCLUDED.instrument_type,
+                    segment = EXCLUDED.segment,
+                    exchange = EXCLUDED.exchange;
             END;
             $$;
         ");
@@ -446,7 +558,9 @@ public class DatabaseInitializer
         await conn.ExecuteAsync(@"
             -- Drop old function first to change return type from DATE to TIMESTAMP
             DROP FUNCTION IF EXISTS sp_get_indian_holidays();
+        ");
 
+        await conn.ExecuteAsync(@"
             -- Function: sp_get_indian_holidays
             CREATE OR REPLACE FUNCTION sp_get_indian_holidays()
             RETURNS TABLE (
@@ -506,5 +620,40 @@ public class DatabaseInitializer
             $$;
         ");
         _logger.LogInformation("PostgreSQL procedures/functions for 'indian_holidays' configured successfully.");
+
+        // Always ensure created_at column with TIMESTAMP WITH TIME ZONE exists on all timeframe tables
+        _logger.LogInformation("Ensuring 'created_at' columns on all candlestick and indicator tables are typed as TIMESTAMP WITH TIME ZONE...");
+        await conn.ExecuteAsync(@"
+            -- market_candles_1m
+            ALTER TABLE market_candles_1m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_candles_1m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_candles_1m ALTER COLUMN created_at SET DEFAULT NOW();
+
+            -- market_candles_5m
+            ALTER TABLE market_candles_5m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_candles_5m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_candles_5m ALTER COLUMN created_at SET DEFAULT NOW();
+
+            -- market_candles_15m
+            ALTER TABLE market_candles_15m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_candles_15m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_candles_15m ALTER COLUMN created_at SET DEFAULT NOW();
+
+            -- market_indicators_1m
+            ALTER TABLE market_indicators_1m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_indicators_1m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_indicators_1m ALTER COLUMN created_at SET DEFAULT NOW();
+
+            -- market_indicators_5m
+            ALTER TABLE market_indicators_5m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_indicators_5m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_indicators_5m ALTER COLUMN created_at SET DEFAULT NOW();
+
+            -- market_indicators_15m
+            ALTER TABLE market_indicators_15m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_indicators_15m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_indicators_15m ALTER COLUMN created_at SET DEFAULT NOW();
+        ");
+        _logger.LogInformation("Timeframe tables schema alignment completed successfully.");
     }
 }

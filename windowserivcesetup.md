@@ -24,7 +24,7 @@ dotnet publish QuantEdge.Worker/QuantEdge.Worker.csproj -c Release -o C:\QuantEd
 ## 2. Register Windows Services
 
 ### Category A: Continuous Services (Auto-Start)
-*These services capture WebSocket streams or maintain tokens. They are set to start automatically on system boot (`start= auto`).*
+*These services capture WebSocket streams, maintain tokens, or sync database instruments. They are set to start automatically on system boot (`start= auto`).*
 
 ```powershell
 # 1. Market Data Feed (All Timeframes)
@@ -39,26 +39,38 @@ sc.exe description "Worker_marketdatafeed_1m" "QuantEdge Live 1-Minute Market Da
 sc.exe create "Worker_marketdatafeed_5m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe marketdatafeed:5m" start= auto
 sc.exe description "Worker_marketdatafeed_5m" "QuantEdge Live 5-Minute Market Data Feed Service"
 
-# 4. Zerodha Session Token Refresher (Window: 6:00 AM - 7:00 AM IST)
+# 4. Market Data Feed (15m Only)
+sc.exe create "Worker_marketdatafeed_15m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe marketdatafeed:15m" start= auto
+sc.exe description "Worker_marketdatafeed_15m" "QuantEdge Live 15-Minute Market Data Feed Service"
+
+# 5. Zerodha Session Token Refresher (Window: 6:00 AM - 7:00 AM IST)
 sc.exe create "Worker_activezerodhatoken" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe activezerodhatoken" start= auto
 sc.exe description "Worker_activezerodhatoken" "QuantEdge Active Zerodha Access Token Maintainer Service"
+
+# 6. Zerodha Instruments Synchronizer (Cron: Monday 8:00 AM IST)
+sc.exe create "Worker_instrumentsync" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe instrumentsync" start= auto
+sc.exe description "Worker_instrumentsync" "QuantEdge Zerodha Instruments Synchronizer Service"
 ```
 
 ### Category B: Run-Once/Historical Services (Manual Start)
 *These services backfill historical gaps and calculate indicators, then exit automatically. They are set to start manually on-demand (`start= demand`).*
 
 ```powershell
-# 5. History Gap Sync (All Timeframes)
+# 7. History Gap Sync (All Timeframes)
 sc.exe create "Worker_history" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe history" start= demand
 sc.exe description "Worker_history" "QuantEdge Historical Data Gap Sync Service (Default)"
 
-# 6. History Gap Sync (1m Only)
+# 8. History Gap Sync (1m Only)
 sc.exe create "Worker_history_1m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe history:1m" start= demand
 sc.exe description "Worker_history_1m" "QuantEdge Historical 1-Minute Data Gap Sync Service"
 
-# 7. History Gap Sync (5m Only)
+# 9. History Gap Sync (5m Only)
 sc.exe create "Worker_history_5m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe history:5m" start= demand
 sc.exe description "Worker_history_5m" "QuantEdge Historical 5-Minute Data Gap Sync Service"
+
+# 10. History Gap Sync (15m Only)
+sc.exe create "Worker_history_15m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe history:15m" start= demand
+sc.exe description "Worker_history_15m" "QuantEdge Historical 15-Minute Data Gap Sync Service"
 ```
 
 ---
@@ -67,10 +79,12 @@ sc.exe description "Worker_history_5m" "QuantEdge Historical 5-Minute Data Gap S
 
 ### Start Services
 ```powershell
-# Start streaming feeds and session maintainer
+# Start streaming feeds, session maintainer, and instrument sync
 Start-Service -Name "Worker_marketdatafeed_1m"
 Start-Service -Name "Worker_marketdatafeed_5m"
+Start-Service -Name "Worker_marketdatafeed_15m"
 Start-Service -Name "Worker_activezerodhatoken"
+Start-Service -Name "Worker_instrumentsync"
 
 # Trigger a historical gap sync manually
 Start-Service -Name "Worker_history_1m"
@@ -80,7 +94,9 @@ Start-Service -Name "Worker_history_1m"
 ```powershell
 Stop-Service -Name "Worker_marketdatafeed_1m"
 Stop-Service -Name "Worker_marketdatafeed_5m"
+Stop-Service -Name "Worker_marketdatafeed_15m"
 Stop-Service -Name "Worker_activezerodhatoken"
+Stop-Service -Name "Worker_instrumentsync"
 ```
 
 ### Get Service Status
@@ -96,8 +112,11 @@ To delete any service registrations from your system:
 sc.exe delete "Worker_marketdatafeed"
 sc.exe delete "Worker_marketdatafeed_1m"
 sc.exe delete "Worker_marketdatafeed_5m"
+sc.exe delete "Worker_marketdatafeed_15m"
 sc.exe delete "Worker_activezerodhatoken"
+sc.exe delete "Worker_instrumentsync"
 sc.exe delete "Worker_history"
 sc.exe delete "Worker_history_1m"
 sc.exe delete "Worker_history_5m"
+sc.exe delete "Worker_history_15m"
 ```

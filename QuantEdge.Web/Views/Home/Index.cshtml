@@ -28,7 +28,7 @@
             <div class="timeframe-group">
                 <label>
                     Timeframe
-                    <span class="info-tooltip-trigger" data-tooltip="The time duration represented by each bar on the chart (1 Minute or 5 Minutes). Shorter times show quick changes; longer times show broader trends.">
+                    <span class="info-tooltip-trigger" data-tooltip="The time duration represented by each bar on the chart (1 Minute, 5 Minutes, or 15 Minutes). Shorter times show quick changes; longer times show broader trends.">
                         <svg class="info-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="10"></circle>
                             <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -39,6 +39,7 @@
                 <div class="tabs">
                     <button class="tab-btn active" data-timeframe="1m">1 MIN</button>
                     <button class="tab-btn" data-timeframe="5m">5 MIN</button>
+                    <button class="tab-btn" data-timeframe="15m">15 MIN</button>
                 </div>
             </div>
         </div>
@@ -226,7 +227,78 @@
         </div>
     </div>
 
-    @*
+    <!-- Asset Specification Card -->
+    <div class="card asset-spec-card">
+        <div class="card-header">
+            <span class="card-section-title">
+                ASSET SPECIFICATION (STOCK MASTER METADATA)
+                <span class="info-tooltip-trigger" data-tooltip="Detailed instrument metadata from the stock master database.">
+                    <svg class="info-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                </span>
+            </span>
+        </div>
+        <div class="card-body">
+            <div class="asset-spec-grid">
+                <div class="spec-item">
+                    <span class="spec-label">Company Name</span>
+                    <span class="spec-value" id="specName">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Trading Symbol</span>
+                    <span class="spec-value" id="specSymbol">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Instrument Token</span>
+                    <span class="spec-value monospace" id="specInstrumentToken">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Exchange Token</span>
+                    <span class="spec-value monospace" id="specExchangeToken">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Exchange</span>
+                    <span class="spec-value" id="specExchange">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Segment</span>
+                    <span class="spec-value" id="specSegment">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Instrument Type</span>
+                    <span class="spec-value" id="specInstrumentType">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Last Price</span>
+                    <span class="spec-value monospace" id="specLastPrice">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Lot Size</span>
+                    <span class="spec-value monospace" id="specLotSize">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Tick Size</span>
+                    <span class="spec-value monospace" id="specTickSize">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Expiry Date</span>
+                    <span class="spec-value monospace" id="specExpiry">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Strike Price</span>
+                    <span class="spec-value monospace" id="specStrike">-</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Status</span>
+                    <span class="spec-status-badge" id="specStatus">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Chart Row -->
     <div class="chart-panel card">
         <div class="chart-panel-header">
@@ -285,7 +357,6 @@
             </div>
         </div>
     </div>
-    *@
 </div>
 
 @section Scripts {
