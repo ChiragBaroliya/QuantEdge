@@ -50,6 +50,10 @@ sc.exe description "Worker_activezerodhatoken" "QuantEdge Active Zerodha Access 
 # 6. Zerodha Instruments Synchronizer (Cron: Monday 8:00 AM IST)
 sc.exe create "Worker_instrumentsync" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe instrumentsync" start= auto
 sc.exe description "Worker_instrumentsync" "QuantEdge Zerodha Instruments Synchronizer Service"
+
+# 7. Daily Swing Trading Strategy EOD Analysis Job (Runs daily at 15:45 IST)
+sc.exe create "Worker_swingtradingjob" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe swingtradingjob" start= auto
+sc.exe description "Worker_swingtradingjob" "QuantEdge Daily Swing Trading strategy EOD analysis service"
 ```
 
 ### Category B: Run-Once/Historical Services (Manual Start)
@@ -85,6 +89,7 @@ Start-Service -Name "Worker_marketdatafeed_5m"
 Start-Service -Name "Worker_marketdatafeed_15m"
 Start-Service -Name "Worker_activezerodhatoken"
 Start-Service -Name "Worker_instrumentsync"
+Start-Service -Name "Worker_swingtradingjob"
 
 # Trigger a historical gap sync manually
 Start-Service -Name "Worker_history_1m"
@@ -97,6 +102,7 @@ Stop-Service -Name "Worker_marketdatafeed_5m"
 Stop-Service -Name "Worker_marketdatafeed_15m"
 Stop-Service -Name "Worker_activezerodhatoken"
 Stop-Service -Name "Worker_instrumentsync"
+Stop-Service -Name "Worker_swingtradingjob"
 ```
 
 ### Get Service Status
@@ -115,6 +121,7 @@ sc.exe delete "Worker_marketdatafeed_5m"
 sc.exe delete "Worker_marketdatafeed_15m"
 sc.exe delete "Worker_activezerodhatoken"
 sc.exe delete "Worker_instrumentsync"
+sc.exe delete "Worker_swingtradingjob"
 sc.exe delete "Worker_history"
 sc.exe delete "Worker_history_1m"
 sc.exe delete "Worker_history_5m"
