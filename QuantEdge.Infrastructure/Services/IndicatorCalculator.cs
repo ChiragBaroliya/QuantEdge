@@ -131,4 +131,183 @@ public static class IndicatorCalculator
 
         return (macd, signal);
     }
+
+    /// <summary>
+    /// Computes Simple Moving Average (SMA) for a list of values.
+    /// </summary>
+    public static List<decimal> CalculateSma(List<decimal> values, int period)
+    {
+        var sma = new List<decimal>();
+        if (values.Count == 0) return sma;
+
+        decimal sum = 0;
+        for (int i = 0; i < values.Count; i++)
+        {
+            sum += values[i];
+            if (i >= period)
+            {
+                sum -= values[i - period];
+                sma.Add(sum / period);
+            }
+            else
+            {
+                sma.Add(sum / (i + 1));
+            }
+        }
+        return sma;
+    }
+
+    /// <summary>
+    /// Computes rolling maximum value (52-week High / 250 trading days).
+    /// </summary>
+    public static List<decimal> Calculate52WeekHigh(List<decimal> highs, int period = 250)
+    {
+        var highs52W = new List<decimal>();
+        if (highs.Count == 0) return highs52W;
+
+        for (int i = 0; i < highs.Count; i++)
+        {
+            int start = Math.Max(0, i - period + 1);
+            decimal max = highs[start];
+            for (int j = start + 1; j <= i; j++)
+            {
+                if (highs[j] > max) max = highs[j];
+            }
+            highs52W.Add(max);
+        }
+        return highs52W;
+    }
+
+    /// <summary>
+    /// Computes Average True Range (ATR) using Wilder's Smoothing.
+    /// </summary>
+    public static List<decimal> CalculateAtr(List<decimal> highs, List<decimal> lows, List<decimal> closes, int period = 14)
+    {
+        var atrList = new List<decimal>();
+        int count = highs.Count;
+        if (count == 0) return atrList;
+
+        for (int i = 0; i < count; i++) atrList.Add(0m);
+
+        if (count < period) return atrList;
+
+        var tr = new decimal[count];
+        tr[0] = highs[0] - lows[0];
+        for (int i = 1; i < count; i++)
+        {
+            decimal tr1 = highs[i] - lows[i];
+            decimal tr2 = Math.Abs(highs[i] - closes[i - 1]);
+            decimal tr3 = Math.Abs(lows[i] - closes[i - 1]);
+            tr[i] = Math.Max(tr1, Math.Max(tr2, tr3));
+        }
+
+        // Seed with SMA of TR
+        decimal sumTR = 0;
+        for (int i = 0; i < period; i++)
+        {
+            sumTR += tr[i];
+            atrList[i] = sumTR / (i + 1);
+        }
+
+        atrList[period - 1] = sumTR / period;
+
+        for (int i = period; i < count; i++)
+        {
+            atrList[i] = ((atrList[i - 1] * (period - 1)) + tr[i]) / period;
+        }
+
+        return atrList;
+    }
+
+    /// <summary>
+    /// Computes Average Directional Index (ADX) using Wilder's Smoothing.
+    /// </summary>
+    public static List<decimal> CalculateAdx(List<decimal> highs, List<decimal> lows, List<decimal> closes, int period = 14)
+    {
+        var adxList = new List<decimal>();
+        int count = highs.Count;
+        if (count == 0) return adxList;
+
+        for (int i = 0; i < count; i++) adxList.Add(0m);
+
+        if (count < period * 2) return adxList;
+
+        var tr = new decimal[count];
+        var plusDM = new decimal[count];
+        var minusDM = new decimal[count];
+
+        for (int i = 1; i < count; i++)
+        {
+            decimal upMove = highs[i] - highs[i - 1];
+            decimal downMove = lows[i - 1] - lows[i];
+
+            plusDM[i] = (upMove > downMove && upMove > 0) ? upMove : 0m;
+            minusDM[i] = (downMove > upMove && downMove > 0) ? downMove : 0m;
+
+            decimal tr1 = highs[i] - lows[i];
+            decimal tr2 = Math.Abs(highs[i] - closes[i - 1]);
+            decimal tr3 = Math.Abs(lows[i] - closes[i - 1]);
+            tr[i] = Math.Max(tr1, Math.Max(tr2, tr3));
+        }
+        tr[0] = highs[0] - lows[0];
+
+        var smoothedTR = new decimal[count];
+        var smoothedPlusDM = new decimal[count];
+        var smoothedMinusDM = new decimal[count];
+
+        decimal sumTR = 0, sumPlusDM = 0, sumMinusDM = 0;
+        for (int i = 0; i < period; i++)
+        {
+            sumTR += tr[i];
+            sumPlusDM += plusDM[i];
+            sumMinusDM += minusDM[i];
+            smoothedTR[i] = sumTR;
+            smoothedPlusDM[i] = sumPlusDM;
+            smoothedMinusDM[i] = sumMinusDM;
+        }
+
+        smoothedTR[period - 1] = sumTR;
+        smoothedPlusDM[period - 1] = sumPlusDM;
+        smoothedMinusDM[period - 1] = sumMinusDM;
+
+        for (int i = period; i < count; i++)
+        {
+            smoothedTR[i] = smoothedTR[i - 1] - (smoothedTR[i - 1] / period) + tr[i];
+            smoothedPlusDM[i] = smoothedPlusDM[i - 1] - (smoothedPlusDM[i - 1] / period) + plusDM[i];
+            smoothedMinusDM[i] = smoothedMinusDM[i - 1] - (smoothedMinusDM[i - 1] / period) + minusDM[i];
+        }
+
+        var dx = new decimal[count];
+        for (int i = 0; i < count; i++)
+        {
+            decimal trVal = smoothedTR[i];
+            if (trVal == 0m)
+            {
+                dx[i] = 0m;
+                continue;
+            }
+
+            decimal plusDI = 100m * smoothedPlusDM[i] / trVal;
+            decimal minusDI = 100m * smoothedMinusDM[i] / trVal;
+            decimal sumDI = plusDI + minusDI;
+            dx[i] = sumDI == 0m ? 0m : 100m * Math.Abs(plusDI - minusDI) / sumDI;
+        }
+
+        decimal sumDX = 0;
+        for (int i = 0; i < period * 2 - 1; i++)
+        {
+            if (i >= period - 1) sumDX += dx[i];
+            adxList[i] = 15m;
+        }
+
+        decimal initialAdx = sumDX / period;
+        adxList[period * 2 - 2] = initialAdx;
+
+        for (int i = period * 2 - 1; i < count; i++)
+        {
+            adxList[i] = ((adxList[i - 1] * (period - 1)) + dx[i]) / period;
+        }
+
+        return adxList;
+    }
 }

@@ -837,3 +837,52 @@ BEGIN
 END;
 $$;
 
+-- ----------------------------------------------------------------------------
+-- 7. Swing Trading & EOD Daily Analysis
+-- ----------------------------------------------------------------------------
+
+-- Table: daily_stock_analysis
+CREATE TABLE IF NOT EXISTS daily_stock_analysis (
+    id SERIAL PRIMARY KEY,
+    stock_id INT NOT NULL REFERENCES stock_master(id) ON DELETE CASCADE,
+    trade_date DATE NOT NULL,
+    close_price NUMERIC(18, 4) NOT NULL,
+    volume BIGINT NOT NULL,
+    ema20 NUMERIC(18, 4),
+    ema50 NUMERIC(18, 4),
+    ema200 NUMERIC(18, 4),
+    rsi14 NUMERIC(18, 4),
+    macd NUMERIC(18, 4),
+    macd_signal NUMERIC(18, 4),
+    adx14 NUMERIC(18, 4),
+    atr14 NUMERIC(18, 4),
+    average_volume20 NUMERIC(18, 4),
+    is_52_week_high BOOLEAN NOT NULL DEFAULT FALSE,
+    buy_score INT,
+    sell_score INT,
+    buy_signal BOOLEAN NOT NULL DEFAULT FALSE,
+    sell_signal BOOLEAN NOT NULL DEFAULT FALSE,
+    recommendation VARCHAR(20) NOT NULL DEFAULT 'HOLD',
+    reason TEXT,
+    created_on TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_daily_stock_analysis UNIQUE (stock_id, trade_date)
+);
+
+CREATE INDEX IF NOT EXISTS ix_daily_stock_analysis_date ON daily_stock_analysis (trade_date DESC);
+CREATE INDEX IF NOT EXISTS ix_daily_stock_analysis_stock_date ON daily_stock_analysis (stock_id, trade_date DESC);
+
+-- Table: swing_positions
+CREATE TABLE IF NOT EXISTS swing_positions (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(50) NOT NULL,
+    entry_date DATE NOT NULL,
+    entry_price NUMERIC(18, 4) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    is_closed BOOLEAN NOT NULL DEFAULT FALSE,
+    exit_date DATE,
+    exit_price NUMERIC(18, 4),
+    exit_reason VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_swing_positions_symbol_closed ON swing_positions (symbol, is_closed);

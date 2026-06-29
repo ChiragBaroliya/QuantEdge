@@ -1,0 +1,391 @@
+/* Swing Trading Dashboard Stylesheet */
+
+.swing-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding-bottom: 40px;
+    animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Control and Trigger Row */
+.swing-header-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.action-buttons-group {
+    display: flex;
+    gap: 12px;
+}
+
+.btn-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--theme-border);
+    color: #ffffff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.btn-trigger:hover:not(:disabled) {
+    background: var(--theme-glow-card);
+    border-color: var(--theme-accent);
+    box-shadow: 0 0 16px var(--theme-glow);
+    transform: translateY(-2px);
+}
+
+.btn-trigger:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.btn-trigger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary-trigger {
+    background: var(--theme-accent);
+    border-color: var(--theme-accent);
+    color: #0b0f19;
+    font-weight: 600;
+}
+
+.btn-primary-trigger:hover:not(:disabled) {
+    background: #ffffff;
+    border-color: #ffffff;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+}
+
+/* Grid Layouts */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.dashboard-main-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+}
+
+@media (min-width: 1200px) {
+    .dashboard-main-grid {
+        grid-template-columns: 350px 1fr;
+    }
+}
+
+/* Custom Cards */
+.card-glow {
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: linear-gradient(135deg, rgba(20, 30, 48, 0.6) 0%, rgba(36, 59, 85, 0.3) 100%);
+    backdrop-filter: blur(16px);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease;
+}
+
+.card-glow::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    background: radial-gradient(circle at 50% 0%, var(--theme-glow), transparent 60%);
+    opacity: 0.15;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.card-glow:hover {
+    border-color: var(--theme-border);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), 0 0 1px 1px var(--theme-border) inset;
+}
+
+/* Nifty & Watchlist Cards */
+.nifty-status-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.nifty-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.nifty-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 0.5px;
+}
+
+.nifty-badge {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.nifty-badge.passed {
+    background: rgba(52, 211, 153, 0.1);
+    color: #34d399;
+    border: 1px solid rgba(52, 211, 153, 0.2);
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.15);
+}
+
+.nifty-badge.failed {
+    background: rgba(248, 113, 113, 0.1);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.2);
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.15);
+}
+
+.nifty-price-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 12px;
+}
+
+.nifty-price {
+    font-size: 32px;
+    font-weight: 800;
+    color: #ffffff;
+    font-family: monospace;
+}
+
+.nifty-details-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.nifty-detail-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+}
+
+.nifty-detail-item .label {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.nifty-detail-item .value {
+    color: #ffffff;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+/* Stat Metrics (Profit/Loss Cards) */
+.stat-metric-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 140px;
+}
+
+.stat-metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.stat-metric-value-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-top: 12px;
+}
+
+.stat-metric-value {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    font-family: monospace;
+}
+
+.stat-metric-value.positive {
+    color: #34d399;
+    text-shadow: 0 0 12px rgba(52, 211, 153, 0.2);
+}
+
+.stat-metric-value.negative {
+    color: #f87171;
+    text-shadow: 0 0 12px rgba(248, 113, 113, 0.2);
+}
+
+.stat-metric-sub {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: 4px;
+}
+
+/* Tables Styling */
+.table-responsive {
+    overflow-x: auto;
+}
+
+.swing-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 13px;
+}
+
+.swing-table th {
+    padding: 14px 16px;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+}
+
+.swing-table td {
+    padding: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.85);
+    vertical-align: middle;
+}
+
+.swing-table tr:hover td {
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.td-symbol {
+    font-weight: 700;
+    color: #ffffff !important;
+}
+
+.td-monospace {
+    font-family: monospace;
+    font-size: 13px;
+}
+
+/* Badges */
+.rec-badge {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    display: inline-block;
+    border: 1px solid transparent;
+}
+
+.rec-badge.buy {
+    background: rgba(52, 211, 153, 0.12);
+    color: #34d399;
+    border-color: rgba(52, 211, 153, 0.25);
+    box-shadow: 0 0 10px rgba(52, 211, 153, 0.15);
+}
+
+.rec-badge.sell {
+    background: rgba(248, 113, 113, 0.12);
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.25);
+    box-shadow: 0 0 10px rgba(248, 113, 113, 0.15);
+}
+
+.rec-badge.hold {
+    background: rgba(251, 191, 36, 0.12);
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.25);
+}
+
+.pnl-text {
+    font-weight: 700;
+    font-family: monospace;
+}
+
+.pnl-text.positive {
+    color: #34d399;
+}
+
+.pnl-text.negative {
+    color: #f87171;
+}
+
+/* Loading Overlay */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(11, 15, 25, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 12px;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.loading-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.08);
+    border-top: 3px solid var(--theme-accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-text {
+    margin-top: 12px;
+    font-weight: 500;
+    color: #ffffff;
+    font-size: 14px;
+    text-align: center;
+}
+
+.loading-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}

@@ -655,5 +655,79 @@ public class DatabaseInitializer
             ALTER TABLE market_indicators_15m ALTER COLUMN created_at SET DEFAULT NOW();
         ");
         _logger.LogInformation("Timeframe tables schema alignment completed successfully.");
+
+        // Check and provision daily_stock_analysis table
+        bool dailyStockAnalysisExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'daily_stock_analysis'
+            );"
+        );
+        if (!dailyStockAnalysisExists)
+        {
+            _logger.LogWarning("Table 'daily_stock_analysis' not found in database '{Database}'. Provisioning table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS daily_stock_analysis (
+                    id SERIAL PRIMARY KEY,
+                    stock_id INT NOT NULL REFERENCES stock_master(id) ON DELETE CASCADE,
+                    trade_date DATE NOT NULL,
+                    close_price NUMERIC(18, 4) NOT NULL,
+                    volume BIGINT NOT NULL,
+                    ema20 NUMERIC(18, 4),
+                    ema50 NUMERIC(18, 4),
+                    ema200 NUMERIC(18, 4),
+                    rsi14 NUMERIC(18, 4),
+                    macd NUMERIC(18, 4),
+                    macd_signal NUMERIC(18, 4),
+                    adx14 NUMERIC(18, 4),
+                    atr14 NUMERIC(18, 4),
+                    average_volume20 NUMERIC(18, 4),
+                    is_52_week_high BOOLEAN NOT NULL DEFAULT FALSE,
+                    buy_score INT,
+                    sell_score INT,
+                    buy_signal BOOLEAN NOT NULL DEFAULT FALSE,
+                    sell_signal BOOLEAN NOT NULL DEFAULT FALSE,
+                    recommendation VARCHAR(20) NOT NULL DEFAULT 'HOLD',
+                    reason TEXT,
+                    created_on TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    CONSTRAINT uq_daily_stock_analysis UNIQUE (stock_id, trade_date)
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_daily_stock_analysis_date ON daily_stock_analysis (trade_date DESC);
+                CREATE INDEX IF NOT EXISTS ix_daily_stock_analysis_stock_date ON daily_stock_analysis (stock_id, trade_date DESC);
+            ");
+            _logger.LogInformation("Table 'daily_stock_analysis' and indexes created successfully.");
+        }
+
+        // Check and provision swing_positions table
+        bool swingPositionsExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'swing_positions'
+            );"
+        );
+        if (!swingPositionsExists)
+        {
+            _logger.LogWarning("Table 'swing_positions' not found in database '{Database}'. Provisioning table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS swing_positions (
+                    id SERIAL PRIMARY KEY,
+                    symbol VARCHAR(50) NOT NULL,
+                    entry_date DATE NOT NULL,
+                    entry_price NUMERIC(18, 4) NOT NULL,
+                    quantity INT NOT NULL DEFAULT 1,
+                    is_closed BOOLEAN NOT NULL DEFAULT FALSE,
+                    exit_date DATE,
+                    exit_price NUMERIC(18, 4),
+                    exit_reason VARCHAR(100),
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_swing_positions_symbol_closed ON swing_positions (symbol, is_closed);
+            ");
+            _logger.LogInformation("Table 'swing_positions' and indexes created successfully.");
+        }
     }
 }

@@ -21,7 +21,7 @@ public class InstrumentSyncService : IInstrumentSyncService
 
     private static readonly HashSet<string> ActiveSymbols = new(StringComparer.OrdinalIgnoreCase)
     {
-        "NIFTYBEES", "INFY", "TCS", "HDFCBANK", "RELIANCE"
+        "NIFTYBEES", "INFY", "TCS", "HDFCBANK", "RELIANCE", "NIFTY 50"
     };
 
     public InstrumentSyncService(

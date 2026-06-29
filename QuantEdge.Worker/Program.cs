@@ -64,6 +64,10 @@ try
         {
             builder.Services.AddHostedService<InstrumentSyncWorker>();
         }
+        else if (actualJobType.Equals("swingtradingjob", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddHostedService<SwingTradingDailyJobWorker>();
+        }
 
         // Also run the InstrumentSyncWorker in all other job conditions to support Monday morning scheduling
         // and immediate startup sync for testing.

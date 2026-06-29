@@ -89,6 +89,7 @@ public static class ServiceCollectionExtensions
         // Register Signal Engine Services
         services.AddTransient<SignalScoreCalculator>();
         services.AddTransient<ISignalEngineService, SignalEngineService>();
+        services.AddTransient<ISwingTradingService, SwingTradingService>();
 
         return services;
     }

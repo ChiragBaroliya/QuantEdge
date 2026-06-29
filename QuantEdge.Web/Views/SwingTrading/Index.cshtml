@@ -1,0 +1,421 @@
+@{
+    ViewData["Title"] = "Swing Trading";
+    ViewData["PageTitle"] = "Swing Trading Strategy & Performance";
+}
+
+<link rel="stylesheet" href="~/css/swingtrading.css" asp-append-version="true" />
+
+<div class="swing-container">
+    <!-- Header Action Bar -->
+    <div class="swing-header-actions">
+        <div>
+            <p class="text-muted" style="margin: 0; font-size: 13px;">Daily Swing Trading analysis (EOD) executed after market close (3:45 PM IST).</p>
+        </div>
+        <div class="action-buttons-group">
+            <button id="btnRunBackfill" class="btn-trigger" title="Runs a clean 2-year historical backtest of the strategy to generate historical performance.">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                    <path d="M16 3h5v5"></path>
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                    <path d="M8 21H3v-5"></path>
+                </svg>
+                Run Historical Backtest
+            </button>
+            <button id="btnRunJob" class="btn-trigger btn-primary-trigger" title="Triggers the daily EOD candle download, indicator calculations, and buy/sell order recommendations.">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                    <polyline points="16 7 22 7 22 13"></polyline>
+                </svg>
+                Execute EOD Job
+            </button>
+        </div>
+    </div>
+
+    <!-- Performance Stats Grid -->
+    <div class="stats-grid">
+        <!-- 15-Day Performance -->
+        <div class="card-glow stat-metric-card">
+            <div class="stat-metric-header">
+                <span>15-Day Performance</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+            </div>
+            <div>
+                <div class="stat-metric-value-row">
+                    <span id="pnl15" class="stat-metric-value positive">0.00%</span>
+                    <span id="winRate15" class="pnl-text positive" style="font-size: 14px;">WR: 0%</span>
+                </div>
+                <div class="stat-metric-sub">
+                    <span id="tradesCount15">0</span> trades generated in the last 15 days
+                </div>
+            </div>
+        </div>
+
+        <!-- 30-Day Performance -->
+        <div class="card-glow stat-metric-card">
+            <div class="stat-metric-header">
+                <span>30-Day Performance</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+            </div>
+            <div>
+                <div class="stat-metric-value-row">
+                    <span id="pnl30" class="stat-metric-value positive">0.00%</span>
+                    <span id="winRate30" class="pnl-text positive" style="font-size: 14px;">WR: 0%</span>
+                </div>
+                <div class="stat-metric-sub">
+                    <span id="tradesCount30">0</span> trades generated in the last 30 days
+                </div>
+            </div>
+        </div>
+
+        <!-- Strategy Parameters Summary -->
+        <div class="card-glow stat-metric-card" style="justify-content: flex-start; gap: 8px;">
+            <div class="stat-metric-header" style="margin-bottom: 4px;">
+                <span>Trading Parameters</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </div>
+            <div style="font-size: 13px; color: rgba(255,255,255,0.7); display: flex; flex-direction: column; gap: 4px;">
+                <div>• Profit Target: <strong class="pnl-text positive">+5%</strong></div>
+                <div>• Stop Loss: <strong class="pnl-text negative">-3%</strong></div>
+                <div>• Max Duration: <strong>20 Trading Days</strong></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Body Grid -->
+    <div class="dashboard-main-grid">
+        
+        <!-- Left Column: Nifty Market Filter -->
+        <div class="card-glow nifty-status-card">
+            <div class="nifty-header">
+                <span class="nifty-title">NIFTY MARKET FILTER</span>
+                <span id="niftyBadge" class="nifty-badge passed">Passed</span>
+            </div>
+            
+            <div class="nifty-price-row">
+                <span id="niftyClose" class="nifty-price">22,450.25</span>
+                <span style="font-size: 11px; color: rgba(255,255,255,0.3); font-weight: 600;">EOD CLOSE</span>
+            </div>
+
+            <div class="nifty-details-list">
+                <div class="nifty-detail-item">
+                    <span class="label">50 Day DMA (SMA50)</span>
+                    <span id="niftySma50" class="value">21,950.00</span>
+                </div>
+                <div class="nifty-detail-item">
+                    <span class="label">Nifty 20 Day EMA</span>
+                    <span id="niftyEma20" class="value">22,120.40</span>
+                </div>
+                <div class="nifty-detail-item">
+                    <span class="label">Nifty 50 Day EMA</span>
+                    <span id="niftyEma50" class="value">21,990.20</span>
+                </div>
+                <div class="nifty-detail-item" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px; margin-top: 4px;">
+                    <span class="label">Price > 50 DMA</span>
+                    <span id="niftyCond1" class="value pnl-text positive">Yes</span>
+                </div>
+                <div class="nifty-detail-item">
+                    <span class="label">EMA20 > EMA50</span>
+                    <span id="niftyCond2" class="value pnl-text positive">Yes</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Stock Signal Watchlist -->
+        <div class="card-glow">
+            <h3 class="nifty-title" style="margin-top: 0; margin-bottom: 16px;">STOCK & ETF EOD RECOMMENDATIONS</h3>
+            <div class="table-responsive">
+                <table class="swing-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Close</th>
+                            <th>Decision</th>
+                            <th>RSI (14)</th>
+                            <th>ADX (14)</th>
+                            <th>EMA (20/50/200)</th>
+                            <th>MACD</th>
+                            <th>Vol Spike</th>
+                            <th>52W High</th>
+                        </tr>
+                    </thead>
+                    <tbody id="watchlistTableBody">
+                        <tr>
+                            <td colspan="9" class="text-center py-4">
+                                <span class="text-muted">Loading recommendations...</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Bottom Row: Recent Trade Log & Simulated Positions -->
+    <div class="card-glow">
+        <h3 class="nifty-title" style="margin-top: 0; margin-bottom: 16px;">SIMULATED POSITIONS & RECENT TRADE LOG</h3>
+        <div class="table-responsive">
+            <table class="swing-table">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Status</th>
+                        <th>Entry Date</th>
+                        <th>Entry Price</th>
+                        <th>Exit Date</th>
+                        <th>Exit Price</th>
+                        <th>Reason / Exit Factor</th>
+                        <th>Hold Days</th>
+                        <th>P&L (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="tradeLogTableBody">
+                    <tr>
+                        <td colspan="9" class="text-center py-4">
+                            <span class="text-muted">Loading trade logs...</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Global Loading Overlay -->
+<div id="loadingOverlay" class="loading-overlay">
+    <div class="loading-content">
+        <div class="spinner"></div>
+        <div id="loadingMessage" class="loading-text">Processing EOD Daily analysis, please wait...</div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        const API_BASE_URL = "@ViewBag.ApiBaseUrl";
+
+        $(document).ready(function() {
+            // Load dashboard data on startup
+            loadDashboard();
+
+            // Hook action triggers
+            $("#btnRunJob").click(function() {
+                triggerJob("/api/swing/run-job", "Running EOD Daily analysis job. Downloading candles and evaluating signals...");
+            });
+
+            $("#btnRunBackfill").click(function() {
+                triggerJob("/api/swing/backfill", "Executing 2-year historical backtest. Re-simulating EOD recommendations day-by-day...");
+            });
+        });
+
+        function showLoading(msg) {
+            $("#loadingMessage").text(msg);
+            $("#loadingOverlay").addClass("active");
+        }
+
+        function hideLoading() {
+            $("#loadingOverlay").removeClass("active");
+        }
+
+        function loadDashboard() {
+            $.ajax({
+                url: `${API_BASE_URL}/api/swing/dashboard`,
+                type: "GET",
+                success: function(data) {
+                    populateNifty(data.niftyStatus);
+                    populateWatchlist(data.stockSignals);
+                    populatePerformance(data.backtestStats15Days, data.backtestStats30Days);
+                    populateTrades(data.recentTrades);
+                },
+                error: function(err) {
+                    console.error("Failed to load dashboard data.", err);
+                    alert("Error loading dashboard data. Check if API is running.");
+                }
+            });
+        }
+
+        function triggerJob(endpoint, loadingMessage) {
+            showLoading(loadingMessage);
+            $.ajax({
+                url: `${API_BASE_URL}${endpoint}`,
+                type: "POST",
+                success: function(res) {
+                    hideLoading();
+                    alert(res.message);
+                    loadDashboard();
+                },
+                error: function(err) {
+                    hideLoading();
+                    console.error("Job execution failed.", err);
+                    alert(`Error running job: ${err.responseText || "Internal server error"}`);
+                }
+            });
+        }
+
+        function populateNifty(ns) {
+            if (!ns) return;
+
+            $("#niftyClose").text(Number(ns.close).toLocaleString("en-IN", { minimumFractionDigits: 2 }));
+            $("#niftySma50").text(Number(ns.sma50).toLocaleString("en-IN", { minimumFractionDigits: 2 }));
+            $("#niftyEma20").text(Number(ns.ema20).toLocaleString("en-IN", { minimumFractionDigits: 2 }));
+            $("#niftyEma50").text(Number(ns.ema50).toLocaleString("en-IN", { minimumFractionDigits: 2 }));
+
+            const badge = $("#niftyBadge");
+            badge.removeClass("passed failed");
+            if (ns.isMarketFilterPassed) {
+                badge.addClass("passed").text("Passed");
+            } else {
+                badge.addClass("failed").text("Failed");
+            }
+
+            setConditionText("#niftyCond1", ns.isAboveSma50);
+            setConditionText("#niftyCond2", ns.isEmaBullish);
+        }
+
+        function setConditionText(selector, cond) {
+            const el = $(selector);
+            el.removeClass("positive negative");
+            if (cond) {
+                el.addClass("positive").text("Yes");
+            } else {
+                el.addClass("negative").text("No");
+            }
+        }
+
+        function populateWatchlist(signals) {
+            const tbody = $("#watchlistTableBody");
+            tbody.empty();
+
+            if (!signals || signals.length === 0) {
+                tbody.append('<tr><td colspan="9" class="text-center text-muted">No stock data available. Run EOD Job.</td></tr>');
+                return;
+            }
+
+            signals.forEach(s => {
+                const decClass = s.decision.toLowerCase();
+                const meetsEma = s.ema20 > s.ema50 && s.ema50 > s.ema200;
+                
+                let volClass = "";
+                if (s.volumeMultiplier >= 1.5) {
+                    volClass = "positive";
+                }
+
+                let rsiClass = "";
+                if (s.rsi14 >= 55 && s.rsi14 <= 70) {
+                    rsiClass = "positive";
+                } else if (s.rsi14 < 45) {
+                    rsiClass = "negative";
+                }
+
+                const row = `
+                    <tr>
+                        <td class="td-symbol">${s.symbol}</td>
+                        <td class="td-monospace">${Number(s.close).toFixed(2)}</td>
+                        <td>
+                            <span class="rec-badge ${decClass}" title="${s.reason}">${s.decision}</span>
+                        </td>
+                        <td class="td-monospace ${rsiClass}">${Number(s.rsi14).toFixed(1)}</td>
+                        <td class="td-monospace ${s.adx14 > 25 ? 'positive' : ''}">${Number(s.adx14).toFixed(1)}</td>
+                        <td style="font-size: 11px;">
+                            <span class="td-monospace ${meetsEma ? 'positive' : ''}">EMA20 > 50 > 200</span><br/>
+                            <span class="text-muted">${Number(s.ema20).toFixed(0)} / ${Number(s.ema50).toFixed(0)} / ${Number(s.ema200).toFixed(0)}</span>
+                        </td>
+                        <td style="font-size: 11px;">
+                            <span class="td-monospace ${s.isMacdBullishCross ? 'positive' : ''}">MACD Cross</span><br/>
+                            <span class="text-muted">${Number(s.macd).toFixed(1)} / ${Number(s.macdSignal).toFixed(1)}</span>
+                        </td>
+                        <td class="td-monospace ${volClass}">
+                            <strong>${s.volumeMultiplier.toFixed(1)}x</strong><br/>
+                            <span class="text-muted" style="font-size: 10px;">${(s.volume/100000).toFixed(1)}L / ${(s.avgVolume20/100000).toFixed(1)}L</span>
+                        </td>
+                        <td class="td-monospace ${s.is52WeekHigh ? 'positive' : ''}">
+                            ${s.is52WeekHigh ? 'Near 52W High' : 'Below 10%'}
+                        </td>
+                    </tr>
+                `;
+                tbody.append(row);
+            });
+        }
+
+        function populatePerformance(stats15, stats30) {
+            updatePnlCard(stats15, "#pnl15", "#winRate15", "#tradesCount15");
+            updatePnlCard(stats30, "#pnl30", "#winRate30", "#tradesCount30");
+        }
+
+        function updatePnlCard(stats, pnlSel, wrSel, countSel) {
+            if (!stats) return;
+
+            const pnlEl = $(pnlSel);
+            const wrEl = $(wrSel);
+            const cntEl = $(countSel);
+
+            pnlEl.removeClass("positive negative");
+            wrEl.removeClass("positive negative");
+
+            const sign = stats.netProfitLossPct >= 0 ? "+" : "";
+            pnlEl.text(`${sign}${stats.netProfitLossPct.toFixed(2)}%`);
+            wrEl.text(`WR: ${stats.winRatePct.toFixed(0)}%`);
+            cntEl.text(stats.totalTrades);
+
+            if (stats.netProfitLossPct >= 0) {
+                pnlEl.addClass("positive");
+                wrEl.addClass("positive");
+            } else {
+                pnlEl.addClass("negative");
+                wrEl.addClass("negative");
+            }
+        }
+
+        function populateTrades(trades) {
+            const tbody = $("#tradeLogTableBody");
+            tbody.empty();
+
+            if (!trades || trades.length === 0) {
+                tbody.append('<tr><td colspan="9" class="text-center text-muted">No simulated trades executed yet. Click Run Historical Backtest to generate data.</td></tr>');
+                return;
+            }
+
+            trades.forEach(t => {
+                const pnlClass = t.profitLossPct >= 0 ? "positive" : "negative";
+                const sign = t.profitLossPct >= 0 ? "+" : "";
+                
+                const entryD = new Date(t.entryDate).toLocaleDateString("en-IN");
+                const exitD = t.isClosed ? new Date(t.exitDate).toLocaleDateString("en-IN") : "Active";
+                const exitP = t.isClosed ? Number(t.exitPrice).toFixed(2) : "—";
+                
+                const statusBadge = t.isClosed 
+                    ? '<span class="rec-badge sell">CLOSED</span>' 
+                    : '<span class="rec-badge buy">OPEN</span>';
+
+                const row = `
+                    <tr>
+                        <td class="td-symbol">${t.symbol}</td>
+                        <td>${statusBadge}</td>
+                        <td class="td-monospace">${entryD}</td>
+                        <td class="td-monospace">${Number(t.entryPrice).toFixed(2)}</td>
+                        <td class="td-monospace">${exitD}</td>
+                        <td class="td-monospace">${exitP}</td>
+                        <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${t.exitReason || ''}">
+                            ${t.exitReason || 'Holding position...'}
+                        </td>
+                        <td class="td-monospace">${t.holdDays} days</td>
+                        <td class="pnl-text ${pnlClass}">${sign}${t.profitLossPct.toFixed(2)}%</td>
+                    </tr>
+                `;
+                tbody.append(row);
+            });
+        }
+    </script>
+}
