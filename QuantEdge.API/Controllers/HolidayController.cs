@@ -8,7 +8,7 @@ using QuantEdge.Infrastructure.Persistence.Repositories;
 namespace QuantEdge.API.Controllers;
 
 [ApiController]
-[Route("api/holidays")]
+[Route("holidays")]
 public class HolidayController : ControllerBase
 {
     private readonly IIndianHolidayRepository _holidayRepository;

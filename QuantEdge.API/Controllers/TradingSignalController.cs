@@ -9,7 +9,7 @@ using QuantEdge.Infrastructure.DTOs;
 namespace QuantEdge.API.Controllers;
 
 [ApiController]
-[Route("api/signals")]
+[Route("signals")]
 public class TradingSignalController : ControllerBase
 {
     private readonly ISignalEngineService _signalEngine;

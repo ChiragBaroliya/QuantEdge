@@ -18,7 +18,7 @@ using static System.Collections.Specialized.BitVector32;
 namespace QuantEdge.API.Controllers;
 
 [ApiController]
-[Route("api/zerodha")]
+[Route("zerodha")]
 public class ZerodhaAuthController : ControllerBase
 {
     private readonly BrokerConfig _config;

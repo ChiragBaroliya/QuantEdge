@@ -2,6 +2,7 @@ using QuantEdge.Infrastructure.Persistence;
 using QuantEdge.Infrastructure.Extensions;
 using QuantEdge.Infrastructure.Hubs;
 using Serilog;
+using Microsoft.AspNetCore.HttpOverrides;
 
 try
 {
@@ -16,7 +17,6 @@ try
 
     builder.Services.AddControllers();
     // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-    builder.Services.AddOpenApi();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
 
@@ -43,6 +43,13 @@ try
 
     var app = builder.Build();
 
+    app.UsePathBase("/api");
+
+    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    });
+
     // Perform automatic database provisioning on startup
     using (var scope = app.Services.CreateScope())
     {
@@ -51,11 +58,14 @@ try
     }
 
     // Configure the HTTP request pipeline.
-    app.MapOpenApi();
-    app.UseSwagger();
+    app.UseSwagger(c =>
+    {
+        c.RouteTemplate = "swagger/{documentName}/swagger.json";
+    });
     app.UseSwaggerUI(c =>
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "QuantEdge API v1");
+        c.RoutePrefix = "swagger";
+        c.SwaggerEndpoint("/api/swagger/v1/swagger.json", "QuantEdge API v1");
     });
 
     app.UseHttpsRedirection();

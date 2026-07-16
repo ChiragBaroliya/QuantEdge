@@ -1,5 +1,6 @@
 using QuantEdge.Infrastructure.Extensions;
 using Serilog;
+using Microsoft.AspNetCore.HttpOverrides;
 
 try
 {
@@ -26,6 +27,11 @@ try
     });
 
     var app = builder.Build();
+
+    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    });
 
     if (!app.Environment.IsDevelopment())
     {

@@ -10,7 +10,7 @@ using QuantEdge.Infrastructure.Persistence.Repositories;
 namespace QuantEdge.API.Controllers;
 
 [ApiController]
-[Route("api/marketdata")]
+[Route("marketdata")]
 public class MarketDataController : ControllerBase
 {
     private readonly IStockMasterRepository _stockMasterRepository;

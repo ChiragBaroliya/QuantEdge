@@ -8,7 +8,7 @@ using QuantEdge.Infrastructure.Interfaces;
 namespace QuantEdge.API.Controllers;
 
 [ApiController]
-[Route("api/swing")]
+[Route("swing")]
 public class SwingTradingController : ControllerBase
 {
     private readonly ISwingTradingService _swingTradingService;

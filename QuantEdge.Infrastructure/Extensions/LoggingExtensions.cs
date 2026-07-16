@@ -36,15 +36,15 @@ public static class LoggingExtensions
             Directory.CreateDirectory(logDir);
         }
 
-        // Formulate the file name with the application name and current start DateTime
-        string logFile = Path.Combine(logDir, $"{appName}_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+        // Formulate the file name template and use Serilog's daily rolling
+        string logFile = Path.Combine(logDir, $"{appName}_log_.txt");
 
         // Initialize Serilog configuration
         Log.Logger = new LoggerConfiguration()
             .ReadFrom.Configuration(configuration)
             .Enrich.FromLogContext()
             .WriteTo.Console()
-            .WriteTo.File(logFile)
+            .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)
             .CreateLogger();
 
         // Register Serilog with the DI container
