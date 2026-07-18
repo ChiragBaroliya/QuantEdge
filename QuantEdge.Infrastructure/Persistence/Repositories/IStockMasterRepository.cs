@@ -23,4 +23,9 @@ public interface IStockMasterRepository
     /// Retrieves all stock master records (active and inactive).
     /// </summary>
     Task<IEnumerable<StockMaster>> GetAllAsync();
+
+    /// <summary>
+    /// Updates the IsHistryStored field for a stock master record.
+    /// </summary>
+    Task UpdateHistoryStoredAsync(int id, int? status);
 }

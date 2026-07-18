@@ -162,8 +162,8 @@ public class SwingTradingService : ISwingTradingService
                            ELSE (CURRENT_DATE - entry_date)
                        END AS hold_days,
                        CASE 
-                           WHEN is_closed = TRUE THEN Math.Round((exit_price - entry_price) / entry_price * 100, 2)
-                           ELSE Math.Round(((SELECT close_price FROM daily_stock_analysis d JOIN stock_master s ON d.stock_id = s.id WHERE s.symbol = t.symbol ORDER BY d.trade_date DESC LIMIT 1) - entry_price) / entry_price * 100, 2)
+                           WHEN is_closed = TRUE THEN ROUND(((exit_price - entry_price) / entry_price * 100)::numeric, 2)
+                           ELSE ROUND((((SELECT close_price FROM daily_stock_analysis d JOIN stock_master s ON d.stock_id = s.id WHERE s.symbol = t.symbol ORDER BY d.trade_date DESC LIMIT 1) - entry_price) / entry_price * 100)::numeric, 2)
                        END AS profit_loss_pct
                 FROM swing_positions t
                 ORDER BY entry_date DESC")).ToList();

@@ -59,16 +59,17 @@ public record BacktestStatsDto(
     decimal AvgProfitLossPct
 );
 
-public record SwingTradeDto(
-    int Id,
-    string Symbol,
-    DateTime EntryDate,
-    decimal EntryPrice,
-    int Quantity,
-    bool IsClosed,
-    DateTime? ExitDate,
-    decimal? ExitPrice,
-    string? ExitReason,
-    int HoldDays,
-    decimal ProfitLossPct
-);
+public record SwingTradeDto
+{
+    public int Id { get; init; }
+    public string Symbol { get; init; } = string.Empty;
+    public DateTime EntryDate { get; init; }
+    public decimal EntryPrice { get; init; }
+    public int Quantity { get; init; }
+    public bool IsClosed { get; init; }
+    public DateTime? ExitDate { get; init; }
+    public decimal? ExitPrice { get; init; }
+    public string? ExitReason { get; init; }
+    public int HoldDays { get; init; }
+    public decimal ProfitLossPct { get; init; }
+}

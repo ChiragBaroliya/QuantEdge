@@ -23,6 +23,7 @@ public class StockMaster
     public string? InstrumentType { get; set; }
     public string? Segment { get; set; }
     public string? Exchange { get; set; }
+    public int? IsHistryStored { get; set; }
 
     public DateTime CreatedAt { get; set; }
 }

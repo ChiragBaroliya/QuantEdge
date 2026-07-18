@@ -53,4 +53,16 @@ public class StockMasterRepository : IStockMasterRepository
             "SELECT * FROM stock_master ORDER BY symbol;"
         );
     }
+
+    /// <summary>
+    /// Updates the IsHistryStored field for a stock master record.
+    /// </summary>
+    public async Task UpdateHistoryStoredAsync(int id, int? status)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        await connection.ExecuteAsync(
+            "UPDATE stock_master SET is_histry_stored = @Status WHERE id = @Id;",
+            new { Id = id, Status = status }
+        );
+    }
 }

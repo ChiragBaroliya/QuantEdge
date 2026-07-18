@@ -49,12 +49,16 @@ public class HistoricalDataSyncWorker : BackgroundService
 
             _logger.LogInformation("HistoricalDataSyncWorker is retrieving active symbols from StockMaster...");
             var activeStocks = await _stockMasterRepository.GetActiveStocksAsync();
-            var activeSymbols = activeStocks.Select(s => s.Symbol).ToList();
+            var stocksToSync = activeStocks.Where(s => s.IsHistryStored == 0).ToList();
 
-            _logger.LogInformation("HistoricalDataSyncWorker is executing gap check and backfill for {Count} active symbols...", activeSymbols.Count);
+            _logger.LogInformation("HistoricalDataSyncWorker is executing gap check and backfill for {Count} symbols where IsHistryStored = 0...", stocksToSync.Count);
 
-            foreach (var symbol in activeSymbols)
+            foreach (var stock in stocksToSync)
             {
+                if (stoppingToken.IsCancellationRequested)
+                    break;
+
+                bool syncSuccess = true;
                 foreach (var timeframe in _config.Timeframes)
                 {
                     if (stoppingToken.IsCancellationRequested)
@@ -62,11 +66,25 @@ public class HistoricalDataSyncWorker : BackgroundService
 
                     try
                     {
-                        await _historicalDataService.SyncGapsAsync(symbol, timeframe, stoppingToken);
+                        await _historicalDataService.SyncGapsAsync(stock.Symbol, timeframe, stoppingToken);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to complete gap sync for symbol {Symbol} ({Timeframe}). Skipping to next configuration.", symbol, timeframe);
+                        syncSuccess = false;
+                        _logger.LogError(ex, "Failed to complete gap sync for symbol {Symbol} ({Timeframe}). Skipping to next configuration.", stock.Symbol, timeframe);
+                    }
+                }
+
+                if (syncSuccess && !stoppingToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await _stockMasterRepository.UpdateHistoryStoredAsync(stock.Id, 1);
+                        _logger.LogInformation("Successfully backfilled and updated IsHistryStored to 1 for symbol {Symbol}.", stock.Symbol);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to update IsHistryStored to 1 for symbol {Symbol}.", stock.Symbol);
                     }
                 }
             }
