@@ -761,7 +761,8 @@ BEGIN
         lot_size = EXCLUDED.lot_size,
         instrument_type = EXCLUDED.instrument_type,
         segment = EXCLUDED.segment,
-        exchange = EXCLUDED.exchange;
+        exchange = EXCLUDED.exchange,
+        is_active = EXCLUDED.is_active;
 END;
 $$;
 

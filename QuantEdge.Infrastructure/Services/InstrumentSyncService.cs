@@ -166,11 +166,10 @@ public class InstrumentSyncService : IInstrumentSyncService
         try
         {
             var json = System.Text.Json.JsonSerializer.Serialize(instrumentsToSave);
-            await connection.ExecuteAsync(
-                "SELECT sp_upsert_instruments(@p_instruments::jsonb);",
+            await connection.ExecuteScalarAsync(
+                "SELECT public.sp_upsert_instruments(@p_instruments::jsonb);",
                 new { p_instruments = json },
-                transaction: transaction
-            );
+                transaction);
             transaction.Commit();
             _logger.LogInformation("Successfully synced {Count} instruments to stock_master via stored function.", instrumentsToSave.Count);
         }
