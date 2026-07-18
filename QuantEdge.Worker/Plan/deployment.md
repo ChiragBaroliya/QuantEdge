@@ -1,0 +1,1 @@
+scp -r "D:\QuantEdge\Job\*" root@217.216.79.53:/opt/quantedge/worker/
