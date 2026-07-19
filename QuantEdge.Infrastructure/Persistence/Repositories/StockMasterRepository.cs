@@ -55,13 +55,22 @@ public class StockMasterRepository : IStockMasterRepository
     }
 
     /// <summary>
-    /// Updates the IsHistryStored field for a stock master record.
+    /// Updates the timeframe-specific history stored field for a stock master record.
     /// </summary>
-    public async Task UpdateHistoryStoredAsync(int id, int? status)
+    public async Task UpdateHistoryStoredAsync(int id, string timeframe, int? status)
     {
         using var connection = _connectionFactory.CreateConnection();
+        string column = timeframe.ToLower() switch
+        {
+            "1m" => "is_histry_stored_1m",
+            "5m" => "is_histry_stored_5m",
+            "15m" => "is_histry_stored_15m",
+            "60m" => "is_histry_stored_60m",
+            "1d" => "is_histry_stored_1d",
+            _ => throw new ArgumentException($"Invalid timeframe: {timeframe}")
+        };
         await connection.ExecuteAsync(
-            "UPDATE stock_master SET is_histry_stored = @Status WHERE id = @Id;",
+            $"UPDATE stock_master SET {column} = @Status WHERE id = @Id;",
             new { Id = id, Status = status }
         );
     }

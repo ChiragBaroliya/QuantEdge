@@ -153,9 +153,7 @@ public class MarketDataProcessor : IMarketDataProcessor
     {
         try
         {
-            string timeframeStr = candleDto.Interval.TotalMinutes >= 1
-                ? $"{(int)candleDto.Interval.TotalMinutes}m"
-                : $"{(int)candleDto.Interval.TotalSeconds}s";
+            string timeframeStr = GetTimeframeString(candleDto.Interval);
 
             string groupName = $"{candleDto.Symbol.ToUpper().Trim()}_{timeframeStr.ToLower().Trim()}";
 
@@ -185,9 +183,7 @@ public class MarketDataProcessor : IMarketDataProcessor
         {
             _logger.LogInformation("Persisting closed candle to PostgreSQL: {Symbol} {Interval} @ {Close}", candleDto.Symbol, candleDto.Interval, candleDto.Close);
 
-            string timeframeStr = candleDto.Interval.TotalMinutes >= 1
-                ? $"{(int)candleDto.Interval.TotalMinutes}m"
-                : $"{(int)candleDto.Interval.TotalSeconds}s";
+            string timeframeStr = GetTimeframeString(candleDto.Interval);
 
             int deterministicId = GenerateDeterministicIntId(candleDto.Symbol, timeframeStr, candleDto.Timestamp);
 
@@ -257,5 +253,18 @@ public class MarketDataProcessor : IMarketDataProcessor
             hash = (hash ^ c) * 16777619;
         }
         return (int)hash;
+    }
+
+    private static string GetTimeframeString(TimeSpan interval)
+    {
+        if (interval == TimeSpan.FromDays(1))
+        {
+            return "1d";
+        }
+        if (interval.TotalMinutes >= 1)
+        {
+            return $"{(int)interval.TotalMinutes}m";
+        }
+        return $"{(int)interval.TotalSeconds}s";
     }
 }

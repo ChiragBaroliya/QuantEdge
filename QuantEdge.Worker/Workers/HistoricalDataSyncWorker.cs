@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using QuantEdge.Infrastructure.Configurations;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
+using QuantEdge.Domain.Entities;
 
 namespace QuantEdge.Worker.Workers;
 
@@ -49,42 +50,39 @@ public class HistoricalDataSyncWorker : BackgroundService
 
             _logger.LogInformation("HistoricalDataSyncWorker is retrieving active symbols from StockMaster...");
             var activeStocks = await _stockMasterRepository.GetActiveStocksAsync();
-            var stocksToSync = activeStocks.Where(s => s.IsHistryStored == 0).ToList();
+            var stocksToSync = activeStocks.Where(stock => 
+                _config.Timeframes != null && _config.Timeframes.Any(tf => (GetHistoryStoredStatus(stock, tf) ?? 0) == 0)
+            ).ToList();
 
-            _logger.LogInformation("HistoricalDataSyncWorker is executing gap check and backfill for {Count} symbols where IsHistryStored = 0...", stocksToSync.Count);
+            _logger.LogInformation("HistoricalDataSyncWorker is executing gap check and backfill for {Count} symbols where at least one target timeframe history is missing...", stocksToSync.Count);
 
             foreach (var stock in stocksToSync)
             {
                 if (stoppingToken.IsCancellationRequested)
                     break;
 
-                bool syncSuccess = true;
-                foreach (var timeframe in _config.Timeframes)
+                foreach (var timeframe in _config.Timeframes ?? Array.Empty<string>())
                 {
                     if (stoppingToken.IsCancellationRequested)
                         break;
 
+                    // Skip timeframe sync if history for this timeframe is already stored for this symbol
+                    if ((GetHistoryStoredStatus(stock, timeframe) ?? 0) == 1)
+                    {
+                        _logger.LogInformation("History for timeframe {Timeframe} is already stored for symbol {Symbol}. Skipping.", timeframe, stock.Symbol);
+                        continue;
+                    }
+
                     try
                     {
                         await _historicalDataService.SyncGapsAsync(stock.Symbol, timeframe, stoppingToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        syncSuccess = false;
-                        _logger.LogError(ex, "Failed to complete gap sync for symbol {Symbol} ({Timeframe}). Skipping to next configuration.", stock.Symbol, timeframe);
-                    }
-                }
 
-                if (syncSuccess && !stoppingToken.IsCancellationRequested)
-                {
-                    try
-                    {
-                        await _stockMasterRepository.UpdateHistoryStoredAsync(stock.Id, 1);
-                        _logger.LogInformation("Successfully backfilled and updated IsHistryStored to 1 for symbol {Symbol}.", stock.Symbol);
+                        await _stockMasterRepository.UpdateHistoryStoredAsync(stock.Id, timeframe, 1);
+                        _logger.LogInformation("Successfully backfilled and updated history stored to 1 for symbol {Symbol} ({Timeframe}).", stock.Symbol, timeframe);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to update IsHistryStored to 1 for symbol {Symbol}.", stock.Symbol);
+                        _logger.LogError(ex, "Failed to complete gap sync for symbol {Symbol} ({Timeframe}). Skipping to next configuration.", stock.Symbol, timeframe);
                     }
                 }
             }
@@ -104,5 +102,18 @@ public class HistoricalDataSyncWorker : BackgroundService
             _logger.LogInformation("Stopping application hosted services as history sync is completed.");
             _lifetime.StopApplication();
         }
+    }
+
+    private static int? GetHistoryStoredStatus(StockMaster stock, string timeframe)
+    {
+        return timeframe.ToLower() switch
+        {
+            "1m" => stock.IsHistryStored1m,
+            "5m" => stock.IsHistryStored5m,
+            "15m" => stock.IsHistryStored15m,
+            "60m" => stock.IsHistryStored60m,
+            "1d" => stock.IsHistryStored1d,
+            _ => null
+        };
     }
 }

@@ -699,7 +699,11 @@ CREATE TABLE IF NOT EXISTS stock_master (
     instrument_type VARCHAR(20),
     segment VARCHAR(20),
     exchange VARCHAR(20),
-    is_histry_stored INT DEFAULT NULL,
+    is_histry_stored_1m INT DEFAULT NULL,
+    is_histry_stored_5m INT DEFAULT NULL,
+    is_histry_stored_15m INT DEFAULT NULL,
+    is_histry_stored_60m INT DEFAULT NULL,
+    is_histry_stored_1d INT DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -742,7 +746,11 @@ RETURNS TABLE (
     instrument_type VARCHAR(20),
     segment VARCHAR(20),
     exchange VARCHAR(20),
-    is_histry_stored INT,
+    is_histry_stored_1m INT,
+    is_histry_stored_5m INT,
+    is_histry_stored_15m INT,
+    is_histry_stored_60m INT,
+    is_histry_stored_1d INT,
     created_at TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -752,7 +760,9 @@ BEGIN
     SELECT s.id, s.symbol, s.instrument_token, s.is_active,
            s.exchange_token, s.name, s.last_price, s.expiry,
            s.strike, s.tick_size, s.lot_size, s.instrument_type,
-           s.segment, s.exchange, s.is_histry_stored, s.created_at
+           s.segment, s.exchange, 
+           s.is_histry_stored_1m, s.is_histry_stored_5m, s.is_histry_stored_15m, s.is_histry_stored_60m, s.is_histry_stored_1d,
+           s.created_at
     FROM stock_master s
     WHERE s.is_active = TRUE;
 END;
@@ -777,7 +787,11 @@ RETURNS TABLE (
     instrument_type VARCHAR(20),
     segment VARCHAR(20),
     exchange VARCHAR(20),
-    is_histry_stored INT,
+    is_histry_stored_1m INT,
+    is_histry_stored_5m INT,
+    is_histry_stored_15m INT,
+    is_histry_stored_60m INT,
+    is_histry_stored_1d INT,
     created_at TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -787,7 +801,9 @@ BEGIN
     SELECT s.id, s.symbol, s.instrument_token, s.is_active,
            s.exchange_token, s.name, s.last_price, s.expiry,
            s.strike, s.tick_size, s.lot_size, s.instrument_type,
-           s.segment, s.exchange, s.is_histry_stored, s.created_at
+           s.segment, s.exchange, 
+           s.is_histry_stored_1m, s.is_histry_stored_5m, s.is_histry_stored_15m, s.is_histry_stored_60m, s.is_histry_stored_1d,
+           s.created_at
     FROM stock_master s
     WHERE UPPER(s.symbol) = UPPER(p_symbol)
     LIMIT 1;

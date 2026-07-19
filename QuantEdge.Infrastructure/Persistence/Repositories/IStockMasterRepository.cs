@@ -25,7 +25,7 @@ public interface IStockMasterRepository
     Task<IEnumerable<StockMaster>> GetAllAsync();
 
     /// <summary>
-    /// Updates the IsHistryStored field for a stock master record.
+    /// Updates the timeframe-specific history stored field for a stock master record.
     /// </summary>
-    Task UpdateHistoryStoredAsync(int id, int? status);
+    Task UpdateHistoryStoredAsync(int id, string timeframe, int? status);
 }
