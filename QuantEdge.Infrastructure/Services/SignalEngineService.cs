@@ -21,6 +21,7 @@ public class SignalEngineService : ISignalEngineService
     private readonly IMarketIndicatorRepository _indicatorRepository;
     private readonly ITradingSignalRepository _tradingSignalRepository;
     private readonly SignalScoreCalculator _scoreCalculator;
+    private readonly IIndicatorService _indicatorService;
     private readonly ILogger<SignalEngineService> _logger;
 
     public SignalEngineService(
@@ -28,12 +29,14 @@ public class SignalEngineService : ISignalEngineService
         IMarketIndicatorRepository indicatorRepository,
         ITradingSignalRepository tradingSignalRepository,
         SignalScoreCalculator scoreCalculator,
+        IIndicatorService indicatorService,
         ILogger<SignalEngineService> logger)
     {
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _indicatorRepository = indicatorRepository ?? throw new ArgumentNullException(nameof(indicatorRepository));
         _tradingSignalRepository = tradingSignalRepository ?? throw new ArgumentNullException(nameof(tradingSignalRepository));
         _scoreCalculator = scoreCalculator ?? throw new ArgumentNullException(nameof(scoreCalculator));
+        _indicatorService = indicatorService ?? throw new ArgumentNullException(nameof(indicatorService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -65,8 +68,21 @@ public class SignalEngineService : ISignalEngineService
         var indicatorsList = (await _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit: 2)).ToList();
         if (indicatorsList.Count < 2)
         {
-            _logger.LogWarning("Insufficient indicator data to evaluate symbol {Symbol}. Minimum required: 2 indicator records.", symbol);
-            return CreateHoldResult(symbol, timeframe, "Insufficient technical indicator history in database.");
+            _logger.LogWarning("Insufficient indicator data to evaluate symbol {Symbol}. Minimum required: 2 indicator records. Attempting self-healing backfill...", symbol);
+            try
+            {
+                await _indicatorService.BackfillHistoricalIndicatorsAsync(symbol, timeframe);
+                indicatorsList = (await _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit: 2)).ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to self-heal/backfill indicators for {Symbol} ({Timeframe}).", symbol, timeframe);
+            }
+
+            if (indicatorsList.Count < 2)
+            {
+                return CreateHoldResult(symbol, timeframe, "Insufficient technical indicator history in database.");
+            }
         }
 
         var latestInd = indicatorsList[0];
