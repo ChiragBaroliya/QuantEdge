@@ -625,6 +625,128 @@ public class DatabaseInitializer
         ");
         _logger.LogInformation("PostgreSQL procedures/functions for 'indian_holidays' configured successfully.");
 
+        // Check and provision market_candles_60m table
+        bool marketCandles60mExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'market_candles_60m'
+            );"
+        );
+        if (!marketCandles60mExists)
+        {
+            _logger.LogWarning("Table 'market_candles_60m' not found in database '{Database}'. Provisioning table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS market_candles_60m (
+                    id INT NOT NULL,
+                    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    symbol VARCHAR(50) NOT NULL,
+                    timeframe VARCHAR(20) NOT NULL,
+                    open NUMERIC(18, 6) NOT NULL,
+                    high NUMERIC(18, 6) NOT NULL,
+                    low NUMERIC(18, 6) NOT NULL,
+                    close NUMERIC(18, 6) NOT NULL,
+                    volume BIGINT NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    CONSTRAINT pk_market_candles_60m PRIMARY KEY (id, candle_time)
+                );
+                CREATE INDEX IF NOT EXISTS ix_market_candles_60m_symbol_candle_time ON market_candles_60m (symbol, candle_time DESC);
+            ");
+            _logger.LogInformation("Table 'market_candles_60m' and index created successfully.");
+        }
+
+        // Check and provision market_candles_1d table
+        bool marketCandles1dExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'market_candles_1d'
+            );"
+        );
+        if (!marketCandles1dExists)
+        {
+            _logger.LogWarning("Table 'market_candles_1d' not found in database '{Database}'. Provisioning table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS market_candles_1d (
+                    id INT NOT NULL,
+                    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    symbol VARCHAR(50) NOT NULL,
+                    timeframe VARCHAR(20) NOT NULL,
+                    open NUMERIC(18, 6) NOT NULL,
+                    high NUMERIC(18, 6) NOT NULL,
+                    low NUMERIC(18, 6) NOT NULL,
+                    close NUMERIC(18, 6) NOT NULL,
+                    volume BIGINT NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    CONSTRAINT pk_market_candles_1d PRIMARY KEY (id, candle_time)
+                );
+                CREATE INDEX IF NOT EXISTS ix_market_candles_1d_symbol_candle_time ON market_candles_1d (symbol, candle_time DESC);
+            ");
+            _logger.LogInformation("Table 'market_candles_1d' and index created successfully.");
+        }
+
+        // Check and provision market_indicators_60m table
+        bool marketIndicators60mExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'market_indicators_60m'
+            );"
+        );
+        if (!marketIndicators60mExists)
+        {
+            _logger.LogWarning("Table 'market_indicators_60m' not found in database '{Database}'. Provisioning table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS market_indicators_60m (
+                    id INT NOT NULL,
+                    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    symbol VARCHAR(50) NOT NULL,
+                    timeframe VARCHAR(20) NOT NULL,
+                    rsi NUMERIC(18, 6) NOT NULL,
+                    ema20 NUMERIC(18, 6) NOT NULL,
+                    ema50 NUMERIC(18, 6) NOT NULL,
+                    macd NUMERIC(18, 6) NOT NULL,
+                    signal_line NUMERIC(18, 6) NOT NULL,
+                    vwap NUMERIC(18, 6) NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    CONSTRAINT pk_market_indicators_60m PRIMARY KEY (id, candle_time)
+                );
+                CREATE INDEX IF NOT EXISTS ix_market_indicators_60m_symbol_candle_time ON market_indicators_60m (symbol, candle_time DESC);
+            ");
+            _logger.LogInformation("Table 'market_indicators_60m' and index created successfully.");
+        }
+
+        // Check and provision market_indicators_1d table
+        bool marketIndicators1dExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'market_indicators_1d'
+            );"
+        );
+        if (!marketIndicators1dExists)
+        {
+            _logger.LogWarning("Table 'market_indicators_1d' not found in database '{Database}'. Provisioning table...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS market_indicators_1d (
+                    id INT NOT NULL,
+                    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    symbol VARCHAR(50) NOT NULL,
+                    timeframe VARCHAR(20) NOT NULL,
+                    rsi NUMERIC(18, 6) NOT NULL,
+                    ema20 NUMERIC(18, 6) NOT NULL,
+                    ema50 NUMERIC(18, 6) NOT NULL,
+                    macd NUMERIC(18, 6) NOT NULL,
+                    signal_line NUMERIC(18, 6) NOT NULL,
+                    vwap NUMERIC(18, 6) NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    CONSTRAINT pk_market_indicators_1d PRIMARY KEY (id, candle_time)
+                );
+                CREATE INDEX IF NOT EXISTS ix_market_indicators_1d_symbol_candle_time ON market_indicators_1d (symbol, candle_time DESC);
+            ");
+            _logger.LogInformation("Table 'market_indicators_1d' and index created successfully.");
+        }
+
         // Always ensure created_at column with TIMESTAMP WITH TIME ZONE exists on all timeframe tables
         _logger.LogInformation("Ensuring 'created_at' columns on all candlestick and indicator tables are typed as TIMESTAMP WITH TIME ZONE...");
         await conn.ExecuteAsync(@"
@@ -643,6 +765,16 @@ public class DatabaseInitializer
             ALTER TABLE market_candles_15m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
             ALTER TABLE market_candles_15m ALTER COLUMN created_at SET DEFAULT NOW();
 
+            -- market_candles_60m
+            ALTER TABLE market_candles_60m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_candles_60m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_candles_60m ALTER COLUMN created_at SET DEFAULT NOW();
+
+            -- market_candles_1d
+            ALTER TABLE market_candles_1d ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_candles_1d ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_candles_1d ALTER COLUMN created_at SET DEFAULT NOW();
+
             -- market_indicators_1m
             ALTER TABLE market_indicators_1m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
             ALTER TABLE market_indicators_1m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
@@ -657,6 +789,16 @@ public class DatabaseInitializer
             ALTER TABLE market_indicators_15m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
             ALTER TABLE market_indicators_15m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
             ALTER TABLE market_indicators_15m ALTER COLUMN created_at SET DEFAULT NOW();
+
+            -- market_indicators_60m
+            ALTER TABLE market_indicators_60m ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_indicators_60m ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_indicators_60m ALTER COLUMN created_at SET DEFAULT NOW();
+
+            -- market_indicators_1d
+            ALTER TABLE market_indicators_1d ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+            ALTER TABLE market_indicators_1d ALTER COLUMN created_at SET DATA TYPE TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE market_indicators_1d ALTER COLUMN created_at SET DEFAULT NOW();
         ");
         _logger.LogInformation("Timeframe tables schema alignment completed successfully.");
 

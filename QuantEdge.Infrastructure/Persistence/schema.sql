@@ -157,6 +157,36 @@ CREATE TABLE IF NOT EXISTS market_candles_15m (
     CONSTRAINT pk_market_candles_15m PRIMARY KEY (id, candle_time)
 );
 
+-- Table: market_candles_60m
+CREATE TABLE IF NOT EXISTS market_candles_60m (
+    id INT NOT NULL,
+    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    timeframe VARCHAR(20) NOT NULL,
+    open NUMERIC(18, 6) NOT NULL,
+    high NUMERIC(18, 6) NOT NULL,
+    low NUMERIC(18, 6) NOT NULL,
+    close NUMERIC(18, 6) NOT NULL,
+    volume BIGINT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_market_candles_60m PRIMARY KEY (id, candle_time)
+);
+
+-- Table: market_candles_1d
+CREATE TABLE IF NOT EXISTS market_candles_1d (
+    id INT NOT NULL,
+    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    timeframe VARCHAR(20) NOT NULL,
+    open NUMERIC(18, 6) NOT NULL,
+    high NUMERIC(18, 6) NOT NULL,
+    low NUMERIC(18, 6) NOT NULL,
+    close NUMERIC(18, 6) NOT NULL,
+    volume BIGINT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_market_candles_1d PRIMARY KEY (id, candle_time)
+);
+
 -- Table: market_indicators_1m
 CREATE TABLE IF NOT EXISTS market_indicators_1m (
     id INT NOT NULL,
@@ -205,6 +235,38 @@ CREATE TABLE IF NOT EXISTS market_indicators_15m (
     CONSTRAINT pk_market_indicators_15m PRIMARY KEY (id, candle_time)
 );
 
+-- Table: market_indicators_60m
+CREATE TABLE IF NOT EXISTS market_indicators_60m (
+    id INT NOT NULL,
+    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    timeframe VARCHAR(20) NOT NULL,
+    rsi NUMERIC(18, 6) NOT NULL,
+    ema20 NUMERIC(18, 6) NOT NULL,
+    ema50 NUMERIC(18, 6) NOT NULL,
+    macd NUMERIC(18, 6) NOT NULL,
+    signal_line NUMERIC(18, 6) NOT NULL,
+    vwap NUMERIC(18, 6) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_market_indicators_60m PRIMARY KEY (id, candle_time)
+);
+
+-- Table: market_indicators_1d
+CREATE TABLE IF NOT EXISTS market_indicators_1d (
+    id INT NOT NULL,
+    candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    timeframe VARCHAR(20) NOT NULL,
+    rsi NUMERIC(18, 6) NOT NULL,
+    ema20 NUMERIC(18, 6) NOT NULL,
+    ema50 NUMERIC(18, 6) NOT NULL,
+    macd NUMERIC(18, 6) NOT NULL,
+    signal_line NUMERIC(18, 6) NOT NULL,
+    vwap NUMERIC(18, 6) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_market_indicators_1d PRIMARY KEY (id, candle_time)
+);
+
 -- Table: trading_signals
 CREATE TABLE IF NOT EXISTS trading_signals (
     id INT NOT NULL,
@@ -247,6 +309,12 @@ ON market_candles_5m (symbol, candle_time DESC);
 CREATE INDEX IF NOT EXISTS ix_market_candles_15m_symbol_candle_time
 ON market_candles_15m (symbol, candle_time DESC);
 
+CREATE INDEX IF NOT EXISTS ix_market_candles_60m_symbol_candle_time
+ON market_candles_60m (symbol, candle_time DESC);
+
+CREATE INDEX IF NOT EXISTS ix_market_candles_1d_symbol_candle_time
+ON market_candles_1d (symbol, candle_time DESC);
+
 CREATE INDEX IF NOT EXISTS ix_market_indicators_1m_symbol_candle_time
 ON market_indicators_1m (symbol, candle_time DESC);
 
@@ -255,6 +323,12 @@ ON market_indicators_5m (symbol, candle_time DESC);
 
 CREATE INDEX IF NOT EXISTS ix_market_indicators_15m_symbol_candle_time
 ON market_indicators_15m (symbol, candle_time DESC);
+
+CREATE INDEX IF NOT EXISTS ix_market_indicators_60m_symbol_candle_time
+ON market_indicators_60m (symbol, candle_time DESC);
+
+CREATE INDEX IF NOT EXISTS ix_market_indicators_1d_symbol_candle_time
+ON market_indicators_1d (symbol, candle_time DESC);
 
 CREATE INDEX IF NOT EXISTS ix_trading_signals_symbol_candle_time
 ON trading_signals (symbol, candle_time DESC);

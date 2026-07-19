@@ -295,7 +295,7 @@ async function fetchChartHistory() {
 async function fetchLiveSignalEvaluation() {
     if (!activeSymbol) return;
     try {
-        const response = await fetch(`${API_BASE_URL}/signals/evaluate?symbol=${activeSymbol}&timeframe=${activeTimeframe}`);
+        const response = await fetch(`${API_BASE_URL}/api/signals/evaluate?symbol=${activeSymbol}&timeframe=${activeTimeframe}`);
         if (!response.ok) throw new Error("Failed to fetch live signal evaluation.");
         const data = await response.json();
         updateSignalUi(data);
@@ -350,7 +350,7 @@ function bindChartData(dataList) {
 // SignalR Connection
 function connectSignalR() {
     connection = new signalR.HubConnectionBuilder()
-        .withUrl(`${API_BASE_URL}/hubs/marketdata`)
+        .withUrl(`${API_BASE_URL}/api/hubs/marketdata`)
         .withAutomaticReconnect()
         .build();
 

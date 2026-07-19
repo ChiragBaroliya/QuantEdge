@@ -56,9 +56,9 @@ public class BrokerConfig
     public string ConnectionString { get; set; } = "Host=localhost;Database=quantedge;Username=postgres;Password=postgres";
 
     /// <summary>
-    /// Gets or sets the target timeframes to process/build candles for (e.g. ["1m", "5m", "15m"]).
+    /// Gets or sets the target timeframes to process/build candles for (e.g. ["1m", "5m", "15m", "60m", "1d"]).
     /// </summary>
-    public string[] Timeframes { get; set; } = new[] { "1m", "5m", "15m" };
+    public string[] Timeframes { get; set; } = new[] { "1m", "5m", "15m", "60m", "1d" };
 
     /// <summary>
     /// Gets or sets a value indicating whether to run the instruments sync immediately on startup for testing/manual triggering.

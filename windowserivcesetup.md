@@ -43,6 +43,14 @@ sc.exe description "Worker_marketdatafeed_5m" "QuantEdge Live 5-Minute Market Da
 sc.exe create "Worker_marketdatafeed_15m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe marketdatafeed:15m" start= auto
 sc.exe description "Worker_marketdatafeed_15m" "QuantEdge Live 15-Minute Market Data Feed Service"
 
+# 4a. Market Data Feed (60m Only)
+sc.exe create "Worker_marketdatafeed_60m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe marketdatafeed:60m" start= auto
+sc.exe description "Worker_marketdatafeed_60m" "QuantEdge Live 60-Minute Market Data Feed Service"
+
+# 4b. Market Data Feed (1d Only)
+sc.exe create "Worker_marketdatafeed_1d" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe marketdatafeed:1d" start= auto
+sc.exe description "Worker_marketdatafeed_1d" "QuantEdge Live 1-Day Market Data Feed Service"
+
 # 5. Zerodha Session Token Refresher (Window: 6:00 AM - 8:30 AM IST)
 sc.exe create "Worker_activezerodhatoken" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe activezerodhatoken" start= auto
 sc.exe description "Worker_activezerodhatoken" "QuantEdge Active Zerodha Access Token Maintainer Service"
@@ -75,6 +83,14 @@ sc.exe description "Worker_history_5m" "QuantEdge Historical 5-Minute Data Gap S
 # 10. History Gap Sync (15m Only)
 sc.exe create "Worker_history_15m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe history:15m" start= demand
 sc.exe description "Worker_history_15m" "QuantEdge Historical 15-Minute Data Gap Sync Service"
+
+# 11. History Gap Sync (60m Only)
+sc.exe create "Worker_history_60m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe history:60m" start= demand
+sc.exe description "Worker_history_60m" "QuantEdge Historical 60-Minute Data Gap Sync Service"
+
+# 12. History Gap Sync (1d Only)
+sc.exe create "Worker_history_1d" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe history:1d" start= demand
+sc.exe description "Worker_history_1d" "QuantEdge Historical 1-Day Data Gap Sync Service"
 ```
 
 ---
@@ -87,6 +103,8 @@ sc.exe description "Worker_history_15m" "QuantEdge Historical 15-Minute Data Gap
 Start-Service -Name "Worker_marketdatafeed_1m"
 Start-Service -Name "Worker_marketdatafeed_5m"
 Start-Service -Name "Worker_marketdatafeed_15m"
+Start-Service -Name "Worker_marketdatafeed_60m"
+Start-Service -Name "Worker_marketdatafeed_1d"
 Start-Service -Name "Worker_activezerodhatoken"
 Start-Service -Name "Worker_instrumentsync"
 Start-Service -Name "Worker_swingtradingjob"
@@ -100,6 +118,8 @@ Start-Service -Name "Worker_history_1m"
 Stop-Service -Name "Worker_marketdatafeed_1m"
 Stop-Service -Name "Worker_marketdatafeed_5m"
 Stop-Service -Name "Worker_marketdatafeed_15m"
+Stop-Service -Name "Worker_marketdatafeed_60m"
+Stop-Service -Name "Worker_marketdatafeed_1d"
 Stop-Service -Name "Worker_activezerodhatoken"
 Stop-Service -Name "Worker_instrumentsync"
 Stop-Service -Name "Worker_swingtradingjob"
@@ -119,6 +139,8 @@ sc.exe delete "Worker_marketdatafeed"
 sc.exe delete "Worker_marketdatafeed_1m"
 sc.exe delete "Worker_marketdatafeed_5m"
 sc.exe delete "Worker_marketdatafeed_15m"
+sc.exe delete "Worker_marketdatafeed_60m"
+sc.exe delete "Worker_marketdatafeed_1d"
 sc.exe delete "Worker_activezerodhatoken"
 sc.exe delete "Worker_instrumentsync"
 sc.exe delete "Worker_swingtradingjob"
@@ -126,4 +148,6 @@ sc.exe delete "Worker_history"
 sc.exe delete "Worker_history_1m"
 sc.exe delete "Worker_history_5m"
 sc.exe delete "Worker_history_15m"
+sc.exe delete "Worker_history_60m"
+sc.exe delete "Worker_history_1d"
 ```

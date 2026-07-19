@@ -146,6 +146,8 @@ declare -a SERVICES=(
     "worker-marketdatafeed-1m|marketdatafeed:1m|true|QuantEdge Live 1-Minute Market Data Feed Service"
     "worker-marketdatafeed-5m|marketdatafeed:5m|true|QuantEdge Live 5-Minute Market Data Feed Service"
     "worker-marketdatafeed-15m|marketdatafeed:15m|true|QuantEdge Live 15-Minute Market Data Feed Service"
+    "worker-marketdatafeed-60m|marketdatafeed:60m|true|QuantEdge Live 60-Minute Market Data Feed Service"
+    "worker-marketdatafeed-1d|marketdatafeed:1d|true|QuantEdge Live 1-Day Market Data Feed Service"
     "worker-activezerodhatoken|activezerodhatoken|true|QuantEdge Active Zerodha Access Token Maintainer Service"
     "worker-instrumentsync|instrumentsync|true|QuantEdge Zerodha Instruments Synchronizer Service"
     
@@ -154,6 +156,8 @@ declare -a SERVICES=(
     "worker-history-1m|history:1m|false|QuantEdge Historical 1-Minute Data Gap Sync Service"
     "worker-history-5m|history:5m|false|QuantEdge Historical 5-Minute Data Gap Sync Service"
     "worker-history-15m|history:15m|false|QuantEdge Historical 15-Minute Data Gap Sync Service"
+    "worker-history-60m|history:60m|false|QuantEdge Historical 60-Minute Data Gap Sync Service"
+    "worker-history-1d|history:1d|false|QuantEdge Historical 1-Day Data Gap Sync Service"
 )
 
 # Loop to generate each systemd service file
@@ -231,6 +235,8 @@ sudo systemctl start quantedge-web
 sudo systemctl start quantedge-worker-marketdatafeed-1m
 sudo systemctl start quantedge-worker-marketdatafeed-5m
 sudo systemctl start quantedge-worker-marketdatafeed-15m
+sudo systemctl start quantedge-worker-marketdatafeed-60m
+sudo systemctl start quantedge-worker-marketdatafeed-1d
 sudo systemctl start quantedge-worker-activezerodhatoken
 sudo systemctl start quantedge-worker-instrumentsync
 
@@ -243,6 +249,8 @@ sudo systemctl start quantedge-worker-history-1m
 sudo systemctl stop quantedge-worker-marketdatafeed-1m
 sudo systemctl stop quantedge-worker-marketdatafeed-5m
 sudo systemctl stop quantedge-worker-marketdatafeed-15m
+sudo systemctl stop quantedge-worker-marketdatafeed-60m
+sudo systemctl stop quantedge-worker-marketdatafeed-1d
 sudo systemctl stop quantedge-worker-activezerodhatoken
 sudo systemctl stop quantedge-worker-instrumentsync
 ```
