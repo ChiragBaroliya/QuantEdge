@@ -106,7 +106,7 @@ public class SignalEngineService : ISignalEngineService
 
         // 4. Select the dominant signal
         string signalType = "HOLD";
-        int finalScore = 0;
+        int finalScore = Math.Max(buyScore, sellScore);
 
         if (buyScore >= 50 && buyScore >= sellScore)
         {
@@ -119,9 +119,9 @@ public class SignalEngineService : ISignalEngineService
             finalScore = sellScore;
         }
 
-        string strength = _scoreCalculator.DetermineStrength(finalScore);
+        string strength = signalType == "HOLD" ? "None" : _scoreCalculator.DetermineStrength(finalScore);
         string reason = BuildReasonString(
-            signalType, finalScore, strength, latestPrice, prevPrice, latestOpen, latestVolume, avgVolume20,
+            signalType, finalScore, strength, buyScore, sellScore, latestPrice, prevPrice, latestOpen, latestVolume, avgVolume20,
             vwap, prevVwap, rsi, prevRsi, ema20, prevEma20, ema50, prevEma50, latestHist, prevHist
         );
 
@@ -179,6 +179,8 @@ public class SignalEngineService : ISignalEngineService
         string signalType, 
         int score, 
         string strength,
+        int buyScore,
+        int sellScore,
         decimal price, 
         decimal prevPrice,
         decimal open,
@@ -195,16 +197,54 @@ public class SignalEngineService : ISignalEngineService
         decimal latestHist,
         decimal prevHist)
     {
-        if (signalType == "HOLD")
-        {
-            return "No clear indicator crossovers or trends met the threshold to generate a BUY/SELL signal (Score below 50).";
-        }
-
         var elements = new List<string>();
-        
         decimal latestGap = ema20 - ema50;
         decimal prevGap = prevEma20 - prevEma50;
-        
+
+        if (signalType == "HOLD")
+        {
+            var dominantSide = buyScore >= sellScore ? "BUY" : "SELL";
+            var maxScore = Math.Max(buyScore, sellScore);
+            
+            if (dominantSide == "BUY")
+            {
+                if ((ema20 > ema50) && (latestGap > prevGap)) 
+                    elements.Add("EMA Trend widening");
+                if (price > vwap && prevPrice > prevVwap) 
+                    elements.Add("Price above VWAP");
+                if (rsi >= 50 && rsi <= 65 && rsi > prevRsi) 
+                    elements.Add("Rising RSI in momentum zone");
+                if (latestHist > 0 && prevHist <= 0) 
+                    elements.Add("MACD Crossover");
+                if (avgVolume > 0 && (double)volume > avgVolume * 1.5 && price > open) 
+                    elements.Add("Bullish Volume Spike");
+            }
+            else
+            {
+                if (ema20 < ema50) 
+                    elements.Add("EMA Bearish Trend");
+                else if (ema20 < prevEma20) 
+                    elements.Add("EMA20 Slope Reversal");
+                    
+                if (price < vwap) 
+                    elements.Add("Price below VWAP");
+                    
+                if (rsi > 70) 
+                    elements.Add("RSI Overbought");
+                else if (rsi < 45) 
+                    elements.Add("RSI Momentum Failure");
+                    
+                if (latestHist < prevHist) 
+                    elements.Add("MACD declining");
+                    
+                if (avgVolume > 0 && (double)volume > avgVolume * 2.0 && price < open) 
+                    elements.Add("Bearish Volume Spike");
+            }
+            
+            string factorsText = elements.Any() ? $" Factors: {string.Join(", ", elements)}." : " No indicator weights met.";
+            return $"HOLD. Dominant {dominantSide} score {maxScore}/100.{factorsText} Need at least 50 score to trigger signal.";
+        }
+
         if (signalType == "BUY")
         {
             if ((ema20 > ema50) && (latestGap > prevGap)) 

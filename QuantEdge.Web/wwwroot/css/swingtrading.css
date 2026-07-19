@@ -27,50 +27,7 @@
     gap: 12px;
 }
 
-.btn-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--theme-border);
-    color: #ffffff;
-    padding: 10px 18px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
 
-.btn-trigger:hover:not(:disabled) {
-    background: var(--theme-glow-card);
-    border-color: var(--theme-accent);
-    box-shadow: 0 0 16px var(--theme-glow);
-    transform: translateY(-2px);
-}
-
-.btn-trigger:active:not(:disabled) {
-    transform: translateY(0);
-}
-
-.btn-trigger:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.btn-primary-trigger {
-    background: var(--theme-accent);
-    border-color: var(--theme-accent);
-    color: #0b0f19;
-    font-weight: 600;
-}
-
-.btn-primary-trigger:hover:not(:disabled) {
-    background: #ffffff;
-    border-color: #ffffff;
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
-}
 
 /* Grid Layouts */
 .stats-grid {

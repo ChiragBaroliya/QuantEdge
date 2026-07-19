@@ -1,0 +1,307 @@
+<!-- QuantEdge Strategy & Formulas Reference Modal -->
+<div id="strategyFormulasModal" class="qe-modal-backdrop">
+    <div class="qe-modal">
+        <!-- Header -->
+        <div class="qe-modal-header">
+            <div class="qe-modal-title-area">
+                <span class="qe-modal-title">QuantEdge Strategy & Formulas Guide</span>
+                <span class="qe-modal-subtitle">Direct reference of rules, indicators, and mathematical formulas.</span>
+            </div>
+            <button id="btnCloseModal" class="qe-modal-close-btn" title="Close Guide (Esc)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="qe-modal-body">
+            <!-- Sidebar Navigation -->
+            <div class="qe-modal-sidebar">
+                <button class="qe-modal-nav-btn active" data-tab="tabRealtime">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                        <polyline points="16 7 22 7 22 13"></polyline>
+                    </svg>
+                    Real-Time Signals
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabSwing">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                    </svg>
+                    Swing Trading Rules
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabIndicators">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                    Technical Formulas
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="qe-modal-content">
+                
+                <!-- Tab 1: Real-Time Signals -->
+                <div id="tabRealtime" class="qe-modal-pane active">
+                    <div class="qe-ref-section">
+                        <h3>Real-Time Scoring System</h3>
+                        <p>The <strong>SignalEngineService</strong> evaluates technical indicators at the close of every candle (1-minute, 5-minute, or 15-minute timeframe) to calculate a BUY and SELL score. The indicators combine for a maximum potential score of 100 points:</p>
+                        
+                        <div class="qe-grid-weights">
+                            <div class="qe-weight-card">
+                                <span class="qe-weight-value">30 Pts</span>
+                                <span class="qe-weight-label">Volume Spike</span>
+                                <span class="qe-weight-desc">Compares volume to 20-candle average.</span>
+                            </div>
+                            <div class="qe-weight-card">
+                                <span class="qe-weight-value">20 Pts</span>
+                                <span class="qe-weight-label">EMA Trend</span>
+                                <span class="qe-weight-desc">Checks EMA(20) vs EMA(50) and slope widening.</span>
+                            </div>
+                            <div class="qe-weight-card">
+                                <span class="qe-weight-value">20 Pts</span>
+                                <span class="qe-weight-label">MACD Crossover</span>
+                                <span class="qe-weight-desc">Triggers on MACD Zero-line crossovers.</span>
+                            </div>
+                            <div class="qe-weight-card">
+                                <span class="qe-weight-value">15 Pts</span>
+                                <span class="qe-weight-label">RSI Momentum</span>
+                                <span class="qe-weight-desc">Checks if RSI is in 50-65 momentum zone.</span>
+                            </div>
+                            <div class="qe-weight-card">
+                                <span class="qe-weight-value">15 Pts</span>
+                                <span class="qe-weight-label">VWAP Support</span>
+                                <span class="qe-weight-desc">Checks if price is holding above daily VWAP.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>Scoring Conditions</h3>
+                        <table class="qe-example-table">
+                            <thead>
+                                <tr>
+                                    <th>Indicator</th>
+                                    <th>BUY Score Conditions (+Max)</th>
+                                    <th>SELL Score Conditions (+Max)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>EMA Trend (20 pts)</strong></td>
+                                    <td>EMA(20) &gt; EMA(50) <strong>AND</strong> Gap is widening:<br/>
+                                    <span class="text-muted">(EMA20<sub>t</sub> - EMA50<sub>t</sub>) &gt; (EMA20<sub>t-1</sub> - EMA50<sub>t-1</sub>)</span></td>
+                                    <td>EMA(20) &lt; EMA(50) <strong>OR</strong> EMA(20) slope is negative:<br/>
+                                    <span class="text-muted">EMA20<sub>t</sub> &lt; EMA20<sub>t-1</sub></span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>RSI Momentum (15 pts)</strong></td>
+                                    <td>RSI(14) is in the momentum zone <strong>AND</strong> rising:<br/>
+                                    <span class="text-muted">50 &le; RSI<sub>t</sub> &le; 65 AND RSI<sub>t</sub> &gt; RSI<sub>t-1</sub></span></td>
+                                    <td>RSI(14) is Overbought <strong>OR</strong> RSI momentum is failing:<br/>
+                                    <span class="text-muted">RSI<sub>t</sub> &gt; 70 OR RSI<sub>t</sub> &lt; 45</span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>MACD Cross (20 pts)</strong></td>
+                                    <td>MACD Histogram crossed above the Zero-line:<br/>
+                                    <span class="text-muted">Hist<sub>t</sub> &gt; 0 AND Hist<sub>t-1</sub> &le; 0</span></td>
+                                    <td>MACD Histogram is declining from a peak:<br/>
+                                    <span class="text-muted">Hist<sub>t</sub> &lt; Hist<sub>t-1</sub></span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>VWAP Support (15 pts)</strong></td>
+                                    <td>Price is holding above VWAP:<br/>
+                                    <span class="text-muted">Price<sub>t</sub> &gt; VWAP<sub>t</sub> AND Price<sub>t-1</sub> &gt; VWAP<sub>t-1</sub></span></td>
+                                    <td>Price breaks below VWAP:<br/>
+                                    <span class="text-muted">Price<sub>t</sub> &lt; VWAP<sub>t</sub></span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Volume Spike (30 pts)</strong></td>
+                                    <td>Bullish surge on a green candle:<br/>
+                                    <span class="text-muted">Volume<sub>t</sub> &gt; (AvgVol<sub>20</sub> &times; 1.5) AND Close<sub>t</sub> &gt; Open<sub>t</sub></span></td>
+                                    <td>Bearish surge on a red candle:<br/>
+                                    <span class="text-muted">Volume<sub>t</sub> &gt; (AvgVol<sub>20</sub> &times; 2.0) AND Close<sub>t</sub> &lt; Open<sub>t</sub></span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>Signal Selection & Confidence Classification</h3>
+                        <p>Recommendations are selected by comparing scores. If neither score meets the threshold of <strong>50</strong>, a <strong>HOLD</strong> recommendation is issued:</p>
+                        <ul>
+                            <li><strong>BUY:</strong> BuyScore &ge; 50 <strong>AND</strong> BuyScore &ge; SellScore.</li>
+                            <li><strong>SELL:</strong> SellScore &ge; 50 <strong>AND</strong> SellScore &gt; BuyScore.</li>
+                            <li><strong>HOLD:</strong> Default if neither condition is satisfied.</li>
+                        </ul>
+                        
+                        <div class="qe-alert-box">
+                            <div class="qe-alert-box-title">Example Calculation: Strong BUY</div>
+                            Suppose NIFTY has the following status:
+                            <br/>• Volume is 1.8x the 20-day average on a green candle <strong>(+30 points BUY)</strong>
+                            <br/>• EMA(20) is above EMA(50) and the gap is widening <strong>(+20 points BUY)</strong>
+                            <br/>• RSI is 58 and rising from 55 <strong>(+15 points BUY)</strong>
+                            <br/>• Price is above VWAP <strong>(+15 points BUY)</strong>
+                            <br/>• MACD Histogram is declining slightly <strong>(+20 points SELL)</strong>
+                            <br/><strong>Results:</strong> Buy Score = 30 + 20 + 15 + 15 = 80. Sell Score = 20.
+                            <br/>Since Buy Score &ge; 50 and Buy Score &ge; Sell Score, a <strong>BUY</strong> is recommended. With a score of 80, the dashboard displays <strong>High Confidence (80%)</strong>.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Swing Trading Rules -->
+                <div id="tabSwing" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>EOD Swing Trading Strategy</h3>
+                        <p>Swing trading runs once daily at End-Of-Day (EOD) after 3:45 PM IST. It requires both a broad market filter to pass and stock-specific parameters to line up perfectly before triggering buying actions.</p>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>1. NIFTY Market Filter</h3>
+                        <p>To avoid buying in a falling market, the broad market filter must be active. <strong>Both</strong> of the following conditions must be met for NIFTY 50:</p>
+                        <ul>
+                            <li><strong>Condition 1:</strong> Price is above the 50 DMA (Simple Moving Average 50) &rarr; <span class="monospace">Close &gt; SMA50</span></li>
+                            <li><strong>Condition 2:</strong> Short-term trend is bullish &rarr; <span class="monospace">EMA20 &gt; EMA50</span></li>
+                        </ul>
+                        <div class="qe-alert-box red">
+                            <div class="qe-alert-box-title">Important Market Filter Rule</div>
+                            If the NIFTY Market Filter fails, the system enters <strong>Defensive Mode</strong>. No new BUY recommendations will be generated. The system will only evaluate exits (SELL) or hold existing positions.
+                        </div>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>2. Stock Entry Rules (All 8 must be met for BUY)</h3>
+                        <p>For an active stock to receive a <strong>BUY</strong> recommendation at EOD, it must satisfy all 8 conditions:</p>
+                        <table class="qe-example-table">
+                            <thead>
+                                <tr>
+                                    <th>Rule</th>
+                                    <th>Condition / Formula</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>1. Market Filter</td>
+                                    <td>Nifty Filter = Passed</td>
+                                    <td>Broad market must be in a confirmed uptrend.</td>
+                                </tr>
+                                <tr>
+                                    <td>2. Price Trend</td>
+                                    <td>Close &gt; EMA(20) &gt; EMA(50) &gt; EMA(200)</td>
+                                    <td>Requires a clean bullish alignment across all major horizons.</td>
+                                </tr>
+                                <tr>
+                                    <td>3. Volume Spike</td>
+                                    <td>Volume &ge; 1.5 &times; AvgVolume<sub>20</sub></td>
+                                    <td>Volume must be at least 50% above the 20-day trailing average.</td>
+                                </tr>
+                                <tr>
+                                    <td>4. RSI Momentum</td>
+                                    <td>55 &le; RSI(14) &le; 70</td>
+                                    <td>RSI must be in the strong momentum zone (not overbought &gt; 70).</td>
+                                </tr>
+                                <tr>
+                                    <td>5. ADX Trend Strength</td>
+                                    <td>ADX(14) &gt; 25</td>
+                                    <td>ADX above 25 indicates a strong, sustainable trend.</td>
+                                </tr>
+                                <tr>
+                                    <td>6. MACD Cross</td>
+                                    <td>MACD &gt; Signal AND MACD<sub>prev</sub> &le; Signal<sub>prev</sub></td>
+                                    <td>MACD Line must have crossed above the Signal Line today.</td>
+                                </tr>
+                                <tr>
+                                    <td>7. 52W High Closeness</td>
+                                    <td>Close &ge; 0.90 &times; High<sub>52w</sub></td>
+                                    <td>Stock price must be within 10% of its 52-week high (near breakouts).</td>
+                                </tr>
+                                <tr>
+                                    <td>8. Candle Bullishness</td>
+                                    <td>Close &gt; Open</td>
+                                    <td>The daily candle must close green.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>3. Simulated Position Exits (Any 1 triggers SELL)</h3>
+                        <p>Once a position is entered, it is held until one of the following exit triggers occurs at EOD close:</p>
+                        <ul>
+                            <li><strong>Profit Target (+5%):</strong> Today's high reached +5% above entry price (<span class="monospace">High &ge; Entry &times; 1.05</span>). Exits at 1.05 limit.</li>
+                            <li><strong>Stop Loss (-3%):</strong> Today's low broke -3% below entry price (<span class="monospace">Low &le; Entry &times; 0.97</span>). Exits at 0.97 stop.</li>
+                            <li><strong>Trend Reversal:</strong> Close price closes below EMA(20) (<span class="monospace">Close &lt; EMA20</span>).</li>
+                            <li><strong>MACD Bearish Cross:</strong> MACD Line crosses below Signal Line (<span class="monospace">MACD &lt; Signal</span>).</li>
+                            <li><strong>RSI Failure:</strong> RSI(14) momentum falls below 45 (<span class="monospace">RSI &lt; 45</span>).</li>
+                            <li><strong>Time Out:</strong> Position has been held for 20 trading days.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Technical Formulas -->
+                <div id="tabIndicators" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>Indicator Mathematics</h3>
+                        <p>Below are the exact mathematical equations used in backend calculations. These run on closed candles sequentially.</p>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>Exponential Moving Average (EMA)</h3>
+                        <p>EMA applies decreasing weights to older prices. The smoothing factor &alpha; is defined as:</p>
+                        <div class="qe-formula-block">
+                            &alpha; = 2 / (Period + 1)
+                            <br/>EMA<sub>t</sub> = (Price<sub>t</sub> &times; &alpha;) + (EMA<sub>t-1</sub> &times; (1 - &alpha;))
+                        </div>
+                        <p><strong>Example:</strong> For EMA(20), &alpha; = 2 / 21 &asymp; 0.0952. If Nifty closes at 22,000 and previous EMA was 21,950, new EMA = (22,000 &times; 0.0952) + (21,950 &times; 0.9048) = 2,094.4 + 19,860.36 = 21,954.76.</p>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>Relative Strength Index (RSI)</h3>
+                        <p>RSI measures speed and change of price movements. Seeding uses SMA of gains/losses, while subsequent periods apply Wilder's Smoothing:</p>
+                        <div class="qe-formula-block">
+                            Average Gain<sub>t</sub> = ((Average Gain<sub>t-1</sub> &times; 13) + Gain<sub>t</sub>) / 14
+                            <br/>Average Loss<sub>t</sub> = ((Average Loss<sub>t-1</sub> &times; 13) + Loss<sub>t</sub>) / 14
+                            <br/>RS = Average Gain / Average Loss
+                            <br/>RSI = 100 - (100 / (1 + RS))
+                        </div>
+                        <p><strong>Example:</strong> If Average Gain is 12 and Average Loss is 4, RS = 12 / 4 = 3. RSI = 100 - (100 / 4) = 75 (Overbought).</p>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>MACD (Moving Average Convergence Divergence)</h3>
+                        <p>MACD highlights changes in strength, direction, momentum, and duration of a trend:</p>
+                        <div class="qe-formula-block">
+                            MACD Line = EMA(Close, 12) - EMA(Close, 26)
+                            <br/>Signal Line = EMA(MACD Line, 9)
+                            <br/>Histogram = MACD Line - Signal Line
+                        </div>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>Volume Weighted Average Price (VWAP)</h3>
+                        <p>VWAP represents the true average price the stock traded at throughout the day, weighted by volume. It resets daily:</p>
+                        <div class="qe-formula-block">
+                            VWAP = &sum;(Close<sub>i</sub> &times; Volume<sub>i</sub>) / &sum;Volume<sub>i</sub>
+                        </div>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>Average Directional Index (ADX)</h3>
+                        <p>ADX measures trend strength (regardless of direction) based on Directional Movement (+DM, -DM) smoothed over 14 periods, divided by Average True Range (ATR):</p>
+                        <div class="qe-formula-block">
+                            +DI = 100 &times; Smoothed(+DM) / Smoothed(TR)
+                            <br/>-DI = 100 &times; Smoothed(-DM) / Smoothed(TR)
+                            <br/>DX = 100 &times; |+DI - -DI| / (|+DI + -DI|)
+                            <br/>ADX<sub>t</sub> = ((ADX<sub>t-1</sub> &times; 13) + DX<sub>t</sub>) / 14
+                        </div>
+                    </div>
+                 </div>
+
+            </div>
+        </div>
+    </div>
+</div>

@@ -12,6 +12,13 @@
             <p class="text-muted" style="margin: 0; font-size: 13px;">Daily Swing Trading analysis (EOD) executed after market close (3:45 PM IST).</p>
         </div>
         <div class="action-buttons-group">
+            <button id="btnOpenReference" class="btn-trigger" title="View Strategy Rules, Stock Filters, and Backend Mathematical Formulas.">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                </svg>
+                Rules & Formulas
+            </button>
             <button id="btnRunBackfill" class="btn-trigger" title="Runs a clean 2-year historical backtest of the strategy to generate historical performance.">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
@@ -202,6 +209,8 @@
     </div>
 </div>
 
+<partial name="_StrategyFormulasModal" />
+
 @section Scripts {
     <script>
         const API_BASE_URL = "@ViewBag.ApiBaseUrl";
@@ -209,6 +218,36 @@
         $(document).ready(function() {
             // Load dashboard data on startup
             loadDashboard();
+
+            // Open Modal
+            $("#btnOpenReference").click(function() {
+                $("#strategyFormulasModal").addClass("active");
+                $("body").css("overflow", "hidden");
+            });
+
+            // Close Modal
+            $("#btnCloseModal, #strategyFormulasModal").click(function(e) {
+                if (e.target === this || $(e.target).closest('#btnCloseModal').length) {
+                    $("#strategyFormulasModal").removeClass("active");
+                    $("body").css("overflow", "");
+                }
+            });
+
+            $(document).keydown(function(e) {
+                if (e.key === "Escape" && $("#strategyFormulasModal").hasClass("active")) {
+                    $("#strategyFormulasModal").removeClass("active");
+                    $("body").css("overflow", "");
+                }
+            });
+
+            // Tab switching
+            $(".qe-modal-nav-btn").click(function() {
+                const tabId = $(this).data("tab");
+                $(".qe-modal-nav-btn").removeClass("active");
+                $(".qe-modal-pane").removeClass("active");
+                $(this).addClass("active");
+                $(`#${tabId}`).addClass("active");
+            });
 
             // Hook action triggers
             $("#btnRunJob").click(function() {
@@ -241,7 +280,14 @@
                 },
                 error: function(err) {
                     console.error("Failed to load dashboard data.", err);
-                    alert("Error loading dashboard data. Check if API is running.");
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Connection Error',
+                        text: 'Error loading dashboard data. Check if API is running.',
+                        confirmButtonColor: 'var(--theme-accent)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)'
+                    });
                 }
             });
         }
@@ -253,13 +299,27 @@
                 type: "POST",
                 success: function(res) {
                     hideLoading();
-                    alert(res.message);
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success',
+                        text: res.message,
+                        confirmButtonColor: 'var(--theme-accent)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)'
+                    });
                     loadDashboard();
                 },
                 error: function(err) {
                     hideLoading();
                     console.error("Job execution failed.", err);
-                    alert(`Error running job: ${err.responseText || "Internal server error"}`);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Job Failed',
+                        text: err.responseText || "Internal server error",
+                        confirmButtonColor: 'var(--theme-accent)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)'
+                    });
                 }
             });
         }

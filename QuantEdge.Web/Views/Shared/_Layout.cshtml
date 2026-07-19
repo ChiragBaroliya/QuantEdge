@@ -124,13 +124,13 @@
                 </svg>
                 Signal Dashboard
             </a>
-            @* <a asp-controller="SwingTrading" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" ? "active" : "")">
+            <a asp-controller="SwingTrading" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" ? "active" : "")">
                 <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
                 </svg>
                 Swing Trading
             </a>
-            *@
+           
         </nav>
 
         <div class="sidebar-footer">
@@ -185,6 +185,21 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <!-- Select2 JS CDN -->
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <!-- SweetAlert2 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        // Global override for standard alert() to use SweetAlert2 (matches dark theme)
+        window.alert = function(message) {
+            Swal.fire({
+                icon: 'info',
+                title: 'Notification',
+                text: message,
+                confirmButtonColor: 'var(--theme-accent)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)'
+            });
+        };
+    </script>
 
     <script src="~/js/theme-selector.js" asp-append-version="true"></script>
 

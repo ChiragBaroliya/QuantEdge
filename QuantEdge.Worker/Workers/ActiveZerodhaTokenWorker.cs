@@ -55,7 +55,7 @@ public class ActiveZerodhaTokenWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation(
-            "ActiveZerodhaTokenWorker started. API Key: {ApiKey}. Allowed execution window: 6:00 AM - 7:00 AM IST.",
+            "ActiveZerodhaTokenWorker started. API Key: {ApiKey}. Allowed execution window: 6:00 AM - 8:30 AM IST.",
             _config.ApiKey);
 
         // Brief startup delay so DatabaseInitializer has time to complete
@@ -65,8 +65,8 @@ public class ActiveZerodhaTokenWorker : BackgroundService
         if (!IsWithinAllowedWindow(out DateTime startIst))
         {
             _logger.LogWarning(
-                "ActiveZerodhaTokenWorker: Current time {Time} IST is outside the allowed window (6:00 AM - 7:00 AM IST). " +
-                "This service runs only during that hour. Shutting down service.",
+                "ActiveZerodhaTokenWorker: Current time {Time} IST is outside the allowed window (6:00 AM - 8:30 AM IST). " +
+                "This service runs only during that window. Shutting down service.",
                 startIst.ToString("hh:mm:ss tt"));
             _lifetime.StopApplication();
             return;
@@ -78,7 +78,7 @@ public class ActiveZerodhaTokenWorker : BackgroundService
             if (!IsWithinAllowedWindow(out DateTime currentIst))
             {
                 _logger.LogInformation(
-                    "ActiveZerodhaTokenWorker: Current time {Time} IST is past the allowed window (6:00 AM - 7:00 AM IST). " +
+                    "ActiveZerodhaTokenWorker: Current time {Time} IST is past the allowed window (6:00 AM - 8:30 AM IST). " +
                     "Stopping service.",
                     currentIst.ToString("hh:mm:ss tt"));
                 _lifetime.StopApplication();
@@ -120,7 +120,7 @@ public class ActiveZerodhaTokenWorker : BackgroundService
 
         nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, indianTimeZone);
         var timeOfDay = nowIst.TimeOfDay;
-        return timeOfDay >= TimeSpan.FromHours(6) && timeOfDay <= TimeSpan.FromHours(7);
+        return timeOfDay >= TimeSpan.FromHours(6) && timeOfDay <= new TimeSpan(8, 30, 0);
     }
 
     /// <summary>

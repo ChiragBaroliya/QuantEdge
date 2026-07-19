@@ -44,7 +44,14 @@
             </div>
         </div>
 
-        <div class="control-right">
+        <div class="control-right" style="display: flex; align-items: center; gap: 12px;">
+            <button id="btnOpenReference" class="btn-trigger" style="display: flex; align-items: center; gap: 8px;" title="View Strategy Rules, Scoring Weights, and Backend Mathematical Formulas.">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                </svg>
+                Rules & Formulas
+            </button>
             <div id="connectionStatus" class="connection-badge offline" data-tooltip="Shows if you are connected to the live market data feed. 'Connected' means you are receiving instant, real-time price updates.">
                 <span class="status-dot"></span>
                 <span class="status-text">Disconnected</span>
@@ -359,6 +366,8 @@
     </div>
 </div>
 
+<partial name="_StrategyFormulasModal" />
+
 @section Scripts {
     <!-- TradingView Lightweight Charts CDN -->
     <script src="~/js/theme/lightweight-charts.standalone.production.js"></script>
@@ -370,4 +379,37 @@
         };
     </script>
     <script src="~/js/dashboard.js" asp-append-version="true"></script>
+    <script>
+        $(document).ready(function() {
+            // Open Modal
+            $("#btnOpenReference").click(function() {
+                $("#strategyFormulasModal").addClass("active");
+                $("body").css("overflow", "hidden");
+            });
+
+            // Close Modal
+            $("#btnCloseModal, #strategyFormulasModal").click(function(e) {
+                if (e.target === this || $(e.target).closest('#btnCloseModal').length) {
+                    $("#strategyFormulasModal").removeClass("active");
+                    $("body").css("overflow", "");
+                }
+            });
+
+            $(document).keydown(function(e) {
+                if (e.key === "Escape" && $("#strategyFormulasModal").hasClass("active")) {
+                    $("#strategyFormulasModal").removeClass("active");
+                    $("body").css("overflow", "");
+                }
+            });
+
+            // Tab switching
+            $(".qe-modal-nav-btn").click(function() {
+                const tabId = $(this).data("tab");
+                $(".qe-modal-nav-btn").removeClass("active");
+                $(".qe-modal-pane").removeClass("active");
+                $(this).addClass("active");
+                $(`#${tabId}`).addClass("active");
+            });
+        });
+    </script>
 }

@@ -43,7 +43,7 @@ sc.exe description "Worker_marketdatafeed_5m" "QuantEdge Live 5-Minute Market Da
 sc.exe create "Worker_marketdatafeed_15m" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe marketdatafeed:15m" start= auto
 sc.exe description "Worker_marketdatafeed_15m" "QuantEdge Live 15-Minute Market Data Feed Service"
 
-# 5. Zerodha Session Token Refresher (Window: 6:00 AM - 7:00 AM IST)
+# 5. Zerodha Session Token Refresher (Window: 6:00 AM - 8:30 AM IST)
 sc.exe create "Worker_activezerodhatoken" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe activezerodhatoken" start= auto
 sc.exe description "Worker_activezerodhatoken" "QuantEdge Active Zerodha Access Token Maintainer Service"
 

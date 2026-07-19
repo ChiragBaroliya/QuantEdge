@@ -284,13 +284,23 @@ async function fetchChartHistory() {
             priceChart.timeScale().fitContent();
         }
 
-        // Update signal widget and quick indicators from the latest point in history
-        if (chartDataCache.length > 0) {
-            const latest = chartDataCache[chartDataCache.length - 1];
-            updateSignalUi(latest);
-        }
+        // Fetch live signal evaluation to get correct score & justification details
+        fetchLiveSignalEvaluation();
     } catch (ex) {
         console.error("History fetch error:", ex);
+    }
+}
+
+// Fetch live signal evaluation dynamically
+async function fetchLiveSignalEvaluation() {
+    if (!activeSymbol) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/signals/evaluate?symbol=${activeSymbol}&timeframe=${activeTimeframe}`);
+        if (!response.ok) throw new Error("Failed to fetch live signal evaluation.");
+        const data = await response.json();
+        updateSignalUi(data);
+    } catch (ex) {
+        console.error("Failed to load live signal evaluation:", ex);
     }
 }
 
@@ -461,27 +471,34 @@ function updateConnectionStatus(isOnline, text) {
 function updateSignalUi(data) {
     if (!data) return;
 
+    // Support both SignalEvaluationResult property names and historical/SignalR payload property names
+    const type = (data.signalType || data.SignalType || "HOLD").toUpperCase();
+    const score = parseInt(data.signalScore !== undefined ? data.signalScore : (data.score !== undefined ? data.score : 0));
+    const strength = data.signalStrength || data.strength || "Neutral";
+    const reason = data.signalReason || data.reason || "No signal generated for current active candle.";
+    
+    const priceVal = data.close !== undefined ? data.close : (data.latestPrice !== undefined ? data.latestPrice : 0);
+    const openVal = data.open !== undefined ? data.open : (data.latestOpen !== undefined ? data.latestOpen : priceVal);
+    const timeVal = data.time || data.evaluatedAt || new Date();
+
     // 1. Update glowing signal card class and badge
     const card = $("#signalCard");
     const badge = $("#signalBadge");
     const scoreCircle = $("#scoreCircle");
     
-    const type = (data.signalType || "HOLD").toUpperCase();
-
     if (card.length) card.attr("class", `card signal-card ${type.toLowerCase()}`);
     if (badge.length) badge.attr("class", `recommendation-badge ${type.toLowerCase()}`).text(type);
 
     // 2. Radial Progress Circle & Score
-    const score = parseInt(data.signalScore || 0);
     $("#scoreValue").text(score);
     
     // stroke-dasharray maps to circumference (2 * pi * r = 2 * 3.1415 * 15.9155 = 100)
     if (scoreCircle.length) scoreCircle.css("stroke-dasharray", `${score}, 100`);
 
     // 3. Info labels
-    $("#signalStrength").text(data.signalStrength || "Neutral");
-    $("#signalPrice").text(data.close ? "₹" + data.close.toFixed(2) : "-");
-    $("#signalTime").text(new Date(data.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    $("#signalStrength").text(strength);
+    $("#signalPrice").text(priceVal ? "₹" + parseFloat(priceVal).toFixed(2) : "-");
+    $("#signalTime").text(new Date(timeVal).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
 
     // Confidence Level evaluation
     let confidenceText = "-";
@@ -509,22 +526,26 @@ function updateSignalUi(data) {
         confidenceEl.text(confidenceText).css("color", confidenceColor);
     }
 
-    $("#signalReasoning").text(data.signalReason || "No signal generated for current active candle.");
+    $("#signalReasoning").text(reason);
 
     // 4. Quick indicator widgets
     // LTP
-    $("#widgetLTP").text(data.close.toFixed(2));
-    const changePct = ((data.close - data.open) / data.open) * 100;
-    const changeEl = $("#widgetChange");
-    if (changeEl.length) {
-        changeEl.text((changePct >= 0 ? "+" : "") + changePct.toFixed(2) + "%");
-        changeEl.attr("class", `w-change ${changePct >= 0 ? "bullish" : "bearish"}`);
+    if (priceVal) {
+        $("#widgetLTP").text(parseFloat(priceVal).toFixed(2));
+        if (openVal) {
+            const changePct = ((priceVal - openVal) / openVal) * 100;
+            const changeEl = $("#widgetChange");
+            if (changeEl.length) {
+                changeEl.text((changePct >= 0 ? "+" : "") + changePct.toFixed(2) + "%");
+                changeEl.attr("class", `w-change ${changePct >= 0 ? "bullish" : "bearish"}`);
+            }
+        }
     }
 
     // RSI
-    const rsi = data.rsi;
+    const rsi = data.rsi !== undefined ? data.rsi : data.RSI;
     if (rsi !== null && rsi !== undefined) {
-        $("#widgetRSI").text(rsi.toFixed(2));
+        $("#widgetRSI").text(parseFloat(rsi).toFixed(2));
         const rsiEl = $("#widgetRsiStatus");
         if (rsiEl.length) {
             if (rsi > 60) {
@@ -541,9 +562,9 @@ function updateSignalUi(data) {
     }
 
     // VWAP Difference
-    const vwap = data.vwap;
-    if (vwap !== null && vwap !== undefined) {
-        const diff = data.close - vwap;
+    const vwap = data.vwap !== undefined ? data.vwap : data.VWAP;
+    if (vwap !== null && vwap !== undefined && vwap > 0) {
+        const diff = priceVal - vwap;
         const pct = (diff / vwap) * 100;
         $("#widgetVWAP").text((pct >= 0 ? "+" : "") + pct.toFixed(2) + "%");
         const vwapEl = $("#widgetVwapStatus");
@@ -560,10 +581,10 @@ function updateSignalUi(data) {
     }
 
     // MACD Cross
-    const macd = data.macd;
-    const sigLine = data.signalLine;
+    const macd = data.macd !== undefined ? data.macd : data.MACD;
+    const sigLine = data.signalLine !== undefined ? data.signalLine : (data.MACDSignal !== undefined ? data.MACDSignal : data.macdSignal);
     if (macd !== null && sigLine !== null && macd !== undefined && sigLine !== undefined) {
-        $("#widgetMACD").text(macd.toFixed(2));
+        $("#widgetMACD").text(parseFloat(macd).toFixed(2));
         const macdEl = $("#widgetMacdStatus");
         if (macdEl.length) {
             const diff = macd - sigLine;
