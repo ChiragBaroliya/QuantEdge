@@ -354,6 +354,35 @@ public class SwingTradingService : ISwingTradingService
         bool near52W = price >= 0.90m * high52W[idx];
         bool isBullishCandle = price > open;
 
+        // Fetch 60m candles for this stock up to the end of the trading hours of tradeDate (e.g. 16:00) to prevent look-ahead bias
+        var candles60m = (await conn.QueryAsync<MarketCandle>(@"
+            SELECT * FROM market_candles_60m 
+            WHERE symbol = @Symbol AND candle_time <= @MaxTime
+            ORDER BY candle_time DESC
+            LIMIT 100",
+            new { Symbol = stock.Symbol, MaxTime = tradeDate.Date.AddHours(16) }))
+            .OrderBy(c => c.CandleTime)
+            .ToList();
+
+        bool is60mFilterPassed = false;
+        decimal last60mClose = 0m;
+        decimal last60mEma20 = 0m;
+        decimal last60mRsi = 0m;
+
+        if (candles60m.Count >= 20)
+        {
+            var closes60m = candles60m.Select(c => c.Close).ToList();
+            var ema20_60m = IndicatorCalculator.CalculateEma(closes60m, 20);
+            var rsi_60m = IndicatorCalculator.CalculateRsi(closes60m, 14);
+
+            int idx60m = candles60m.Count - 1;
+            last60mClose = closes60m[idx60m];
+            last60mEma20 = ema20_60m[idx60m];
+            last60mRsi = rsi_60m[idx60m];
+
+            is60mFilterPassed = last60mClose > last60mEma20 && last60mRsi >= 40m && last60mRsi <= 65m;
+        }
+
         // Check if there is an active/open position in swing_positions
         var openPosition = await conn.QueryFirstOrDefaultAsync<dynamic>(@"
             SELECT * FROM swing_positions WHERE symbol = @Symbol AND is_closed = FALSE LIMIT 1",
@@ -446,11 +475,11 @@ public class SwingTradingService : ISwingTradingService
         else
         {
             // Stock is not held, check BUY conditions
-            if (marketFilterPassed && priceTrend && volSpike && rsiZone && adxZone && macdBullish && near52W && isBullishCandle)
+            if (marketFilterPassed && priceTrend && volSpike && rsiZone && adxZone && macdBullish && near52W && isBullishCandle && is60mFilterPassed)
             {
                 buySignal = true;
                 recommendation = "BUY";
-                reason = "All BUY conditions met: Market Trend Up, Stock Price Trend (EMA20>50>200), Volume Spike (>1.5x), RSI in momentum zone (55-70), ADX > 25, MACD Bullish Cross, Close within 10% of 52W High, Last candle Bullish.";
+                reason = $"All BUY conditions met: Market Trend Up, Stock Price Trend (EMA20>50>200), Volume Spike (>1.5x), RSI in momentum zone (55-70), ADX > 25, MACD Bullish Cross, Close within 10% of 52W High, Last candle Bullish. 60m Filter passed (Close: {last60mClose:F2} > EMA20: {last60mEma20:F2}, RSI: {last60mRsi:F2}).";
 
                 // Calculate next day's open price (simulated)
                 // In actual backtesting, we enter at next day's open. For EOD live signal, we assume we buy tomorrow morning at open.
@@ -474,6 +503,7 @@ public class SwingTradingService : ISwingTradingService
                 if (!macdBullish) failedList.Add("MACD Bullish Cross");
                 if (!near52W) failedList.Add("Close within 10% of 52W High");
                 if (!isBullishCandle) failedList.Add("Last candle Bullish");
+                if (!is60mFilterPassed) failedList.Add($"60m Filter (Close: {last60mClose:F2}, EMA20: {last60mEma20:F2}, RSI: {last60mRsi:F2})");
 
                 reason = $"HOLD. Failed factors: {string.Join(", ", failedList)}";
             }
@@ -629,6 +659,35 @@ public class SwingTradingService : ISwingTradingService
                     bool near52W = price >= 0.90m * high52W[idx];
                     bool isBullishCandle = price > open;
 
+                    // Fetch 60m stock history up to currentDate 16:00 to prevent look-ahead bias
+                    var stockHistory60m = (await conn.QueryAsync<MarketCandle>(@"
+                        SELECT * FROM market_candles_60m 
+                        WHERE symbol = @Symbol AND candle_time <= @MaxTime
+                        ORDER BY candle_time DESC
+                        LIMIT 100",
+                        new { Symbol = stock.Symbol, MaxTime = currentDate.Date.AddHours(16) }))
+                        .OrderBy(c => c.CandleTime)
+                        .ToList();
+
+                    bool is60mFilterPassed = false;
+                    decimal last60mClose = 0m;
+                    decimal last60mEma20 = 0m;
+                    decimal last60mRsi = 0m;
+
+                    if (stockHistory60m.Count >= 20)
+                    {
+                        var closes60m = stockHistory60m.Select(c => c.Close).ToList();
+                        var ema20_60m = IndicatorCalculator.CalculateEma(closes60m, 20);
+                        var rsi_60m = IndicatorCalculator.CalculateRsi(closes60m, 14);
+
+                        int idx60m = stockHistory60m.Count - 1;
+                        last60mClose = closes60m[idx60m];
+                        last60mEma20 = ema20_60m[idx60m];
+                        last60mRsi = rsi_60m[idx60m];
+
+                        is60mFilterPassed = last60mClose > last60mEma20 && last60mRsi >= 40m && last60mRsi <= 65m;
+                    }
+
                     // Evaluate position
                     var openPosition = await conn.QueryFirstOrDefaultAsync<dynamic>(@"
                         SELECT * FROM swing_positions WHERE symbol = @Symbol AND is_closed = FALSE LIMIT 1",
@@ -714,11 +773,11 @@ public class SwingTradingService : ISwingTradingService
                     }
                     else
                     {
-                        if (marketFilterPassed && priceTrend && volSpike && rsiZone && adxZone && macdBullish && near52W && isBullishCandle)
+                        if (marketFilterPassed && priceTrend && volSpike && rsiZone && adxZone && macdBullish && near52W && isBullishCandle && is60mFilterPassed)
                         {
                             buySignal = true;
                             recommendation = "BUY";
-                            reason = "All BUY conditions met.";
+                            reason = $"All BUY conditions met. 60m Filter passed (Close: {last60mClose:F2} > EMA20: {last60mEma20:F2}, RSI: {last60mRsi:F2}).";
 
                             // In backtest, simulate entry on next day's open. For simplicity, we approximate using current close or next day's open
                             // Let's find next candle open if available, otherwise current close
@@ -746,6 +805,18 @@ public class SwingTradingService : ISwingTradingService
                         else
                         {
                             recommendation = "HOLD";
+                            var failedList = new List<string>();
+                            if (!marketFilterPassed) failedList.Add("Market Filter");
+                            if (!priceTrend) failedList.Add("Price > EMA20 > EMA50 > EMA200");
+                            if (!volSpike) failedList.Add("Volume Spike (>1.5x)");
+                            if (!rsiZone) failedList.Add("RSI in 55-70");
+                            if (!adxZone) failedList.Add("ADX > 25");
+                            if (!macdBullish) failedList.Add("MACD Bullish Cross");
+                            if (!near52W) failedList.Add("Close within 10% of 52W High");
+                            if (!isBullishCandle) failedList.Add("Last candle Bullish");
+                            if (!is60mFilterPassed) failedList.Add($"60m Filter (Close: {last60mClose:F2}, EMA20: {last60mEma20:F2}, RSI: {last60mRsi:F2})");
+
+                            reason = $"HOLD. Failed factors: {string.Join(", ", failedList)}";
                         }
                     }
 
