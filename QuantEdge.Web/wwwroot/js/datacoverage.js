@@ -105,22 +105,12 @@ $(document).ready(function () {
             const id = stock.id || stock.Id;
             const symbol = stock.symbol || stock.Symbol || '';
             const isActive = stock.isActive ?? stock.IsActive ?? false;
-            const is1dStored = (stock.isHistryStored1d ?? stock.IsHistryStored1d ?? 0) === 1;
-            const is60mStored = (stock.isHistryStored60m ?? stock.IsHistryStored60m ?? 0) === 1;
 
             const isSelected = state.selectedStockId === id;
 
             const statusBadge = isActive
                 ? '<span class="badge badge-active">Active</span>'
                 : '<span class="badge badge-inactive">Inactive</span>';
-
-            const formatted1d = is1dStored
-                ? '<span class="badge badge-active">Stored</span>'
-                : '<span class="candle-text no-data">No data</span>';
-
-            const formatted60m = is60mStored
-                ? '<span class="badge badge-active">Stored</span>'
-                : '<span class="candle-text no-data">No data</span>';
 
             const rowHtml = `
                 <tr class="stock-row ${isSelected ? 'selected-row' : ''}" data-id="${id}">
@@ -129,8 +119,6 @@ $(document).ready(function () {
                     </td>
                     <td style="font-weight: 600; color: #f8fafc;">${escapeHtml(symbol)}</td>
                     <td>${statusBadge}</td>
-                    <td>${formatted1d}</td>
-                    <td>${formatted60m}</td>
                 </tr>
             `;
 
@@ -141,7 +129,7 @@ $(document).ready(function () {
     function renderEmptyTable(message) {
         $('#coverageTableBody').html(`
             <tr>
-                <td colspan="5" style="text-align: center; padding: 40px; color: #94a3b8;">
+                <td colspan="3" style="text-align: center; padding: 40px; color: #94a3b8;">
                     ${escapeHtml(message)}
                 </td>
             </tr>
@@ -153,7 +141,7 @@ $(document).ready(function () {
     function showTableLoading() {
         $('#coverageTableBody').html(`
             <tr>
-                <td colspan="5" style="text-align: center; padding: 40px; color: #94a3b8;">
+                <td colspan="3" style="text-align: center; padding: 40px; color: #94a3b8;">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon" style="vertical-align: middle; margin-right: 8px;">
                         <line x1="12" y1="2" x2="12" y2="6"></line>
                         <line x1="12" y1="18" x2="12" y2="22"></line>
