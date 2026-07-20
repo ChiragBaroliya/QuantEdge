@@ -132,7 +132,8 @@ public class InstrumentSyncService : IInstrumentSyncService
                         upperName.Contains("NCD") ||
                         upperName.Contains("GOI") ||
                         upperName.Contains("T-BILL") ||
-                        upperName.Contains("GS "))
+                        upperName.Contains("GS") ||
+                        upperName.Contains("TREASURY"))
                     {
                         continue;
                     }
@@ -142,7 +143,13 @@ public class InstrumentSyncService : IInstrumentSyncService
                         continue;
                     }
 
-                    if (upperSymbol.EndsWith("-SG") || upperSymbol.EndsWith("-GS"))
+                    if (upperSymbol.EndsWith("-SG") || 
+                        upperSymbol.EndsWith("-GS") ||
+                        upperSymbol.EndsWith("-GB") ||
+                        upperSymbol.EndsWith("-SM") ||
+                        upperSymbol.EndsWith("-ST") ||
+                        upperSymbol.Contains("GS") ||
+                        upperSymbol.Contains("TB"))
                     {
                         continue;
                     }
