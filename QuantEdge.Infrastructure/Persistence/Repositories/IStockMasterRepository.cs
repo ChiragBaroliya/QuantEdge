@@ -43,5 +43,17 @@ public interface IStockMasterRepository
     /// Updates a stock's active status and timeframe history stored flags.
     /// </summary>
     Task UpdateStockCoverageFlagsAsync(QuantEdge.Infrastructure.DTOs.UpdateStockCoverageRequest request);
+
+    /// <summary>
+    /// Deletes a stock master record by ID.
+    /// </summary>
+    Task DeleteStockAsync(int id);
+
+    /// <summary>
+    /// Deletes multiple stock master records by ID array in bulk.
+    /// </summary>
+    Task BulkDeleteStocksAsync(IEnumerable<int> ids);
 }
+
+
 

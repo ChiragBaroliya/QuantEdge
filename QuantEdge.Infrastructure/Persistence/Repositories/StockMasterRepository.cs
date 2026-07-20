@@ -17,6 +17,11 @@ public class StockMasterRepository : IStockMasterRepository
 {
     private readonly IDbConnectionFactory _connectionFactory;
 
+    static StockMasterRepository()
+    {
+        DefaultTypeMap.MatchNamesWithUnderscores = true;
+    }
+
     public StockMasterRepository(IDbConnectionFactory connectionFactory)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
@@ -138,5 +143,33 @@ public class StockMasterRepository : IStockMasterRepository
             }
         );
     }
+
+    /// <summary>
+    /// Deletes a stock master record and its associated market candles using sp_delete_stock_master.
+    /// </summary>
+    public async Task DeleteStockAsync(int id)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        await connection.ExecuteAsync(
+            "SELECT sp_delete_stock_master(@p_id);",
+            new { p_id = id }
+        );
+    }
+
+    /// <summary>
+    /// Deletes multiple stock master records and associated market candles using sp_bulk_delete_stock_master.
+    /// </summary>
+    public async Task BulkDeleteStocksAsync(IEnumerable<int> ids)
+    {
+        if (ids == null || !ids.Any()) return;
+
+        using var connection = _connectionFactory.CreateConnection();
+        await connection.ExecuteAsync(
+            "SELECT sp_bulk_delete_stock_master(@p_ids);",
+            new { p_ids = ids.ToArray() }
+        );
+    }
 }
+
+
 

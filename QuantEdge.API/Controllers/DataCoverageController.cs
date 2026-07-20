@@ -85,4 +85,52 @@ public class DataCoverageController : ControllerBase
             return StatusCode(500, $"Internal server error: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// DELETE /datacoverage/{id} - Deletes a stock master record from database tables.
+    /// </summary>
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteStock(int id)
+    {
+        if (id <= 0)
+        {
+            return BadRequest("Invalid stock ID.");
+        }
+
+        try
+        {
+            await _stockMasterRepository.DeleteStockAsync(id);
+            return Ok(new { success = true, message = "Stock deleted successfully." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete stock with ID {Id}.", id);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// POST /datacoverage/bulk-delete - Deletes multiple stock master records from database tables.
+    /// </summary>
+    [HttpPost("bulk-delete")]
+    public async Task<IActionResult> BulkDeleteStocks([FromBody] int[] ids)
+    {
+        if (ids == null || ids.Length == 0)
+        {
+            return BadRequest("No stock IDs provided for bulk deletion.");
+        }
+
+        try
+        {
+            await _stockMasterRepository.BulkDeleteStocksAsync(ids);
+            return Ok(new { success = true, count = ids.Length, message = $"{ids.Length} stocks deleted successfully." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to bulk delete {Count} stocks.", ids.Length);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
 }
+
+

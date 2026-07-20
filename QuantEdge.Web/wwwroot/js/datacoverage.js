@@ -93,6 +93,8 @@ $(document).ready(function () {
     function renderTableRows(items) {
         const $tbody = $('#coverageTableBody');
         $tbody.empty();
+        $('#selectAllCheckbox').prop('checked', false);
+        updateBulkDeleteButton();
 
         if (items.length === 0) {
             renderEmptyTable('No stocks matching the selected filters');
@@ -102,6 +104,7 @@ $(document).ready(function () {
         items.forEach(stock => {
             const id = stock.id || stock.Id;
             const symbol = stock.symbol || stock.Symbol || '';
+            const isActive = stock.isActive ?? stock.IsActive ?? false;
             const is1dStored = (stock.isHistryStored1d ?? stock.IsHistryStored1d ?? 0) === 1;
             const is60mStored = (stock.isHistryStored60m ?? stock.IsHistryStored60m ?? 0) === 1;
 
@@ -345,6 +348,11 @@ $(document).ready(function () {
         $('#selectAllCheckbox').on('change', function () {
             const isChecked = $(this).is(':checked');
             $('.row-checkbox').prop('checked', isChecked);
+            updateBulkDeleteButton();
+        });
+
+        $(document).on('change', '.row-checkbox', function () {
+            updateBulkDeleteButton();
         });
 
         // Row Click & Action Button Click
@@ -373,6 +381,149 @@ $(document).ready(function () {
         $('#btnSaveCoverageFlags').on('click', function (e) {
             e.preventDefault();
             saveCoverageFlags();
+        });
+
+        // Delete Stock Button
+        $('#btnDeleteStock').on('click', function (e) {
+            e.preventDefault();
+            deleteStock();
+        });
+
+        // Bulk Delete Button
+        $('#btnBulkDelete').on('click', function (e) {
+            e.preventDefault();
+            bulkDeleteStocks();
+        });
+    }
+
+    function updateBulkDeleteButton() {
+        const selectedIds = getSelectedStockIds();
+        const count = selectedIds.length;
+        $('#selectedCount').text(count);
+        if (count > 0) {
+            $('#btnBulkDelete').fadeIn(150);
+        } else {
+            $('#btnBulkDelete').fadeOut(150);
+            $('#selectAllCheckbox').prop('checked', false);
+        }
+    }
+
+    function getSelectedStockIds() {
+        const ids = [];
+        $('.row-checkbox:checked').each(function () {
+            const id = parseInt($(this).data('id'), 10);
+            if (id) ids.push(id);
+        });
+        return ids;
+    }
+
+    // 5. Delete Single Stock Record
+    function deleteStock() {
+        const id = parseInt($('#editStockId').val(), 10);
+        if (!id) return;
+
+        const stock = state.stocksMap[id];
+        const symbol = stock ? (stock.symbol || stock.Symbol || '') : 'this stock';
+
+        Swal.fire({
+            title: 'Delete Stock?',
+            text: `Are you sure you want to permanently delete ${symbol} from the database?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#475569',
+            confirmButtonText: 'Yes, Delete',
+            background: 'var(--bg-card, #1e293b)',
+            color: '#f8fafc'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                $.ajax({
+                    url: apiBaseUrl + '/datacoverage/' + id,
+                    type: 'DELETE',
+                    success: function (res) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Deleted!',
+                            text: `${symbol} has been deleted successfully.`,
+                            timer: 2000,
+                            showConfirmButton: false,
+                            background: 'var(--bg-card, #1e293b)',
+                            color: '#f8fafc'
+                        });
+
+                        $('#detailCard').slideUp(200);
+                        state.selectedStockId = null;
+
+                        loadSummary();
+                        loadPaginatedList();
+                    },
+                    error: function (xhr, status, err) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Delete Failed',
+                            text: xhr.responseText || err || 'Failed to delete stock.',
+                            background: 'var(--bg-card, #1e293b)',
+                            color: '#f8fafc'
+                        });
+                    }
+                });
+            }
+        });
+    }
+
+    // 6. Bulk Delete Stocks
+    function bulkDeleteStocks() {
+        const selectedIds = getSelectedStockIds();
+        if (selectedIds.length === 0) return;
+
+        Swal.fire({
+            title: `Delete ${selectedIds.length} Selected Stocks?`,
+            text: `Are you sure you want to permanently delete ${selectedIds.length} selected stocks from the database?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#475569',
+            confirmButtonText: `Yes, Delete ${selectedIds.length} Stocks`,
+            background: 'var(--bg-card, #1e293b)',
+            color: '#f8fafc'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                $.ajax({
+                    url: apiBaseUrl + '/datacoverage/bulk-delete',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(selectedIds),
+                    success: function (res) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Bulk Delete Complete',
+                            text: `${selectedIds.length} stocks deleted successfully.`,
+                            timer: 2000,
+                            showConfirmButton: false,
+                            background: 'var(--bg-card, #1e293b)',
+                            color: '#f8fafc'
+                        });
+
+                        if (selectedIds.includes(state.selectedStockId)) {
+                            $('#detailCard').slideUp(200);
+                            state.selectedStockId = null;
+                        }
+
+                        updateBulkDeleteButton();
+                        loadSummary();
+                        loadPaginatedList();
+                    },
+                    error: function (xhr, status, err) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Bulk Delete Failed',
+                            text: xhr.responseText || err || 'Failed to bulk delete selected stocks.',
+                            background: 'var(--bg-card, #1e293b)',
+                            color: '#f8fafc'
+                        });
+                    }
+                });
+            }
         });
     }
 

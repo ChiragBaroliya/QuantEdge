@@ -859,20 +859,20 @@ $$;
 -- Function: sp_get_data_coverage_summary
 CREATE OR REPLACE FUNCTION sp_get_data_coverage_summary()
 RETURNS TABLE (
-    total_stocks INT,
-    active_count INT,
-    inactive_count INT,
-    history_missing_count INT
+    "TotalStocks" INT,
+    "ActiveCount" INT,
+    "InactiveCount" INT,
+    "HistoryMissingCount" INT
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
     SELECT 
-        COUNT(*)::INT AS total_stocks,
-        COUNT(*) FILTER (WHERE s.is_active = TRUE)::INT AS active_count,
-        COUNT(*) FILTER (WHERE s.is_active = FALSE)::INT AS inactive_count,
-        COUNT(*) FILTER (WHERE COALESCE(s.is_histry_stored_1d, 0) = 0 OR COALESCE(s.is_histry_stored_60m, 0) = 0)::INT AS history_missing_count
+        COUNT(*)::INT AS "TotalStocks",
+        COUNT(*) FILTER (WHERE s.is_active = TRUE)::INT AS "ActiveCount",
+        COUNT(*) FILTER (WHERE s.is_active = FALSE)::INT AS "InactiveCount",
+        COUNT(*) FILTER (WHERE COALESCE(s.is_histry_stored_1d, 0) = 0 OR COALESCE(s.is_histry_stored_60m, 0) = 0)::INT AS "HistoryMissingCount"
     FROM stock_master s;
 END;
 $$;
@@ -886,22 +886,22 @@ CREATE OR REPLACE FUNCTION sp_get_paginated_stock_coverage(
     p_page_size INT DEFAULT 25
 )
 RETURNS TABLE (
-    id INT,
-    symbol VARCHAR(50),
-    name VARCHAR(100),
-    exchange VARCHAR(20),
-    instrument_token INT,
-    is_active BOOLEAN,
-    is_histry_stored_1m INT,
-    is_histry_stored_5m INT,
-    is_histry_stored_15m INT,
-    is_histry_stored_60m INT,
-    is_histry_stored_1d INT,
-    created_at TIMESTAMP WITH TIME ZONE,
-    count_1d BIGINT,
-    count_60m BIGINT,
-    last_candle_date TIMESTAMP WITH TIME ZONE,
-    total_records INT
+    "Id" INT,
+    "Symbol" VARCHAR(50),
+    "Name" VARCHAR(100),
+    "Exchange" VARCHAR(20),
+    "InstrumentToken" INT,
+    "IsActive" BOOLEAN,
+    "IsHistryStored1m" INT,
+    "IsHistryStored5m" INT,
+    "IsHistryStored15m" INT,
+    "IsHistryStored60m" INT,
+    "IsHistryStored1d" INT,
+    "CreatedAt" TIMESTAMP WITH TIME ZONE,
+    "Count1d" BIGINT,
+    "Count60m" BIGINT,
+    "LastCandleDate" TIMESTAMP WITH TIME ZONE,
+    "TotalRecords" INT
 )
 LANGUAGE plpgsql
 AS $$
@@ -937,22 +937,22 @@ BEGIN
         LIMIT GREATEST(1, p_page_size) OFFSET v_offset
     )
     SELECT 
-        c.id,
-        c.symbol,
-        c.name,
-        c.exchange,
-        c.instrument_token,
-        c.is_active,
-        c.is_histry_stored_1m,
-        c.is_histry_stored_5m,
-        c.is_histry_stored_15m,
-        c.is_histry_stored_60m,
-        c.is_histry_stored_1d,
-        c.created_at,
-        COALESCE(c.is_histry_stored_1d, 0)::BIGINT AS count_1d,
-        COALESCE(c.is_histry_stored_60m, 0)::BIGINT AS count_60m,
-        (SELECT MAX(candle_time) FROM market_candles_1d c1d WHERE c1d.symbol = c.symbol) AS last_candle_date,
-        c.full_count AS total_records
+        c.id AS "Id",
+        c.symbol AS "Symbol",
+        c.name AS "Name",
+        c.exchange AS "Exchange",
+        c.instrument_token AS "InstrumentToken",
+        c.is_active AS "IsActive",
+        c.is_histry_stored_1m AS "IsHistryStored1m",
+        c.is_histry_stored_5m AS "IsHistryStored5m",
+        c.is_histry_stored_15m AS "IsHistryStored15m",
+        c.is_histry_stored_60m AS "IsHistryStored60m",
+        c.is_histry_stored_1d AS "IsHistryStored1d",
+        c.created_at AS "CreatedAt",
+        COALESCE(c.is_histry_stored_1d, 0)::BIGINT AS "Count1d",
+        COALESCE(c.is_histry_stored_60m, 0)::BIGINT AS "Count60m",
+        (SELECT MAX(candle_time) FROM market_candles_1d c1d WHERE c1d.symbol = c.symbol) AS "LastCandleDate",
+        c.full_count AS "TotalRecords"
     FROM counted c
     ORDER BY c.symbol ASC;
 END;
@@ -981,6 +981,46 @@ BEGIN
         is_histry_stored_60m = p_histry_60m,
         is_histry_stored_1d = p_histry_1d
     WHERE id = p_id;
+END;
+$$;
+
+-- Procedure: sp_delete_stock_master
+CREATE OR REPLACE FUNCTION sp_delete_stock_master(
+    p_id INT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Delete associated candles if any
+    DELETE FROM market_candles_1d WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
+    DELETE FROM market_candles_60m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
+    DELETE FROM market_candles_15m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
+    DELETE FROM market_candles_5m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
+    DELETE FROM market_candles_1m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
+
+    -- Delete main record from stock_master
+    DELETE FROM stock_master WHERE id = p_id;
+END;
+$$;
+
+-- Procedure: sp_bulk_delete_stock_master
+CREATE OR REPLACE FUNCTION sp_bulk_delete_stock_master(
+    p_ids INT[]
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Delete associated candles if any
+    DELETE FROM market_candles_1d WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
+    DELETE FROM market_candles_60m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
+    DELETE FROM market_candles_15m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
+    DELETE FROM market_candles_5m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
+    DELETE FROM market_candles_1m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
+
+    -- Delete main records from stock_master
+    DELETE FROM stock_master WHERE id = ANY(p_ids);
 END;
 $$;
 
