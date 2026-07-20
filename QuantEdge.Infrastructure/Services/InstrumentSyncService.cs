@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence;
+using System.Text.RegularExpressions;
 
 namespace QuantEdge.Infrastructure.Services;
 
@@ -117,6 +118,40 @@ public class InstrumentSyncService : IInstrumentSyncService
 
                 var instType = cols[9].Trim();
                 var segment = cols[10].Trim();
+
+                // Apply exclusions for NSE equities (bonds, SDL, etc.)
+                if (exchange.Equals("NSE", StringComparison.OrdinalIgnoreCase) &&
+                    segment.Equals("NSE", StringComparison.OrdinalIgnoreCase) &&
+                    instType.Equals("EQ", StringComparison.OrdinalIgnoreCase))
+                {
+                    var upperName = name.ToUpperInvariant();
+                    var upperSymbol = symbol.ToUpperInvariant();
+
+                    if (upperName.Contains("SDL") ||
+                        upperName.Contains("SGB") ||
+                        upperName.Contains("NCD") ||
+                        upperName.Contains("GOI") ||
+                        upperName.Contains("T-BILL") ||
+                        upperName.Contains("GS "))
+                    {
+                        continue;
+                    }
+
+                    if (Regex.IsMatch(name, @"\d+\.\d+%"))
+                    {
+                        continue;
+                    }
+
+                    if (upperSymbol.EndsWith("-SG") || upperSymbol.EndsWith("-GS"))
+                    {
+                        continue;
+                    }
+
+                    if (lotSize != 1)
+                    {
+                        continue;
+                    }
+                }
 
                 bool isActive = ActiveSymbols.Contains(symbol);
 
