@@ -27,13 +27,51 @@ public class TokenController : Controller
     /// GET /Token — Renders the main token management dashboard.
     /// </summary>
     [HttpGet]
-    public IActionResult Index()
+    public async Task<IActionResult> Index()
     {
         var vm = new TokenViewModel
         {
-            StatusMessage = "Click \"Create Token\" to initiate the Zerodha OAuth login flow.",
+            StatusMessage = "Checking token status...",
             StatusType = "info"
         };
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient("QuantEdgeApi");
+            var response = await client.GetAsync("/api/zerodha/session-status");
+
+            if (response.IsSuccessStatusCode)
+            {
+                string json = await response.Content.ReadAsStringAsync();
+                var node = JsonNode.Parse(json);
+                bool hasActiveToken = node?["hasActiveToken"]?.GetValue<bool>() ?? false;
+
+                vm.HasActiveToken = hasActiveToken;
+                vm.ApiKey = node?["apiKey"]?.ToString();
+                vm.AccessTokenMasked = node?["accessTokenMasked"]?.ToString();
+                vm.CreatedAtIst = node?["createdAtIst"]?.ToString();
+                vm.ExpiresAtIst = node?["expiresAtIst"]?.ToString();
+
+                if (hasActiveToken)
+                {
+                    vm.IsSuccess = true;
+                    vm.StatusType = "success";
+                    vm.StatusMessage = "Zerodha access token is ACTIVE and valid for today.";
+                }
+                else
+                {
+                    vm.IsSuccess = false;
+                    vm.StatusType = "info";
+                    vm.StatusMessage = "No active token for today. Click \"Create Token\" to authenticate.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query Zerodha session status from API.");
+            vm.StatusMessage = "Unable to connect to API server. Click \"Create Token\" to authenticate manually.";
+            vm.StatusType = "warning";
+        }
 
         // Carry forward any TempData from a previous redirect (e.g. after callback)
         if (TempData.ContainsKey("StatusMessage"))
@@ -41,10 +79,14 @@ public class TokenController : Controller
             vm.StatusMessage = TempData["StatusMessage"]?.ToString();
             vm.StatusType = TempData["StatusType"]?.ToString() ?? "info";
             vm.IsSuccess = vm.StatusType == "success";
-            vm.UserName = TempData["UserName"]?.ToString();
-            vm.Email = TempData["Email"]?.ToString();
-            vm.AccessTokenMasked = TempData["AccessTokenMasked"]?.ToString();
-            vm.ApiKey = TempData["ApiKey"]?.ToString();
+            if (vm.IsSuccess)
+            {
+                vm.HasActiveToken = true;
+            }
+            if (TempData.ContainsKey("UserName")) vm.UserName = TempData["UserName"]?.ToString();
+            if (TempData.ContainsKey("Email")) vm.Email = TempData["Email"]?.ToString();
+            if (TempData.ContainsKey("AccessTokenMasked")) vm.AccessTokenMasked = TempData["AccessTokenMasked"]?.ToString();
+            if (TempData.ContainsKey("ApiKey")) vm.ApiKey = TempData["ApiKey"]?.ToString();
         }
 
         return View(vm);

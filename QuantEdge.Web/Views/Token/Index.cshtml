@@ -40,89 +40,97 @@
 <!-- Main Dashboard Grid -->
 <div class="dashboard-grid">
 
-    <!-- Token Creation Card -->
-    <div class="card card-primary">
-        <div class="card-header">
-            <div class="card-header-icon icon-key">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
-                </svg>
-            </div>
-            <div>
-                <h2 class="card-title">Create Access Token</h2>
-                <p class="card-subtitle">Authenticate with Zerodha via OAuth 2.0</p>
-            </div>
-        </div>
-
-        <div class="card-body">
-            <!-- Flow Steps Diagram -->
-            <div class="flow-steps">
-                <div class="flow-step">
-                    <div class="step-number">1</div>
-                    <div class="step-content">
-                        <div class="step-title">Initiate OAuth</div>
-                        <div class="step-desc">Click button → API fetches login URL</div>
-                    </div>
-                </div>
-                <div class="flow-arrow">→</div>
-                <div class="flow-step">
-                    <div class="step-number">2</div>
-                    <div class="step-content">
-                        <div class="step-title">Zerodha Login</div>
-                        <div class="step-desc">Enter credentials + 2FA TOTP code</div>
-                    </div>
-                </div>
-                <div class="flow-arrow">→</div>
-                <div class="flow-step">
-                    <div class="step-number">3</div>
-                    <div class="step-content">
-                        <div class="step-title">Callback & Save</div>
-                        <div class="step-desc">Token exchanged & saved to database</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CTA Button -->
-            <div class="btn-wrapper">
-                <a asp-controller="Token" asp-action="CreateToken" 
-                   class="btn-create-token" 
-                   id="createTokenBtn"
-                   onclick="handleCreateTokenClick(event, this)">
-                    <div class="btn-shimmer"></div>
-                    <span class="btn-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
-                        </svg>
-                    </span>
-                    <span class="btn-text">Create Token</span>
-                    <span class="btn-arrow">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                            <polyline points="12 5 19 12 12 19"></polyline>
-                        </svg>
-                    </span>
-                </a>
-                <div class="btn-hint">
-                    You'll be redirected to <strong>kite.zerodha.com</strong> to complete login
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Session Info Card (shown if token was just created) -->
-    @if (Model.IsSuccess && !string.IsNullOrEmpty(Model.UserName))
+    <!-- Token Creation Card (Shown ONLY when no active token for today) -->
+    @if (!Model.HasActiveToken)
     {
-        <div class="card card-success">
+        <div class="card card-primary">
             <div class="card-header">
-                <div class="card-header-icon icon-check">
+                <div class="card-header-icon icon-key">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="20 6 9 17 4 12"></polyline>
+                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
                     </svg>
                 </div>
                 <div>
-                    <h2 class="card-title">Active Session</h2>
-                    <p class="card-subtitle">Token successfully created and saved</p>
+                    <h2 class="card-title">Create Access Token</h2>
+                    <p class="card-subtitle">Authenticate with Zerodha via OAuth 2.0</p>
                 </div>
+            </div>
+
+            <div class="card-body">
+                <!-- Flow Steps Diagram -->
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <div class="step-title">Initiate OAuth</div>
+                            <div class="step-desc">Click button → API fetches login URL</div>
+                        </div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <div class="step-title">Zerodha Login</div>
+                            <div class="step-desc">Enter credentials + 2FA TOTP code</div>
+                        </div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <div class="step-title">Callback & Save</div>
+                            <div class="step-desc">Token exchanged & saved to database</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CTA Button -->
+                <div class="btn-wrapper">
+                    <a asp-controller="Token" asp-action="CreateToken" 
+                       class="btn-create-token" 
+                       id="createTokenBtn"
+                       onclick="handleCreateTokenClick(event, this)">
+                        <div class="btn-shimmer"></div>
+                        <span class="btn-icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                            </svg>
+                        </span>
+                        <span class="btn-text">Create Token</span>
+                        <span class="btn-arrow">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                            </svg>
+                        </span>
+                    </a>
+                    <div class="btn-hint">
+                        You'll be redirected to <strong>kite.zerodha.com</strong> to complete login
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Active Session Information Card (Shown directly when active token exists for today) -->
+    @if (Model.HasActiveToken)
+    {
+        <div class="card card-success">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div class="card-header-icon icon-check">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="card-title">Active Session Information</h2>
+                        <p class="card-subtitle">Zerodha Access Token is active and saved in database</p>
+                    </div>
+                </div>
+                <span class="status-chip status-chip-success" style="font-size: 0.85rem; padding: 4px 12px;">
+                    <span class="chip-dot"></span> Active for Today
+                </span>
             </div>
             <div class="card-body">
                 <div class="session-info-grid">
@@ -154,6 +162,37 @@
                             <span class="info-value monospace token-masked">@Model.AccessTokenMasked</span>
                         </div>
                     }
+                    @if (!string.IsNullOrEmpty(Model.CreatedAtIst))
+                    {
+                        <div class="info-row">
+                            <span class="info-label">Generated At</span>
+                            <span class="info-value">@Model.CreatedAtIst</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.ExpiresAtIst))
+                    {
+                        <div class="info-row">
+                            <span class="info-label">Expires At</span>
+                            <span class="info-value" style="color: var(--amber-400, #fbbf24);">@Model.ExpiresAtIst (6:00 AM IST)</span>
+                        </div>
+                    }
+                </div>
+
+                <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.82rem; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        Token will automatically reset when day changes at 6:00 AM IST tomorrow.
+                    </span>
+                    <a asp-controller="Token" asp-action="CreateToken" 
+                       class="btn-secondary-action"
+                       style="font-size: 0.8rem; padding: 6px 14px; opacity: 0.8; text-decoration: none;"
+                       onclick="return confirm('Re-create Zerodha Access Token?');">
+                        Re-create Token
+                    </a>
                 </div>
             </div>
         </div>

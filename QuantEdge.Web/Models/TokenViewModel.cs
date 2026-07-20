@@ -39,4 +39,19 @@ public class TokenViewModel
     /// Email returned from Zerodha session exchange.
     /// </summary>
     public string? Email { get; set; }
+
+    /// <summary>
+    /// Whether a valid token is active for today (created after 6:00 AM IST).
+    /// </summary>
+    public bool HasActiveToken { get; set; }
+
+    /// <summary>
+    /// Timestamp when the current active token was created (formatted in IST).
+    /// </summary>
+    public string? CreatedAtIst { get; set; }
+
+    /// <summary>
+    /// Timestamp when the current active token will expire (formatted in IST, 6:00 AM IST next day).
+    /// </summary>
+    public string? ExpiresAtIst { get; set; }
 }

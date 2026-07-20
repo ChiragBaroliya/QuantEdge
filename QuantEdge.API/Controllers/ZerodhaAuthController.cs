@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using QuantEdge.API.Services;
 using QuantEdge.Infrastructure.Configurations;
 using QuantEdge.Infrastructure.Persistence;
+using QuantEdge.Infrastructure.Persistence.Repositories;
 using System;
 using System.Data;
 using System.IO;
@@ -23,6 +24,7 @@ public class ZerodhaAuthController : ControllerBase
 {
     private readonly BrokerConfig _config;
     private readonly IDbConnectionFactory _connectionFactory;
+    private readonly IZerodhaSessionRepository _sessionRepository;
     private readonly ILogger<ZerodhaAuthController> _logger;
     private readonly IMemoryCache _cache;
     private readonly string _fallbackWebBaseUrl;
@@ -33,16 +35,92 @@ public class ZerodhaAuthController : ControllerBase
     public ZerodhaAuthController(
         IOptions<BrokerConfig> config,
         IDbConnectionFactory connectionFactory,
+        IZerodhaSessionRepository sessionRepository,
         IMemoryCache cache,
         IConfiguration configuration,
         ILogger<ZerodhaAuthController> logger)
     {
         _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+        _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         // Fallback URL used only if the Web project did not pass a returnUrl
         _fallbackWebBaseUrl = configuration["WebBaseUrl"] ?? "https://localhost:7031";
+    }
+
+    /// <summary>
+    /// Checks if a valid Zerodha session token exists for today (created after 6:00 AM IST cutoff).
+    /// </summary>
+    [HttpGet("session-status")]
+    public async Task<IActionResult> GetSessionStatus()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_config.ApiKey))
+            {
+                return Ok(new { hasActiveToken = false, message = "ApiKey is not configured." });
+            }
+
+            // 1. Attempt activation for today's token
+            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey);
+
+            // 2. Fetch current active session
+            var activeSession = await _sessionRepository.GetActiveSessionAsync();
+
+            TimeZoneInfo indianTimeZone;
+            try
+            {
+                indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
+            }
+
+            var nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, indianTimeZone);
+
+            // Cutoff logic: 6:00 AM IST today (or yesterday 6:00 AM if before 6:00 AM IST)
+            DateTime todayCutoffIst = nowIst.TimeOfDay < TimeSpan.FromHours(6)
+                ? nowIst.Date.AddDays(-1).AddHours(6)
+                : nowIst.Date.AddHours(6);
+
+            DateTime nextExpiryIst = todayCutoffIst.AddDays(1);
+
+            if (activeSession != null)
+            {
+                var createdAtIst = TimeZoneInfo.ConvertTime(activeSession.CreatedAt, indianTimeZone);
+                if (createdAtIst >= todayCutoffIst)
+                {
+                    string maskedToken = activeSession.AccessToken.Length > 12
+                        ? activeSession.AccessToken[..8] + "••••••••" + activeSession.AccessToken[^4..]
+                        : activeSession.AccessToken[..Math.Min(4, activeSession.AccessToken.Length)] + "••••";
+
+                    return Ok(new
+                    {
+                        hasActiveToken = true,
+                        apiKey = activeSession.ApiKey,
+                        accessTokenMasked = maskedToken,
+                        createdAtIst = createdAtIst.ToString("dd-MMM-yyyy hh:mm:ss tt"),
+                        expiresAtIst = nextExpiryIst.ToString("dd-MMM-yyyy hh:mm:ss tt"),
+                        message = "Valid Zerodha access token active for today."
+                    });
+                }
+            }
+
+            return Ok(new
+            {
+                hasActiveToken = false,
+                apiKey = _config.ApiKey,
+                expiresAtIst = nextExpiryIst.ToString("dd-MMM-yyyy hh:mm:ss tt"),
+                message = "No active session for today. Token expired or not created."
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking Zerodha session status.");
+            return StatusCode(500, new { hasActiveToken = false, message = ex.Message });
+        }
     }
 
     /// <summary>
@@ -138,6 +216,9 @@ public class ZerodhaAuthController : ControllerBase
                 );
             }
 
+            // Immediately activate token in DB if valid for today
+            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey);
+
             // 4. Persist to appsettings.json dynamically in the API & Worker folders
             UpdateAppsettingsInAllPaths(accessToken);
 
@@ -208,6 +289,9 @@ public class ZerodhaAuthController : ControllerBase
                     commandType: CommandType.StoredProcedure
                 );
             }
+
+            // Immediately activate token in DB if valid for today
+            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey);
 
             // 2. Persist to appsettings.json dynamically in the API & Worker folders
             UpdateAppsettingsInAllPaths(accessToken);
