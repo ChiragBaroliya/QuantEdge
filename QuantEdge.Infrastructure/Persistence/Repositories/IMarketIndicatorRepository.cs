@@ -18,4 +18,9 @@ public interface IMarketIndicatorRepository
     /// Retrieves historical indicators using a Stored Procedure, returning auto-mapped entities.
     /// </summary>
     Task<IEnumerable<MarketIndicator>> GetHistoryAsync(string symbol, string timeframe, int limit);
+
+    /// <summary>
+    /// Deletes today's calculated indicators for a specific symbol and timeframe.
+    /// </summary>
+    Task DeleteTodayIndicatorsAsync(string symbol, string timeframe);
 }

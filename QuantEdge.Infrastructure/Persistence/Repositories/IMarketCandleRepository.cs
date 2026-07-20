@@ -18,4 +18,9 @@ public interface IMarketCandleRepository
     /// Retrieves historical candles using a Stored Procedure, returning auto-mapped entities.
     /// </summary>
     Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int limit);
+
+    /// <summary>
+    /// Deletes all history for today for a specific symbol and timeframe.
+    /// </summary>
+    Task DeleteTodayHistoryAsync(string symbol, string timeframe);
 }

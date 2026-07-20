@@ -25,6 +25,9 @@ let macdHistSeries = null;
 let chartDataCache = [];
 
 $(document).ready(async function () {
+    // Connect to SignalR early so listeners can be attached before await yields
+    connectSignalR();
+
     await loadStocksDropdown();
     initCharts();
   
@@ -52,9 +55,6 @@ $(document).ready(async function () {
         
         switchTimeframe(newTimeframe);
     });
-
-    // Connect to SignalR
-    connectSignalR();
 });
 
 // Initialize Lightweight Charts (Dark Theme)

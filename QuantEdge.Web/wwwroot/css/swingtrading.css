@@ -37,27 +37,22 @@
 }
 
 .dashboard-main-grid {
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 24px;
-}
-
-@media (min-width: 1200px) {
-    .dashboard-main-grid {
-        grid-template-columns: 350px 1fr;
-    }
 }
 
 /* Custom Cards */
 .card-glow {
     position: relative;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    background: linear-gradient(135deg, rgba(20, 30, 48, 0.6) 0%, rgba(36, 59, 85, 0.3) 100%);
-    backdrop-filter: blur(16px);
-    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(145deg, rgba(20, 25, 40, 0.7) 0%, rgba(30, 41, 59, 0.4) 100%);
+    backdrop-filter: blur(24px);
+    border-radius: 16px;
     padding: 24px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    transition: all 0.3s ease;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
 }
 
 .card-glow::before {
@@ -67,96 +62,109 @@
     left: 0;
     width: 100%;
     height: 100%;
-    border-radius: 12px;
-    background: radial-gradient(circle at 50% 0%, var(--theme-glow), transparent 60%);
-    opacity: 0.15;
+    border-radius: 16px;
+    background: radial-gradient(circle at top left, rgba(79, 156, 249, 0.15), transparent 60%);
     pointer-events: none;
-    transition: opacity 0.3s ease;
+    transition: opacity 0.4s ease;
 }
 
 .card-glow:hover {
-    border-color: var(--theme-border);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), 0 0 1px 1px var(--theme-border) inset;
+    border-color: rgba(79, 156, 249, 0.3);
+    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.4), 0 0 15px rgba(79, 156, 249, 0.1) inset;
+    transform: translateY(-2px);
 }
 
-/* Nifty & Watchlist Cards */
-.nifty-status-card {
+/* Nifty Horizontal Banner */
+.nifty-status-banner {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 20px 28px;
+    border-radius: 16px;
+    background: linear-gradient(90deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 41, 59, 0.6) 100%);
+    border-left: 4px solid var(--theme-accent);
+}
+
+.nifty-banner-left {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 8px;
 }
 
-.nifty-header {
+.nifty-banner-right {
     display: flex;
-    justify-content: space-between;
+    gap: 32px;
+    flex-wrap: wrap;
     align-items: center;
 }
 
 .nifty-title {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
-    color: #ffffff;
-    letter-spacing: 0.5px;
+    color: rgba(255, 255, 255, 0.6);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin: 0;
 }
 
 .nifty-badge {
-    padding: 6px 12px;
+    padding: 4px 12px;
     border-radius: 20px;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1px;
     text-transform: uppercase;
 }
 
 .nifty-badge.passed {
-    background: rgba(52, 211, 153, 0.1);
+    background: rgba(52, 211, 153, 0.15);
     color: #34d399;
-    border: 1px solid rgba(52, 211, 153, 0.2);
-    box-shadow: 0 0 8px rgba(52, 211, 153, 0.15);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    box-shadow: 0 0 12px rgba(52, 211, 153, 0.2);
 }
 
 .nifty-badge.failed {
-    background: rgba(248, 113, 113, 0.1);
+    background: rgba(248, 113, 113, 0.15);
     color: #f87171;
-    border: 1px solid rgba(248, 113, 113, 0.2);
-    box-shadow: 0 0 8px rgba(248, 113, 113, 0.15);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    box-shadow: 0 0 12px rgba(248, 113, 113, 0.2);
 }
 
 .nifty-price-row {
     display: flex;
-    justify-content: space-between;
     align-items: baseline;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    padding-bottom: 12px;
+    gap: 12px;
 }
 
 .nifty-price {
-    font-size: 32px;
+    font-size: 28px;
     font-weight: 800;
     color: #ffffff;
     font-family: monospace;
-}
-
-.nifty-details-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    letter-spacing: -0.5px;
 }
 
 .nifty-detail-item {
     display: flex;
-    justify-content: space-between;
-    font-size: 13px;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .nifty-detail-item .label {
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
 }
 
 .nifty-detail-item .value {
     color: #ffffff;
-    font-weight: 600;
+    font-weight: 700;
     font-family: monospace;
+    font-size: 14px;
 }
 
 /* Stat Metrics (Profit/Loss Cards) */
@@ -194,12 +202,12 @@
 
 .stat-metric-value.positive {
     color: #34d399;
-    text-shadow: 0 0 12px rgba(52, 211, 153, 0.2);
+    text-shadow: 0 0 15px rgba(52, 211, 153, 0.3);
 }
 
 .stat-metric-value.negative {
     color: #f87171;
-    text-shadow: 0 0 12px rgba(248, 113, 113, 0.2);
+    text-shadow: 0 0 15px rgba(248, 113, 113, 0.3);
 }
 
 .stat-metric-sub {
@@ -215,76 +223,106 @@
 
 .swing-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0 8px;
     text-align: left;
     font-size: 13px;
 }
 
 .swing-table th {
-    padding: 14px 16px;
+    padding: 12px 16px;
     color: rgba(255, 255, 255, 0.4);
     font-weight: 600;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     text-transform: uppercase;
     font-size: 11px;
     letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .swing-table td {
     padding: 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     color: rgba(255, 255, 255, 0.85);
     vertical-align: middle;
+    background: rgba(255, 255, 255, 0.02);
+    border-top: 1px solid rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+    transition: background 0.2s ease;
+}
+
+.swing-table td:first-child {
+    border-left: 1px solid rgba(255, 255, 255, 0.02);
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+.swing-table td:last-child {
+    border-right: 1px solid rgba(255, 255, 255, 0.02);
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
 }
 
 .swing-table tr:hover td {
-    background: rgba(255, 255, 255, 0.015);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Staggered Row Animations */
+.stagger-row {
+    animation: slideUpFade 0.4s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
+@keyframes slideUpFade {
+    from { opacity: 0; transform: translateY(15px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .td-symbol {
-    font-weight: 700;
+    font-weight: 800;
     color: #ffffff !important;
+    font-size: 14px;
+    letter-spacing: 0.5px;
 }
 
 .td-monospace {
     font-family: monospace;
     font-size: 13px;
+    font-weight: 500;
 }
 
 /* Badges */
 .rec-badge {
-    padding: 4px 10px;
-    border-radius: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 800;
     text-transform: uppercase;
     display: inline-block;
     border: 1px solid transparent;
+    letter-spacing: 0.5px;
 }
 
 .rec-badge.buy {
-    background: rgba(52, 211, 153, 0.12);
+    background: linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(16, 185, 129, 0.05));
     color: #34d399;
-    border-color: rgba(52, 211, 153, 0.25);
-    box-shadow: 0 0 10px rgba(52, 211, 153, 0.15);
+    border-color: rgba(52, 211, 153, 0.3);
+    box-shadow: 0 0 15px rgba(52, 211, 153, 0.15);
 }
 
 .rec-badge.sell {
-    background: rgba(248, 113, 113, 0.12);
+    background: linear-gradient(135deg, rgba(248, 113, 113, 0.15), rgba(239, 68, 68, 0.05));
     color: #f87171;
-    border-color: rgba(248, 113, 113, 0.25);
-    box-shadow: 0 0 10px rgba(248, 113, 113, 0.15);
+    border-color: rgba(248, 113, 113, 0.3);
+    box-shadow: 0 0 15px rgba(248, 113, 113, 0.15);
 }
 
 .rec-badge.hold {
-    background: rgba(251, 191, 36, 0.12);
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.05));
     color: #fbbf24;
-    border-color: rgba(251, 191, 36, 0.25);
+    border-color: rgba(251, 191, 36, 0.3);
+    box-shadow: 0 0 15px rgba(251, 191, 36, 0.15);
 }
 
 .pnl-text {
-    font-weight: 700;
+    font-weight: 800;
     font-family: monospace;
+    font-size: 14px;
 }
 
 .pnl-text.positive {
@@ -445,64 +483,62 @@
 }
 
 /* Expandable Drawer Subrow */
-.stock-main-row:hover td {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-.checklist-subrow {
-    background: rgba(15, 23, 42, 0.4) !important;
+.checklist-subrow td {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
 }
 
 .checklist-drawer-cell {
-    padding: 16px 20px !important;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    padding: 8px 16px 24px 16px !important;
 }
 
 .checklist-drawer-container {
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 41, 59, 0.5) 100%);
+    background: linear-gradient(145deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.7) 100%);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
-    padding: 16px;
-    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.3), 0 10px 30px rgba(0, 0, 0, 0.2);
 }
 
 .checklist-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 14px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .checklist-title {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
 }
 
 .symbol-tag {
     background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
     color: #ffffff;
     font-weight: 800;
-    padding: 3px 10px;
-    border-radius: 4px;
-    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 13px;
     letter-spacing: 0.5px;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
 .checklist-title .title-text {
     font-weight: 700;
     color: #ffffff;
-    font-size: 14px;
+    font-size: 15px;
     letter-spacing: 0.3px;
 }
 
 .summary-count {
-    font-size: 12px;
-    font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 6px 12px;
+    border-radius: 8px;
 }
 
 /* Checklist Cards Grid */
@@ -682,6 +718,18 @@
         font-size: 28px;
     }
 
+    .nifty-status-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 16px;
+    }
+    
+    .nifty-banner-right {
+        width: 100%;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
     .nifty-price {
         font-size: 26px;
     }
@@ -709,11 +757,11 @@
     }
 
     .checklist-drawer-cell {
-        padding: 8px 4px !important;
+        padding: 8px 4px 16px 4px !important;
     }
 
     .checklist-drawer-container {
-        padding: 10px;
+        padding: 12px;
         border-radius: 8px;
     }
 
@@ -729,7 +777,7 @@
     }
 
     .cond-card {
-        padding: 10px;
+        padding: 12px;
     }
 }
 

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
@@ -18,7 +20,10 @@ public class MarketDataController : ControllerBase
     private readonly IMarketIndicatorRepository _indicatorRepository;
     private readonly ITradingSignalRepository _tradingSignalRepository;
     private readonly IInstrumentSyncService _instrumentSyncService;
+    private readonly IHistoricalDataService _historicalDataService;
     private readonly ILogger<MarketDataController> _logger;
+    private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _scopeFactory;
+    private readonly Microsoft.AspNetCore.SignalR.IHubContext<QuantEdge.Infrastructure.Hubs.MarketDataHub> _hubContext;
 
     public MarketDataController(
         IStockMasterRepository stockMasterRepository,
@@ -26,14 +31,20 @@ public class MarketDataController : ControllerBase
         IMarketIndicatorRepository indicatorRepository,
         ITradingSignalRepository tradingSignalRepository,
         IInstrumentSyncService instrumentSyncService,
-        ILogger<MarketDataController> logger)
+        IHistoricalDataService historicalDataService,
+        ILogger<MarketDataController> logger,
+        Microsoft.Extensions.DependencyInjection.IServiceScopeFactory scopeFactory,
+        Microsoft.AspNetCore.SignalR.IHubContext<QuantEdge.Infrastructure.Hubs.MarketDataHub> hubContext)
     {
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _indicatorRepository = indicatorRepository ?? throw new ArgumentNullException(nameof(indicatorRepository));
         _tradingSignalRepository = tradingSignalRepository ?? throw new ArgumentNullException(nameof(tradingSignalRepository));
         _instrumentSyncService = instrumentSyncService ?? throw new ArgumentNullException(nameof(instrumentSyncService));
+        _historicalDataService = historicalDataService ?? throw new ArgumentNullException(nameof(historicalDataService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
     }
 
     /// <summary>
@@ -167,5 +178,119 @@ public class MarketDataController : ControllerBase
             _logger.LogError(ex, "Failed to compile chart data for symbol {Symbol}.", symbol);
             return StatusCode(500, $"Internal server error: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Deletes all history for today for a specific symbol and timeframe.
+    /// </summary>
+    [HttpDelete("history/today/{symbol}")]
+    public async Task<IActionResult> DeleteTodayHistory(string symbol, [FromQuery] string timeframe)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest("Symbol parameter is required.");
+        if (string.IsNullOrWhiteSpace(timeframe)) return BadRequest("Timeframe parameter is required.");
+        try
+        {
+            await _candleRepository.DeleteTodayHistoryAsync(symbol, timeframe);
+            await _indicatorRepository.DeleteTodayIndicatorsAsync(symbol, timeframe);
+            return Ok(new { message = $"Successfully deleted today's history and indicators for {symbol} ({timeframe})." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete today's history for {Symbol} ({Timeframe}).", symbol, timeframe);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Fetches historical data from Zerodha for today for a specific symbol and timeframe.
+    /// </summary>
+    [HttpPost("history/today/{symbol}")]
+    public async Task<IActionResult> CreateTodayHistory(string symbol, [FromQuery] string timeframe)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest("Symbol parameter is required.");
+        if (string.IsNullOrWhiteSpace(timeframe)) return BadRequest("Timeframe parameter is required.");
+        try
+        {
+            DateTime fromTime = DateTime.UtcNow.Date; // Start of today (UTC)
+            DateTime toTime = DateTime.UtcNow;
+
+            // Fetch from Zerodha using the service
+            await _historicalDataService.FetchHistoricalCandlesAsync(symbol, timeframe, fromTime, toTime, CancellationToken.None);
+
+            return Ok(new { message = $"Successfully fetched today's history from Zerodha for {symbol} ({timeframe})." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch today's history from Zerodha for {Symbol} ({Timeframe}).", symbol, timeframe);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Resets all history for today for all active stocks for a specific timeframe in the background.
+    /// This deletes existing data and fetches new data sequentially.
+    /// </summary>
+    [HttpPost("history/today/all/reset")]
+    public IActionResult ResetTodayHistoryAll([FromQuery] string timeframe)
+    {
+        if (string.IsNullOrWhiteSpace(timeframe)) return BadRequest("Timeframe parameter is required.");
+        
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var stockRepo = scope.ServiceProvider.GetRequiredService<IStockMasterRepository>();
+                var candleRepo = scope.ServiceProvider.GetRequiredService<IMarketCandleRepository>();
+                var indicatorRepo = scope.ServiceProvider.GetRequiredService<IMarketIndicatorRepository>();
+                var historicalDataService = scope.ServiceProvider.GetRequiredService<IHistoricalDataService>();
+
+                var activeStocks = (await stockRepo.GetActiveStocksAsync()).ToList();
+                DateTime fromTime = DateTime.UtcNow.Date; // Start of today (UTC)
+                DateTime toTime = DateTime.UtcNow;
+                int total = activeStocks.Count;
+                int processed = 0;
+
+                await _hubContext.Clients.All.SendAsync("SyncProgress", new { 
+                    message = $"Starting sync for {total} stocks ({timeframe})...", 
+                    progress = 0 
+                });
+
+                foreach (var stock in activeStocks)
+                {
+                    // 1. Delete
+                    await candleRepo.DeleteTodayHistoryAsync(stock.Symbol, timeframe);
+                    await indicatorRepo.DeleteTodayIndicatorsAsync(stock.Symbol, timeframe);
+
+                    // 2. Fetch
+                    try
+                    {
+                        await historicalDataService.FetchHistoricalCandlesAsync(stock.Symbol, timeframe, fromTime, toTime, CancellationToken.None);
+                    }
+                    catch (Exception innerEx)
+                    {
+                        _logger.LogError(innerEx, "Failed to fetch today's history from Zerodha for {Symbol} ({Timeframe}).", stock.Symbol, timeframe);
+                    }
+
+                    processed++;
+                    double pct = Math.Round((double)processed / total * 100, 1);
+                    await _hubContext.Clients.All.SendAsync("SyncProgress", new { 
+                        message = $"Synced {stock.Symbol} ({processed}/{total})", 
+                        progress = pct 
+                    });
+                }
+
+                await _hubContext.Clients.All.SendAsync("SyncComplete", new { 
+                    message = $"Successfully synced history for all {total} stocks ({timeframe})." 
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync today's history for all active stocks ({Timeframe}) in background.", timeframe);
+                await _hubContext.Clients.All.SendAsync("SyncError", new { message = "Error during bulk sync: " + ex.Message });
+            }
+        });
+
+        return Accepted(new { message = $"Background sync task started for timeframe {timeframe}." });
     }
 }

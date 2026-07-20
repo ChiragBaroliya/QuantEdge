@@ -57,4 +57,18 @@ public class MarketCandleRepository : IMarketCandleRepository
             new { p_symbol = symbol, p_timeframe = timeframe, p_limit = limit }
         );
     }
+
+    public async Task DeleteTodayHistoryAsync(string symbol, string timeframe)
+    {
+        string safeTimeframe = timeframe.ToLower();
+        if (!new[] { "1m", "5m", "15m", "60m", "1d" }.Contains(safeTimeframe)) return;
+
+        using var connection = _connectionFactory.CreateConnection();
+        string tableName = $"market_candles_{safeTimeframe}";
+        
+        await connection.ExecuteAsync(
+            $"DELETE FROM {tableName} WHERE symbol = @Symbol AND DATE(candle_time) = CURRENT_DATE;",
+            new { Symbol = symbol.ToUpper() }
+        );
+    }
 }

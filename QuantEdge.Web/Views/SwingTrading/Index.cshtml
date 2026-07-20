@@ -104,32 +104,33 @@
     <!-- Main Dashboard Body Grid -->
     <div class="dashboard-main-grid">
         
-        <!-- Left Column: Nifty Market Filter -->
-        <div class="card-glow nifty-status-card">
-            <div class="nifty-header">
-                <span class="nifty-title">NIFTY MARKET FILTER</span>
-                <span id="niftyBadge" class="nifty-badge passed">Passed</span>
+        <!-- Top Horizontal Nifty Market Filter Banner -->
+        <div class="nifty-status-banner">
+            <div class="nifty-banner-left">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <h3 class="nifty-title">NIFTY MARKET FILTER</h3>
+                    <span id="niftyBadge" class="nifty-badge passed">Passed</span>
+                </div>
+                <div class="nifty-price-row">
+                    <span id="niftyClose" class="nifty-price">22,450.25</span>
+                    <span style="font-size: 11px; color: rgba(255,255,255,0.4); font-weight: 600;">EOD CLOSE</span>
+                </div>
             </div>
             
-            <div class="nifty-price-row">
-                <span id="niftyClose" class="nifty-price">22,450.25</span>
-                <span style="font-size: 11px; color: rgba(255,255,255,0.3); font-weight: 600;">EOD CLOSE</span>
-            </div>
-
-            <div class="nifty-details-list">
+            <div class="nifty-banner-right">
                 <div class="nifty-detail-item">
-                    <span class="label">50 Day DMA (SMA50)</span>
+                    <span class="label">50 Day DMA</span>
                     <span id="niftySma50" class="value">21,950.00</span>
                 </div>
                 <div class="nifty-detail-item">
-                    <span class="label">Nifty 20 Day EMA</span>
+                    <span class="label">20 Day EMA</span>
                     <span id="niftyEma20" class="value">22,120.40</span>
                 </div>
                 <div class="nifty-detail-item">
-                    <span class="label">Nifty 50 Day EMA</span>
+                    <span class="label">50 Day EMA</span>
                     <span id="niftyEma50" class="value">21,990.20</span>
                 </div>
-                <div class="nifty-detail-item" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px; margin-top: 4px;">
+                <div class="nifty-detail-item" style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;">
                     <span class="label">Price > 50 DMA</span>
                     <span id="niftyCond1" class="value pnl-text positive">Yes</span>
                 </div>
@@ -140,7 +141,7 @@
             </div>
         </div>
 
-        <!-- Right Column: Stock Signal Watchlist -->
+        <!-- Full Width Stock Signal Watchlist -->
         <div class="card-glow">
             <h3 class="nifty-title" style="margin-top: 0; margin-bottom: 16px;">STOCK & ETF EOD RECOMMENDATIONS</h3>
             <div class="table-responsive">
@@ -372,7 +373,7 @@
                 return;
             }
 
-            signals.forEach(s => {
+            signals.forEach((s, index) => {
                 const decClass = s.decision.toLowerCase();
                 const meetsEma = s.ema20 > s.ema50 && s.ema50 > s.ema200;
                 
@@ -427,7 +428,7 @@
                 }
 
                 const mainRow = `
-                    <tr class="stock-main-row">
+                    <tr class="stock-main-row stagger-row" style="animation-delay: ${index * 0.05}s">
                         <td class="td-symbol">${s.symbol}</td>
                         <td class="td-monospace">${Number(s.close).toFixed(2)}</td>
                         <td>
@@ -527,7 +528,7 @@
                 return;
             }
 
-            trades.forEach(t => {
+            trades.forEach((t, index) => {
                 const pnlClass = t.profitLossPct >= 0 ? "positive" : "negative";
                 const sign = t.profitLossPct >= 0 ? "+" : "";
                 
@@ -540,7 +541,7 @@
                     : '<span class="rec-badge buy">OPEN</span>';
 
                 const row = `
-                    <tr>
+                    <tr class="stagger-row" style="animation-delay: ${index * 0.05}s">
                         <td class="td-symbol">${t.symbol}</td>
                         <td>${statusBadge}</td>
                         <td class="td-monospace">${entryD}</td>

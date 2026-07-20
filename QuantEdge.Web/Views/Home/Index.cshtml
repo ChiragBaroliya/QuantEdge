@@ -47,6 +47,12 @@
         </div>
 
         <div class="control-right" style="display: flex; align-items: center; gap: 12px;">
+            <button id="btnOpenManageHistory" class="btn-trigger" style="display: flex; align-items: center; gap: 8px; color: #4f9cf9; border-color: #4f9cf9;" title="Manage History Data">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                </svg>
+                Manage History
+            </button>
             <button id="btnOpenReference" class="btn-trigger" style="display: flex; align-items: center; gap: 8px;" title="View Strategy Rules, Scoring Weights, and Backend Mathematical Formulas.">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
@@ -368,9 +374,97 @@
     </div>
 </div>
 
+<!-- Manage History Modal -->
+<div id="manageHistoryModal" class="qe-modal-backdrop manage-history-modal">
+    <div class="qe-modal">
+        <div class="qe-modal-header">
+            <div class="qe-modal-title-area">
+                <span class="qe-modal-title">Manage Today's History</span>
+                <span class="qe-modal-subtitle">Select a timeframe to delete and regenerate today's data.</span>
+            </div>
+            <button id="btnCloseManageHistory" class="qe-modal-close-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="qe-modal-body" style="padding: 24px; display: block; overflow: visible;">
+            <div class="manage-history-btn-grid">
+                <button class="btn-manage-history" data-tf="1m">1 MIN</button>
+                <button class="btn-manage-history" data-tf="5m">5 MIN</button>
+                <button class="btn-manage-history" data-tf="15m">15 MIN</button>
+                <button class="btn-manage-history" data-tf="60m">60 MIN</button>
+                <button class="btn-manage-history" data-tf="1d" style="grid-column: 1 / -1;">1 DAY</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .manage-history-modal .qe-modal {
+        max-width: 400px;
+        height: auto;
+        min-height: 200px;
+    }
+    .manage-history-btn-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        width: 100%;
+    }
+    .manage-history-btn-grid .btn-manage-history {
+        padding: 14px;
+        background: var(--bg-input);
+        border: 1px solid var(--border-subtle);
+        color: var(--text-primary);
+        cursor: pointer;
+        border-radius: var(--radius-md);
+        font-weight: 600;
+        font-size: 13px;
+        letter-spacing: 0.5px;
+        transition: all var(--transition);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .manage-history-btn-grid .btn-manage-history:hover {
+        background: rgba(255,255,255,0.05);
+        border-color: var(--accent-blue);
+        color: var(--accent-blue);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(79, 156, 249, 0.15);
+    }
+    .manage-history-btn-grid .btn-manage-history:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+</style>
+</div>
+
+<!-- Global Background Task Progress Panel -->
+<div id="syncProgressPanel" style="position: fixed; bottom: 20px; left: 20px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 16px; width: 300px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 9999; display: none; transform: translateY(100px); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); flex-direction: column; gap: 8px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Background Task</span>
+        <span id="syncProgressPercent" style="font-size: 12px; font-weight: 600; color: var(--theme-accent);">0%</span>
+    </div>
+    <div style="width: 100%; background: var(--bg-input); height: 6px; border-radius: 3px; overflow: hidden;">
+        <div id="syncProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--theme-accent), #8ba3cc); transition: width 0.3s ease;"></div>
+    </div>
+    <div id="syncProgressMessage" style="font-size: 11px; color: var(--text-secondary); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        Initializing...
+    </div>
+</div>
+
 <partial name="_StrategyFormulasModal" />
 
 @section Scripts {
+    <!-- SweetAlert2 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
     <!-- TradingView Lightweight Charts CDN -->
     <script src="~/js/theme/lightweight-charts.standalone.production.js"></script>
     <!-- Microsoft SignalR JS Client CDN -->
@@ -411,6 +505,140 @@
                 $(".qe-modal-pane").removeClass("active");
                 $(this).addClass("active");
                 $(`#${tabId}`).addClass("active");
+            });
+
+            // Manage History Modal Handlers
+            $("#btnOpenManageHistory").click(function() {
+                $("#manageHistoryModal").addClass("active");
+                $("body").css("overflow", "hidden");
+            });
+
+            $("#btnCloseManageHistory, #manageHistoryModal").click(function(e) {
+                if (e.target === this || $(e.target).closest('#btnCloseManageHistory').length) {
+                    $("#manageHistoryModal").removeClass("active");
+                    $("body").css("overflow", "");
+                }
+            });
+
+            $(document).keydown(function(e) {
+                if (e.key === "Escape" && $("#manageHistoryModal").hasClass("active")) {
+                    $("#manageHistoryModal").removeClass("active");
+                    $("body").css("overflow", "");
+                }
+            });
+
+            // Handle timeframe buttons in modal (Global)
+            $(".btn-manage-history").click(async function() {
+                const tf = $(this).data("tf");
+                
+                const result = await Swal.fire({
+                    title: 'Reset History Data?',
+                    text: `Are you sure you want to delete and recreate today's history for ALL active stocks (${tf})? This may take some time.`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#34d399',
+                    cancelButtonColor: '#f87171',
+                    confirmButtonText: 'Yes, reset all!',
+                    background: '#141929',
+                    color: '#e8edf5'
+                });
+
+                if (!result.isConfirmed) return;
+
+                const btn = $(this);
+                const originalText = btn.text();
+                btn.prop("disabled", true).text("Starting...");
+
+                try {
+                    // Start background reset task
+                    let res = await fetch(`${API_BASE_URL}/api/marketdata/history/today/all/reset?timeframe=${tf}`, { method: 'POST' });
+                    if (!res.ok) throw new Error("Failed to start reset history task.");
+                    
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'Task Started',
+                        text: `Background sync for ALL active stocks (${tf}) has started. Check the progress panel.`,
+                        background: '#141929',
+                        color: '#e8edf5',
+                        confirmButtonColor: '#4f9cf9',
+                        timer: 3000,
+                        timerProgressBar: true
+                    });
+                    
+                    $("#manageHistoryModal").removeClass("active");
+                    $("body").css("overflow", "");
+                } catch (ex) {
+                    console.error("Manage history start failed:", ex);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'Failed to start background sync. ' + ex.message,
+                        background: '#141929',
+                        color: '#e8edf5',
+                        confirmButtonColor: '#4f9cf9'
+                    });
+                } finally {
+                    btn.prop("disabled", false).text(originalText);
+                }
+            });
+
+            // SignalR event handlers for global background sync
+            connection.on("SyncProgress", (data) => {
+                const panel = $("#syncProgressPanel");
+                if (panel.css("display") === "none") {
+                    panel.css("display", "flex");
+                    setTimeout(() => panel.css("transform", "translateY(0)"), 10);
+                }
+                
+                $("#syncProgressMessage").text(data.message);
+                $("#syncProgressBar").css("width", `${data.progress}%`);
+                $("#syncProgressPercent").text(`${Math.round(data.progress)}%`);
+            });
+
+            connection.on("SyncComplete", async (data) => {
+                $("#syncProgressMessage").text(data.message);
+                $("#syncProgressBar").css("width", "100%");
+                $("#syncProgressPercent").text("100%");
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Sync Complete',
+                    text: data.message,
+                    background: '#141929',
+                    color: '#e8edf5',
+                    confirmButtonColor: '#4f9cf9',
+                    toast: true,
+                    position: 'bottom-end',
+                    showConfirmButton: false,
+                    timer: 5000
+                });
+
+                setTimeout(() => {
+                    $("#syncProgressPanel").css("transform", "translateY(100px)");
+                    setTimeout(() => $("#syncProgressPanel").css("display", "none"), 300);
+                }, 3000);
+
+                await fetchChartHistory(); // Refresh chart just in case active symbol was affected
+            });
+
+            connection.on("SyncError", (data) => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Sync Failed',
+                    text: data.message,
+                    background: '#141929',
+                    color: '#e8edf5',
+                    confirmButtonColor: '#f87171',
+                    toast: true,
+                    position: 'bottom-end',
+                    showConfirmButton: false,
+                    timer: 5000
+                });
+
+                setTimeout(() => {
+                    $("#syncProgressPanel").css("transform", "translateY(100px)");
+                    setTimeout(() => $("#syncProgressPanel").css("display", "none"), 300);
+                }, 3000);
             });
         });
     </script>
