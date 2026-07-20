@@ -856,6 +856,134 @@ BEGIN
 END;
 $$;
 
+-- Function: sp_get_data_coverage_summary
+CREATE OR REPLACE FUNCTION sp_get_data_coverage_summary()
+RETURNS TABLE (
+    total_stocks INT,
+    active_count INT,
+    inactive_count INT,
+    history_missing_count INT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        COUNT(*)::INT AS total_stocks,
+        COUNT(*) FILTER (WHERE s.is_active = TRUE)::INT AS active_count,
+        COUNT(*) FILTER (WHERE s.is_active = FALSE)::INT AS inactive_count,
+        COUNT(*) FILTER (WHERE COALESCE(s.is_histry_stored_1d, 0) = 0 OR COALESCE(s.is_histry_stored_60m, 0) = 0)::INT AS history_missing_count
+    FROM stock_master s;
+END;
+$$;
+
+-- Function: sp_get_paginated_stock_coverage
+CREATE OR REPLACE FUNCTION sp_get_paginated_stock_coverage(
+    p_search VARCHAR DEFAULT NULL,
+    p_status_filter VARCHAR DEFAULT NULL,
+    p_history_filter VARCHAR DEFAULT NULL,
+    p_page_number INT DEFAULT 1,
+    p_page_size INT DEFAULT 25
+)
+RETURNS TABLE (
+    id INT,
+    symbol VARCHAR(50),
+    name VARCHAR(100),
+    exchange VARCHAR(20),
+    instrument_token INT,
+    is_active BOOLEAN,
+    is_histry_stored_1m INT,
+    is_histry_stored_5m INT,
+    is_histry_stored_15m INT,
+    is_histry_stored_60m INT,
+    is_histry_stored_1d INT,
+    created_at TIMESTAMP WITH TIME ZONE,
+    count_1d BIGINT,
+    count_60m BIGINT,
+    last_candle_date TIMESTAMP WITH TIME ZONE,
+    total_records INT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_offset INT;
+BEGIN
+    v_offset := (GREATEST(1, p_page_number) - 1) * GREATEST(1, p_page_size);
+
+    RETURN QUERY
+    WITH filtered_stocks AS (
+        SELECT s.*
+        FROM stock_master s
+        WHERE 
+            (p_search IS NULL OR p_search = '' OR UPPER(s.symbol) LIKE '%' || UPPER(p_search) || '%' OR UPPER(COALESCE(s.name, '')) LIKE '%' || UPPER(p_search) || '%')
+            AND (
+                p_status_filter IS NULL OR p_status_filter = '' OR LOWER(p_status_filter) = 'all'
+                OR (LOWER(p_status_filter) = 'active' AND s.is_active = TRUE)
+                OR (LOWER(p_status_filter) = 'inactive' AND s.is_active = FALSE)
+            )
+            AND (
+                p_history_filter IS NULL OR p_history_filter = '' OR LOWER(p_history_filter) = 'all'
+                OR (LOWER(p_history_filter) = 'missing' AND (COALESCE(s.is_histry_stored_1d, 0) = 0 OR COALESCE(s.is_histry_stored_60m, 0) = 0))
+                OR (LOWER(p_history_filter) = '1d_missing' AND COALESCE(s.is_histry_stored_1d, 0) = 0)
+                OR (LOWER(p_history_filter) = '60m_missing' AND COALESCE(s.is_histry_stored_60m, 0) = 0)
+                OR (LOWER(p_history_filter) = 'has_1d' AND COALESCE(s.is_histry_stored_1d, 0) = 1)
+                OR (LOWER(p_history_filter) = 'has_60m' AND COALESCE(s.is_histry_stored_60m, 0) = 1)
+            )
+    ),
+    counted AS (
+        SELECT fs.*, COUNT(*) OVER()::INT AS full_count
+        FROM filtered_stocks fs
+        ORDER BY fs.symbol ASC
+        LIMIT GREATEST(1, p_page_size) OFFSET v_offset
+    )
+    SELECT 
+        c.id,
+        c.symbol,
+        c.name,
+        c.exchange,
+        c.instrument_token,
+        c.is_active,
+        c.is_histry_stored_1m,
+        c.is_histry_stored_5m,
+        c.is_histry_stored_15m,
+        c.is_histry_stored_60m,
+        c.is_histry_stored_1d,
+        c.created_at,
+        COALESCE(c.is_histry_stored_1d, 0)::BIGINT AS count_1d,
+        COALESCE(c.is_histry_stored_60m, 0)::BIGINT AS count_60m,
+        (SELECT MAX(candle_time) FROM market_candles_1d c1d WHERE c1d.symbol = c.symbol) AS last_candle_date,
+        c.full_count AS total_records
+    FROM counted c
+    ORDER BY c.symbol ASC;
+END;
+$$;
+
+-- Procedure: sp_update_stock_coverage_flags
+CREATE OR REPLACE FUNCTION sp_update_stock_coverage_flags(
+    p_id INT,
+    p_is_active BOOLEAN,
+    p_histry_1m INT,
+    p_histry_5m INT,
+    p_histry_15m INT,
+    p_histry_60m INT,
+    p_histry_1d INT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE stock_master
+    SET 
+        is_active = p_is_active,
+        is_histry_stored_1m = p_histry_1m,
+        is_histry_stored_5m = p_histry_5m,
+        is_histry_stored_15m = p_histry_15m,
+        is_histry_stored_60m = p_histry_60m,
+        is_histry_stored_1d = p_histry_1d
+    WHERE id = p_id;
+END;
+$$;
+
 -- ----------------------------------------------------------------------------
 -- 6. Indian Holidays Configuration
 -- ----------------------------------------------------------------------------

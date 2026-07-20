@@ -1,0 +1,212 @@
+@{
+    ViewData["Title"] = "Data Coverage Manager";
+    ViewData["PageTitle"] = "Data Coverage Manager";
+}
+
+<link rel="stylesheet" href="~/css/datacoverage.css" asp-append-version="true" />
+
+<div class="coverage-container" data-api-base-url="@ViewBag.ApiBaseUrl">
+    <!-- Top KPI Summary Cards -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <span class="kpi-label">Total stocks</span>
+            <span id="kpiTotalStocks" class="kpi-value">...</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">Active</span>
+            <span id="kpiActiveCount" class="kpi-value active-color">...</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">Inactive</span>
+            <span id="kpiInactiveCount" class="kpi-value inactive-color">...</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">History missing</span>
+            <span id="kpiMissingCount" class="kpi-value warning-color">...</span>
+        </div>
+    </div>
+
+    <!-- Filter & Control Bar -->
+    <div class="filter-bar">
+        <div class="filter-group">
+            <select id="statusFilter" class="filter-select">
+                <option value="all">All status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+            </select>
+
+            <select id="historyFilter" class="filter-select">
+                <option value="all">All history</option>
+                <option value="missing">History missing</option>
+                <option value="1d_missing">1D Missing</option>
+                <option value="60m_missing">60m Missing</option>
+                <option value="has_1d">Has 1D History</option>
+                <option value="has_60m">Has 60m History</option>
+            </select>
+
+            <div class="search-input-wrapper">
+                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="searchInput" class="search-input" placeholder="Search symbol or name..." />
+            </div>
+        </div>
+
+        <div class="filter-group">
+            <span style="font-size: 13px; color: #94a3b8;">Per Page:</span>
+            <select id="pageSizeSelect" class="filter-select" style="padding: 6px 10px;">
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Data Table Card -->
+    <div class="table-card">
+        <div style="overflow-x: auto;">
+            <table class="coverage-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox" /></th>
+                        <th>Symbol</th>
+                        <th>Status</th>
+                        <th>1D history</th>
+                        <th>60m history</th>
+                    </tr>
+                </thead>
+                <tbody id="coverageTableBody">
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 40px; color: #94a3b8;">
+                            Loading stock data coverage...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination Controls Bar -->
+        <div class="pagination-wrapper">
+            <div id="paginationInfo" class="pagination-info">
+                Showing 0 to 0 of 0 stocks
+            </div>
+            <div id="paginationControls" class="pagination-controls">
+                <!-- Page buttons rendered dynamically by datacoverage.js -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Stock Details & Edit Card Panel -->
+    <div id="detailCard" class="detail-card" style="display: none;">
+        <div class="detail-card-header">
+            <div class="detail-title"><span id="detailSymbol">...</span> detail</div>
+            <div>
+                <button id="btnEditCard" class="btn-page active" style="padding: 6px 16px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    Edit Flags
+                </button>
+            </div>
+        </div>
+
+        <div class="detail-grid">
+            <div class="detail-item">
+                <span class="detail-item-label">Company Name</span>
+                <span id="detailName" class="detail-item-value">...</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-item-label">Exchange</span>
+                <span id="detailExchange" class="detail-item-value">NSE</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-item-label">Status</span>
+                <span id="detailStatus" class="detail-item-value">Active</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-item-label">Last Candle Date</span>
+                <span id="detailLastCandleDate" class="detail-item-value">No data</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-item-label">Instrument Token</span>
+                <span id="detailInstrumentToken" class="detail-item-value">...</span>
+            </div>
+        </div>
+
+        <!-- Flags Edit / Save Section -->
+        <div class="flags-edit-section">
+            <div class="flags-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                Manage Active Status & Timeframe History Flags
+            </div>
+            <form id="editFlagsForm">
+                <input type="hidden" id="editStockId" value="" />
+                
+                <div class="flags-grid">
+                    <div class="flag-toggle-card">
+                        <span class="flag-label">is_active</span>
+                        <label class="switch">
+                            <input type="checkbox" id="chkIsActive" />
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="flag-toggle-card">
+                        <span class="flag-label">is_histry_stored_1m</span>
+                        <label class="switch">
+                            <input type="checkbox" id="chkHistory1m" />
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="flag-toggle-card">
+                        <span class="flag-label">is_histry_stored_5m</span>
+                        <label class="switch">
+                            <input type="checkbox" id="chkHistory5m" />
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="flag-toggle-card">
+                        <span class="flag-label">is_histry_stored_15m</span>
+                        <label class="switch">
+                            <input type="checkbox" id="chkHistory15m" />
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="flag-toggle-card">
+                        <span class="flag-label">is_histry_stored_60m</span>
+                        <label class="switch">
+                            <input type="checkbox" id="chkHistory60m" />
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="flag-toggle-card">
+                        <span class="flag-label">is_histry_stored_1d</span>
+                        <label class="switch">
+                            <input type="checkbox" id="chkHistory1d" />
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="detail-actions-row">
+                    <button type="button" id="btnSaveCoverageFlags" class="btn-save-coverage">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                            <polyline points="7 3 7 8 15 8"></polyline>
+                        </svg>
+                        Save / Update Flags
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/datacoverage.js" asp-append-version="true"></script>
+}
