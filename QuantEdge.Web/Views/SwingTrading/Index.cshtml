@@ -150,17 +150,19 @@
                             <th>Symbol</th>
                             <th>Close</th>
                             <th>Decision</th>
+                            <th>Conditions Met</th>
                             <th>RSI (14)</th>
                             <th>ADX (14)</th>
                             <th>EMA (20/50/200)</th>
                             <th>MACD</th>
                             <th>Vol Spike</th>
                             <th>52W High</th>
+                            <th>Details</th>
                         </tr>
                     </thead>
                     <tbody id="watchlistTableBody">
                         <tr>
-                            <td colspan="9" class="text-center py-4">
+                            <td colspan="11" class="text-center py-4">
                                 <span class="text-muted">Loading recommendations...</span>
                             </td>
                         </tr>
@@ -354,12 +356,19 @@
             }
         }
 
+        function toggleChecklist(symbol) {
+            const row = $(`#checklist-row-${symbol}`);
+            const btn = $(`#btn-toggle-${symbol}`);
+            row.toggle();
+            btn.toggleClass("active");
+        }
+
         function populateWatchlist(signals) {
             const tbody = $("#watchlistTableBody");
             tbody.empty();
 
             if (!signals || signals.length === 0) {
-                tbody.append('<tr><td colspan="9" class="text-center text-muted">No stock data available. Run EOD Job.</td></tr>');
+                tbody.append('<tr><td colspan="11" class="text-center text-muted">No stock data available. Run EOD Job.</td></tr>');
                 return;
             }
 
@@ -379,12 +388,58 @@
                     rsiClass = "negative";
                 }
 
-                const row = `
-                    <tr>
+                const checklist = s.checklist || { metCount: 0, totalCount: 8, conditions: [] };
+                const metCount = checklist.metCount;
+                const totalCount = checklist.totalCount || 8;
+                const pct = Math.round((metCount / totalCount) * 100);
+
+                let badgeClass = "low-met";
+                if (metCount === totalCount) {
+                    badgeClass = "all-met";
+                } else if (metCount >= 5) {
+                    badgeClass = "partial-met";
+                }
+
+                let condCardsHtml = "";
+                if (checklist.conditions && checklist.conditions.length > 0) {
+                    condCardsHtml = checklist.conditions.map(c => `
+                        <div class="cond-card ${c.isMet ? 'met' : 'pending'}">
+                            <div class="cond-card-header">
+                                <span class="cond-status-icon">${c.isMet ? '✓' : '✕'}</span>
+                                <span class="cond-name">${c.name}</span>
+                                <span class="cond-badge ${c.isMet ? 'pass' : 'pending'}">${c.isMet ? 'PASSED' : 'PENDING'}</span>
+                            </div>
+                            <div class="cond-desc">${c.description}</div>
+                            <div class="cond-values">
+                                <div class="cond-val-row">
+                                    <span class="val-label">Actual:</span>
+                                    <span class="val-text ${c.isMet ? 'positive' : 'negative'}">${c.actualValueText}</span>
+                                </div>
+                                <div class="cond-val-row">
+                                    <span class="val-label">Target:</span>
+                                    <span class="val-text muted">${c.requiredValueText}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join("");
+                } else {
+                    condCardsHtml = '<div class="text-muted" style="font-size: 12px;">No condition checklist details available.</div>';
+                }
+
+                const mainRow = `
+                    <tr class="stock-main-row">
                         <td class="td-symbol">${s.symbol}</td>
                         <td class="td-monospace">${Number(s.close).toFixed(2)}</td>
                         <td>
                             <span class="rec-badge ${decClass}" title="${s.reason}">${s.decision}</span>
+                        </td>
+                        <td>
+                            <div class="cond-pill-container" onclick="toggleChecklist('${s.symbol}')" title="Click to view detailed condition checklist">
+                                <span class="cond-count-badge ${badgeClass}">${metCount}/${totalCount} Met</span>
+                                <div class="cond-progress-mini">
+                                    <div class="cond-progress-fill ${badgeClass}" style="width: ${pct}%"></div>
+                                </div>
+                            </div>
                         </td>
                         <td class="td-monospace ${rsiClass}">${Number(s.rsi14).toFixed(1)}</td>
                         <td class="td-monospace ${s.adx14 > 25 ? 'positive' : ''}">${Number(s.adx14).toFixed(1)}</td>
@@ -393,7 +448,7 @@
                             <span class="text-muted">${Number(s.ema20).toFixed(0)} / ${Number(s.ema50).toFixed(0)} / ${Number(s.ema200).toFixed(0)}</span>
                         </td>
                         <td style="font-size: 11px;">
-                            <span class="td-monospace ${s.isMacdBullishCross ? 'positive' : ''}">MACD Cross</span><br/>
+                            <span class="td-monospace ${s.macd > s.macdSignal ? 'positive' : ''}">MACD Cross</span><br/>
                             <span class="text-muted">${Number(s.macd).toFixed(1)} / ${Number(s.macdSignal).toFixed(1)}</span>
                         </td>
                         <td class="td-monospace ${volClass}">
@@ -403,9 +458,34 @@
                         <td class="td-monospace ${s.is52WeekHigh ? 'positive' : ''}">
                             ${s.is52WeekHigh ? 'Near 52W High' : 'Below 10%'}
                         </td>
+                        <td>
+                            <button class="btn-toggle-checklist" onclick="toggleChecklist('${s.symbol}')" id="btn-toggle-${s.symbol}" title="Toggle Condition Checklist">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                        </td>
+                    </tr>
+                    <tr id="checklist-row-${s.symbol}" class="checklist-subrow" style="display: none;">
+                        <td colspan="11" class="checklist-drawer-cell">
+                            <div class="checklist-drawer-container">
+                                <div class="checklist-header">
+                                    <div class="checklist-title">
+                                        <span class="symbol-tag">${s.symbol}</span>
+                                        <span class="title-text">BUY Signal Condition Checklist</span>
+                                    </div>
+                                    <div class="checklist-summary">
+                                        <span class="summary-count ${badgeClass}">${metCount} of ${totalCount} Conditions Met (${pct}%)</span>
+                                    </div>
+                                </div>
+                                <div class="checklist-cards-grid">
+                                    ${condCardsHtml}
+                                </div>
+                            </div>
+                        </td>
                     </tr>
                 `;
-                tbody.append(row);
+                tbody.append(mainRow);
             });
         }
 

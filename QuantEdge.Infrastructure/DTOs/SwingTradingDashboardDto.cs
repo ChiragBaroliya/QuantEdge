@@ -22,6 +22,21 @@ public record NiftyStatusDto(
     bool IsMarketFilterPassed
 );
 
+public record ConditionItemDto(
+    string Code,
+    string Name,
+    string Description,
+    string ActualValueText,
+    string RequiredValueText,
+    bool IsMet
+);
+
+public record ConditionChecklistDto(
+    int MetCount,
+    int TotalCount,
+    List<ConditionItemDto> Conditions
+);
+
 public record SwingStockSignalDto(
     string Symbol,
     decimal Close,
@@ -46,7 +61,8 @@ public record SwingStockSignalDto(
     bool MeetsStockFilter,
     bool MeetsAllBuyRules,
     string Decision,
-    string Reason
+    string Reason,
+    ConditionChecklistDto Checklist = null!
 );
 
 public record BacktestStatsDto(

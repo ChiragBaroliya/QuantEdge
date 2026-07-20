@@ -116,40 +116,59 @@ public class SwingTradingService : ISwingTradingService
 
                 if (latestAnalysis != null)
                 {
+                    decimal closeVal = (decimal)latestAnalysis.close_price;
+                    decimal ema20Val = latestAnalysis.ema20 != null ? (decimal)latestAnalysis.ema20 : 0m;
+                    decimal ema50Val = latestAnalysis.ema50 != null ? (decimal)latestAnalysis.ema50 : 0m;
+                    decimal ema200Val = latestAnalysis.ema200 != null ? (decimal)latestAnalysis.ema200 : 0m;
+                    decimal rsi14Val = latestAnalysis.rsi14 != null ? (decimal)latestAnalysis.rsi14 : 0m;
+                    decimal macdVal = latestAnalysis.macd != null ? (decimal)latestAnalysis.macd : 0m;
+                    decimal macdSigVal = latestAnalysis.macd_signal != null ? (decimal)latestAnalysis.macd_signal : 0m;
+                    decimal adx14Val = latestAnalysis.adx14 != null ? (decimal)latestAnalysis.adx14 : 0m;
+                    decimal atr14Val = latestAnalysis.atr14 != null ? (decimal)latestAnalysis.atr14 : 0m;
+                    long volVal = (long)latestAnalysis.volume;
+                    decimal avgVol20Val = latestAnalysis.average_volume20 != null ? (decimal)latestAnalysis.average_volume20 : 0m;
+                    decimal volMultVal = avgVol20Val > 0m ? Math.Round((decimal)volVal / avgVol20Val, 2) : 0m;
+                    bool is52WVal = (bool)latestAnalysis.is_52_week_high;
+                    string reasonStr = (string)latestAnalysis.reason ?? "";
+
+                    var checklist = BuildConditionChecklist(
+                        niftyStatus, closeVal, ema20Val, ema50Val, ema200Val, rsi14Val, macdVal, macdSigVal, adx14Val, volMultVal, volVal, avgVol20Val, is52WVal, true, reasonStr
+                    );
+
                     stockSignals.Add(new SwingStockSignalDto(
                         Symbol: stock.Symbol,
-                        Close: (decimal)latestAnalysis.close_price,
-                        Open: 0m, // Filled from candles if needed, or left as 0
+                        Close: closeVal,
+                        Open: 0m,
                         High: 0m,
                         Low: 0m,
-                        Ema20: latestAnalysis.ema20 != null ? (decimal)latestAnalysis.ema20 : 0m,
-                        Ema50: latestAnalysis.ema50 != null ? (decimal)latestAnalysis.ema50 : 0m,
-                        Ema200: latestAnalysis.ema200 != null ? (decimal)latestAnalysis.ema200 : 0m,
-                        Rsi14: latestAnalysis.rsi14 != null ? (decimal)latestAnalysis.rsi14 : 0m,
-                        Macd: latestAnalysis.macd != null ? (decimal)latestAnalysis.macd : 0m,
-                        MacdSignal: latestAnalysis.macd_signal != null ? (decimal)latestAnalysis.macd_signal : 0m,
-                        Adx14: latestAnalysis.adx14 != null ? (decimal)latestAnalysis.adx14 : 0m,
-                        Atr14: latestAnalysis.atr14 != null ? (decimal)latestAnalysis.atr14 : 0m,
-                        Volume: (long)latestAnalysis.volume,
-                        AvgVolume20: latestAnalysis.average_volume20 != null ? (decimal)latestAnalysis.average_volume20 : 0m,
-                        VolumeMultiplier: latestAnalysis.average_volume20 != null && (decimal)latestAnalysis.average_volume20 > 0m 
-                                            ? Math.Round((decimal)latestAnalysis.volume / (decimal)latestAnalysis.average_volume20, 2) 
-                                            : 0m,
-                        Is52WeekHigh: (bool)latestAnalysis.is_52_week_high,
-                        High52Week: 0m, // rolling high not directly stored but implied
+                        Ema20: ema20Val,
+                        Ema50: ema50Val,
+                        Ema200: ema200Val,
+                        Rsi14: rsi14Val,
+                        Macd: macdVal,
+                        MacdSignal: macdSigVal,
+                        Adx14: adx14Val,
+                        Atr14: atr14Val,
+                        Volume: volVal,
+                        AvgVolume20: avgVol20Val,
+                        VolumeMultiplier: volMultVal,
+                        Is52WeekHigh: is52WVal,
+                        High52Week: 0m,
                         ClosenessTo52WeekHighPct: 0m,
                         IsLastCandleBullish: true,
                         MeetsStockFilter: (bool)latestAnalysis.buy_signal,
                         MeetsAllBuyRules: (bool)latestAnalysis.buy_signal && niftyStatus.IsMarketFilterPassed,
                         Decision: (string)latestAnalysis.recommendation,
-                        Reason: (string)latestAnalysis.reason
+                        Reason: reasonStr,
+                        Checklist: checklist
                     ));
                 }
                 else
                 {
+                    var emptyChecklist = BuildConditionChecklist(niftyStatus, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, false, false, "");
                     // Fallback placeholders if no analysis is in DB yet
                     stockSignals.Add(new SwingStockSignalDto(
-                        stock.Symbol, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, 0m, false, 0m, 0m, false, false, false, "HOLD", "No EOD analysis found. Please run EOD Job."
+                        stock.Symbol, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, 0m, false, 0m, 0m, false, false, false, "HOLD", "No EOD analysis found. Please run EOD Job.", emptyChecklist
                     ));
                 }
             }
@@ -864,5 +883,71 @@ public class SwingTradingService : ISwingTradingService
         }
 
         _logger.LogInformation("Backfill of historical analyses completed!");
+    }
+
+    private static ConditionChecklistDto BuildConditionChecklist(
+        NiftyStatusDto niftyStatus,
+        decimal close,
+        decimal ema20,
+        decimal ema50,
+        decimal ema200,
+        decimal rsi14,
+        decimal macd,
+        decimal macdSignal,
+        decimal adx14,
+        decimal volumeMultiplier,
+        long volume,
+        decimal avgVolume20,
+        bool is52WeekHigh,
+        bool isLastCandleBullish,
+        string reason = "")
+    {
+        bool isMarketMet = niftyStatus != null && niftyStatus.IsMarketFilterPassed;
+        bool isPriceTrendMet = close > ema20 && ema20 > ema50 && ema50 > ema200;
+        bool isVolSpikeMet = volumeMultiplier >= 1.5m;
+        bool isRsiMet = rsi14 >= 55m && rsi14 <= 70m;
+        bool isAdxMet = adx14 > 25m;
+        bool isMacdMet = macd > macdSignal;
+        bool is52WMet = is52WeekHigh;
+        bool isCandleMet = isLastCandleBullish;
+
+        var conditions = new List<ConditionItemDto>
+        {
+            new ConditionItemDto("MARKET_FILTER", "Nifty Market Filter", "Nifty 50 Close > 50 DMA & EMA20 > EMA50",
+                isMarketMet ? "Passed (Close > SMA50 & EMA20 > EMA50)" : "Failed", "Nifty Close > 50 DMA & EMA20 > EMA50", isMarketMet),
+
+            new ConditionItemDto("PRICE_TREND", "Stock Price Trend", "Close > EMA20 > EMA50 > EMA200 (Sustained Uptrend)",
+                isPriceTrendMet ? $"Met ({close:F2} > {ema20:F1} > {ema50:F1} > {ema200:F1})" : $"Close:{close:F2}, EMA20:{ema20:F1}, EMA50:{ema50:F1}, EMA200:{ema200:F1}",
+                "Close > EMA20 > EMA50 > EMA200", isPriceTrendMet),
+
+            new ConditionItemDto("VOL_SPIKE", "Volume Spike", "Daily Volume >= 1.5x of 20-Day Average Volume",
+                $"{volumeMultiplier:F1}x ({(volume / 100000m):F1}L vs Avg {(avgVolume20 / 100000m):F1}L)",
+                ">= 1.5x Avg Volume", isVolSpikeMet),
+
+            new ConditionItemDto("RSI_ZONE", "RSI Momentum Zone", "14-Period RSI between 55 and 70",
+                $"{rsi14:F1}", "55.0 - 70.0", isRsiMet),
+
+            new ConditionItemDto("ADX_ZONE", "ADX Trend Strength", "14-Period ADX > 25 (Strong Trend)",
+                $"{adx14:F1}", "> 25.0", isAdxMet),
+
+            new ConditionItemDto("MACD_BULLISH", "MACD Bullish Signal", "MACD Line above Signal Line",
+                $"MACD: {macd:F2}, Signal: {macdSignal:F2}", "MACD > Signal", isMacdMet),
+
+            new ConditionItemDto("NEAR_52W", "52-Week High Proximity", "Close Price within 10% of 52-Week High",
+                is52WMet ? "Within 10% of 52W High" : "Below 10% threshold", "Close >= 90% of 52W High", is52WMet),
+
+            new ConditionItemDto("BULLISH_CANDLE", "Bullish Candle", "Daily Close Price > Daily Open Price",
+                isCandleMet ? "Bullish (Close > Open)" : "Bearish / Neutral", "Close > Open", isCandleMet)
+        };
+
+        if (!string.IsNullOrEmpty(reason) && reason.Contains("60m Filter"))
+        {
+            bool is60mMet = !reason.Contains("Failed factors") || !reason.Contains("60m Filter");
+            conditions.Add(new ConditionItemDto("HOURLY_60M", "60m Hourly Trend Filter", "Hourly Close > EMA20 and Hourly RSI between 40-65",
+                is60mMet ? "Passed" : "Pending", "60m Close > EMA20 & RSI 40-65", is60mMet));
+        }
+
+        int metCount = conditions.Count(c => c.IsMet);
+        return new ConditionChecklistDto(metCount, conditions.Count, conditions);
     }
 }
