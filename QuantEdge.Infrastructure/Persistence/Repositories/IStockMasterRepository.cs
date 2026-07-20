@@ -28,4 +28,32 @@ public interface IStockMasterRepository
     /// Updates the timeframe-specific history stored field for a stock master record.
     /// </summary>
     Task UpdateHistoryStoredAsync(int id, string timeframe, int? status);
+
+    /// <summary>
+    /// Retrieves overall data coverage summary statistics.
+    /// </summary>
+    Task<QuantEdge.Infrastructure.DTOs.CoverageSummaryDto> GetCoverageSummaryAsync();
+
+    /// <summary>
+    /// Retrieves paginated stock coverage data matching search and filter criteria.
+    /// </summary>
+    Task<QuantEdge.Infrastructure.DTOs.PaginatedCoverageResult> GetPaginatedCoverageAsync(string? search, string? statusFilter, string? historyFilter, int pageNumber, int pageSize);
+
+    /// <summary>
+    /// Updates a stock's active status and timeframe history stored flags.
+    /// </summary>
+    Task UpdateStockCoverageFlagsAsync(QuantEdge.Infrastructure.DTOs.UpdateStockCoverageRequest request);
+
+    /// <summary>
+    /// Deletes a stock master record by ID.
+    /// </summary>
+    Task DeleteStockAsync(int id);
+
+    /// <summary>
+    /// Deletes multiple stock master records by ID array in bulk.
+    /// </summary>
+    Task BulkDeleteStocksAsync(IEnumerable<int> ids);
 }
+
+
+

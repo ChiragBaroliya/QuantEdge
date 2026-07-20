@@ -103,33 +103,28 @@ public class DatabaseInitializer
             );"
         );
 
-        if (!schemaExists)
+        // Always execute schema.sql to ensure all stored procedures, functions, tables and indexes are provisioned
+        string schemaFilePath = Path.Combine(AppContext.BaseDirectory, "Persistence", "schema.sql");
+        if (!File.Exists(schemaFilePath))
         {
-            _logger.LogWarning("Schema tables not found in database '{Database}'. Provisioning tables...", targetDb);
+            schemaFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Persistence", "schema.sql");
+        }
 
-            string schemaFilePath = Path.Combine(AppContext.BaseDirectory, "Persistence", "schema.sql");
-            if (!File.Exists(schemaFilePath))
-            {
-                // Fallback for development if not in output directory yet
-                schemaFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Persistence", "schema.sql");
-            }
+        if (!File.Exists(schemaFilePath))
+        {
+            schemaFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "QuantEdge.Infrastructure", "Persistence", "schema.sql");
+        }
 
-            if (!File.Exists(schemaFilePath))
-            {
-                throw new FileNotFoundException($"Database schema file not found at '{schemaFilePath}'. Unable to initialize database.");
-            }
-
-            _logger.LogInformation("Reading schema file from: {Path}", schemaFilePath);
+        if (File.Exists(schemaFilePath))
+        {
+            _logger.LogInformation("Executing schema.sql to provision/update stored procedures in '{Database}'...", targetDb);
             string schemaSql = await File.ReadAllTextAsync(schemaFilePath);
-
-            // Execute the schema scripts
             await conn.ExecuteAsync(schemaSql);
-
             _logger.LogInformation("Database tables and stored procedures provisioned successfully in '{Database}'.", targetDb);
         }
         else
         {
-            _logger.LogInformation("Database schema tables are already present in '{Database}'. Skipping schema script execution.", targetDb);
+            _logger.LogWarning("schema.sql file not found at path '{Path}'. Skipping schema script execution.", schemaFilePath);
         }
 
         // Check and provision stock_master table (supports upgrading existing databases)
