@@ -10,7 +10,8 @@ using QuantEdge.Infrastructure.Configurations;
 namespace QuantEdge.Infrastructure.Persistence;
 
 /// <summary>
-/// Service responsible for provisioning the PostgreSQL database and running schema.sql at startup.
+/// Service responsible for provisioning the PostgreSQL database and initializing essential tables/procedures at startup.
+/// Note: Automatic execution of schema.sql has been disabled/commented out.
 /// </summary>
 public class DatabaseInitializer
 {
@@ -38,22 +39,22 @@ public class DatabaseInitializer
             return;
         }
 
-        try
-        {
-            var builder = new NpgsqlConnectionStringBuilder(_config.ConnectionString);
-            string targetDb = builder.Database ?? "quantedge";
+        //try
+        //{
+        //    var builder = new NpgsqlConnectionStringBuilder(_config.ConnectionString);
+        //    string targetDb = builder.Database ?? "quantedge";
 
-            // 1. Check if database exists, create if not
-            await EnsureDatabaseCreatedAsync(builder, targetDb);
+        //    // 1. Check if database exists, create if not
+        //    await EnsureDatabaseCreatedAsync(builder, targetDb);
 
-            // 2. Connect to the target database and check if tables exist
-            await EnsureSchemaInitializedAsync(targetDb);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "An error occurred during database initialization.");
-            throw;
-        }
+        //    // 2. Connect to the target database and check if tables exist
+        //    await EnsureSchemaInitializedAsync(targetDb);
+        //}
+        //catch (Exception ex)
+        //{
+        //    _logger.LogError(ex, "An error occurred during database initialization.");
+        //    throw;
+        //}
     }
 
     private async Task EnsureDatabaseCreatedAsync(NpgsqlConnectionStringBuilder originalBuilder, string targetDb)
@@ -103,29 +104,29 @@ public class DatabaseInitializer
             );"
         );
 
-        // Always execute schema.sql to ensure all stored procedures, functions, tables and indexes are provisioned
-        string schemaFilePath = Path.Combine(AppContext.BaseDirectory, "Persistence", "schema.sql");
-        if (!File.Exists(schemaFilePath))
+        // Disabled automatic SQL script execution during API database initialization.
+        // Database scripts (schema.sql, stored_procedures.sql, and functions.sql) should be executed manually or managed via database migrations.
+        /*
+        string[] scriptFiles = { "schema.sql", "stored_procedures.sql", "functions.sql" };
+        foreach (var scriptName in scriptFiles)
         {
-            schemaFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Persistence", "schema.sql");
+            string scriptPath = Path.Combine(AppContext.BaseDirectory, "Persistence", scriptName);
+            if (!File.Exists(scriptPath))
+            {
+                scriptPath = Path.Combine(Directory.GetCurrentDirectory(), "Persistence", scriptName);
+            }
+            if (!File.Exists(scriptPath))
+            {
+                scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "QuantEdge.Infrastructure", "Persistence", scriptName);
+            }
+            if (File.Exists(scriptPath))
+            {
+                _logger.LogInformation("Executing {Script} in '{Database}'...", scriptName, targetDb);
+                string sql = await File.ReadAllTextAsync(scriptPath);
+                await conn.ExecuteAsync(sql);
+            }
         }
-
-        if (!File.Exists(schemaFilePath))
-        {
-            schemaFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "QuantEdge.Infrastructure", "Persistence", "schema.sql");
-        }
-
-        if (File.Exists(schemaFilePath))
-        {
-            _logger.LogInformation("Executing schema.sql to provision/update stored procedures in '{Database}'...", targetDb);
-            string schemaSql = await File.ReadAllTextAsync(schemaFilePath);
-            await conn.ExecuteAsync(schemaSql);
-            _logger.LogInformation("Database tables and stored procedures provisioned successfully in '{Database}'.", targetDb);
-        }
-        else
-        {
-            _logger.LogWarning("schema.sql file not found at path '{Path}'. Skipping schema script execution.", schemaFilePath);
-        }
+        */
 
         // Check and provision stock_master table (supports upgrading existing databases)
         bool stockMasterExists = await conn.ExecuteScalarAsync<bool>(@"

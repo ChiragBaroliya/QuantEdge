@@ -1,5 +1,5 @@
 -- ============================================================================
--- QuantEdge Database Schema & Stored Procedures (PostgreSQL / TimescaleDB)
+-- QuantEdge Database Schema (Tables, Indexes, & Initial Seeds)
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -288,6 +288,80 @@ CREATE TABLE IF NOT EXISTS zerodha_sessions (
     created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
+-- Table: stock_master
+CREATE TABLE IF NOT EXISTS stock_master (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(50) UNIQUE NOT NULL,
+    instrument_token INT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+    exchange_token VARCHAR(50),
+    name VARCHAR(100),
+    last_price NUMERIC(18, 4),
+    expiry TIMESTAMP WITH TIME ZONE,
+    strike NUMERIC(18, 4),
+    tick_size NUMERIC(18, 4),
+    lot_size INT,
+    instrument_type VARCHAR(20),
+    segment VARCHAR(20),
+    exchange VARCHAR(20),
+    is_histry_stored_1m INT DEFAULT NULL,
+    is_histry_stored_5m INT DEFAULT NULL,
+    is_histry_stored_15m INT DEFAULT NULL,
+    is_histry_stored_60m INT DEFAULT NULL,
+    is_histry_stored_1d INT DEFAULT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Table: indian_holidays
+CREATE TABLE IF NOT EXISTS indian_holidays (
+    id SERIAL PRIMARY KEY,
+    holiday_date DATE UNIQUE NOT NULL,
+    description VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Table: daily_stock_analysis
+CREATE TABLE IF NOT EXISTS daily_stock_analysis (
+    id SERIAL PRIMARY KEY,
+    stock_id INT NOT NULL REFERENCES stock_master(id) ON DELETE CASCADE,
+    trade_date DATE NOT NULL,
+    close_price NUMERIC(18, 4) NOT NULL,
+    volume BIGINT NOT NULL,
+    ema20 NUMERIC(18, 4),
+    ema50 NUMERIC(18, 4),
+    ema200 NUMERIC(18, 4),
+    rsi14 NUMERIC(18, 4),
+    macd NUMERIC(18, 4),
+    macd_signal NUMERIC(18, 4),
+    adx14 NUMERIC(18, 4),
+    atr14 NUMERIC(18, 4),
+    average_volume20 NUMERIC(18, 4),
+    is_52_week_high BOOLEAN NOT NULL DEFAULT FALSE,
+    buy_score INT,
+    sell_score INT,
+    buy_signal BOOLEAN NOT NULL DEFAULT FALSE,
+    sell_signal BOOLEAN NOT NULL DEFAULT FALSE,
+    recommendation VARCHAR(20) NOT NULL DEFAULT 'HOLD',
+    reason TEXT,
+    created_on TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_daily_stock_analysis UNIQUE (stock_id, trade_date)
+);
+
+-- Table: swing_positions
+CREATE TABLE IF NOT EXISTS swing_positions (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(50) NOT NULL,
+    entry_date DATE NOT NULL,
+    entry_price NUMERIC(18, 4) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    is_closed BOOLEAN NOT NULL DEFAULT FALSE,
+    exit_date DATE,
+    exit_price NUMERIC(18, 4),
+    exit_reason VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+
 -- ----------------------------------------------------------------------------
 -- 2. Optional: TimescaleDB Hypertables Configuration
 -- ----------------------------------------------------------------------------
@@ -297,8 +371,9 @@ CREATE TABLE IF NOT EXISTS zerodha_sessions (
 -- SELECT create_hypertable('market_indicators_5m', 'candle_time', if_not_exists => TRUE);
 -- SELECT create_hypertable('trading_signals', 'candle_time', if_not_exists => TRUE);
 
+
 -- ----------------------------------------------------------------------------
--- 3. Composite Optimization Indexes
+-- 3. Composite & Helper Indexes
 -- ----------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS ix_market_candles_1m_symbol_candle_time
 ON market_candles_1m (symbol, candle_time DESC);
@@ -333,383 +408,25 @@ ON market_indicators_1d (symbol, candle_time DESC);
 CREATE INDEX IF NOT EXISTS ix_trading_signals_symbol_candle_time
 ON trading_signals (symbol, candle_time DESC);
 
--- ----------------------------------------------------------------------------
--- 4. Stored Procedures (Dynamic Routing Data Ingestion & Extraction APIs)
--- ----------------------------------------------------------------------------
-
--- Procedure: sp_insert_market_candle
--- Dynamically creates target table based on timeframe if not exists, and UPSERTs data.
-CREATE OR REPLACE PROCEDURE sp_insert_market_candle(
-    p_id INT,
-    p_symbol VARCHAR(50),
-    p_timeframe VARCHAR(20),
-    p_open NUMERIC(18, 6),
-    p_high NUMERIC(18, 6),
-    p_low NUMERIC(18, 6),
-    p_close NUMERIC(18, 6),
-    p_volume BIGINT,
-    p_candle_time TIMESTAMP WITH TIME ZONE,
-    p_created_at TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_table_name TEXT;
-BEGIN
-    v_table_name := 'market_candles_' || LOWER(p_timeframe);
-    
-    -- Check and create table dynamically if it doesn't exist
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_name = v_table_name
-    ) THEN
-        EXECUTE format('
-            CREATE TABLE %I (
-                id INT NOT NULL,
-                candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
-                symbol VARCHAR(50) NOT NULL,
-                timeframe VARCHAR(20) NOT NULL,
-                open NUMERIC(18, 6) NOT NULL,
-                high NUMERIC(18, 6) NOT NULL,
-                low NUMERIC(18, 6) NOT NULL,
-                close NUMERIC(18, 6) NOT NULL,
-                volume BIGINT NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                CONSTRAINT %I PRIMARY KEY (id, candle_time)
-            );
-            CREATE INDEX IF NOT EXISTS %I ON %I (symbol, candle_time DESC);
-        ', 
-        v_table_name, 
-        'pk_' || v_table_name, 
-        'ix_' || v_table_name || '_symbol_candle_time', 
-        v_table_name);
-        
-        RAISE NOTICE 'Created dynamic table %', v_table_name;
-    END IF;
-
-    EXECUTE format('
-        INSERT INTO %I (id, symbol, timeframe, open, high, low, close, volume, candle_time, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        ON CONFLICT (id, candle_time) DO UPDATE
-        SET open = EXCLUDED.open,
-            high = EXCLUDED.high,
-            low = EXCLUDED.low,
-            close = EXCLUDED.close,
-            volume = EXCLUDED.volume;', v_table_name)
-    USING p_id, p_symbol, p_timeframe, p_open, p_high, p_low, p_close, p_volume, p_candle_time, p_created_at;
-END;
-$$;
-
--- Function: sp_get_market_candles
--- Dynamically returns query results from target timeframe table, safely handling non-existent tables.
-CREATE OR REPLACE FUNCTION sp_get_market_candles(
-    p_symbol VARCHAR(50),
-    p_timeframe VARCHAR(20),
-    p_limit INTEGER
-)
-RETURNS TABLE (
-    id INT,
-    candle_time TIMESTAMP WITH TIME ZONE,
-    symbol VARCHAR(50),
-    timeframe VARCHAR(20),
-    open NUMERIC(18, 6),
-    high NUMERIC(18, 6),
-    low NUMERIC(18, 6),
-    close NUMERIC(18, 6),
-    volume BIGINT,
-    created_at TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_table_name TEXT;
-BEGIN
-    v_table_name := 'market_candles_' || LOWER(p_timeframe);
-    
-    -- Check if table exists. If not, return empty result
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_name = v_table_name
-    ) THEN
-        RETURN;
-    END IF;
-
-    RETURN QUERY EXECUTE format('
-        SELECT c.id, c.candle_time, c.symbol, c.timeframe, c.open, c.high, c.low, c.close, c.volume, c.created_at
-        FROM %I c
-        WHERE c.symbol = $1
-        ORDER BY c.candle_time DESC
-        LIMIT $2;', v_table_name)
-    USING p_symbol, p_limit;
-END;
-$$;
-
--- Procedure: sp_insert_market_indicator
--- Dynamically creates target table based on timeframe if not exists, and UPSERTs data.
-CREATE OR REPLACE PROCEDURE sp_insert_market_indicator(
-    p_id INT,
-    p_symbol VARCHAR(50),
-    p_timeframe VARCHAR(20),
-    p_rsi NUMERIC(18, 6),
-    p_ema20 NUMERIC(18, 6),
-    p_ema50 NUMERIC(18, 6),
-    p_macd NUMERIC(18, 6),
-    p_signal_line NUMERIC(18, 6),
-    p_vwap NUMERIC(18, 6),
-    p_candle_time TIMESTAMP WITH TIME ZONE,
-    p_created_at TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_table_name TEXT;
-BEGIN
-    v_table_name := 'market_indicators_' || LOWER(p_timeframe);
-    
-    -- Check and create table dynamically if it doesn't exist
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_name = v_table_name
-    ) THEN
-        EXECUTE format('
-            CREATE TABLE %I (
-                id INT NOT NULL,
-                candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
-                symbol VARCHAR(50) NOT NULL,
-                timeframe VARCHAR(20) NOT NULL,
-                rsi NUMERIC(18, 6) NOT NULL,
-                ema20 NUMERIC(18, 6) NOT NULL,
-                ema50 NUMERIC(18, 6) NOT NULL,
-                macd NUMERIC(18, 6) NOT NULL,
-                signal_line NUMERIC(18, 6) NOT NULL,
-                vwap NUMERIC(18, 6) NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                CONSTRAINT %I PRIMARY KEY (id, candle_time)
-            );
-            CREATE INDEX IF NOT EXISTS %I ON %I (symbol, candle_time DESC);
-        ', 
-        v_table_name, 
-        'pk_' || v_table_name, 
-        'ix_' || v_table_name || '_symbol_candle_time', 
-        v_table_name);
-        
-        RAISE NOTICE 'Created dynamic table %', v_table_name;
-    END IF;
-
-    EXECUTE format('
-        INSERT INTO %I (id, symbol, timeframe, rsi, ema20, ema50, macd, signal_line, vwap, candle_time, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        ON CONFLICT (id, candle_time) DO UPDATE
-        SET rsi = EXCLUDED.rsi,
-            ema20 = EXCLUDED.ema20,
-            ema50 = EXCLUDED.ema50,
-            macd = EXCLUDED.macd,
-            signal_line = EXCLUDED.signal_line,
-            vwap = EXCLUDED.vwap;', v_table_name)
-    USING p_id, p_symbol, p_timeframe, p_rsi, p_ema20, p_ema50, p_macd, p_signal_line, p_vwap, p_candle_time, p_created_at;
-END;
-$$;
-
--- Function: sp_get_market_indicators
--- Dynamically returns query results from target timeframe table, safely handling non-existent tables.
-CREATE OR REPLACE FUNCTION sp_get_market_indicators(
-    p_symbol VARCHAR(50),
-    p_timeframe VARCHAR(20),
-    p_limit INTEGER
-)
-RETURNS TABLE (
-    id INT,
-    candle_time TIMESTAMP WITH TIME ZONE,
-    symbol VARCHAR(50),
-    timeframe VARCHAR(20),
-    rsi NUMERIC(18, 6),
-    ema20 NUMERIC(18, 6),
-    ema50 NUMERIC(18, 6),
-    macd NUMERIC(18, 6),
-    signal_line NUMERIC(18, 6),
-    vwap NUMERIC(18, 6),
-    created_at TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_table_name TEXT;
-BEGIN
-    v_table_name := 'market_indicators_' || LOWER(p_timeframe);
-    
-    -- Check if table exists. If not, return empty result
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_name = v_table_name
-    ) THEN
-        RETURN;
-    END IF;
-
-    RETURN QUERY EXECUTE format('
-        SELECT i.id, i.candle_time, i.symbol, i.timeframe, i.rsi, i.ema20, i.ema50, i.macd, i.signal_line, i.vwap, i.created_at
-        FROM %I i
-        WHERE i.symbol = $1
-        ORDER BY i.candle_time DESC
-        LIMIT $2;', v_table_name)
-    USING p_symbol, p_limit;
-END;
-$$;
-
--- Procedure: sp_insert_trading_signal
-CREATE OR REPLACE PROCEDURE sp_insert_trading_signal(
-    p_id INT,
-    p_symbol VARCHAR(50),
-    p_signal_type VARCHAR(20),
-    p_signal_strength NUMERIC(5, 2),
-    p_entry_price NUMERIC(18, 6),
-    p_reason VARCHAR(1000),
-    p_candle_time TIMESTAMP WITH TIME ZONE,
-    p_created_at TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    INSERT INTO trading_signals (id, symbol, signal_type, signal_strength, entry_price, reason, candle_time, created_at)
-    VALUES (p_id, p_symbol, p_signal_type, p_signal_strength, p_entry_price, p_reason, p_candle_time, p_created_at)
-    ON CONFLICT (id, candle_time) DO NOTHING;
-END;
-$$;
-
--- Function: sp_get_recent_trading_signals
-CREATE OR REPLACE FUNCTION sp_get_recent_trading_signals(
-    p_limit INTEGER
-)
-RETURNS TABLE (
-    id INT,
-    candle_time TIMESTAMP WITH TIME ZONE,
-    symbol VARCHAR(50),
-    signal_type VARCHAR(20),
-    signal_strength NUMERIC(5, 2),
-    entry_price NUMERIC(18, 6),
-    reason VARCHAR(1000),
-    created_at TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT s.id, s.candle_time, s.symbol, s.signal_type, s.signal_strength, s.entry_price, s.reason, s.created_at
-    FROM trading_signals s
-    ORDER BY s.candle_time DESC
-    LIMIT p_limit;
-END;
-$$;
-
--- Procedure: sp_upsert_zerodha_session
-CREATE OR REPLACE PROCEDURE sp_upsert_zerodha_session(
-    p_api_key VARCHAR(50),
-    p_access_token VARCHAR(255)
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    INSERT INTO zerodha_sessions (api_key, access_token, is_active, created_at)
-    VALUES (p_api_key, p_access_token, FALSE, NOW())
-    ON CONFLICT (api_key)
-    DO UPDATE SET
-        access_token = EXCLUDED.access_token,
-        is_active    = FALSE,
-        created_at   = NOW();
-END;
-$$;
-
--- Function: sp_activate_zerodha_token
-CREATE OR REPLACE FUNCTION sp_activate_zerodha_token(
-    p_api_key VARCHAR(50)
-)
-RETURNS VARCHAR
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_cutoff_time     TIMESTAMP WITH TIME ZONE;
-    v_token_created   TIMESTAMP WITH TIME ZONE;
-    v_access_token    VARCHAR(255);
-BEGIN
-    -- 6:00 AM IST = 00:30 UTC
-    v_cutoff_time := (DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata')
-                     + INTERVAL '6 hours')
-                     AT TIME ZONE 'Asia/Kolkata';
-
-    SELECT access_token, created_at
-    INTO v_access_token, v_token_created
-    FROM zerodha_sessions
-    WHERE api_key = p_api_key
-    LIMIT 1;
-
-    IF v_access_token IS NULL THEN
-        RAISE NOTICE 'sp_activate_zerodha_token: No session found for api_key %', p_api_key;
-        RETURN NULL;
-    END IF;
-
-    IF v_token_created >= v_cutoff_time THEN
-        UPDATE zerodha_sessions
-        SET is_active = TRUE
-        WHERE api_key = p_api_key;
-
-        RAISE NOTICE 'sp_activate_zerodha_token: Token for api_key % activated (created_at: %)', p_api_key, v_token_created;
-        RETURN v_access_token;
-    ELSE
-        RAISE NOTICE 'sp_activate_zerodha_token: Token for api_key % is stale (created_at: %, cutoff: %). Not activating.', p_api_key, v_token_created, v_cutoff_time;
-        RETURN NULL;
-    END IF;
-END;
-$$;
-
--- Function: sp_get_active_zerodha_session
-CREATE OR REPLACE FUNCTION sp_get_active_zerodha_session()
-RETURNS TABLE (
-    api_key      VARCHAR(50),
-    access_token VARCHAR(255),
-    is_active    BOOLEAN,
-    created_at   TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT s.api_key, s.access_token, s.is_active, s.created_at
-    FROM zerodha_sessions s
-    WHERE s.is_active = TRUE
-    LIMIT 1;
-END;
-$$;
-
--- ----------------------------------------------------------------------------
--- 5. Stock Master Tables Configuration
--- ----------------------------------------------------------------------------
-
--- Table: stock_master
-CREATE TABLE IF NOT EXISTS stock_master (
-    id SERIAL PRIMARY KEY,
-    symbol VARCHAR(50) UNIQUE NOT NULL,
-    instrument_token INT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT FALSE,
-    exchange_token VARCHAR(50),
-    name VARCHAR(100),
-    last_price NUMERIC(18, 4),
-    expiry TIMESTAMP WITH TIME ZONE,
-    strike NUMERIC(18, 4),
-    tick_size NUMERIC(18, 4),
-    lot_size INT,
-    instrument_type VARCHAR(20),
-    segment VARCHAR(20),
-    exchange VARCHAR(20),
-    is_histry_stored_1m INT DEFAULT NULL,
-    is_histry_stored_5m INT DEFAULT NULL,
-    is_histry_stored_15m INT DEFAULT NULL,
-    is_histry_stored_60m INT DEFAULT NULL,
-    is_histry_stored_1d INT DEFAULT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
 CREATE INDEX IF NOT EXISTS ix_stock_master_instrument_token 
 ON stock_master (instrument_token);
 
+CREATE INDEX IF NOT EXISTS ix_indian_holidays_date 
+ON indian_holidays (holiday_date);
+
+CREATE INDEX IF NOT EXISTS ix_daily_stock_analysis_date 
+ON daily_stock_analysis (trade_date DESC);
+
+CREATE INDEX IF NOT EXISTS ix_daily_stock_analysis_stock_date 
+ON daily_stock_analysis (stock_id, trade_date DESC);
+
+CREATE INDEX IF NOT EXISTS ix_swing_positions_symbol_closed 
+ON swing_positions (symbol, is_closed);
+
+
+-- ----------------------------------------------------------------------------
+-- 4. Initial Seed Data
+-- ----------------------------------------------------------------------------
 INSERT INTO stock_master (symbol, instrument_token, is_active)
 VALUES 
     ('NIFTYBEES', 3771393, TRUE),
@@ -724,427 +441,3 @@ VALUES
     ('ITC', 424961, FALSE),
     ('TATAMOTORS', 884737, FALSE)
 ON CONFLICT (symbol) DO NOTHING;
-
-DROP FUNCTION IF EXISTS sp_get_active_stocks();
-DROP FUNCTION IF EXISTS sp_get_stock_by_symbol(VARCHAR);
-DROP FUNCTION IF EXISTS sp_upsert_instruments(JSONB);
-
--- Function: sp_get_active_stocks
-CREATE OR REPLACE FUNCTION sp_get_active_stocks()
-RETURNS TABLE (
-    id INT,
-    symbol VARCHAR(50),
-    instrument_token INT,
-    is_active BOOLEAN,
-    exchange_token VARCHAR(50),
-    name VARCHAR(100),
-    last_price NUMERIC(18, 4),
-    expiry TIMESTAMP WITH TIME ZONE,
-    strike NUMERIC(18, 4),
-    tick_size NUMERIC(18, 4),
-    lot_size INT,
-    instrument_type VARCHAR(20),
-    segment VARCHAR(20),
-    exchange VARCHAR(20),
-    is_histry_stored_1m INT,
-    is_histry_stored_5m INT,
-    is_histry_stored_15m INT,
-    is_histry_stored_60m INT,
-    is_histry_stored_1d INT,
-    created_at TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT s.id, s.symbol, s.instrument_token, s.is_active,
-           s.exchange_token, s.name, s.last_price, s.expiry,
-           s.strike, s.tick_size, s.lot_size, s.instrument_type,
-           s.segment, s.exchange, 
-           s.is_histry_stored_1m, s.is_histry_stored_5m, s.is_histry_stored_15m, s.is_histry_stored_60m, s.is_histry_stored_1d,
-           s.created_at
-    FROM stock_master s
-    WHERE s.is_active = TRUE;
-END;
-$$;
-
--- Function: sp_get_stock_by_symbol
-CREATE OR REPLACE FUNCTION sp_get_stock_by_symbol(
-    p_symbol VARCHAR(50)
-)
-RETURNS TABLE (
-    id INT,
-    symbol VARCHAR(50),
-    instrument_token INT,
-    is_active BOOLEAN,
-    exchange_token VARCHAR(50),
-    name VARCHAR(100),
-    last_price NUMERIC(18, 4),
-    expiry TIMESTAMP WITH TIME ZONE,
-    strike NUMERIC(18, 4),
-    tick_size NUMERIC(18, 4),
-    lot_size INT,
-    instrument_type VARCHAR(20),
-    segment VARCHAR(20),
-    exchange VARCHAR(20),
-    is_histry_stored_1m INT,
-    is_histry_stored_5m INT,
-    is_histry_stored_15m INT,
-    is_histry_stored_60m INT,
-    is_histry_stored_1d INT,
-    created_at TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT s.id, s.symbol, s.instrument_token, s.is_active,
-           s.exchange_token, s.name, s.last_price, s.expiry,
-           s.strike, s.tick_size, s.lot_size, s.instrument_type,
-           s.segment, s.exchange, 
-           s.is_histry_stored_1m, s.is_histry_stored_5m, s.is_histry_stored_15m, s.is_histry_stored_60m, s.is_histry_stored_1d,
-           s.created_at
-    FROM stock_master s
-    WHERE UPPER(s.symbol) = UPPER(p_symbol)
-    LIMIT 1;
-END;
-$$;
-
--- Function: sp_upsert_instruments
-CREATE OR REPLACE FUNCTION sp_upsert_instruments(p_instruments JSONB)
-RETURNS VOID
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    INSERT INTO stock_master (
-        symbol, instrument_token, is_active, exchange_token, name, 
-        last_price, expiry, strike, tick_size, lot_size, 
-        instrument_type, segment, exchange
-    )
-    SELECT 
-        (rec->>'Symbol')::VARCHAR(50),
-        (rec->>'InstrumentToken')::INT,
-        (rec->>'IsActive')::BOOLEAN,
-        (rec->>'ExchangeToken')::VARCHAR(50),
-        (rec->>'Name')::VARCHAR(100),
-        (rec->>'LastPrice')::NUMERIC(18, 4),
-        CASE 
-            WHEN rec->>'Expiry' IS NOT NULL AND (rec->>'Expiry') <> '' 
-            THEN (rec->>'Expiry')::TIMESTAMP WITH TIME ZONE 
-            ELSE NULL 
-        END,
-        (rec->>'Strike')::NUMERIC(18, 4),
-        (rec->>'TickSize')::NUMERIC(18, 4),
-        (rec->>'LotSize')::INT,
-        (rec->>'InstrumentType')::VARCHAR(20),
-        (rec->>'Segment')::VARCHAR(20),
-        (rec->>'Exchange')::VARCHAR(20)
-    FROM jsonb_array_elements(p_instruments) AS rec
-    ON CONFLICT (symbol) DO UPDATE SET
-        instrument_token = EXCLUDED.instrument_token,
-        exchange_token = EXCLUDED.exchange_token,
-        name = EXCLUDED.name,
-        last_price = EXCLUDED.last_price,
-        expiry = EXCLUDED.expiry,
-        strike = EXCLUDED.strike,
-        tick_size = EXCLUDED.tick_size,
-        lot_size = EXCLUDED.lot_size,
-        instrument_type = EXCLUDED.instrument_type,
-        segment = EXCLUDED.segment,
-        exchange = EXCLUDED.exchange,
-        is_active = EXCLUDED.is_active;
-END;
-$$;
-
--- Function: sp_get_data_coverage_summary
-CREATE OR REPLACE FUNCTION sp_get_data_coverage_summary()
-RETURNS TABLE (
-    "TotalStocks" INT,
-    "ActiveCount" INT,
-    "InactiveCount" INT,
-    "HistoryMissingCount" INT
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        COUNT(*)::INT AS "TotalStocks",
-        COUNT(*) FILTER (WHERE s.is_active = TRUE)::INT AS "ActiveCount",
-        COUNT(*) FILTER (WHERE s.is_active = FALSE)::INT AS "InactiveCount",
-        COUNT(*) FILTER (WHERE COALESCE(s.is_histry_stored_1d, 0) = 0 OR COALESCE(s.is_histry_stored_60m, 0) = 0)::INT AS "HistoryMissingCount"
-    FROM stock_master s;
-END;
-$$;
-
--- Function: sp_get_paginated_stock_coverage
-CREATE OR REPLACE FUNCTION sp_get_paginated_stock_coverage(
-    p_search VARCHAR DEFAULT NULL,
-    p_status_filter VARCHAR DEFAULT NULL,
-    p_history_filter VARCHAR DEFAULT NULL,
-    p_page_number INT DEFAULT 1,
-    p_page_size INT DEFAULT 25
-)
-RETURNS TABLE (
-    "Id" INT,
-    "Symbol" VARCHAR(50),
-    "Name" VARCHAR(100),
-    "Exchange" VARCHAR(20),
-    "InstrumentToken" INT,
-    "IsActive" BOOLEAN,
-    "IsHistryStored1m" INT,
-    "IsHistryStored5m" INT,
-    "IsHistryStored15m" INT,
-    "IsHistryStored60m" INT,
-    "IsHistryStored1d" INT,
-    "CreatedAt" TIMESTAMP WITH TIME ZONE,
-    "Count1d" BIGINT,
-    "Count60m" BIGINT,
-    "LastCandleDate" TIMESTAMP WITH TIME ZONE,
-    "TotalRecords" INT
-)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_offset INT;
-BEGIN
-    v_offset := (GREATEST(1, p_page_number) - 1) * GREATEST(1, p_page_size);
-
-    RETURN QUERY
-    WITH filtered_stocks AS (
-        SELECT s.*
-        FROM stock_master s
-        WHERE 
-            (p_search IS NULL OR p_search = '' OR UPPER(s.symbol) LIKE '%' || UPPER(p_search) || '%' OR UPPER(COALESCE(s.name, '')) LIKE '%' || UPPER(p_search) || '%')
-            AND (
-                p_status_filter IS NULL OR p_status_filter = '' OR LOWER(p_status_filter) = 'all'
-                OR (LOWER(p_status_filter) = 'active' AND s.is_active = TRUE)
-                OR (LOWER(p_status_filter) = 'inactive' AND s.is_active = FALSE)
-            )
-            AND (
-                p_history_filter IS NULL OR p_history_filter = '' OR LOWER(p_history_filter) = 'all'
-                OR (LOWER(p_history_filter) = 'missing' AND (COALESCE(s.is_histry_stored_1d, 0) = 0 OR COALESCE(s.is_histry_stored_60m, 0) = 0))
-                OR (LOWER(p_history_filter) = '1d_missing' AND COALESCE(s.is_histry_stored_1d, 0) = 0)
-                OR (LOWER(p_history_filter) = '60m_missing' AND COALESCE(s.is_histry_stored_60m, 0) = 0)
-                OR (LOWER(p_history_filter) = 'has_1d' AND COALESCE(s.is_histry_stored_1d, 0) = 1)
-                OR (LOWER(p_history_filter) = 'has_60m' AND COALESCE(s.is_histry_stored_60m, 0) = 1)
-            )
-    ),
-    counted AS (
-        SELECT fs.*, COUNT(*) OVER()::INT AS full_count
-        FROM filtered_stocks fs
-        ORDER BY fs.symbol ASC
-        LIMIT GREATEST(1, p_page_size) OFFSET v_offset
-    )
-    SELECT 
-        c.id AS "Id",
-        c.symbol AS "Symbol",
-        c.name AS "Name",
-        c.exchange AS "Exchange",
-        c.instrument_token AS "InstrumentToken",
-        c.is_active AS "IsActive",
-        c.is_histry_stored_1m AS "IsHistryStored1m",
-        c.is_histry_stored_5m AS "IsHistryStored5m",
-        c.is_histry_stored_15m AS "IsHistryStored15m",
-        c.is_histry_stored_60m AS "IsHistryStored60m",
-        c.is_histry_stored_1d AS "IsHistryStored1d",
-        c.created_at AS "CreatedAt",
-        COALESCE(c.is_histry_stored_1d, 0)::BIGINT AS "Count1d",
-        COALESCE(c.is_histry_stored_60m, 0)::BIGINT AS "Count60m",
-        (SELECT MAX(candle_time) FROM market_candles_1d c1d WHERE c1d.symbol = c.symbol) AS "LastCandleDate",
-        c.full_count AS "TotalRecords"
-    FROM counted c
-    ORDER BY c.symbol ASC;
-END;
-$$;
-
--- Procedure: sp_update_stock_coverage_flags
-CREATE OR REPLACE FUNCTION sp_update_stock_coverage_flags(
-    p_id INT,
-    p_is_active BOOLEAN,
-    p_histry_1m INT,
-    p_histry_5m INT,
-    p_histry_15m INT,
-    p_histry_60m INT,
-    p_histry_1d INT
-)
-RETURNS VOID
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    UPDATE stock_master
-    SET 
-        is_active = p_is_active,
-        is_histry_stored_1m = p_histry_1m,
-        is_histry_stored_5m = p_histry_5m,
-        is_histry_stored_15m = p_histry_15m,
-        is_histry_stored_60m = p_histry_60m,
-        is_histry_stored_1d = p_histry_1d
-    WHERE id = p_id;
-END;
-$$;
-
--- Procedure: sp_delete_stock_master
-CREATE OR REPLACE FUNCTION sp_delete_stock_master(
-    p_id INT
-)
-RETURNS VOID
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    -- Delete associated candles if any
-    DELETE FROM market_candles_1d WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
-    DELETE FROM market_candles_60m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
-    DELETE FROM market_candles_15m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
-    DELETE FROM market_candles_5m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
-    DELETE FROM market_candles_1m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = p_id);
-
-    -- Delete main record from stock_master
-    DELETE FROM stock_master WHERE id = p_id;
-END;
-$$;
-
--- Procedure: sp_bulk_delete_stock_master
-CREATE OR REPLACE FUNCTION sp_bulk_delete_stock_master(
-    p_ids INT[]
-)
-RETURNS VOID
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    -- Delete associated candles if any
-    DELETE FROM market_candles_1d WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
-    DELETE FROM market_candles_60m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
-    DELETE FROM market_candles_15m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
-    DELETE FROM market_candles_5m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
-    DELETE FROM market_candles_1m WHERE symbol IN (SELECT symbol FROM stock_master WHERE id = ANY(p_ids));
-
-    -- Delete main records from stock_master
-    DELETE FROM stock_master WHERE id = ANY(p_ids);
-END;
-$$;
-
--- ----------------------------------------------------------------------------
--- 6. Indian Holidays Configuration
--- ----------------------------------------------------------------------------
-
--- Table: indian_holidays
-CREATE TABLE IF NOT EXISTS indian_holidays (
-    id SERIAL PRIMARY KEY,
-    holiday_date DATE UNIQUE NOT NULL,
-    description VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS ix_indian_holidays_date ON indian_holidays (holiday_date);
-
--- Drop old function first to change return type from DATE to TIMESTAMP
-DROP FUNCTION IF EXISTS sp_get_indian_holidays();
-
--- Function: sp_get_indian_holidays
-CREATE OR REPLACE FUNCTION sp_get_indian_holidays()
-RETURNS TABLE (
-    id INT,
-    holiday_date TIMESTAMP,
-    description VARCHAR(255),
-    created_at TIMESTAMP WITH TIME ZONE
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT h.id, h.holiday_date::timestamp, h.description, h.created_at
-    FROM indian_holidays h
-    ORDER BY h.holiday_date ASC;
-END;
-$$;
-
--- Procedure: sp_insert_indian_holiday
-CREATE OR REPLACE PROCEDURE sp_insert_indian_holiday(
-    p_holiday_date DATE,
-    p_description VARCHAR(255)
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    INSERT INTO indian_holidays (holiday_date, description)
-    VALUES (p_holiday_date, p_description)
-    ON CONFLICT (holiday_date) DO UPDATE
-    SET description = EXCLUDED.description;
-END;
-$$;
-
--- Procedure: sp_delete_indian_holiday
-CREATE OR REPLACE PROCEDURE sp_delete_indian_holiday(
-    p_id INT
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    DELETE FROM indian_holidays WHERE id = p_id;
-END;
-$$;
-
--- Function: sp_is_indian_holiday
-CREATE OR REPLACE FUNCTION sp_is_indian_holiday(
-    p_date DATE
-)
-RETURNS BOOLEAN
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN EXISTS (
-        SELECT 1 FROM indian_holidays WHERE holiday_date = p_date
-    );
-END;
-$$;
-
--- ----------------------------------------------------------------------------
--- 7. Swing Trading & EOD Daily Analysis
--- ----------------------------------------------------------------------------
-
--- Table: daily_stock_analysis
-CREATE TABLE IF NOT EXISTS daily_stock_analysis (
-    id SERIAL PRIMARY KEY,
-    stock_id INT NOT NULL REFERENCES stock_master(id) ON DELETE CASCADE,
-    trade_date DATE NOT NULL,
-    close_price NUMERIC(18, 4) NOT NULL,
-    volume BIGINT NOT NULL,
-    ema20 NUMERIC(18, 4),
-    ema50 NUMERIC(18, 4),
-    ema200 NUMERIC(18, 4),
-    rsi14 NUMERIC(18, 4),
-    macd NUMERIC(18, 4),
-    macd_signal NUMERIC(18, 4),
-    adx14 NUMERIC(18, 4),
-    atr14 NUMERIC(18, 4),
-    average_volume20 NUMERIC(18, 4),
-    is_52_week_high BOOLEAN NOT NULL DEFAULT FALSE,
-    buy_score INT,
-    sell_score INT,
-    buy_signal BOOLEAN NOT NULL DEFAULT FALSE,
-    sell_signal BOOLEAN NOT NULL DEFAULT FALSE,
-    recommendation VARCHAR(20) NOT NULL DEFAULT 'HOLD',
-    reason TEXT,
-    created_on TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_daily_stock_analysis UNIQUE (stock_id, trade_date)
-);
-
-CREATE INDEX IF NOT EXISTS ix_daily_stock_analysis_date ON daily_stock_analysis (trade_date DESC);
-CREATE INDEX IF NOT EXISTS ix_daily_stock_analysis_stock_date ON daily_stock_analysis (stock_id, trade_date DESC);
-
--- Table: swing_positions
-CREATE TABLE IF NOT EXISTS swing_positions (
-    id SERIAL PRIMARY KEY,
-    symbol VARCHAR(50) NOT NULL,
-    entry_date DATE NOT NULL,
-    entry_price NUMERIC(18, 4) NOT NULL,
-    quantity INT NOT NULL DEFAULT 1,
-    is_closed BOOLEAN NOT NULL DEFAULT FALSE,
-    exit_date DATE,
-    exit_price NUMERIC(18, 4),
-    exit_reason VARCHAR(100),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS ix_swing_positions_symbol_closed ON swing_positions (symbol, is_closed);
