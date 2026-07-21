@@ -1913,7 +1913,7 @@ body {
     cursor: pointer;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    height: 38px;
+    height: 44px;
     box-sizing: border-box;
 }
 

@@ -9,37 +9,31 @@
 
 .control-panel {
     display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 20px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
     padding: 14px 20px;
     background: var(--bg-card);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
     flex-wrap: nowrap;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .control-left {
     display: flex;
-    align-items: flex-end;
-    gap: 20px;
+    align-items: center;
+    gap: 14px;
     flex-wrap: nowrap;
+    flex: 1;
+    justify-content: flex-start;
 }
 
 .control-select-group {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.control-select-group label, .timeframe-group label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    letter-spacing: 0.8px;
-    white-space: nowrap;
+    align-items: center;
 }
 
 .custom-select {
@@ -47,13 +41,15 @@
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     color: var(--text-primary);
-    padding: 8px 16px;
-    font-size: 13px;
+    padding: 0 16px;
+    font-size: 13.5px;
     font-weight: 600;
     outline: none;
     cursor: pointer;
-    min-width: 170px;
-    height: 38px;
+    width: 230px;
+    min-width: 220px;
+    max-width: 240px;
+    height: 44px;
     box-sizing: border-box;
     transition: all var(--transition);
 }
@@ -65,17 +61,18 @@
 
 .timeframe-group {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    align-items: center;
 }
 
 .tabs {
-    display: flex;
+    display: inline-flex;
+    align-items: center;
     background: var(--bg-input);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     padding: 3px;
-    height: 38px;
+    height: 44px;
+    gap: 2px;
     box-sizing: border-box;
 }
 
@@ -83,10 +80,11 @@
     background: none;
     border: none;
     color: var(--text-secondary);
-    padding: 4px 12px;
-    font-size: 11.5px;
+    padding: 0 14px;
+    font-size: 12px;
     font-weight: 700;
     border-radius: 6px;
+    height: 38px;
     cursor: pointer;
     white-space: nowrap;
     transition: all var(--transition);
@@ -103,8 +101,8 @@
 
 .control-right {
     display: flex;
-    align-items: flex-end;
-    gap: 10px;
+    align-items: center;
+    gap: 14px;
     flex-wrap: nowrap;
 }
 
@@ -112,14 +110,14 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 0 14px;
-    border-radius: var(--radius-md);
+    padding: 0 16px;
+    border-radius: 30px;
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.5px;
     background: rgba(255,255,255,0.03);
     border: 1px solid var(--border-subtle);
-    height: 38px;
+    height: 44px;
     box-sizing: border-box;
     white-space: nowrap;
 }
@@ -556,32 +554,38 @@
 }
 
 /* =====================================================
-   Signal Dashboard Responsiveness (Mobile, Tablet & Laptop)
-/* =====================================================
    Signal Dashboard Responsiveness (Mobile & Tablet)
    ===================================================== */
-@media (max-width: 991.98px) {
+
+/* Tablet Devices (768px to 1199px) — Wrap into two rows */
+@media (max-width: 1199.98px) {
     .control-panel {
         flex-direction: column;
         align-items: stretch;
-        gap: 16px;
-        padding: 16px 20px;
+        gap: 12px;
+        padding: 14px 18px;
         flex-wrap: wrap;
     }
 
     .control-left {
         width: 100%;
-        justify-content: space-between;
-        gap: 16px;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 14px;
         flex-wrap: wrap;
     }
 
     .control-right {
         width: 100%;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
         justify-content: flex-start;
-        padding-top: 12px;
+        gap: 14px;
+        padding-top: 10px;
         border-top: 1px solid var(--border-subtle);
-        gap: 12px;
         flex-wrap: wrap;
     }
 
@@ -595,15 +599,25 @@
     }
 }
 
+/* Mobile Devices (< 768px) — Stack controls vertically */
 @media (max-width: 767.98px) {
+    .control-panel {
+        padding: 12px 14px;
+        gap: 10px;
+    }
+
     .control-left {
         flex-direction: column;
         align-items: stretch;
+        gap: 10px;
     }
 
-    .control-select-group, .custom-select {
-        width: 100%;
-        min-width: unset;
+    .control-select-group, 
+    .custom-select {
+        width: 100% !important;
+        min-width: unset !important;
+        max-width: 100% !important;
+        height: 44px;
     }
 
     .timeframe-group {
@@ -615,37 +629,31 @@
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
         white-space: nowrap;
+        height: 44px;
         padding: 3px;
+        justify-content: flex-start;
     }
 
     .tab-btn {
         flex: 1;
         text-align: center;
-        padding: 6px 10px;
+        padding: 0 10px;
         font-size: 11px;
-    }
-
-    .metrics-widget-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-    }
-}
-
-@media (max-width: 575.98px) {
-    .dashboard-container {
-        gap: 14px;
+        height: 38px;
     }
 
     .control-right {
-        gap: 8px;
         flex-direction: column;
         align-items: stretch;
+        gap: 8px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border-subtle);
     }
 
     .btn-trigger {
-        font-size: 12px;
-        padding: 6px 12px;
-        height: 36px;
+        font-size: 12.5px;
+        padding: 0 12px;
+        height: 44px;
         width: 100%;
         justify-content: center;
     }
@@ -653,6 +661,7 @@
     .connection-badge {
         justify-content: center;
         width: 100%;
+        height: 44px;
     }
 
     .metrics-widget-grid {
@@ -664,4 +673,5 @@
         grid-template-columns: repeat(2, 1fr);
     }
 }
+
 
