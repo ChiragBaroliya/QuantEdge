@@ -1,7 +1,7 @@
 @model QuantEdge.Web.Models.TokenViewModel
 @{
     ViewData["Title"] = "Token Manager";
-    ViewData["PageTitle"] = "Zerodha Token Manager";
+    ViewData["PageTitle"] = "Token Manager";
 }
 
 <!-- Status Banner -->
@@ -11,25 +11,11 @@
         <div class="alert-icon">
             @if (Model.StatusType == "success")
             {
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-            }
-            else if (Model.StatusType == "danger")
-            {
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
             }
             else
             {
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
             }
         </div>
         <span class="alert-text">@Model.StatusMessage</span>
@@ -37,208 +23,286 @@
     </div>
 }
 
-<!-- Main Dashboard Grid -->
-<div class="dashboard-grid">
+<!-- ============================================================
+     ACTIVE SESSION — Shown when token exists
+     ============================================================ -->
+@if (Model.HasActiveToken)
+{
+    <!-- Status KPI mini-cards -->
+    <div class="kpi-row" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+        <div class="kpi-card" style="--kpi-color: var(--accent-green);">
+            <div class="kpi-header">
+                <span class="kpi-label">Token Status</span>
+                <div class="kpi-icon" style="color:var(--accent-green);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+            </div>
+            <div style="margin-top:4px;">
+                <span class="badge badge-success" style="font-size:13px;height:28px;padding:0 14px;">
+                    <span class="badge-dot"></span> Active
+                </span>
+            </div>
+            <div class="kpi-subtext">Valid for today</div>
+        </div>
+        <div class="kpi-card" style="--kpi-color: var(--theme-accent);">
+            <div class="kpi-header">
+                <span class="kpi-label">Generated At</span>
+                <div class="kpi-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                </div>
+            </div>
+            <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-top:4px;font-variant-numeric:tabular-nums;">
+                @(Model.CreatedAtIst ?? "—")
+            </div>
+            <div class="kpi-subtext">IST</div>
+        </div>
+        <div class="kpi-card" style="--kpi-color: var(--accent-amber);">
+            <div class="kpi-header">
+                <span class="kpi-label">Expires At</span>
+                <div class="kpi-icon" style="color:var(--accent-amber);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                </div>
+            </div>
+            <div style="font-size:15px;font-weight:700;color:var(--accent-amber);margin-top:4px;">
+                6:00 AM IST
+            </div>
+            <div class="kpi-subtext">Next day reset</div>
+        </div>
+    </div>
 
-    <!-- Token Creation Card (Shown ONLY when no active token for today) -->
-    @if (!Model.HasActiveToken)
-    {
-        <div class="card card-primary">
-            <div class="card-header">
+    <!-- Active Session Card -->
+    <div class="card card-success" style="margin-bottom: 20px;">
+        <div class="card-header">
+            <div class="card-header-inner">
+                <div class="card-header-icon icon-check">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <div>
+                    <h2 class="card-title">Active Session Information</h2>
+                    <p class="card-subtitle">Zerodha Access Token saved and ready</p>
+                </div>
+            </div>
+            <div class="card-header-actions">
+                <span class="badge badge-success" style="font-size:12px;height:26px;padding:0 12px;">
+                    <span class="badge-dot"></span> Active for Today
+                </span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="session-info-grid">
+                @if (!string.IsNullOrEmpty(Model.UserName))
+                {
+                    <div class="info-row">
+                        <span class="info-label">User Name</span>
+                        <span class="info-value">@Model.UserName</span>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(Model.Email))
+                {
+                    <div class="info-row">
+                        <span class="info-label">Email</span>
+                        <span class="info-value">@Model.Email</span>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(Model.ApiKey))
+                {
+                    <div class="info-row">
+                        <span class="info-label">API Key</span>
+                        <span class="info-value monospace">@Model.ApiKey</span>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(Model.AccessTokenMasked))
+                {
+                    <div class="info-row">
+                        <span class="info-label">Access Token</span>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <span class="info-value monospace token-masked" id="tokenDisplay">@Model.AccessTokenMasked</span>
+                            <button type="button" class="btn-icon-only btn-xs" onclick="copyToken()" title="Copy token" style="width:28px;height:28px;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+                <span style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                    Token resets automatically at 6:00 AM IST
+                </span>
+                <a asp-controller="Token" asp-action="CreateToken"
+                   class="btn-secondary btn-sm"
+                   onclick="return confirm('Re-create Zerodha Access Token?')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M16 3h5v5"></path></svg>
+                    Re-create Token
+                </a>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ============================================================
+     CREATE TOKEN — Shown when no token exists
+     ============================================================ -->
+@if (!Model.HasActiveToken)
+{
+    <div class="card card-primary" style="margin-bottom: 20px;">
+        <div class="card-header">
+            <div class="card-header-inner">
                 <div class="card-header-icon icon-key">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
-                    </svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
                 </div>
                 <div>
                     <h2 class="card-title">Create Access Token</h2>
                     <p class="card-subtitle">Authenticate with Zerodha via OAuth 2.0</p>
                 </div>
             </div>
-
-            <div class="card-body">
-                <!-- Flow Steps Diagram -->
-                <div class="flow-steps">
-                    <div class="flow-step">
-                        <div class="step-number">1</div>
-                        <div class="step-content">
-                            <div class="step-title">Initiate OAuth</div>
-                            <div class="step-desc">Click button → API fetches login URL</div>
-                        </div>
-                    </div>
-                    <div class="flow-arrow">→</div>
-                    <div class="flow-step">
-                        <div class="step-number">2</div>
-                        <div class="step-content">
-                            <div class="step-title">Zerodha Login</div>
-                            <div class="step-desc">Enter credentials + 2FA TOTP code</div>
-                        </div>
-                    </div>
-                    <div class="flow-arrow">→</div>
-                    <div class="flow-step">
-                        <div class="step-number">3</div>
-                        <div class="step-content">
-                            <div class="step-title">Callback & Save</div>
-                            <div class="step-desc">Token exchanged & saved to database</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- CTA Button -->
-                <div class="btn-wrapper">
-                    <a asp-controller="Token" asp-action="CreateToken" 
-                       class="btn-create-token" 
-                       id="createTokenBtn"
-                       onclick="handleCreateTokenClick(event, this)">
-                        <div class="btn-shimmer"></div>
-                        <span class="btn-icon">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
-                            </svg>
-                        </span>
-                        <span class="btn-text">Create Token</span>
-                        <span class="btn-arrow">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                <line x1="5" y1="12" x2="19" y2="12"></line>
-                                <polyline points="12 5 19 12 12 19"></polyline>
-                            </svg>
-                        </span>
-                    </a>
-                    <div class="btn-hint">
-                        You'll be redirected to <strong>kite.zerodha.com</strong> to complete login
-                    </div>
-                </div>
-            </div>
         </div>
-    }
 
-    <!-- Active Session Information Card (Shown directly when active token exists for today) -->
-    @if (Model.HasActiveToken)
-    {
-        <div class="card card-success">
-            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <div class="card-header-icon icon-check">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                    </div>
-                    <div>
-                        <h2 class="card-title">Active Session Information</h2>
-                        <p class="card-subtitle">Zerodha Access Token is active and saved in database</p>
+        <div class="card-body">
+            <!-- OAuth Flow Steps -->
+            <div class="flow-steps">
+                <div class="flow-step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-title">Initiate OAuth</div>
+                        <div class="step-desc">Click button → API fetches login URL</div>
                     </div>
                 </div>
-                <span class="status-chip status-chip-success" style="font-size: 0.85rem; padding: 4px 12px;">
-                    <span class="chip-dot"></span> Active for Today
-                </span>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <div class="step-title">Zerodha Login</div>
+                        <div class="step-desc">Enter credentials + 2FA TOTP</div>
+                    </div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <div class="step-title">Callback & Save</div>
+                        <div class="step-desc">Token exchanged & saved to DB</div>
+                    </div>
+                </div>
             </div>
-            <div class="card-body">
-                <div class="session-info-grid">
-                    @if (!string.IsNullOrEmpty(Model.UserName))
-                    {
-                        <div class="info-row">
-                            <span class="info-label">User Name</span>
-                            <span class="info-value">@Model.UserName</span>
-                        </div>
-                    }
-                    @if (!string.IsNullOrEmpty(Model.Email))
-                    {
-                        <div class="info-row">
-                            <span class="info-label">Email</span>
-                            <span class="info-value">@Model.Email</span>
-                        </div>
-                    }
-                    @if (!string.IsNullOrEmpty(Model.ApiKey))
-                    {
-                        <div class="info-row">
-                            <span class="info-label">API Key</span>
-                            <span class="info-value monospace">@Model.ApiKey</span>
-                        </div>
-                    }
-                    @if (!string.IsNullOrEmpty(Model.AccessTokenMasked))
-                    {
-                        <div class="info-row">
-                            <span class="info-label">Access Token</span>
-                            <span class="info-value monospace token-masked">@Model.AccessTokenMasked</span>
-                        </div>
-                    }
-                    @if (!string.IsNullOrEmpty(Model.CreatedAtIst))
-                    {
-                        <div class="info-row">
-                            <span class="info-label">Generated At</span>
-                            <span class="info-value">@Model.CreatedAtIst</span>
-                        </div>
-                    }
-                    @if (!string.IsNullOrEmpty(Model.ExpiresAtIst))
-                    {
-                        <div class="info-row">
-                            <span class="info-label">Expires At</span>
-                            <span class="info-value" style="color: var(--amber-400, #fbbf24);">@Model.ExpiresAtIst (6:00 AM IST)</span>
-                        </div>
-                    }
-                </div>
 
-                <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 0.82rem; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                        </svg>
-                        Token will automatically reset when day changes at 6:00 AM IST tomorrow.
+            <div class="btn-wrapper">
+                <a asp-controller="Token" asp-action="CreateToken"
+                   class="btn-create-token"
+                   id="createTokenBtn"
+                   onclick="handleCreateTokenClick(event, this)">
+                    <div class="btn-shimmer"></div>
+                    <span class="btn-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
                     </span>
-                    <a asp-controller="Token" asp-action="CreateToken" 
-                       class="btn-secondary-action"
-                       style="font-size: 0.8rem; padding: 6px 14px; opacity: 0.8; text-decoration: none;"
-                       onclick="return confirm('Re-create Zerodha Access Token?');">
-                        Re-create Token
-                    </a>
-                </div>
+                    <span class="btn-text">Create Token</span>
+                    <span class="btn-arrow">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    </span>
+                </a>
+                <div class="btn-hint">You'll be redirected to <strong>kite.zerodha.com</strong> to complete login</div>
             </div>
         </div>
-    }
+    </div>
+}
 
-    <!-- How It Works Info Card -->
-    <div class="card card-info">
-        <div class="card-header">
+<!-- ============================================================
+     TOKEN LIFECYCLE INFO — Timeline
+     ============================================================ -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-header-inner">
             <div class="card-header-icon icon-info">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
             </div>
             <div>
-                <h2 class="card-title">About Token Lifecycle</h2>
-                <p class="card-subtitle">Important notes about Zerodha sessions</p>
+                <h2 class="card-title">Token Lifecycle</h2>
+                <p class="card-subtitle">Daily authentication flow for Zerodha sessions</p>
             </div>
         </div>
-        <div class="card-body">
+    </div>
+    <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:32px;">
+        <!-- Timeline -->
+        <div>
+            <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:16px;">Today's Flow</div>
+            <div class="timeline">
+                <div class="timeline-item">
+                    <div class="timeline-dot success"></div>
+                    <div class="timeline-content">
+                        <div class="timeline-label">Manual Login</div>
+                        <div class="timeline-desc">User opens Token Manager & initiates OAuth</div>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-dot success"></div>
+                    <div class="timeline-content">
+                        <div class="timeline-label">Token Generated</div>
+                        <div class="timeline-desc">Zerodha issues access token after 2FA</div>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-dot success"></div>
+                    <div class="timeline-content">
+                        <div class="timeline-label">Saved to Database</div>
+                        <div class="timeline-desc">Token persisted to PostgreSQL via callback</div>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-dot @(Model.HasActiveToken ? "active" : "")"></div>
+                    <div class="timeline-content">
+                        <div class="timeline-label">Worker Picks Token</div>
+                        <div class="timeline-desc">Background service auto-loads token for trading</div>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-dot warning"></div>
+                    <div class="timeline-content">
+                        <div class="timeline-label">Token Expires</div>
+                        <div class="timeline-desc">Daily reset at 6:00 AM IST — repeat tomorrow</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info notes -->
+        <div>
+            <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:16px;">Important Notes</div>
             <ul class="info-list">
                 <li>
                     <div class="info-bullet info-bullet-amber"></div>
-                    <span>Zerodha access tokens expire <strong>daily at 6:00 AM IST</strong>. Regenerate every trading day.</span>
+                    <span>Zerodha tokens expire <strong>daily at 6:00 AM IST</strong>. Regenerate every trading day.</span>
                 </li>
                 <li>
                     <div class="info-bullet info-bullet-blue"></div>
-                    <span>The token is saved to the <strong>PostgreSQL database</strong> and picked up automatically by the Worker service.</span>
+                    <span>Token is saved to <strong>PostgreSQL</strong> and auto-loaded by the Worker service.</span>
                 </li>
                 <li>
                     <div class="info-bullet info-bullet-green"></div>
-                    <span>The <strong>Callback URL</strong> must be registered in Zerodha's Developer Console:
+                    <span>Callback URL must be registered in Zerodha Developer Console:<br>
                         <code class="inline-code">https://localhost:44370/api/zerodha/callback</code>
                     </span>
                 </li>
                 <li>
                     <div class="info-bullet info-bullet-purple"></div>
-                    <span>Use <strong>Headless Login</strong> via the API endpoint <code class="inline-code">POST /api/zerodha/headless-login</code> to skip manual browser login using TOTP automation.</span>
+                    <span>Use <strong>Headless Login</strong> via <code class="inline-code">POST /api/zerodha/headless-login</code> to automate TOTP.</span>
                 </li>
             </ul>
         </div>
     </div>
-
 </div>
 
 @section Scripts {
     <script src="~/js/token-manager.js" asp-append-version="true"></script>
+    <script>
+        function copyToken() {
+            const el = document.getElementById('tokenDisplay');
+            if (!el) return;
+            navigator.clipboard.writeText(el.textContent.trim()).then(() => {
+                showToast('Token copied to clipboard', 'success');
+            }).catch(() => {
+                showToast('Could not copy token', 'error');
+            });
+        }
+    </script>
 }

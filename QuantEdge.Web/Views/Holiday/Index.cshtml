@@ -1,17 +1,28 @@
 @model IEnumerable<QuantEdge.Web.Models.HolidayViewModel>
 @{
     ViewData["Title"] = "Holiday Manager";
-    ViewData["PageTitle"] = "Indian Stock Market Holiday Manager";
+    ViewData["PageTitle"] = "Holiday Manager";
+
+    var allHolidays = Model?.ToList() ?? new List<QuantEdge.Web.Models.HolidayViewModel>();
+    var today = DateTime.Today;
+    var currentYear = today.Year;
+    var thisYearHolidays = allHolidays.Where(h => h.HolidayDate.Year == currentYear).ToList();
+    var upcomingHolidays = allHolidays.Where(h => h.HolidayDate >= today).OrderBy(h => h.HolidayDate).ToList();
+    // Rough trading days remaining in year (Mon-Fri excluding holidays)
+    int tradingDaysLeft = 0;
+    for (var d = today; d.Year == currentYear; d = d.AddDays(1))
+    {
+        if (d.DayOfWeek != DayOfWeek.Saturday && d.DayOfWeek != DayOfWeek.Sunday
+            && !allHolidays.Any(h => h.HolidayDate.Date == d.Date))
+            tradingDaysLeft++;
+    }
 }
 
-<!-- Alert Banners -->
 @if (ViewBag.SuccessMessage != null)
 {
     <div class="alert alert-success" id="successAlert" role="alert">
         <div class="alert-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
         </div>
         <span class="alert-text">@ViewBag.SuccessMessage</span>
         <button class="alert-close" onclick="this.parentElement.style.display='none'" aria-label="Close">×</button>
@@ -22,85 +33,185 @@
 {
     <div class="alert alert-danger" id="errorAlert" role="alert">
         <div class="alert-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
         </div>
         <span class="alert-text">@ViewBag.ErrorMessage</span>
         <button class="alert-close" onclick="this.parentElement.style.display='none'" aria-label="Close">×</button>
     </div>
 }
 
+<!-- KPI Summary Row -->
+<div class="kpi-row kpi-row-4" style="margin-bottom: 24px;">
+    <div class="kpi-card" style="--kpi-color: var(--theme-accent);">
+        <div class="kpi-header">
+            <span class="kpi-label">Total Holidays</span>
+            <div class="kpi-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            </div>
+        </div>
+        <div class="kpi-value">@allHolidays.Count</div>
+        <div class="kpi-subtext">All configured</div>
+    </div>
+    <div class="kpi-card" style="--kpi-color: var(--accent-blue);">
+        <div class="kpi-header">
+            <span class="kpi-label">Current Year</span>
+            <div class="kpi-icon" style="color: var(--accent-blue);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            </div>
+        </div>
+        <div class="kpi-value" style="color: var(--accent-blue);">@thisYearHolidays.Count</div>
+        <div class="kpi-subtext">In @currentYear</div>
+    </div>
+    <div class="kpi-card" style="--kpi-color: var(--accent-amber);">
+        <div class="kpi-header">
+            <span class="kpi-label">Upcoming</span>
+            <div class="kpi-icon" style="color: var(--accent-amber);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            </div>
+        </div>
+        <div class="kpi-value" style="color: var(--accent-amber);">@upcomingHolidays.Count</div>
+        <div class="kpi-subtext">From today</div>
+    </div>
+    <div class="kpi-card" style="--kpi-color: var(--accent-green);">
+        <div class="kpi-header">
+            <span class="kpi-label">Trading Days Left</span>
+            <div class="kpi-icon" style="color: var(--accent-green);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline></svg>
+            </div>
+        </div>
+        <div class="kpi-value" style="color: var(--accent-green);">@tradingDaysLeft</div>
+        <div class="kpi-subtext">This year</div>
+    </div>
+</div>
+
+<!-- Main 2-col grid -->
 <div class="holiday-dashboard-grid">
 
     <!-- Holiday List Card -->
-    <div class="card card-primary">
+    <div class="card">
         <div class="card-header">
-            <div class="card-header-icon" style="background: linear-gradient(135deg, rgba(79, 156, 249, 0.15), rgba(124, 92, 252, 0.1)); color: var(--theme-accent); border: 1px solid var(--theme-border);">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                    <line x1="16" y1="2" x2="16" y2="6"></line>
-                    <line x1="8" y1="2" x2="8" y2="6"></line>
-                    <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
+            <div class="card-header-inner">
+                <div class="card-header-icon icon-key">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                </div>
+                <div>
+                    <h2 class="card-title">Configured Market Holidays</h2>
+                    <p class="card-subtitle">Trading is paused on these dates</p>
+                </div>
             </div>
-            <div>
-                <h2 class="card-title">Configured Market Holidays</h2>
-                <p class="card-subtitle">WebSocket connection and data processing are paused on these dates</p>
+            <div class="card-header-actions">
+                <button type="button" class="btn-secondary btn-sm" id="btnExportCSV" title="Export as CSV">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Export
+                </button>
             </div>
         </div>
 
-        <div class="card-body">
-            @if (Model == null || !Model.Any())
+        <div style="padding: 16px 24px 0;">
+            <!-- Search + Filter row -->
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
+                <div style="position: relative; flex: 1; min-width: 180px;">
+                    <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="holidaySearch" placeholder="Search holidays..." 
+                           style="width:100%;height:36px;padding:0 12px 0 36px;background:var(--bg-input);border:1px solid var(--border-subtle);border-radius:var(--radius-md);color:var(--text-primary);font-size:13px;outline:none;transition:border-color var(--transition);"
+                           oninput="filterHolidays()" onfocus="this.style.borderColor='var(--theme-accent)'" onblur="this.style.borderColor='var(--border-subtle)'">
+                </div>
+                <div style="display:flex;gap:6px;flex-shrink:0;">
+                    <button class="hf-chip hf-chip-active" onclick="setHolidayFilter('all',this)" data-filter="all">All</button>
+                    <button class="hf-chip" onclick="setHolidayFilter('upcoming',this)" data-filter="upcoming">Upcoming</button>
+                    <button class="hf-chip" onclick="setHolidayFilter('past',this)" data-filter="past">Past</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-body" style="padding-top: 0;">
+            @if (!allHolidays.Any())
             {
-                <div class="no-holidays-msg">
-                    No holidays configured yet. The background service will run strictly from Monday to Friday based on time.
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    </div>
+                    <div class="empty-state-title">No holidays configured</div>
+                    <div class="empty-state-desc">The background service will run Mon–Fri based on time. Add holidays using the form.</div>
                 </div>
             }
             else
             {
-                <div class="holiday-list">
-                    <div class="holiday-header-row">
-                        <div>Date (IST)</div>
-                        <div>Description</div>
-                        <div style="text-align: right;">Action</div>
+                <div class="table-wrapper" style="border-radius: var(--radius-md);">
+                    <table class="qe-table" id="holidayTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Status</th>
+                                <th class="text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var holiday in allHolidays.OrderBy(h => h.HolidayDate))
+                            {
+                                var isPast = holiday.HolidayDate < today;
+                                var isToday = holiday.HolidayDate.Date == today;
+                                <tr class="holiday-row" 
+                                    data-date="@holiday.HolidayDate.ToString("yyyy-MM-dd")"
+                                    data-desc="@holiday.Description.ToLower()"
+                                    data-past="@isPast.ToString().ToLower()">
+                                    <td>
+                                        <span style="font-weight:600;color:var(--theme-accent);font-variant-numeric:tabular-nums;">
+                                            @holiday.HolidayDate.ToString("dd MMM yyyy")
+                                        </span>
+                                    </td>
+                                    <td style="color:var(--text-primary);">@holiday.Description</td>
+                                    <td>
+                                        @if (isToday)
+                                        {
+                                            <span class="badge badge-warning"><span class="badge-dot"></span>Today</span>
+                                        }
+                                        else if (isPast)
+                                        {
+                                            <span class="badge badge-neutral">Past</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge badge-success"><span class="badge-dot"></span>Upcoming</span>
+                                        }
+                                    </td>
+                                    <td class="text-right">
+                                        <form asp-controller="Holiday" asp-action="Delete" method="post" style="display:inline;">
+                                            <input type="hidden" name="id" value="@holiday.Id" />
+                                            <button type="submit" class="btn-danger btn-xs"
+                                                    onclick="return confirm('Delete holiday: &quot;@holiday.Description&quot;?')">
+                                                Delete
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div id="noResultsMsg" style="display:none;" class="empty-state" style="padding:32px;">
+                    <div class="empty-state-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     </div>
-                    @foreach (var holiday in Model)
-                    {
-                        <div class="holiday-row">
-                            <div class="holiday-date">@holiday.HolidayDate.ToString("dd MMM yyyy")</div>
-                            <div class="holiday-desc">@holiday.Description</div>
-                            <div class="holiday-action">
-                                <form asp-controller="Holiday" asp-action="Delete" method="post" style="display:inline;">
-                                    <input type="hidden" name="id" value="@holiday.Id" />
-                                    <button type="submit" class="btn-delete" onclick="return confirm('Are you sure you want to delete this holiday: &quot;@holiday.Description&quot;?')">
-                                        Delete
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-                    }
+                    <div class="empty-state-title">No results found</div>
+                    <div class="empty-state-desc">Try a different search term or filter.</div>
                 </div>
             }
         </div>
     </div>
 
     <!-- Add Holiday Form Card -->
-    <div class="card card-info">
+    <div class="card">
         <div class="card-header">
-            <div class="card-header-icon" style="background: linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(5, 150, 105, 0.1)); color: var(--theme-accent); border: 1px solid var(--theme-border);">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="12" y1="18" x2="12" y2="12"></line>
-                    <line x1="9" y1="15" x2="15" y2="15"></line>
-                </svg>
-            </div>
-            <div>
-                <h2 class="card-title">Add Market Holiday</h2>
-                <p class="card-subtitle">Register a new trading holiday</p>
+            <div class="card-header-inner">
+                <div class="card-header-icon" style="background:rgba(52,211,153,0.12);color:var(--accent-green);border:1px solid rgba(52,211,153,0.2);">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </div>
+                <div>
+                    <h2 class="card-title">Add Market Holiday</h2>
+                    <p class="card-subtitle">Register a new trading holiday</p>
+                </div>
             </div>
         </div>
 
@@ -108,156 +219,108 @@
             <form asp-controller="Holiday" asp-action="Create" method="post">
                 <div class="form-group">
                     <label class="form-label" for="holidayDate">Holiday Date</label>
-                    <input type="date" class="form-input" id="holidayDate" name="holidayDate" required value="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                    <input type="date" class="form-input" id="holidayDate" name="holidayDate"
+                           required value="@DateTime.Today.ToString("yyyy-MM-dd")" />
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom: 28px;">
                     <label class="form-label" for="description">Description</label>
-                    <input type="text" class="form-input" id="description" name="description" placeholder="e.g. Diwali, Independence Day" required autocomplete="off" />
+                    <input type="text" class="form-input" id="description" name="description"
+                           placeholder="e.g. Diwali, Independence Day" required autocomplete="off" />
                 </div>
 
-                <div style="margin-top: 30px;">
-                    <button type="submit" class="btn-primary-action" style="width: 100%; border: none; justify-content: center; cursor: pointer;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                        Save Holiday
-                    </button>
-                </div>
+                <button type="submit" class="btn-primary" style="width:100%;justify-content:center;border:none;cursor:pointer;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Save Holiday
+                </button>
             </form>
+
+            <!-- Info note -->
+            <div style="margin-top:20px;padding:14px 16px;background:rgba(79,156,249,0.06);border:1px solid rgba(79,156,249,0.15);border-radius:var(--radius-md);font-size:12.5px;color:var(--text-secondary);line-height:1.6;">
+                <strong style="color:var(--accent-blue);display:block;margin-bottom:4px;">ℹ Note</strong>
+                The background service automatically skips weekends. Add only public holidays here that fall on weekdays.
+            </div>
         </div>
     </div>
 
 </div>
 
 <style>
-    .holiday-dashboard-grid {
-        display: grid;
-        grid-template-columns: 1.3fr 1fr;
-        gap: 24px;
-        align-items: start;
-    }
-    
-    @@media (max-width: 992px) {
-        .holiday-dashboard-grid {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    .holiday-list {
-        display: flex;
-        flex-direction: column;
-        border-radius: var(--radius-md);
-        background: rgba(255, 255, 255, 0.01);
+    .hf-chip {
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 8px;
         border: 1px solid var(--border-subtle);
-        overflow: hidden;
-    }
-
-    .holiday-header-row {
-        display: grid;
-        grid-template-columns: 130px 1fr 100px;
-        padding: 14px 20px;
-        background: rgba(255, 255, 255, 0.03);
-        border-bottom: 1px solid var(--border-subtle);
-        font-weight: 600;
-        font-size: 13px;
-        color: var(--text-primary);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .holiday-row {
-        display: grid;
-        grid-template-columns: 130px 1fr 100px;
-        align-items: center;
-        padding: 14px 20px;
-        border-bottom: 1px solid var(--border-subtle);
-        transition: background 0.2s ease;
-    }
-
-    .holiday-row:last-child {
-        border-bottom: none;
-    }
-
-    .holiday-row:hover {
-        background: rgba(255, 255, 255, 0.02);
-    }
-
-    .holiday-date {
-        font-weight: 600;
-        color: var(--theme-accent);
-        font-family: monospace;
-        font-size: 14px;
-    }
-
-    .holiday-desc {
-        color: var(--text-primary);
-        font-size: 14px;
-        padding-right: 15px;
-        word-break: break-word;
-    }
-
-    .holiday-action {
-        text-align: right;
-    }
-
-    .btn-delete {
-        background: rgba(248, 113, 113, 0.08);
-        color: #f87171;
-        border: 1px solid rgba(248, 113, 113, 0.15);
-        padding: 6px 12px;
-        border-radius: var(--radius-sm, 4px);
+        background: rgba(255,255,255,0.03);
+        color: var(--text-secondary);
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
-        transition: all 0.2s ease;
+        transition: all var(--transition);
+        white-space: nowrap;
     }
-
-    .btn-delete:hover {
-        background: rgba(248, 113, 113, 0.2);
-        border-color: rgba(248, 113, 113, 0.35);
-        box-shadow: 0 4px 12px rgba(248, 113, 113, 0.15);
-    }
-
-    .form-group {
-        margin-bottom: 20px;
-    }
-
-    .form-label {
-        display: block;
-        margin-bottom: 8px;
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .form-input {
-        width: 100%;
-        padding: 12px 16px;
-        border-radius: var(--radius-md);
-        background-color: #1e2640 !important;
-        border: 1px solid var(--border-subtle) !important;
-        color: white;
-        font-size: 14px;
-        transition: all 0.2s ease;
-    }
-
-    .form-input:focus {
-        outline: none;
+    .hf-chip:hover { border-color: var(--theme-border); color: var(--text-primary); }
+    .hf-chip-active {
+        background: var(--theme-glow-card) !important;
         border-color: var(--theme-accent) !important;
-        box-shadow: 0 0 0 3px var(--theme-glow);
-    }
-
-    .no-holidays-msg {
-        padding: 30px;
-        text-align: center;
-        color: var(--text-muted);
-        font-size: 14px;
-        border: 1px dashed var(--border-subtle);
-        border-radius: var(--radius-md);
-        background: rgba(255,255,255,0.005);
+        color: var(--theme-accent) !important;
     }
 </style>
+
+<script>
+    let currentFilter = 'all';
+
+    function setHolidayFilter(filter, btn) {
+        currentFilter = filter;
+        document.querySelectorAll('.hf-chip').forEach(c => c.classList.remove('hf-chip-active'));
+        btn.classList.add('hf-chip-active');
+        filterHolidays();
+    }
+
+    function filterHolidays() {
+        const search = document.getElementById('holidaySearch')?.value.toLowerCase() || '';
+        const rows = document.querySelectorAll('.holiday-row');
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const desc = row.dataset.desc || '';
+            const date = row.dataset.date || '';
+            const isPast = row.dataset.past === 'true';
+
+            const matchesSearch = !search || desc.includes(search) || date.includes(search);
+            const matchesFilter = currentFilter === 'all'
+                || (currentFilter === 'upcoming' && !isPast)
+                || (currentFilter === 'past' && isPast);
+
+            const show = matchesSearch && matchesFilter;
+            row.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+
+        const noMsg = document.getElementById('noResultsMsg');
+        const table = document.getElementById('holidayTable');
+        if (noMsg && table) {
+            table.style.display = visibleCount === 0 ? 'none' : '';
+            noMsg.style.display = visibleCount === 0 ? 'flex' : 'none';
+        }
+    }
+
+    // Export CSV
+    document.getElementById('btnExportCSV')?.addEventListener('click', function () {
+        const rows = document.querySelectorAll('.holiday-row');
+        let csv = 'Date,Description\n';
+        rows.forEach(r => {
+            if (r.style.display !== 'none') {
+                const cells = r.querySelectorAll('td');
+                const date = cells[0]?.textContent?.trim() || '';
+                const desc = cells[1]?.textContent?.trim() || '';
+                csv += `"${date}","${desc}"\n`;
+            }
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'holidays.csv';
+        a.click();
+    });
+</script>

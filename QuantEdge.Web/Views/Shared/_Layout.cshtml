@@ -15,7 +15,7 @@
     <!-- Self-executing Theme Override Script to prevent FOUC -->
     <script>
         (function() {
-            const theme = localStorage.getItem('theme-color') || 'blue';
+            const theme = localStorage.getItem('qe-theme') || 'purple';
             const colors = {
                 blue: {
                     accent: '#4f9cf9',
@@ -95,7 +95,7 @@
         <div class="sidebar-brand">
             <div class="brand-left">
                 <div class="brand-icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
                         <polyline points="16 7 22 7 22 13"></polyline>
                     </svg>
@@ -103,53 +103,63 @@
                 <span class="brand-name">QuantEdge</span>
             </div>
             <button class="sidebar-close-btn" id="sidebarClose" type="button" aria-label="Close navigation menu">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
             </button>
         </div>
 
-        <nav class="sidebar-nav">
+        <nav class="sidebar-nav" aria-label="Main navigation">
             <div class="nav-section-label">PLATFORM</div>
-            <a asp-controller="Token" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Token" ? "active" : "")">
-                <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <a asp-controller="Token" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Token" ? "active" : "")"
+               title="Token Manager">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                 </svg>
-                Token Manager
+                <span class="nav-label">Token Manager</span>
             </a>
-            <a asp-controller="Holiday" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Holiday" ? "active" : "")">
-                <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <a asp-controller="Holiday" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Holiday" ? "active" : "")"
+               title="Holiday Manager">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                     <line x1="16" y1="2" x2="16" y2="6"></line>
                     <line x1="8" y1="2" x2="8" y2="6"></line>
                     <line x1="3" y1="10" x2="21" y2="10"></line>
                 </svg>
-                Holiday Manager
+                <span class="nav-label">Holiday Manager</span>
             </a>
-            <a asp-controller="Home" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" ? "active" : "")">
-                <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <a asp-controller="Home" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" ? "active" : "")"
+               title="Signal Dashboard">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="20" x2="18" y2="10"></line>
                     <line x1="12" y1="20" x2="12" y2="4"></line>
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                 </svg>
-                Signal Dashboard
+                <span class="nav-label">Signal Dashboard</span>
             </a>
-            <a asp-controller="SwingTrading" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" ? "active" : "")">
-                <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <a asp-controller="SwingTrading" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" ? "active" : "")"
+               title="Swing Trading">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
                 </svg>
-                Swing Trading
+                <span class="nav-label">Swing Trading</span>
             </a>
-            <a asp-controller="DataCoverage" asp-action="Index" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "DataCoverage" ? "active" : "")">
-                <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <a asp-controller="DataCoverage" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "DataCoverage" ? "active" : "")"
+               title="Data Coverage Manager">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
                     <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
                     <path d="M21 19c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
                     <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
                 </svg>
-                Data Coverage Manager
+                <span class="nav-label">Data Coverage</span>
             </a>
         </nav>
 
@@ -168,7 +178,7 @@
         <header class="top-header">
             <div class="header-left">
                 <button class="mobile-sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle Navigation">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="3" y1="12" x2="21" y2="12"></line>
                         <line x1="3" y1="6" x2="21" y2="6"></line>
                         <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -177,7 +187,7 @@
                 </button>
                 <div class="mobile-header-brand">
                     <div class="brand-icon-sm">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
                             <polyline points="16 7 22 7 22 13"></polyline>
                         </svg>
@@ -193,23 +203,23 @@
                 </div>
             </div>
             <div class="header-right">
-                <!-- Color Option Theme Dropdown -->
+                <!-- Theme Selector -->
                 <div class="theme-select-container">
                     <span class="theme-select-label">Theme</span>
-                    <select id="themeSelector" class="theme-dropdown-select">
-                        <option value="blue">Blue</option>
-                        <option value="green">Green</option>
-                        <option value="red">Red</option>
-                        <option value="amber">Amber</option>
-                        <option value="purple">Purple</option>
+                    <select id="themeSelector" class="theme-dropdown-select" aria-label="Select color theme">
+                        <option value="blue">● Blue</option>
+                        <option value="green">● Green</option>
+                        <option value="red">● Red</option>
+                        <option value="amber">● Amber</option>
+                        <option value="purple">● Purple</option>
                     </select>
                 </div>
 
-                <div class="market-badge">
+                <div class="market-badge" aria-label="NSE Live">
                     <span class="market-dot"></span>
                     NSE · LIVE
                 </div>
-                <div class="current-time" id="currentTime"></div>
+                <div class="current-time" id="currentTime" aria-live="polite"></div>
             </div>
         </header>
 
