@@ -479,3 +479,63 @@ input:checked + .slider:before {
     box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
+/* =====================================================
+   Data Coverage Manager Responsiveness
+   ===================================================== */
+@media (max-width: 1199.98px) {
+    .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        padding: 14px;
+    }
+
+    .filter-group {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .search-input-wrapper {
+        width: 100%;
+    }
+
+    .search-input {
+        width: 100% !important;
+    }
+
+    .filter-select {
+        flex: 1;
+    }
+
+    .pagination-wrapper {
+        flex-direction: column;
+        gap: 12px;
+        align-items: center;
+        text-align: center;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .kpi-card {
+        padding: 14px 16px;
+    }
+
+    .kpi-value {
+        font-size: 24px;
+    }
+
+    .coverage-table {
+        font-size: 12.5px;
+    }
+
+    .coverage-table th, .coverage-table td {
+        padding: 8px 10px;
+    }
+}
+
+

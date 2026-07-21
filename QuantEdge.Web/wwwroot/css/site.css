@@ -83,9 +83,15 @@ body {
 .sidebar-brand {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 22px 20px;
+    justify-content: space-between;
+    padding: 18px 20px;
     border-bottom: 1px solid var(--border-subtle);
+}
+
+.brand-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .brand-icon {
@@ -108,6 +114,22 @@ body {
     -webkit-text-fill-color: transparent;
     background-clip: text;
     letter-spacing: -0.5px;
+}
+
+.sidebar-close-btn {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition);
+}
+
+.sidebar-close-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .sidebar-nav {
@@ -230,6 +252,153 @@ body {
     position: sticky;
     top: 0;
     z-index: 50;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mobile-sidebar-toggle {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--theme-border);
+    color: var(--text-primary);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all var(--transition);
+    height: 36px;
+}
+
+.mobile-sidebar-toggle:hover {
+    background: var(--theme-glow-card);
+    border-color: var(--theme-accent);
+    color: var(--theme-accent);
+    box-shadow: 0 0 12px var(--theme-glow);
+}
+
+.mobile-header-brand {
+    display: none;
+    align-items: center;
+    gap: 8px;
+}
+
+.brand-icon-sm {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--theme-accent) 0%, var(--theme-secondary) 100%);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: 0 2px 8px var(--theme-glow);
+}
+
+.header-title-container {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Sidebar Backdrop Overlay */
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(6px);
+    z-index: 1045;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.sidebar-backdrop.show {
+    display: block;
+    opacity: 1;
+}
+
+/* Responsive Offcanvas Sidebar Drawer for Tablet & Mobile (up to 1200px) */
+@media (max-width: 1199.98px) {
+    .sidebar {
+        width: 270px;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 1050;
+        box-shadow: 6px 0 30px rgba(0, 0, 0, 0.6);
+    }
+    
+    .sidebar.show {
+        transform: translateX(0);
+    }
+    
+    .sidebar-close-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .mobile-sidebar-toggle {
+        display: inline-flex;
+    }
+
+    .mobile-header-brand {
+        display: flex;
+    }
+    
+    .main-wrapper {
+        margin-left: 0 !important;
+        width: 100% !important;
+    }
+    
+    .top-header {
+        padding: 0 18px;
+    }
+    
+    .page-title {
+        font-size: 16px;
+    }
+    
+    .breadcrumb {
+        font-size: 11px;
+    }
+    
+    .header-right {
+        gap: 10px;
+    }
+    
+    .current-time {
+        display: none;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .page-content {
+        padding: 12px !important;
+    }
+
+    .mobile-toggle-text {
+        display: none;
+    }
+    
+    .market-badge {
+        font-size: 11px;
+        padding: 4px 8px;
+    }
+    
+    .theme-select-label {
+        display: none;
+    }
+    
+    .theme-dropdown-select {
+        padding: 4px 8px;
+        font-size: 12px;
+    }
 }
 
 .page-title {
@@ -846,12 +1015,6 @@ body {
 }
 
 @media (max-width: 680px) {
-    .sidebar {
-        display: none;
-    }
-    .main-wrapper {
-        margin-left: 0;
-    }
     .page-content {
         padding: 16px;
     }
@@ -1686,26 +1849,49 @@ body {
     color: var(--text-secondary);
 }
 
-/* Responsiveness */
-@@media (max-width: 768px) {
+/* Holiday Manager Layout & Responsiveness */
+.holiday-dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 24px;
+}
+
+@media (max-width: 991.98px) {
+    .holiday-dashboard-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+}
+
+/* Responsiveness for Modals */
+@media (max-width: 768px) {
     .qe-modal {
         width: 95%;
+        max-width: 100%;
         height: 90vh;
+        margin: 10px auto;
     }
     .qe-modal-body {
         flex-direction: column;
+        overflow-y: auto;
     }
     .qe-modal-sidebar {
         width: 100%;
-        height: 160px;
+        height: auto;
         flex-direction: row;
         overflow-x: auto;
         overflow-y: hidden;
         border-right: none;
         border-bottom: 1px solid var(--border-subtle);
+        padding: 8px;
     }
     .qe-modal-nav-btn {
         white-space: nowrap;
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+    .qe-modal-content {
+        padding: 16px;
     }
 }
 

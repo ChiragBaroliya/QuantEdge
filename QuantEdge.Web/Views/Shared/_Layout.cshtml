@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     
@@ -86,16 +87,27 @@
 </head>
 <body>
 
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar">
+    <!-- Mobile/Tablet Sidebar Backdrop Overlay -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- Sidebar Navigation Drawer -->
+    <aside class="sidebar" id="appSidebar">
         <div class="sidebar-brand">
-            <div class="brand-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
-                    <polyline points="16 7 22 7 22 13"></polyline>
-                </svg>
+            <div class="brand-left">
+                <div class="brand-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                        <polyline points="16 7 22 7 22 13"></polyline>
+                    </svg>
+                </div>
+                <span class="brand-name">QuantEdge</span>
             </div>
-            <span class="brand-name">QuantEdge</span>
+            <button class="sidebar-close-btn" id="sidebarClose" type="button" aria-label="Close navigation menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
         </div>
 
         <nav class="sidebar-nav">
@@ -155,11 +167,29 @@
         <!-- Top Header Bar -->
         <header class="top-header">
             <div class="header-left">
-                <h1 class="page-title">@(ViewData["PageTitle"] ?? ViewData["Title"])</h1>
-                <div class="breadcrumb">
-                    <span>QuantEdge</span>
-                    <span class="breadcrumb-sep">›</span>
-                    <span>@(ViewData["Title"])</span>
+                <button class="mobile-sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle Navigation">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                    <span class="mobile-toggle-text">Menu</span>
+                </button>
+                <div class="mobile-header-brand">
+                    <div class="brand-icon-sm">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                            <polyline points="16 7 22 7 22 13"></polyline>
+                        </svg>
+                    </div>
+                </div>
+                <div class="header-title-container">
+                    <h1 class="page-title">@(ViewData["PageTitle"] ?? ViewData["Title"])</h1>
+                    <div class="breadcrumb">
+                        <span>QuantEdge</span>
+                        <span class="breadcrumb-sep">›</span>
+                        <span>@(ViewData["Title"])</span>
+                    </div>
                 </div>
             </div>
             <div class="header-right">
@@ -191,6 +221,8 @@
 
     <!-- jQuery CDN -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Bootstrap 5 Bundle JS -->
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Select2 JS CDN -->
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <!-- SweetAlert2 CDN -->
@@ -210,6 +242,7 @@
     </script>
 
     <script src="~/js/theme-selector.js" asp-append-version="true"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
 
     @await RenderSectionAsync("Scripts", required: false)
 </body>

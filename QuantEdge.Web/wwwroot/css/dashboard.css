@@ -9,30 +9,37 @@
 
 .control-panel {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: space-between;
-    padding: 16px 24px;
+    gap: 20px;
+    padding: 14px 20px;
     background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    flex-wrap: nowrap;
 }
 
 .control-left {
     display: flex;
-    align-items: center;
-    gap: 32px;
+    align-items: flex-end;
+    gap: 20px;
+    flex-wrap: nowrap;
 }
 
-.input-group {
+.control-select-group {
     display: flex;
     flex-direction: column;
     gap: 6px;
 }
 
-.input-group label, .timeframe-group label {
+.control-select-group label, .timeframe-group label {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
     color: var(--text-muted);
     letter-spacing: 0.8px;
+    white-space: nowrap;
 }
 
 .custom-select {
@@ -41,16 +48,19 @@
     border-radius: var(--radius-md);
     color: var(--text-primary);
     padding: 8px 16px;
-    font-size: 13.5px;
-    font-weight: 500;
+    font-size: 13px;
+    font-weight: 600;
     outline: none;
     cursor: pointer;
-    min-width: 180px;
-    transition: border-color var(--transition);
+    min-width: 170px;
+    height: 38px;
+    box-sizing: border-box;
+    transition: all var(--transition);
 }
 
 .custom-select:focus {
-    border-color: var(--accent-blue);
+    border-color: var(--theme-accent);
+    box-shadow: 0 0 12px var(--theme-glow);
 }
 
 .timeframe-group {
@@ -64,38 +74,54 @@
     background: var(--bg-input);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    padding: 2px;
+    padding: 3px;
+    height: 38px;
+    box-sizing: border-box;
 }
 
 .tab-btn {
     background: none;
     border: none;
     color: var(--text-secondary);
-    padding: 6px 16px;
-    font-size: 12px;
-    font-weight: 600;
+    padding: 4px 12px;
+    font-size: 11.5px;
+    font-weight: 700;
     border-radius: 6px;
     cursor: pointer;
+    white-space: nowrap;
     transition: all var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .tab-btn.active {
-    background: var(--bg-card);
-    color: var(--accent-blue);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    background: var(--theme-accent);
+    color: #0b0f19;
+    box-shadow: 0 2px 8px var(--theme-glow);
+}
+
+.control-right {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: nowrap;
 }
 
 .connection-badge {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 14px;
-    border-radius: 30px;
+    padding: 0 14px;
+    border-radius: var(--radius-md);
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.5px;
     background: rgba(255,255,255,0.03);
     border: 1px solid var(--border-subtle);
+    height: 38px;
+    box-sizing: border-box;
+    white-space: nowrap;
 }
 
 .connection-badge.online {
@@ -529,4 +555,113 @@
     border: 1px solid rgba(248, 113, 113, 0.25);
 }
 
+/* =====================================================
+   Signal Dashboard Responsiveness (Mobile, Tablet & Laptop)
+/* =====================================================
+   Signal Dashboard Responsiveness (Mobile & Tablet)
+   ===================================================== */
+@media (max-width: 991.98px) {
+    .control-panel {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 16px;
+        padding: 16px 20px;
+        flex-wrap: wrap;
+    }
+
+    .control-left {
+        width: 100%;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .control-right {
+        width: 100%;
+        justify-content: flex-start;
+        padding-top: 12px;
+        border-top: 1px solid var(--border-subtle);
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .signal-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    .asset-spec-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    }
+}
+
+@media (max-width: 767.98px) {
+    .control-left {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .control-select-group, .custom-select {
+        width: 100%;
+        min-width: unset;
+    }
+
+    .timeframe-group {
+        width: 100%;
+    }
+
+    .tabs {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        white-space: nowrap;
+        padding: 3px;
+    }
+
+    .tab-btn {
+        flex: 1;
+        text-align: center;
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+
+    .metrics-widget-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .dashboard-container {
+        gap: 14px;
+    }
+
+    .control-right {
+        gap: 8px;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .btn-trigger {
+        font-size: 12px;
+        padding: 6px 12px;
+        height: 36px;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .connection-badge {
+        justify-content: center;
+        width: 100%;
+    }
+
+    .metrics-widget-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .asset-spec-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
 
