@@ -74,6 +74,55 @@ function initCharts() {
             timeVisible: true,
             secondsVisible: false,
             borderColor: 'rgba(255, 255, 255, 0.06)',
+            tickMarkFormatter: (time, tickMarkType, locale) => {
+                if (typeof time === 'number') {
+                    const date = new Date(time * 1000);
+                    const options = { timeZone: 'Asia/Kolkata' };
+                    switch (tickMarkType) {
+                        case 0: // Year
+                            return date.toLocaleDateString('en-IN', { ...options, year: 'numeric' });
+                        case 1: // Month
+                            return date.toLocaleDateString('en-IN', { ...options, month: 'short' });
+                        case 2: // DayOfMonth
+                            return date.toLocaleDateString('en-IN', { ...options, day: '2-digit', month: 'short' });
+                        case 3: // Time
+                            return date.toLocaleTimeString('en-IN', { ...options, hour: '2-digit', minute: '2-digit', hour12: false });
+                        case 4: // TimeWithSeconds
+                            return date.toLocaleTimeString('en-IN', { ...options, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                        default:
+                            return date.toLocaleTimeString('en-IN', { ...options, hour: '2-digit', minute: '2-digit', hour12: false });
+                    }
+                }
+                return null;
+            }
+        },
+        localization: {
+            locale: 'en-IN',
+            dateFormat: 'dd MMM yyyy',
+            timeFormatter: (time) => {
+                if (typeof time === 'number') {
+                    const date = new Date(time * 1000);
+                    if (activeTimeframe === '1d') {
+                        return date.toLocaleDateString('en-IN', {
+                            timeZone: 'Asia/Kolkata',
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                        }) + ' (IST)';
+                    }
+                    return date.toLocaleString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    }) + ' IST';
+                }
+                return String(time);
+            }
         },
         crosshair: {
             mode: LightweightCharts.CrosshairMode.Normal,
@@ -211,7 +260,7 @@ async function fetchStockMasterDetails(symbol) {
         if (data.expiry) {
             const expiryDate = new Date(data.expiry);
             if (!isNaN(expiryDate.getTime())) {
-                $("#specExpiry").text(expiryDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }));
+                $("#specExpiry").text(expiryDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }));
             } else {
                 $("#specExpiry").text("-");
             }
@@ -235,7 +284,7 @@ async function switchSymbol(symbol) {
     const oldSymbol = activeSymbol;
     activeSymbol = symbol;
     
-    $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe})`);
+    $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe} - IST)`);
     await fetchChartHistory();
     await fetchStockMasterDetails(symbol);
 
@@ -254,7 +303,7 @@ async function switchTimeframe(timeframe) {
     const oldTimeframe = activeTimeframe;
     activeTimeframe = timeframe;
     
-    $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe})`);
+    $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe} - IST)`);
     await fetchChartHistory();
 
     // Re-subscribe to SignalR groups
@@ -498,7 +547,21 @@ function updateSignalUi(data) {
     // 3. Info labels
     $("#signalStrength").text(strength);
     $("#signalPrice").text(priceVal ? "₹" + parseFloat(priceVal).toFixed(2) : "-");
-    $("#signalTime").text(new Date(timeVal).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    
+    let formattedTime = "-";
+    if (timeVal) {
+        const d = new Date(timeVal);
+        if (!isNaN(d.getTime())) {
+            formattedTime = d.toLocaleTimeString('en-IN', {
+                timeZone: 'Asia/Kolkata',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            }) + " IST";
+        }
+    }
+    $("#signalTime").text(formattedTime);
 
     // Confidence Level evaluation
     let confidenceText = "-";
