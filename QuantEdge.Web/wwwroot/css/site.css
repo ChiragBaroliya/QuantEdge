@@ -258,6 +258,104 @@ body {
     overflow: hidden;
 }
 
+/* Sidebar Nav Submenu & Nested Items */
+.nav-item-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 2px;
+}
+
+.nav-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: all var(--transition);
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    user-select: none;
+}
+
+.nav-item-header:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border-left-color: rgba(255, 255, 255, 0.15);
+}
+
+.nav-item-header.active {
+    color: var(--theme-accent);
+    background: var(--theme-glow-card);
+    border-left-color: var(--theme-accent);
+}
+
+.nav-item-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.nav-chevron {
+    width: 14px;
+    height: 14px;
+    transition: transform 0.2s ease;
+    opacity: 0.6;
+    color: var(--text-secondary);
+}
+
+.nav-item-group.open .nav-chevron {
+    transform: rotate(90deg);
+    opacity: 1;
+    color: var(--theme-accent);
+}
+
+.nav-submenu {
+    display: none;
+    flex-direction: column;
+    padding-left: 24px;
+    gap: 2px;
+    margin-top: 2px;
+}
+
+.nav-item-group.open .nav-submenu {
+    display: flex;
+}
+
+.nav-sub-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    height: 38px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    transition: all var(--transition);
+    border-left: 2px solid transparent;
+    text-decoration: none;
+}
+
+.nav-sub-item:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-sub-item.active {
+    color: var(--theme-accent);
+    background: var(--theme-glow-card);
+    border-left-color: var(--theme-accent);
+    font-weight: 600;
+}
+
+.nav-sub-item.active svg {
+    color: var(--theme-accent);
+}
+
 /* Sidebar Footer */
 .sidebar-footer {
     padding: 14px 16px;

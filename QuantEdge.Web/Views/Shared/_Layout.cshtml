@@ -161,6 +161,49 @@
                 </svg>
                 <span class="nav-label">Data Coverage</span>
             </a>
+            <!-- Main Menu Log with Sub Items -->
+            @{
+                bool isLogActive = ViewContext.RouteData.Values["controller"]?.ToString() == "Log";
+                bool isApiLogActive = isLogActive && ViewContext.RouteData.Values["action"]?.ToString() == "ApiLog";
+                bool isWebLogActive = isLogActive && !isApiLogActive;
+            }
+            <div class="nav-item-group @(isLogActive ? "open" : "")">
+                <div class="nav-item-header @(isLogActive ? "active" : "")" title="Log Manager">
+                    <div class="nav-item-header-left">
+                        <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                        <span class="nav-label">Log</span>
+                    </div>
+                    <svg class="nav-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                </div>
+                <div class="nav-submenu">
+                    <a asp-controller="Log" asp-action="Index"
+                       class="nav-sub-item @(isWebLogActive ? "active" : "")"
+                       title="Web Log">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                        <span>Web Log</span>
+                    </a>
+                    <a asp-controller="Log" asp-action="ApiLog"
+                       class="nav-sub-item @(isApiLogActive ? "active" : "")"
+                       title="API Log">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="16 18 22 12 16 6"></polyline>
+                            <polyline points="8 6 2 12 8 18"></polyline>
+                        </svg>
+                        <span>API Log</span>
+                    </a>
+                </div>
+            </div>
         </nav>
 
         <div class="sidebar-footer">

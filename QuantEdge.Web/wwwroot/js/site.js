@@ -37,6 +37,16 @@ document.addEventListener('DOMContentLoaded', function () {
         if (window.innerWidth >= 768) closeSidebar();
     });
 
+    // ---- Nav Submenu Group Toggler ----
+    document.querySelectorAll('.nav-item-header').forEach(function (header) {
+        header.addEventListener('click', function () {
+            var group = this.closest('.nav-item-group');
+            if (group) {
+                group.classList.toggle('open');
+            }
+        });
+    });
+
     // ---- Live Clock ----
     var timeEl = document.getElementById('currentTime');
     if (timeEl) {
