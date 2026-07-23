@@ -20,10 +20,18 @@ public class InstrumentSyncService : IInstrumentSyncService
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ILogger<InstrumentSyncService> _logger;
 
+    private static readonly string[] ExcludedNameKeywords = 
+    {
+        "TREASURY", "GOVERNMENT", "GOVT", "STATE DEVELOPMENT LOAN", "SOVEREIGN", 
+        "DEBT", "BOND", "SECURITY", "SDL", "SGB", "NCD", "TBILL", "T-BILL", 
+        "GSEC", "GOI"
+    };
+
     private static readonly HashSet<string> ActiveSymbols = new(StringComparer.OrdinalIgnoreCase)
     {
         "NIFTYBEES", "INFY", "TCS", "HDFCBANK", "RELIANCE", "NIFTY 50"
     };
+
 
     public InstrumentSyncService(
         IDbConnectionFactory connectionFactory,
@@ -119,38 +127,89 @@ public class InstrumentSyncService : IInstrumentSyncService
                 var instType = cols[9].Trim();
                 var segment = cols[10].Trim();
 
-                // Apply exclusions for NSE equities (bonds, SDL, etc.)
-                if (exchange.Equals("NSE", StringComparison.OrdinalIgnoreCase) &&
-                    segment.Equals("NSE", StringComparison.OrdinalIgnoreCase) &&
-                    instType.Equals("EQ", StringComparison.OrdinalIgnoreCase))
+                // 1. Inclusion criteria
+                // 1. Inclusion criteria
+                bool isNSEEquity = exchange.Equals("NSE", StringComparison.OrdinalIgnoreCase) && 
+                                   segment.Equals("NSE", StringComparison.OrdinalIgnoreCase) && 
+                                   instType.Equals("EQ", StringComparison.OrdinalIgnoreCase);
+
+                bool isNSEETF = exchange.Equals("NSE", StringComparison.OrdinalIgnoreCase) && 
+                                segment.Equals("NSE", StringComparison.OrdinalIgnoreCase) && 
+                                instType.Equals("ETF", StringComparison.OrdinalIgnoreCase);
+
+                bool isNSEIndex = segment.Equals("INDICES", StringComparison.OrdinalIgnoreCase);
+
+                if (!isNSEEquity && !isNSEETF && !isNSEIndex)
                 {
-                    var upperName = name.ToUpperInvariant();
-                    var upperSymbol = symbol.ToUpperInvariant();
+                    continue;
+                }
 
-                    if (upperName.Contains("SDL") ||
-                        upperName.Contains("SGB") ||
-                        upperName.Contains("NCD") ||
-                        upperName.Contains("GOI") ||
-                        upperName.Contains("T-BILL") ||
-                        upperName.Contains("TREASURY"))
-                    {
-                        continue;
-                    }
+                // 2. Exclusion criteria
 
-                    if (Regex.IsMatch(name, @"\d+\.\d+%"))
-                    {
-                        continue;
-                    }
+                // Reject if name is empty
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
 
-                    if (upperSymbol.EndsWith("-SG") || 
-                        upperSymbol.EndsWith("-GS") ||
-                        upperSymbol.EndsWith("-GB") ||
-                        upperSymbol.EndsWith("-SM") ||
-                        upperSymbol.EndsWith("-ST"))
+                // Reject symbols that start with a digit
+                if (symbol.Length > 0 && char.IsDigit(symbol[0]))
+                {
+                    continue;
+                }
+
+                // Reject symbols ending with -N0 to -N9
+                if (Regex.IsMatch(symbol, @"-N\d$"))
+                {
+                    continue;
+                }
+
+                // Reject government securities based on symbol
+                if (Regex.IsMatch(symbol, @"-(SG|GS|GB)$", RegexOptions.IgnoreCase))
+                {
+                    continue;
+                }
+
+                // Keep existing exclusions for SME, Warrants, Rights, Suspended
+                var upperSymbol = symbol.ToUpperInvariant();
+                if (upperSymbol.EndsWith("-SM") ||
+                    upperSymbol.EndsWith("-ST") ||
+                    upperSymbol.EndsWith("-RE") ||
+                    upperSymbol.EndsWith("-RT") ||
+                    upperSymbol.EndsWith("-W") ||
+                    upperSymbol.EndsWith("-W1"))
+                {
+                    continue;
+                }
+
+                var upperName = name.ToUpperInvariant();
+                if (upperName.Contains("SUSPENDED") || upperName.Contains("WARRANT"))
+                {
+                    continue;
+                }
+
+                // Reject names matching coupon rates (e.g. 7.18%, 6.95%)
+                if (Regex.IsMatch(name, @"\d+(\.\d+)?%"))
+                {
+                    continue;
+                }
+
+                // Reject names containing excluded keywords
+                bool hasExcludedKeyword = false;
+                foreach (var keyword in ExcludedNameKeywords)
+                {
+                    if (upperName.Contains(keyword))
                     {
-                        continue;
+                        hasExcludedKeyword = true;
+                        break;
                     }
                 }
+
+                if (hasExcludedKeyword)
+                {
+                    continue;
+                }
+
 
                 bool isActive = ActiveSymbols.Contains(symbol);
 
@@ -190,6 +249,7 @@ public class InstrumentSyncService : IInstrumentSyncService
         _logger.LogInformation("Saving {Count} de-duplicated instruments to database...", instrumentsToSave.Count);
 
         // Perform batch upsert in a single transaction for performance
+        /*
         using var connection = _connectionFactory.CreateConnection();
         if (connection.State != ConnectionState.Open)
         {
@@ -213,6 +273,29 @@ public class InstrumentSyncService : IInstrumentSyncService
             _logger.LogError(ex, "Error occurred during bulk saving of instruments to database via stored function.");
             throw;
         }
+        */
+
+        var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "instruments_output.csv");
+        _logger.LogInformation("Writing {Count} instruments to CSV for testing at {Path}", instrumentsToSave.Count, csvPath);
+        
+        var csvLines = new List<string>
+        {
+            "Symbol,Name,InstrumentToken,ExchangeToken,InstrumentType,Segment,Exchange,IsActive"
+        };
+
+        foreach(var inst in instrumentsToSave)
+        {
+            // Escape any existing quotes in the name
+            var safeName = inst.Name?.Replace("\"", "\"\"") ?? "";
+            csvLines.Add($"{inst.Symbol},\"{safeName}\",{inst.InstrumentToken},{inst.ExchangeToken},{inst.InstrumentType},{inst.Segment},{inst.Exchange},{inst.IsActive}");
+        }
+
+        if (File.Exists(csvPath))
+        {
+            File.Delete(csvPath);
+        }
+        await File.WriteAllLinesAsync(csvPath, csvLines, cancellationToken);
+        _logger.LogInformation("Successfully cleared old file and wrote new instruments to CSV.");
     }
 
     private static string[] SplitCsvLine(string line)
