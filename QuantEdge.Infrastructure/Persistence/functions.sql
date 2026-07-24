@@ -8,11 +8,13 @@
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS sp_get_market_candles CASCADE;
 DROP FUNCTION IF EXISTS sp_get_market_candles(VARCHAR, VARCHAR, INTEGER) CASCADE;
+DROP FUNCTION IF EXISTS sp_get_market_candles(VARCHAR, VARCHAR, INTEGER, TIMESTAMP WITH TIME ZONE) CASCADE;
 
 CREATE OR REPLACE FUNCTION sp_get_market_candles(
     p_symbol VARCHAR(50),
     p_timeframe VARCHAR(20),
-    p_limit INTEGER
+    p_limit INTEGER,
+    p_before_time TIMESTAMP WITH TIME ZONE DEFAULT NULL
 )
 RETURNS TABLE (
     id INT,
@@ -41,13 +43,23 @@ BEGIN
         RETURN;
     END IF;
 
-    RETURN QUERY EXECUTE format('
-        SELECT c.id, c.candle_time, c.symbol, c.timeframe, c.open, c.high, c.low, c.close, c.volume, c.created_at
-        FROM %I c
-        WHERE c.symbol = $1
-        ORDER BY c.candle_time DESC
-        LIMIT $2;', v_table_name)
-    USING p_symbol, p_limit;
+    IF p_before_time IS NULL THEN
+        RETURN QUERY EXECUTE format('
+            SELECT c.id, c.candle_time, c.symbol, c.timeframe, c.open, c.high, c.low, c.close, c.volume, c.created_at
+            FROM %I c
+            WHERE c.symbol = $1
+            ORDER BY c.candle_time DESC
+            LIMIT $2;', v_table_name)
+        USING p_symbol, p_limit;
+    ELSE
+        RETURN QUERY EXECUTE format('
+            SELECT c.id, c.candle_time, c.symbol, c.timeframe, c.open, c.high, c.low, c.close, c.volume, c.created_at
+            FROM %I c
+            WHERE c.symbol = $1 AND c.candle_time < $2
+            ORDER BY c.candle_time DESC
+            LIMIT $3;', v_table_name)
+        USING p_symbol, p_before_time, p_limit;
+    END IF;
 END;
 $$;
 
@@ -58,11 +70,13 @@ $$;
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS sp_get_market_indicators CASCADE;
 DROP FUNCTION IF EXISTS sp_get_market_indicators(VARCHAR, VARCHAR, INTEGER) CASCADE;
+DROP FUNCTION IF EXISTS sp_get_market_indicators(VARCHAR, VARCHAR, INTEGER, TIMESTAMP WITH TIME ZONE) CASCADE;
 
 CREATE OR REPLACE FUNCTION sp_get_market_indicators(
     p_symbol VARCHAR(50),
     p_timeframe VARCHAR(20),
-    p_limit INTEGER
+    p_limit INTEGER,
+    p_before_time TIMESTAMP WITH TIME ZONE DEFAULT NULL
 )
 RETURNS TABLE (
     id INT,
@@ -92,13 +106,23 @@ BEGIN
         RETURN;
     END IF;
 
-    RETURN QUERY EXECUTE format('
-        SELECT i.id, i.candle_time, i.symbol, i.timeframe, i.rsi, i.ema20, i.ema50, i.macd, i.signal_line, i.vwap, i.created_at
-        FROM %I i
-        WHERE i.symbol = $1
-        ORDER BY i.candle_time DESC
-        LIMIT $2;', v_table_name)
-    USING p_symbol, p_limit;
+    IF p_before_time IS NULL THEN
+        RETURN QUERY EXECUTE format('
+            SELECT i.id, i.candle_time, i.symbol, i.timeframe, i.rsi, i.ema20, i.ema50, i.macd, i.signal_line, i.vwap, i.created_at
+            FROM %I i
+            WHERE i.symbol = $1
+            ORDER BY i.candle_time DESC
+            LIMIT $2;', v_table_name)
+        USING p_symbol, p_limit;
+    ELSE
+        RETURN QUERY EXECUTE format('
+            SELECT i.id, i.candle_time, i.symbol, i.timeframe, i.rsi, i.ema20, i.ema50, i.macd, i.signal_line, i.vwap, i.created_at
+            FROM %I i
+            WHERE i.symbol = $1 AND i.candle_time < $2
+            ORDER BY i.candle_time DESC
+            LIMIT $3;', v_table_name)
+        USING p_symbol, p_before_time, p_limit;
+    END IF;
 END;
 $$;
 

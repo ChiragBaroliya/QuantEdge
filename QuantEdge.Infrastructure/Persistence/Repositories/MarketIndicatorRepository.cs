@@ -57,18 +57,31 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
     }
 
     /// <summary>
-    /// Retrieves indicator logs using sp_get_market_indicators function.
+    /// Retrieves indicator logs using direct SQL query on timeframe table for maximum performance and reliability.
     /// </summary>
-    public async Task<IEnumerable<MarketIndicator>> GetHistoryAsync(string symbol, string timeframe, int limit)
+    public async Task<IEnumerable<MarketIndicator>> GetHistoryAsync(string symbol, string timeframe, int limit, DateTime? beforeTime = null)
     {
+        string safeTimeframe = timeframe.ToLower();
+        if (!new[] { "1m", "5m", "15m", "60m", "1d" }.Contains(safeTimeframe))
+        {
+            safeTimeframe = "1m";
+        }
+        string tableName = $"market_indicators_{safeTimeframe}";
+
         using var connection = _connectionFactory.CreateConnection();
 
         try
         {
-            return await connection.QueryAsync<MarketIndicator>(
-                "SELECT * FROM sp_get_market_indicators(@p_symbol, @p_timeframe, @p_limit);",
-                new { p_symbol = symbol, p_timeframe = timeframe, p_limit = limit }
-            );
+            if (beforeTime.HasValue)
+            {
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE UPPER(symbol) = UPPER(@Symbol) AND candle_time < @BeforeTime ORDER BY candle_time DESC LIMIT @Limit;";
+                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = symbol, BeforeTime = beforeTime.Value, Limit = limit });
+            }
+            else
+            {
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE UPPER(symbol) = UPPER(@Symbol) ORDER BY candle_time DESC LIMIT @Limit;";
+                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = symbol, Limit = limit });
+            }
         }
         finally
         {

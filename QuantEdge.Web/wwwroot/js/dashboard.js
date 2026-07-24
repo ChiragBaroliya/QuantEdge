@@ -23,6 +23,8 @@ let macdHistSeries = null;
 
 // Keep local cache of data for real-time appends
 let chartDataCache = [];
+let isLoadingOlderData = false;
+let noMoreHistoryAvailable = false;
 
 $(document).ready(async function () {
     // Connect to SignalR early so listeners can be attached before await yields
@@ -189,10 +191,14 @@ function initCharts() {
         downColor: 'rgba(248, 113, 113, 0.4)',
     });
 
-    // Synchronize crosshairs & scaling across all three charts
+    // Synchronize crosshairs & scaling across all three charts and lazy-load older history on scroll
     priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
         rsiChart.timeScale().setVisibleLogicalRange(range);
         macdChart.timeScale().setVisibleLogicalRange(range);
+
+        if (range && range.from !== null && range.from < 15 && !isLoadingOlderData && !noMoreHistoryAvailable && chartDataCache.length > 0) {
+            fetchOlderChartHistory();
+        }
     });
     rsiChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
         priceChart.timeScale().setVisibleLogicalRange(range);
@@ -318,8 +324,11 @@ async function switchTimeframe(timeframe) {
 async function fetchChartHistory() {
     if (!activeSymbol) return;
 
+    isLoadingOlderData = false;
+    noMoreHistoryAvailable = false;
+
     try {
-        const response = await fetch(`${API_BASE_URL}/api/marketdata/chart-data?symbol=${activeSymbol}&timeframe=${activeTimeframe}&limit=200`);
+        const response = await fetch(`${API_BASE_URL}/api/marketdata/chart-data?symbol=${activeSymbol}&timeframe=${activeTimeframe}&limit=500`);
         if (!response.ok) throw new Error("Failed to load chart history.");
         const data = await response.json();
 
@@ -340,6 +349,56 @@ async function fetchChartHistory() {
     }
 }
 
+// Fetch older historical chart data when panning/scrolling left
+async function fetchOlderChartHistory() {
+    if (isLoadingOlderData || noMoreHistoryAvailable || chartDataCache.length === 0 || !activeSymbol) return;
+
+    isLoadingOlderData = true;
+    const oldestCandle = chartDataCache[0];
+    const beforeTime = oldestCandle.time;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/marketdata/chart-data?symbol=${activeSymbol}&timeframe=${activeTimeframe}&limit=500&before=${beforeTime}`);
+        if (!response.ok) throw new Error("Failed to load older chart history.");
+        const olderData = await response.json();
+
+        if (!olderData || olderData.length === 0) {
+            noMoreHistoryAvailable = true;
+            return;
+        }
+
+        const existingTimeMap = new Set(chartDataCache.map(d => d.time));
+        const filteredOlderData = olderData.filter(d => !existingTimeMap.has(d.time));
+
+        if (filteredOlderData.length === 0) {
+            noMoreHistoryAvailable = true;
+            return;
+        }
+
+        const addedCount = filteredOlderData.length;
+
+        // Save current visible logical range before updating data
+        const currentRange = priceChart ? priceChart.timeScale().getVisibleLogicalRange() : null;
+
+        chartDataCache = [...filteredOlderData, ...chartDataCache];
+        chartDataCache.sort((a, b) => a.time - b.time);
+
+        bindChartData(chartDataCache);
+
+        // Adjust visible logical range so user view position stays perfectly stationary
+        if (priceChart && currentRange) {
+            priceChart.timeScale().setVisibleLogicalRange({
+                from: currentRange.from + addedCount,
+                to: currentRange.to + addedCount
+            });
+        }
+    } catch (ex) {
+        console.error("Error loading older history:", ex);
+    } finally {
+        isLoadingOlderData = false;
+    }
+}
+
 // Fetch live signal evaluation dynamically
 async function fetchLiveSignalEvaluation() {
     if (!activeSymbol) return;
@@ -350,6 +409,19 @@ async function fetchLiveSignalEvaluation() {
         updateSignalUi(data);
     } catch (ex) {
         console.error("Failed to load live signal evaluation:", ex);
+    }
+}
+
+function updateLivePriceHeader(price, openPrice) {
+    if (price === null || price === undefined || isNaN(price) || price === 0) return;
+
+    $("#hdrLivePrice").text("₹" + parseFloat(price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    
+    if (openPrice && openPrice > 0) {
+        const changePct = ((price - openPrice) / openPrice) * 100;
+        const changeEl = $("#hdrLiveChange");
+        changeEl.text((changePct >= 0 ? "+" : "") + changePct.toFixed(2) + "%");
+        changeEl.attr("class", `hdr-change-val ${changePct >= 0 ? "bullish" : "bearish"}`);
     }
 }
 
@@ -387,6 +459,7 @@ function bindChartData(dataList) {
     });
 
     candleSeries.setData(priceData);
+    candleSeries.setMarkers([]);
     ema20Series.setData(ema20Data);
     ema50Series.setData(ema50Data);
     vwapSeries.setData(vwapData);
@@ -394,6 +467,11 @@ function bindChartData(dataList) {
     macdLineSeries.setData(macdData);
     macdSignalSeries.setData(macdSignalData);
     macdHistSeries.setData(macdHistData);
+
+    if (priceData.length > 0) {
+        const latest = priceData[priceData.length - 1];
+        updateLivePriceHeader(latest.close, latest.open);
+    }
 }
 
 // SignalR Connection
@@ -422,6 +500,7 @@ function connectSignalR() {
 
         // Update widgets with live LTP
         $("#widgetLTP").text(candleUpdate.close.toFixed(2));
+        updateLivePriceHeader(candleUpdate.close, candleUpdate.open);
         
         // Calculate percentage change compared to the open price of the active candle
         const changePct = ((candleUpdate.close - candleUpdate.open) / candleUpdate.open) * 100;
@@ -464,7 +543,7 @@ function connectSignalR() {
             chartDataCache[index] = chartItem;
         } else {
             chartDataCache.push(chartItem);
-            if (chartDataCache.length > 200) {
+            if (chartDataCache.length > 2000) {
                 chartDataCache.shift();
             }
         }
@@ -545,7 +624,14 @@ function updateSignalUi(data) {
     if (scoreCircle.length) scoreCircle.css("stroke-dasharray", `${score}, 100`);
 
     // 3. Info labels
-    $("#signalStrength").text(strength);
+    const strengthEl = $("#signalStrength");
+    if (strengthEl.length) {
+        strengthEl.text(strength);
+        if (type === "BUY") strengthEl.attr("class", "m-val-badge bullish");
+        else if (type === "SELL") strengthEl.attr("class", "m-val-badge bearish");
+        else strengthEl.attr("class", "m-val-badge neutral");
+    }
+
     $("#signalPrice").text(priceVal ? "₹" + parseFloat(priceVal).toFixed(2) : "-");
     
     let formattedTime = "-";
@@ -565,28 +651,28 @@ function updateSignalUi(data) {
 
     // Confidence Level evaluation
     let confidenceText = "-";
-    let confidenceColor = "var(--text-secondary)";
+    let confidenceClass = "m-val-badge neutral";
     if (type === "HOLD") {
-        confidenceText = `Low (Hold) (${score}%)`;
-        confidenceColor = "var(--text-muted)";
+        confidenceText = `Hold (${score}%)`;
+        confidenceClass = "m-val-badge neutral";
     } else {
         if (score >= 90) {
             confidenceText = `Very High (${score}%)`;
-            confidenceColor = "var(--accent-green)";
+            confidenceClass = "m-val-badge bullish";
         } else if (score >= 70) {
             confidenceText = `High (${score}%)`;
-            confidenceColor = "var(--accent-green)";
+            confidenceClass = "m-val-badge bullish";
         } else if (score >= 50) {
             confidenceText = `Moderate (${score}%)`;
-            confidenceColor = "var(--accent-amber)";
+            confidenceClass = "m-val-badge neutral";
         } else {
             confidenceText = `Low (${score}%)`;
-            confidenceColor = "var(--accent-red)";
+            confidenceClass = "m-val-badge bearish";
         }
     }
     const confidenceEl = $("#signalConfidence");
     if (confidenceEl.length) {
-        confidenceEl.text(confidenceText).css("color", confidenceColor);
+        confidenceEl.text(confidenceText).attr("class", confidenceClass);
     }
 
     $("#signalReasoning").text(reason);
@@ -608,12 +694,20 @@ function updateSignalUi(data) {
     // RSI
     const rsi = data.rsi !== undefined ? data.rsi : data.RSI;
     if (rsi !== null && rsi !== undefined) {
-        $("#widgetRSI").text(parseFloat(rsi).toFixed(2));
+        const rsiVal = parseFloat(rsi);
+        $("#widgetRSI").text(rsiVal.toFixed(2));
+        
+        // Update RSI mini fill bar
+        if (!isNaN(rsiVal)) {
+            const clampedPct = Math.min(100, Math.max(0, rsiVal));
+            $("#rsiBarFill").css("width", `${clampedPct}%`);
+        }
+
         const rsiEl = $("#widgetRsiStatus");
         if (rsiEl.length) {
-            if (rsi > 60) {
+            if (rsiVal > 60) {
                 rsiEl.text("Overbought").attr("class", "w-status bearish");
-            } else if (rsi < 40) {
+            } else if (rsiVal < 40) {
                 rsiEl.text("Oversold").attr("class", "w-status bullish");
             } else {
                 rsiEl.text("Neutral").attr("class", "w-status neutral");
@@ -622,6 +716,7 @@ function updateSignalUi(data) {
     } else {
         $("#widgetRSI").text("-");
         $("#widgetRsiStatus").text("-").attr("class", "w-status neutral");
+        $("#rsiBarFill").css("width", "50%");
     }
 
     // VWAP Difference

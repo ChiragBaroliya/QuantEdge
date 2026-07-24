@@ -39,22 +39,22 @@ public class DatabaseInitializer
             return;
         }
 
-        //try
-        //{
-        //    var builder = new NpgsqlConnectionStringBuilder(_config.ConnectionString);
-        //    string targetDb = builder.Database ?? "quantedge";
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(_config.ConnectionString);
+            string targetDb = builder.Database ?? "quantedge";
 
-        //    // 1. Check if database exists, create if not
-        //    await EnsureDatabaseCreatedAsync(builder, targetDb);
+            // 1. Check if database exists, create if not
+            await EnsureDatabaseCreatedAsync(builder, targetDb);
 
-        //    // 2. Connect to the target database and check if tables exist
-        //    await EnsureSchemaInitializedAsync(targetDb);
-        //}
-        //catch (Exception ex)
-        //{
-        //    _logger.LogError(ex, "An error occurred during database initialization.");
-        //    throw;
-        //}
+            // 2. Connect to the target database and check if tables exist
+            await EnsureSchemaInitializedAsync(targetDb);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred during database initialization.");
+            throw;
+        }
     }
 
     private async Task EnsureDatabaseCreatedAsync(NpgsqlConnectionStringBuilder originalBuilder, string targetDb)
@@ -280,6 +280,115 @@ public class DatabaseInitializer
             $$;
         ");
         _logger.LogInformation("PostgreSQL procedures/functions for 'trading_signals' configured successfully.");
+
+        // Always ensure stored functions for market_candles and market_indicators are provisioned/updated
+        _logger.LogInformation("Ensuring PostgreSQL functions for 'market_candles' and 'market_indicators' are provisioned...");
+        await conn.ExecuteAsync(@"
+            CREATE OR REPLACE FUNCTION sp_get_market_candles(
+                p_symbol VARCHAR(50),
+                p_timeframe VARCHAR(20),
+                p_limit INTEGER,
+                p_before_time TIMESTAMP WITH TIME ZONE DEFAULT NULL
+            )
+            RETURNS TABLE (
+                id INT,
+                candle_time TIMESTAMP WITH TIME ZONE,
+                symbol VARCHAR(50),
+                timeframe VARCHAR(20),
+                open NUMERIC(18, 6),
+                high NUMERIC(18, 6),
+                low NUMERIC(18, 6),
+                close NUMERIC(18, 6),
+                volume BIGINT,
+                created_at TIMESTAMP WITH TIME ZONE
+            )
+            LANGUAGE plpgsql
+            AS $$
+            DECLARE
+                v_table_name TEXT;
+            BEGIN
+                v_table_name := 'market_candles_' || LOWER(p_timeframe);
+                
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_schema = 'public' AND table_name = v_table_name
+                ) THEN
+                    RETURN;
+                END IF;
+
+                IF p_before_time IS NULL THEN
+                    RETURN QUERY EXECUTE format('
+                        SELECT c.id, c.candle_time, c.symbol, c.timeframe, c.open, c.high, c.low, c.close, c.volume, c.created_at
+                        FROM %I c
+                        WHERE c.symbol = $1
+                        ORDER BY c.candle_time DESC
+                        LIMIT $2;', v_table_name)
+                    USING p_symbol, p_limit;
+                ELSE
+                    RETURN QUERY EXECUTE format('
+                        SELECT c.id, c.candle_time, c.symbol, c.timeframe, c.open, c.high, c.low, c.close, c.volume, c.created_at
+                        FROM %I c
+                        WHERE c.symbol = $1 AND c.candle_time < $2
+                        ORDER BY c.candle_time DESC
+                        LIMIT $3;', v_table_name)
+                    USING p_symbol, p_before_time, p_limit;
+                END IF;
+            END;
+            $$;
+
+            CREATE OR REPLACE FUNCTION sp_get_market_indicators(
+                p_symbol VARCHAR(50),
+                p_timeframe VARCHAR(20),
+                p_limit INTEGER,
+                p_before_time TIMESTAMP WITH TIME ZONE DEFAULT NULL
+            )
+            RETURNS TABLE (
+                id INT,
+                candle_time TIMESTAMP WITH TIME ZONE,
+                symbol VARCHAR(50),
+                timeframe VARCHAR(20),
+                rsi NUMERIC(18, 6),
+                ema20 NUMERIC(18, 6),
+                ema50 NUMERIC(18, 6),
+                macd NUMERIC(18, 6),
+                signal_line NUMERIC(18, 6),
+                vwap NUMERIC(18, 6),
+                created_at TIMESTAMP WITH TIME ZONE
+            )
+            LANGUAGE plpgsql
+            AS $$
+            DECLARE
+                v_table_name TEXT;
+            BEGIN
+                v_table_name := 'market_indicators_' || LOWER(p_timeframe);
+                
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_schema = 'public' AND table_name = v_table_name
+                ) THEN
+                    RETURN;
+                END IF;
+
+                IF p_before_time IS NULL THEN
+                    RETURN QUERY EXECUTE format('
+                        SELECT i.id, i.candle_time, i.symbol, i.timeframe, i.rsi, i.ema20, i.ema50, i.macd, i.signal_line, i.vwap, i.created_at
+                        FROM %I i
+                        WHERE i.symbol = $1
+                        ORDER BY i.candle_time DESC
+                        LIMIT $2;', v_table_name)
+                    USING p_symbol, p_limit;
+                ELSE
+                    RETURN QUERY EXECUTE format('
+                        SELECT i.id, i.candle_time, i.symbol, i.timeframe, i.rsi, i.ema20, i.ema50, i.macd, i.signal_line, i.vwap, i.created_at
+                        FROM %I i
+                        WHERE i.symbol = $1 AND i.candle_time < $2
+                        ORDER BY i.candle_time DESC
+                        LIMIT $3;', v_table_name)
+                    USING p_symbol, p_before_time, p_limit;
+                END IF;
+            END;
+            $$;
+        ");
 
         // Always ensure stored functions for stock_master are provisioned/updated
         _logger.LogInformation("Ensuring PostgreSQL functions for 'stock_master' are provisioned...");

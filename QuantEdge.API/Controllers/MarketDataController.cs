@@ -118,40 +118,70 @@ public class MarketDataController : ControllerBase
 
     /// <summary>
     /// Returns combined candles, indicators, and signals for the given symbol and timeframe.
+    /// Supports optional `before` parameter (Unix timestamp in milliseconds) for historical pagination.
     /// </summary>
     [HttpGet("chart-data")]
-    public async Task<IActionResult> GetChartData([FromQuery] string symbol, [FromQuery] string timeframe, [FromQuery] int limit = 150)
+    public async Task<IActionResult> GetChartData(
+        [FromQuery] string symbol, 
+        [FromQuery] string timeframe, 
+        [FromQuery] int limit = 500,
+        [FromQuery] long? before = null)
     {
         if (string.IsNullOrWhiteSpace(symbol)) return BadRequest("Symbol parameter is required.");
         if (string.IsNullOrWhiteSpace(timeframe)) return BadRequest("Timeframe parameter is required.");
 
-        _logger.LogInformation("HTTP Request: Fetching combined chart data for symbol {Symbol} ({Timeframe}, Limit: {Limit})", symbol, timeframe, limit);
+        _logger.LogInformation("HTTP Request: Fetching combined chart data for symbol {Symbol} ({Timeframe}, Limit: {Limit}, Before: {Before})", symbol, timeframe, limit, before);
 
         try
         {
+            DateTime? beforeDateTime = before.HasValue 
+                ? DateTimeOffset.FromUnixTimeMilliseconds(before.Value).UtcDateTime 
+                : null;
+
             // Fetch candles and indicators from DB (ordered by candle_time DESC in repos)
-            var candlesTask = _candleRepository.GetHistoryAsync(symbol, timeframe, limit);
-            var indicatorsTask = _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit);
+            var candlesTask = _candleRepository.GetHistoryAsync(symbol, timeframe, limit, beforeDateTime);
+            var indicatorsTask = _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit, beforeDateTime);
             var signalsTask = _tradingSignalRepository.GetRecentSignalsAsync(limit);
 
             await Task.WhenAll(candlesTask, indicatorsTask, signalsTask);
 
-            var candles = candlesTask.Result.ToList();
-            var indicators = indicatorsTask.Result.ToDictionary(i => i.CandleTime.ToString("yyyy-MM-dd HH:mm:ssZ"));
-            var signals = signalsTask.Result.Where(s => s.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase))
-                .ToDictionary(s => s.CandleTime.ToString("yyyy-MM-dd HH:mm:ssZ"));
+            var rawCandles = candlesTask.Result;
+            var rawIndicators = indicatorsTask.Result;
+            var rawSignals = signalsTask.Result;
+
+            // Deduplicate and order candles chronologically (oldest first for Lightweight Charts)
+            var candles = rawCandles
+                .GroupBy(c => c.CandleTime)
+                .Select(g => g.First())
+                .OrderBy(c => c.CandleTime)
+                .ToList();
+
+            var indicators = rawIndicators
+                .GroupBy(i => i.CandleTime.ToString("yyyy-MM-dd HH:mm:ssZ"))
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var signalsByTimeSec = rawSignals
+                .Where(s => s.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(s => (s.CandleTime.Kind == DateTimeKind.Utc ? new DateTimeOffset(s.CandleTime) : new DateTimeOffset(DateTime.SpecifyKind(s.CandleTime, DateTimeKind.Utc))).ToUnixTimeSeconds())
+                .ToDictionary(g => g.Key, g => g.First());
 
             // Match and build chart DTO list ordered chronologically (oldest first for Lightweight Charts)
             var chartData = candles.Select(c =>
             {
+                DateTime utcTime = c.CandleTime.Kind == DateTimeKind.Utc 
+                    ? c.CandleTime 
+                    : DateTime.SpecifyKind(c.CandleTime, DateTimeKind.Utc);
+
+                long timeMs = new DateTimeOffset(utcTime).ToUnixTimeMilliseconds();
+                long timeSec = timeMs / 1000;
                 string key = c.CandleTime.ToString("yyyy-MM-dd HH:mm:ssZ");
                 
                 indicators.TryGetValue(key, out var ind);
-                signals.TryGetValue(key, out var sig);
+                signalsByTimeSec.TryGetValue(timeSec, out var sig);
 
                 return new
                 {
-                    time = new DateTimeOffset(c.CandleTime).ToUnixTimeMilliseconds(),
+                    time = timeMs,
                     open = c.Open,
                     high = c.High,
                     low = c.Low,
@@ -163,7 +193,7 @@ public class MarketDataController : ControllerBase
                     macd = ind?.MACD,
                     signalLine = ind?.SignalLine,
                     vwap = ind?.VWAP,
-                    signalType = sig?.SignalType, // BUY, SELL, HOLD
+                    signalType = sig?.SignalType,
                     signalScore = sig?.SignalStrength,
                     signalReason = sig?.Reason
                 };
