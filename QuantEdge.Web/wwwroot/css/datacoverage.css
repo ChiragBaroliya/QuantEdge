@@ -511,6 +511,194 @@ input:checked + .slider:before {
     flex-wrap: wrap;
 }
 
+/* ---- Symbol & Token Cells ---- */
+.symbol-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.symbol-code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Roboto Mono', monospace;
+    font-weight: 700;
+    font-size: 13.5px;
+    color: var(--text-primary, #f8fafc);
+    letter-spacing: 0.3px;
+}
+
+.exchange-tag {
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(79, 156, 249, 0.12);
+    color: var(--theme-accent, #4f9cf9);
+    border: 1px solid rgba(79, 156, 249, 0.25);
+    text-transform: uppercase;
+}
+
+.token-tag {
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--text-muted, #94a3b8);
+    background: rgba(255, 255, 255, 0.04);
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+
+/* ---- Company Name Cell ---- */
+.company-name-cell {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--text-secondary, #cbd5e1);
+    font-weight: 500;
+}
+
+/* ---- Timeframe Badges Group ---- */
+.tf-badges-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.tf-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    transition: all 0.2s ease;
+}
+
+.tf-badge.tf-stored {
+    background: rgba(52, 211, 153, 0.15);
+    color: var(--accent-green, #34d399);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.tf-badge.tf-missing {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted, #64748b);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ---- Action Buttons & Icons ---- */
+.table-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.btn-action-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-subtle, #334155);
+    color: var(--text-secondary, #cbd5e1);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-action-icon:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary, #ffffff);
+}
+
+.btn-action-icon.btn-edit-flag:hover {
+    border-color: var(--theme-accent, #4f9cf9);
+    color: var(--theme-accent, #4f9cf9);
+    background: rgba(79, 156, 249, 0.15);
+}
+
+.btn-action-icon.btn-delete-row:hover {
+    border-color: var(--accent-red, #f87171);
+    color: var(--accent-red, #f87171);
+    background: rgba(248, 113, 113, 0.15);
+}
+
+.btn-refresh-coverage {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--input-height, 36px);
+    padding: 0 14px;
+    background: var(--bg-input, rgba(15, 23, 42, 0.6));
+    border: 1px solid var(--border-subtle, #334155);
+    border-radius: var(--radius-md, 6px);
+    color: var(--text-primary, #f8fafc);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-refresh-coverage:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--theme-accent, #4f9cf9);
+    color: var(--theme-accent, #4f9cf9);
+}
+
+.btn-close-detail {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-subtle, #334155);
+    color: var(--text-muted, #94a3b8);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-close-detail:hover {
+    background: rgba(248, 113, 113, 0.15);
+    border-color: rgba(248, 113, 113, 0.3);
+    color: var(--accent-red, #f87171);
+}
+
+.status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.status-dot.green {
+    background: var(--accent-green, #34d399);
+    box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+}
+
+.status-dot.gray {
+    background: var(--text-muted, #64748b);
+}
+
+.spin-icon {
+    animation: spinAnimation 0.8s linear infinite;
+}
+
+@keyframes spinAnimation {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 1199.98px) {
     .kpi-grid { grid-template-columns: repeat(2, 1fr); }

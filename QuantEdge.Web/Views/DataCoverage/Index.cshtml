@@ -70,7 +70,15 @@
         </div>
 
         <div class="filter-group">
-            <span style="font-size:12px;color:var(--text-muted);font-weight:600;">Per page:</span>
+            <button type="button" id="btnRefreshCoverage" class="btn-refresh-coverage" title="Refresh stock list">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                Refresh
+            </button>
+            <span style="font-size:12px;color:var(--text-muted);font-weight:600;margin-left:8px;">Per page:</span>
             <select id="pageSizeSelect" class="filter-select" style="min-width:80px;">
                 <option value="10">10</option>
                 <option value="25" selected>25</option>
@@ -97,13 +105,16 @@
                 <thead>
                     <tr>
                         <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox" /></th>
-                        <th>Symbol</th>
-                        <th>Status</th>
+                        <th style="min-width: 140px;">Symbol & Exchange</th>
+                        <th style="min-width: 200px;">Company Name</th>
+                        <th style="min-width: 240px;">Timeframe History Flags</th>
+                        <th style="min-width: 150px;">Last Candle Sync</th>
+                        <th style="min-width: 110px;">Status</th>
                     </tr>
                 </thead>
                 <tbody id="coverageTableBody">
                     <tr>
-                        <td colspan="3" style="text-align: center; padding: 40px; color: #94a3b8;">
+                        <td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">
                             Loading stock data coverage...
                         </td>
                     </tr>
@@ -133,13 +144,12 @@
                 </svg>
                 <span id="detailSymbol">...</span> Stock Specification
             </div>
-            <div>
-                <button id="btnEditCard" class="btn-secondary btn-sm">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <button type="button" id="btnCloseDetailCard" class="btn-close-detail" title="Close Specification Panel">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
-                    Edit Flags
                 </button>
             </div>
         </div>

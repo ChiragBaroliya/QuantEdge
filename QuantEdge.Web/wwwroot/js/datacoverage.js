@@ -104,20 +104,53 @@ $(document).ready(function () {
         items.forEach(stock => {
             const id = stock.id || stock.Id;
             const symbol = stock.symbol || stock.Symbol || '';
+            const name = stock.name || stock.Name || symbol;
+            const exchange = stock.exchange || stock.Exchange || 'NSE';
+            const token = stock.instrumentToken || stock.InstrumentToken || '';
             const isActive = stock.isActive ?? stock.IsActive ?? false;
+            const lastCandleDate = stock.lastCandleDate || stock.LastCandleDate;
+
+            const is1m = (stock.isHistryStored1m ?? stock.IsHistryStored1m ?? 0) === 1;
+            const is5m = (stock.isHistryStored5m ?? stock.IsHistryStored5m ?? 0) === 1;
+            const is15m = (stock.isHistryStored15m ?? stock.IsHistryStored15m ?? 0) === 1;
+            const is60m = (stock.isHistryStored60m ?? stock.IsHistryStored60m ?? 0) === 1;
+            const is1d = (stock.isHistryStored1d ?? stock.IsHistryStored1d ?? 0) === 1;
 
             const isSelected = state.selectedStockId === id;
 
             const statusBadge = isActive
-                ? '<span class="badge badge-active">Active</span>'
-                : '<span class="badge badge-inactive">Inactive</span>';
+                ? '<span class="badge badge-active"><span class="status-dot green"></span>Active</span>'
+                : '<span class="badge badge-inactive"><span class="status-dot gray"></span>Inactive</span>';
+
+            const tfBadges = `
+                <div class="tf-badges-group">
+                    <span class="tf-badge ${is1m ? 'tf-stored' : 'tf-missing'}" title="1m History: ${is1m ? 'Stored' : 'Missing'}">1M</span>
+                    <span class="tf-badge ${is5m ? 'tf-stored' : 'tf-missing'}" title="5m History: ${is5m ? 'Stored' : 'Missing'}">5M</span>
+                    <span class="tf-badge ${is15m ? 'tf-stored' : 'tf-missing'}" title="15m History: ${is15m ? 'Stored' : 'Missing'}">15M</span>
+                    <span class="tf-badge ${is60m ? 'tf-stored' : 'tf-missing'}" title="60m History: ${is60m ? 'Stored' : 'Missing'}">60M</span>
+                    <span class="tf-badge ${is1d ? 'tf-stored' : 'tf-missing'}" title="1d History: ${is1d ? 'Stored' : 'Missing'}">1D</span>
+                </div>
+            `;
+
+            const lastSyncText = lastCandleDate ? formatDate(lastCandleDate) : '<span style="color:var(--text-muted);font-style:italic;">No Candles</span>';
 
             const rowHtml = `
                 <tr class="stock-row ${isSelected ? 'selected-row' : ''}" data-id="${id}">
                     <td onclick="event.stopPropagation();">
                         <input type="checkbox" class="row-checkbox" data-id="${id}" />
                     </td>
-                    <td style="font-weight: 600; color: #f8fafc;">${escapeHtml(symbol)}</td>
+                    <td>
+                        <div class="symbol-cell">
+                            <span class="symbol-code">${escapeHtml(symbol)}</span>
+                            <span class="exchange-tag">${escapeHtml(exchange)}</span>
+                            ${token ? `<span class="token-tag">${token}</span>` : ''}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="company-name-cell" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+                    </td>
+                    <td>${tfBadges}</td>
+                    <td style="font-size: 12.5px;">${lastSyncText}</td>
                     <td>${statusBadge}</td>
                 </tr>
             `;
@@ -129,8 +162,8 @@ $(document).ready(function () {
     function renderEmptyTable(message) {
         $('#coverageTableBody').html(`
             <tr>
-                <td colspan="3" style="text-align: center; padding: 40px; color: #94a3b8;">
-                    ${escapeHtml(message)}
+                <td colspan="6" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
+                    <div style="font-size: 14px; font-weight: 500;">${escapeHtml(message)}</div>
                 </td>
             </tr>
         `);
@@ -141,7 +174,7 @@ $(document).ready(function () {
     function showTableLoading() {
         $('#coverageTableBody').html(`
             <tr>
-                <td colspan="3" style="text-align: center; padding: 40px; color: #94a3b8;">
+                <td colspan="6" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon" style="vertical-align: middle; margin-right: 8px;">
                         <line x1="12" y1="2" x2="12" y2="6"></line>
                         <line x1="12" y1="18" x2="12" y2="22"></line>
@@ -315,10 +348,29 @@ $(document).ready(function () {
             loadPaginatedList();
         });
 
-        $('#pageSizeSelect').on('change', function () {
-            state.pageSize = parseInt($(this).val(), 10);
-            state.currentPage = 1;
+        // Refresh Button
+        $('#btnRefreshCoverage').on('click', function () {
+            const $icon = $(this).find('svg');
+            $icon.addClass('spin-icon');
+            loadSummary();
             loadPaginatedList();
+            setTimeout(() => $icon.removeClass('spin-icon'), 750);
+        });
+
+        // Close Detail Panel
+        $('#btnCloseDetailCard').on('click', function () {
+            $('#detailCard').slideUp(200);
+            state.selectedStockId = null;
+            $('.stock-row').removeClass('selected-row');
+        });
+
+        $(document).on('click', '.btn-delete-row', function (e) {
+            e.stopPropagation();
+            const id = parseInt($(this).data('id'), 10);
+            if (id) {
+                $('#editStockId').val(id);
+                deleteStock();
+            }
         });
 
         // Search Input with Debounce
@@ -406,8 +458,8 @@ $(document).ready(function () {
     }
 
     // 5. Delete Single Stock Record
-    function deleteStock() {
-        const id = parseInt($('#editStockId').val(), 10);
+    function deleteStock(targetStockId) {
+        const id = targetStockId || parseInt($('#editStockId').val(), 10);
         if (!id) return;
 
         const stock = state.stocksMap[id];
