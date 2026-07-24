@@ -23,4 +23,9 @@ public interface IMarketCandleRepository
     /// Deletes all history for today for a specific symbol and timeframe.
     /// </summary>
     Task DeleteTodayHistoryAsync(string symbol, string timeframe);
+
+    /// <summary>
+    /// Deletes history within a specific date range for a symbol (or all symbols if symbol is null/empty).
+    /// </summary>
+    Task DeleteHistoryRangeAsync(string? symbol, string timeframe, System.DateTime fromDate, System.DateTime toDate);
 }

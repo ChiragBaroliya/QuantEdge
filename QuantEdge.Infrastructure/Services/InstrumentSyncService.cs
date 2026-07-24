@@ -45,6 +45,39 @@ public class InstrumentSyncService : IInstrumentSyncService
     {
         _logger.LogInformation("Starting instruments sync from Zerodha...");
         
+        // 0. Query existing active symbols from stock_master to skip them during sync
+        var activeSymbolsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var conn = _connectionFactory.CreateConnection();
+            try
+            {
+                var activeSymbols = await conn.QueryAsync<string>("SELECT symbol FROM stock_master WHERE is_active = TRUE;");
+                if (activeSymbols != null)
+                {
+                    foreach (var sym in activeSymbols)
+                    {
+                        if (!string.IsNullOrWhiteSpace(sym))
+                        {
+                            activeSymbolsSet.Add(sym);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (conn.State == ConnectionState.Open)
+                {
+                    conn.Close();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to query active stock symbols prior to instrument sync.");
+        }
+        _logger.LogInformation("Loaded {Count} currently active stock symbols from database to skip during sync.", activeSymbolsSet.Count);
+
         using var httpClient = new HttpClient();
         httpClient.Timeout = TimeSpan.FromMinutes(2);
         
@@ -86,6 +119,12 @@ public class InstrumentSyncService : IInstrumentSyncService
 
                 var symbol = cols[2].Trim();
                 if (string.IsNullOrEmpty(symbol)) continue;
+
+                // Skip active stocks — active stock data should not be changed during instrument sync
+                if (activeSymbolsSet.Contains(symbol))
+                {
+                    continue;
+                }
 
                 var instToken = int.Parse(cols[0].Trim());
                 var exchangeToken = cols[1].Trim();
@@ -249,31 +288,42 @@ public class InstrumentSyncService : IInstrumentSyncService
         _logger.LogInformation("Saving {Count} de-duplicated instruments to database...", instrumentsToSave.Count);
 
         // Perform batch upsert in a single transaction for performance
-        /*
-        using var connection = _connectionFactory.CreateConnection();
-        if (connection.State != ConnectionState.Open)
+        if (instrumentsToSave.Count > 0)
         {
-            connection.Open();
-        }
+            using var connection = _connectionFactory.CreateConnection();
+            if (connection.State != ConnectionState.Open)
+            {
+                connection.Open();
+            }
 
-        using var transaction = connection.BeginTransaction();
-        try
-        {
-            var json = System.Text.Json.JsonSerializer.Serialize(instrumentsToSave);
-            await connection.ExecuteScalarAsync(
-                "SELECT public.sp_upsert_instruments(@p_instruments::jsonb);",
-                new { p_instruments = json },
-                transaction);
-            transaction.Commit();
-            _logger.LogInformation("Successfully synced {Count} instruments to stock_master via stored function.", instrumentsToSave.Count);
+            try
+            {
+                using var transaction = connection.BeginTransaction();
+                try
+                {
+                    var json = System.Text.Json.JsonSerializer.Serialize(instrumentsToSave);
+                    await connection.ExecuteScalarAsync(
+                        "SELECT public.sp_upsert_instruments(@p_instruments::jsonb);",
+                        new { p_instruments = json },
+                        transaction);
+                    transaction.Commit();
+                    _logger.LogInformation("Successfully synced {Count} non-active instruments to stock_master via stored function.", instrumentsToSave.Count);
+                }
+                catch (Exception ex)
+                {
+                    transaction.Rollback();
+                    _logger.LogError(ex, "Error occurred during bulk saving of instruments to database via stored function.");
+                    throw;
+                }
+            }
+            finally
+            {
+                if (connection.State == ConnectionState.Open)
+                {
+                    connection.Close();
+                }
+            }
         }
-        catch (Exception ex)
-        {
-            transaction.Rollback();
-            _logger.LogError(ex, "Error occurred during bulk saving of instruments to database via stored function.");
-            throw;
-        }
-        */
 
         var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "instruments_output.csv");
         _logger.LogInformation("Writing {Count} instruments to CSV for testing at {Path}", instrumentsToSave.Count, csvPath);

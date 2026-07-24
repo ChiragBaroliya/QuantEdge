@@ -412,8 +412,8 @@ public class DatabaseInitializer
                     lot_size = EXCLUDED.lot_size,
                     instrument_type = EXCLUDED.instrument_type,
                     segment = EXCLUDED.segment,
-                    exchange = EXCLUDED.exchange,
-                    is_active = EXCLUDED.is_active;
+                    exchange = EXCLUDED.exchange
+                WHERE stock_master.is_active = FALSE;
             END;
             $$;
         ");

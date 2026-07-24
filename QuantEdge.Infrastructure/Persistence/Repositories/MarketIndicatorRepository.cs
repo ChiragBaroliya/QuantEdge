@@ -39,11 +39,21 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
         parameters.Add("p_candle_time", indicator.CandleTime);
         parameters.Add("p_created_at", indicator.CreatedAt);
 
-        await connection.ExecuteAsync(
-            "sp_insert_market_indicator",
-            parameters,
-            commandType: CommandType.StoredProcedure
-        );
+        try
+        {
+            await connection.ExecuteAsync(
+                "sp_insert_market_indicator",
+                parameters,
+                commandType: CommandType.StoredProcedure
+            );
+        }
+        finally
+        {
+            if (connection.State == ConnectionState.Open)
+            {
+                connection.Close();
+            }
+        }
     }
 
     /// <summary>
@@ -53,10 +63,20 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
     {
         using var connection = _connectionFactory.CreateConnection();
 
-        return await connection.QueryAsync<MarketIndicator>(
-            "SELECT * FROM sp_get_market_indicators(@p_symbol, @p_timeframe, @p_limit);",
-            new { p_symbol = symbol, p_timeframe = timeframe, p_limit = limit }
-        );
+        try
+        {
+            return await connection.QueryAsync<MarketIndicator>(
+                "SELECT * FROM sp_get_market_indicators(@p_symbol, @p_timeframe, @p_limit);",
+                new { p_symbol = symbol, p_timeframe = timeframe, p_limit = limit }
+            );
+        }
+        finally
+        {
+            if (connection.State == ConnectionState.Open)
+            {
+                connection.Close();
+            }
+        }
     }
 
     /// <summary>
@@ -64,15 +84,42 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
     /// </summary>
     public async Task DeleteTodayIndicatorsAsync(string symbol, string timeframe)
     {
+        DateTime todayStart = DateTime.UtcNow.Date;
+        DateTime todayEnd = todayStart.AddDays(1).AddTicks(-1);
+        await DeleteIndicatorsRangeAsync(symbol, timeframe, todayStart, todayEnd);
+    }
+
+    public async Task DeleteIndicatorsRangeAsync(string? symbol, string timeframe, DateTime fromDate, DateTime toDate)
+    {
         string safeTimeframe = timeframe.ToLower();
         if (!new[] { "1m", "5m", "15m", "60m", "1d" }.Contains(safeTimeframe)) return;
 
         using var connection = _connectionFactory.CreateConnection();
         string tableName = $"market_indicators_{safeTimeframe}";
-        
-        await connection.ExecuteAsync(
-            $"DELETE FROM {tableName} WHERE symbol = @Symbol AND DATE(candle_time) = CURRENT_DATE;",
-            new { Symbol = symbol.ToUpper() }
-        );
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+            {
+                await connection.ExecuteAsync(
+                    $"DELETE FROM {tableName} WHERE created_at >= @FromDate AND created_at <= @ToDate;",
+                    new { FromDate = fromDate, ToDate = toDate }
+                );
+            }
+            else
+            {
+                await connection.ExecuteAsync(
+                    $"DELETE FROM {tableName} WHERE symbol = @Symbol AND created_at >= @FromDate AND created_at <= @ToDate;",
+                    new { Symbol = symbol.ToUpper(), FromDate = fromDate, ToDate = toDate }
+                );
+            }
+        }
+        finally
+        {
+            if (connection.State == ConnectionState.Open)
+            {
+                connection.Close();
+            }
+        }
     }
 }

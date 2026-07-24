@@ -23,4 +23,9 @@ public interface IMarketIndicatorRepository
     /// Deletes today's calculated indicators for a specific symbol and timeframe.
     /// </summary>
     Task DeleteTodayIndicatorsAsync(string symbol, string timeframe);
+
+    /// <summary>
+    /// Deletes calculated indicators within a specific date range for a symbol (or all symbols if symbol is null/empty).
+    /// </summary>
+    Task DeleteIndicatorsRangeAsync(string? symbol, string timeframe, System.DateTime fromDate, System.DateTime toDate);
 }

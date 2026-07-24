@@ -227,14 +227,26 @@ public class MarketDataController : ControllerBase
     }
 
     /// <summary>
-    /// Resets all history for today for all active stocks for a specific timeframe in the background.
-    /// This deletes existing data and fetches new data sequentially.
+    /// Resets history for a date range (fromDate to toDate) for active stocks for a specific timeframe in the background.
+    /// Clears existing candle & indicator records for the date range and fetches/inserts updated records.
     /// </summary>
-    [HttpPost("history/today/all/reset")]
-    public IActionResult ResetTodayHistoryAll([FromQuery] string timeframe)
+    [HttpPost("history/reset")]
+    public IActionResult ResetHistoryRange(
+        [FromQuery] string timeframe,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] string? symbol = null)
     {
         if (string.IsNullOrWhiteSpace(timeframe)) return BadRequest("Timeframe parameter is required.");
+
+        DateTime startUtc = fromDate.HasValue 
+            ? DateTime.SpecifyKind(fromDate.Value.Date, DateTimeKind.Utc) 
+            : DateTime.UtcNow.Date;
         
+        DateTime endUtc = toDate.HasValue 
+            ? DateTime.SpecifyKind(toDate.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc) 
+            : DateTime.UtcNow;
+
         _ = Task.Run(async () =>
         {
             try
@@ -244,32 +256,42 @@ public class MarketDataController : ControllerBase
                 var candleRepo = scope.ServiceProvider.GetRequiredService<IMarketCandleRepository>();
                 var indicatorRepo = scope.ServiceProvider.GetRequiredService<IMarketIndicatorRepository>();
                 var historicalDataService = scope.ServiceProvider.GetRequiredService<IHistoricalDataService>();
+                var indicatorService = scope.ServiceProvider.GetRequiredService<IIndicatorService>();
 
-                var activeStocks = (await stockRepo.GetActiveStocksAsync()).ToList();
-                DateTime fromTime = DateTime.UtcNow.Date; // Start of today (UTC)
-                DateTime toTime = DateTime.UtcNow;
-                int total = activeStocks.Count;
+                List<QuantEdge.Domain.Entities.StockMaster> targetStocks;
+                if (!string.IsNullOrWhiteSpace(symbol))
+                {
+                    var singleStock = await stockRepo.GetBySymbolAsync(symbol);
+                    targetStocks = singleStock != null ? new List<QuantEdge.Domain.Entities.StockMaster> { singleStock } : new List<QuantEdge.Domain.Entities.StockMaster>();
+                }
+                else
+                {
+                    targetStocks = (await stockRepo.GetActiveStocksAsync()).ToList();
+                }
+
+                int total = targetStocks.Count;
                 int processed = 0;
 
                 await _hubContext.Clients.All.SendAsync("SyncProgress", new { 
-                    message = $"Starting sync for {total} stocks ({timeframe})...", 
+                    message = $"Starting reset for {total} stocks ({timeframe}) from {startUtc:yyyy-MM-dd} to {endUtc:yyyy-MM-dd}...", 
                     progress = 0 
                 });
 
-                foreach (var stock in activeStocks)
+                foreach (var stock in targetStocks)
                 {
-                    // 1. Delete
-                    await candleRepo.DeleteTodayHistoryAsync(stock.Symbol, timeframe);
-                    await indicatorRepo.DeleteTodayIndicatorsAsync(stock.Symbol, timeframe);
+                    // 1. Clear records in range
+                    await candleRepo.DeleteHistoryRangeAsync(stock.Symbol, timeframe, startUtc, endUtc);
+                    await indicatorRepo.DeleteIndicatorsRangeAsync(stock.Symbol, timeframe, startUtc, endUtc);
 
-                    // 2. Fetch
+                    // 2. Fetch & Insert new records
                     try
                     {
-                        await historicalDataService.FetchHistoricalCandlesAsync(stock.Symbol, timeframe, fromTime, toTime, CancellationToken.None);
+                        await historicalDataService.FetchHistoricalCandlesAsync(stock.Symbol, timeframe, startUtc, endUtc, CancellationToken.None);
+                        await indicatorService.BackfillHistoricalIndicatorsAsync(stock.Symbol, timeframe);
                     }
                     catch (Exception innerEx)
                     {
-                        _logger.LogError(innerEx, "Failed to fetch today's history from Zerodha for {Symbol} ({Timeframe}).", stock.Symbol, timeframe);
+                        _logger.LogError(innerEx, "Failed to fetch history from Zerodha for {Symbol} ({Timeframe}) range {Start} to {End}.", stock.Symbol, timeframe, startUtc, endUtc);
                     }
 
                     processed++;
@@ -281,16 +303,29 @@ public class MarketDataController : ControllerBase
                 }
 
                 await _hubContext.Clients.All.SendAsync("SyncComplete", new { 
-                    message = $"Successfully synced history for all {total} stocks ({timeframe})." 
+                    message = $"Successfully synced history for {total} stocks ({timeframe}) from {startUtc:yyyy-MM-dd} to {endUtc:yyyy-MM-dd}." 
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to sync today's history for all active stocks ({Timeframe}) in background.", timeframe);
+                _logger.LogError(ex, "Failed to sync history for active stocks ({Timeframe}) in background.", timeframe);
                 await _hubContext.Clients.All.SendAsync("SyncError", new { message = "Error during bulk sync: " + ex.Message });
             }
         });
 
-        return Accepted(new { message = $"Background sync task started for timeframe {timeframe}." });
+        return Accepted(new { message = $"Background sync task started for timeframe {timeframe} ({startUtc:yyyy-MM-dd} to {endUtc:yyyy-MM-dd})." });
+    }
+
+    /// <summary>
+    /// Resets all history for today for all active stocks for a specific timeframe in the background.
+    /// </summary>
+    [HttpPost("history/today/all/reset")]
+    public IActionResult ResetTodayHistoryAll(
+        [FromQuery] string timeframe,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] string? symbol = null)
+    {
+        return ResetHistoryRange(timeframe, fromDate, toDate, symbol);
     }
 }

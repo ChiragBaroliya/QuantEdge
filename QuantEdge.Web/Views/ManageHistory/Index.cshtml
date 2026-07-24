@@ -1,0 +1,124 @@
+@{
+    ViewData["Title"] = "Manage History Data";
+    ViewData["PageTitle"] = "Manage History Data";
+}
+
+<link rel="stylesheet" href="~/css/managehistory.css" asp-append-version="true" />
+
+<div class="history-container" data-api-base-url="@ViewBag.ApiBaseUrl">
+    <!-- Header Card -->
+    <div class="history-header-card">
+        <div class="history-header-title">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <div>
+                <h2>Manage History Data</h2>
+                <p>Filter date range and stock symbol to clear existing records and insert fresh historical data from Zerodha.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main History Form Card -->
+    <div class="history-form-card">
+        <div class="history-form-grid">
+            <!-- Stock Selection Dropdown -->
+            <div class="form-group-card">
+                <label for="stockSelector" class="form-group-label">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"></path><path d="M7 12h10"></path></svg>
+                    Stock Symbol Filter
+                </label>
+                <select id="stockSelector" class="form-group-select">
+                    <option value="" selected>ALL STOCKS (All Active Instruments)</option>
+                </select>
+            </div>
+
+            <!-- From Date Picker -->
+            <div class="form-group-card">
+                <label for="historyFromDate" class="form-group-label">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    From Date
+                </label>
+                <input type="date" id="historyFromDate" class="form-group-input" />
+            </div>
+
+            <!-- To Date Picker -->
+            <div class="form-group-card">
+                <label for="historyToDate" class="form-group-label">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    To Date
+                </label>
+                <input type="date" id="historyToDate" class="form-group-input" />
+            </div>
+        </div>
+
+        <!-- Timeframe Selector Section -->
+        <div class="timeframe-selection-section">
+            <label class="form-group-label">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line></svg>
+                Select Target Timeframe
+            </label>
+
+            <div class="timeframe-grid">
+                <button type="button" class="timeframe-card-btn active" data-tf="1m">
+                    <span>1 MIN</span>
+                    <span class="timeframe-subtext">1-Minute Bars</span>
+                </button>
+                <button type="button" class="timeframe-card-btn" data-tf="5m">
+                    <span>5 MIN</span>
+                    <span class="timeframe-subtext">5-Minute Bars</span>
+                </button>
+                <button type="button" class="timeframe-card-btn" data-tf="15m">
+                    <span>15 MIN</span>
+                    <span class="timeframe-subtext">15-Minute Bars</span>
+                </button>
+                <button type="button" class="timeframe-card-btn" data-tf="60m">
+                    <span>60 MIN</span>
+                    <span class="timeframe-subtext">Hourly Bars</span>
+                </button>
+                <button type="button" class="timeframe-card-btn" data-tf="1d">
+                    <span>1 DAY</span>
+                    <span class="timeframe-subtext">Daily Candle Bars</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Action Row -->
+        <div class="action-trigger-row">
+            <button type="button" id="btnStartHistoryReset" class="btn-execute-reset">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+                    <polyline points="21 3 21 8 16 8"></polyline>
+                </svg>
+                Clear & Recreate History
+            </button>
+        </div>
+    </div>
+
+    <!-- Progress & Live Execution Log Card -->
+    <div id="progressCard" class="progress-card" style="display: none;">
+        <div class="progress-header">
+            <span class="progress-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--theme-accent);"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line></svg>
+                Synchronization Progress
+            </span>
+            <span id="progressPercentText" style="font-weight:700; font-size:14px; color:var(--theme-accent);">0%</span>
+        </div>
+
+        <div class="progress-bar-track">
+            <div id="progressBarFill" class="progress-bar-fill"></div>
+        </div>
+        <div id="progressStatusText" style="font-size:13px; color:var(--text-muted);">Task initialized...</div>
+
+        <!-- Real-time Console Log Box -->
+        <div id="historyLogBox" class="log-box">
+            <div class="log-entry info">[System] Connected to Real-time History Sync Hub. Ready.</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+    <script src="~/js/managehistory.js" asp-append-version="true"></script>
+}

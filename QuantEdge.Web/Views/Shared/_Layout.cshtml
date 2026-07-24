@@ -161,6 +161,15 @@
                 </svg>
                 <span class="nav-label">Data Coverage</span>
             </a>
+            <a asp-controller="ManageHistory" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "ManageHistory" ? "active" : "")"
+               title="Manage History Data">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span class="nav-label">Manage History</span>
+            </a>
             <!-- Main Menu Log with Sub Items -->
             @{
                 bool isLogActive = ViewContext.RouteData.Values["controller"]?.ToString() == "Log";
