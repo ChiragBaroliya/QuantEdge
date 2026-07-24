@@ -325,26 +325,26 @@ public class InstrumentSyncService : IInstrumentSyncService
             }
         }
 
-        var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "instruments_output.csv");
-        _logger.LogInformation("Writing {Count} instruments to CSV for testing at {Path}", instrumentsToSave.Count, csvPath);
+        //var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "instruments_output.csv");
+        //_logger.LogInformation("Writing {Count} instruments to CSV for testing at {Path}", instrumentsToSave.Count, csvPath);
         
-        var csvLines = new List<string>
-        {
-            "Symbol,Name,InstrumentToken,ExchangeToken,InstrumentType,Segment,Exchange,IsActive"
-        };
+        //var csvLines = new List<string>
+        //{
+        //    "Symbol,Name,InstrumentToken,ExchangeToken,InstrumentType,Segment,Exchange,IsActive"
+        //};
 
-        foreach(var inst in instrumentsToSave)
-        {
-            // Escape any existing quotes in the name
-            var safeName = inst.Name?.Replace("\"", "\"\"") ?? "";
-            csvLines.Add($"{inst.Symbol},\"{safeName}\",{inst.InstrumentToken},{inst.ExchangeToken},{inst.InstrumentType},{inst.Segment},{inst.Exchange},{inst.IsActive}");
-        }
+        //foreach(var inst in instrumentsToSave)
+        //{
+        //    // Escape any existing quotes in the name
+        //    var safeName = inst.Name?.Replace("\"", "\"\"") ?? "";
+        //    csvLines.Add($"{inst.Symbol},\"{safeName}\",{inst.InstrumentToken},{inst.ExchangeToken},{inst.InstrumentType},{inst.Segment},{inst.Exchange},{inst.IsActive}");
+        //}
 
-        if (File.Exists(csvPath))
-        {
-            File.Delete(csvPath);
-        }
-        await File.WriteAllLinesAsync(csvPath, csvLines, cancellationToken);
+        //if (File.Exists(csvPath))
+        //{
+        //    File.Delete(csvPath);
+        //}
+        //await File.WriteAllLinesAsync(csvPath, csvLines, cancellationToken);
         _logger.LogInformation("Successfully cleared old file and wrote new instruments to CSV.");
     }
 
