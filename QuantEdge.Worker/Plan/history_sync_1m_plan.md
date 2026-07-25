@@ -40,19 +40,16 @@ Type=simple
 User=root
 WorkingDirectory=/opt/quantedge/worker
 ExecStart=/usr/bin/dotnet QuantEdge.Worker.dll history:1m
-Restart=always
-RestartSec=5
+Restart=no
 KillMode=process
 Environment=DOTNET_ENVIRONMENT=Production
-
-[Install]
-WantedBy=multi-user.target
 ```
 
-Reload the systemd daemon to recognize the new service:
+Reload the systemd daemon and ensure auto-start on boot is disabled:
 
 ```bash
 sudo systemctl daemon-reload
+sudo systemctl disable quantedge-worker-history-1m
 ```
 
 ---

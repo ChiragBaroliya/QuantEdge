@@ -179,6 +179,13 @@ for item in "${SERVICES[@]}"; do
         EXEC_CMD="${DOTNET_PATH} QuantEdge.Worker.dll ${arg}"
     fi
 
+    # Determine restart policy based on auto-start setting
+    if [ "$autostart" == "true" ]; then
+        RESTART_POLICY="always"
+    else
+        RESTART_POLICY="no"
+    fi
+
     echo "Creating Systemd service: ${SERVICE_NAME}"
     
     # Create the service configuration file
@@ -192,7 +199,7 @@ Type=simple
 User=root
 WorkingDirectory=${WORK_DIR}
 ExecStart=${EXEC_CMD}
-Restart=always
+Restart=${RESTART_POLICY}
 RestartSec=5
 KillMode=process
 Environment=DOTNET_ENVIRONMENT=${ENV_MODE}
@@ -206,6 +213,7 @@ EOF
         systemctl enable "${SERVICE_NAME}"
         echo " -> Enabled auto-start on boot"
     else
+        systemctl disable "${SERVICE_NAME}"
         echo " -> Service registered for manual start (on-demand)"
     fi
 done

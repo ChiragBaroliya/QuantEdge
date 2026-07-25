@@ -284,6 +284,9 @@ public class DatabaseInitializer
         // Always ensure stored functions for market_candles and market_indicators are provisioned/updated
         _logger.LogInformation("Ensuring PostgreSQL functions for 'market_candles' and 'market_indicators' are provisioned...");
         await conn.ExecuteAsync(@"
+            DROP FUNCTION IF EXISTS sp_get_market_candles CASCADE;
+            DROP FUNCTION IF EXISTS sp_get_market_indicators CASCADE;
+
             CREATE OR REPLACE FUNCTION sp_get_market_candles(
                 p_symbol VARCHAR(50),
                 p_timeframe VARCHAR(20),
