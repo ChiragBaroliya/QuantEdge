@@ -135,11 +135,11 @@ public class StockMasterRepository : IStockMasterRepository
             new {
                 p_id = request.Id,
                 p_is_active = request.IsActive,
-                p_histry_1m = request.IsHistryStored1m,
-                p_histry_5m = request.IsHistryStored5m,
-                p_histry_15m = request.IsHistryStored15m,
-                p_histry_60m = request.IsHistryStored60m,
-                p_histry_1d = request.IsHistryStored1d
+                p_histry_1m = request.Get1mValue(),
+                p_histry_5m = request.Get5mValue(),
+                p_histry_15m = request.Get15mValue(),
+                p_histry_60m = request.Get60mValue(),
+                p_histry_1d = request.Get1dValue()
             }
         );
     }

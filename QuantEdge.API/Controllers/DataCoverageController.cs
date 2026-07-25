@@ -64,6 +64,20 @@ public class DataCoverageController : ControllerBase
     }
 
     /// <summary>
+    /// PUT /datacoverage/{id} or /api/datacoverage/{id} - Updates active status and timeframe history flags for a stock by ID.
+    /// </summary>
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateCoverageFlagsPut(int id, [FromBody] UpdateStockCoverageRequest request)
+    {
+        if (request == null || id <= 0)
+        {
+            return BadRequest("Invalid stock update request.");
+        }
+        request.Id = id;
+        return await UpdateCoverageFlags(request);
+    }
+
+    /// <summary>
     /// POST /datacoverage/update - Updates active status and timeframe history flags for a stock.
     /// </summary>
     [HttpPost("update")]

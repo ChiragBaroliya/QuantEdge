@@ -4,6 +4,16 @@
 $(document).ready(function () {
     const apiBaseUrl = $('.coverage-container').data('api-base-url') || 'https://localhost:44370';
 
+    const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3000,
+        timerProgressBar: true,
+        background: 'var(--bg-card, #1e293b)',
+        color: '#f8fafc'
+    });
+
     let state = {
         currentPage: 1,
         pageSize: 25,
@@ -13,10 +23,33 @@ $(document).ready(function () {
         totalCount: 0,
         totalPages: 0,
         selectedStockId: null,
-        stocksMap: {}
+        stocksMap: {},
+        savedState: {}, // id -> { isActive, history1M, history5M, history15M, history60M, history1D } (values: null, 0, 1)
+        draftState: {}  // id -> { isActive, history1M, history5M, history15M, history60M, history1D } (values: null, 0, 1)
     };
 
     let searchTimer = null;
+
+    // Helper: Normalize URL to avoid missing or duplicate /api prefixes
+    function getEndpointUrl(endpoint) {
+        let base = (apiBaseUrl || '').replace(/\/+$/, '');
+        let path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+
+        if (base.endsWith('/api') && path.startsWith('/api/')) {
+            path = path.substring(4);
+        }
+        if (!base.endsWith('/api') && !path.startsWith('/api/')) {
+            path = '/api' + path;
+        }
+        return base + path;
+    }
+
+    // Helper to parse history flag into null, 0, or 1
+    function getRawTfVal(val) {
+        if (val === 1 || val === '1') return 1;
+        if (val === 0 || val === '0') return 0;
+        return null;
+    }
 
     // Initialize Dashboard Data
     initDataCoverage();
@@ -30,7 +63,7 @@ $(document).ready(function () {
     // 1. Fetch & Render Summary KPI Cards
     function loadSummary() {
         $.ajax({
-            url: apiBaseUrl + '/datacoverage/summary',
+            url: getEndpointUrl('/datacoverage/summary'),
             type: 'GET',
             success: function (data) {
                 if (data) {
@@ -59,7 +92,7 @@ $(document).ready(function () {
         };
 
         $.ajax({
-            url: apiBaseUrl + '/datacoverage/list',
+            url: getEndpointUrl('/datacoverage/list'),
             type: 'GET',
             data: params,
             success: function (res) {
@@ -93,8 +126,6 @@ $(document).ready(function () {
     function renderTableRows(items) {
         const $tbody = $('#coverageTableBody');
         $tbody.empty();
-        $('#selectAllCheckbox').prop('checked', false);
-        updateBulkDeleteButton();
 
         if (items.length === 0) {
             renderEmptyTable('No stocks matching the selected filters');
@@ -107,51 +138,81 @@ $(document).ready(function () {
             const name = stock.name || stock.Name || symbol;
             const exchange = stock.exchange || stock.Exchange || 'NSE';
             const token = stock.instrumentToken || stock.InstrumentToken || '';
-            const isActive = stock.isActive ?? stock.IsActive ?? false;
+            const isActive = Boolean(stock.isActive ?? stock.IsActive ?? false);
             const lastCandleDate = stock.lastCandleDate || stock.LastCandleDate;
 
-            const is1m = (stock.isHistryStored1m ?? stock.IsHistryStored1m ?? 0) === 1;
-            const is5m = (stock.isHistryStored5m ?? stock.IsHistryStored5m ?? 0) === 1;
-            const is15m = (stock.isHistryStored15m ?? stock.IsHistryStored15m ?? 0) === 1;
-            const is60m = (stock.isHistryStored60m ?? stock.IsHistryStored60m ?? 0) === 1;
-            const is1d = (stock.isHistryStored1d ?? stock.IsHistryStored1d ?? 0) === 1;
+            const is1m = getRawTfVal(stock.isHistryStored1m ?? stock.IsHistryStored1m ?? stock.history1M ?? stock.History1M);
+            const is5m = getRawTfVal(stock.isHistryStored5m ?? stock.IsHistryStored5m ?? stock.history5M ?? stock.History5M);
+            const is15m = getRawTfVal(stock.isHistryStored15m ?? stock.IsHistryStored15m ?? stock.history15M ?? stock.History15M);
+            const is60m = getRawTfVal(stock.isHistryStored60m ?? stock.IsHistryStored60m ?? stock.history60M ?? stock.History60M);
+            const is1d = getRawTfVal(stock.isHistryStored1d ?? stock.IsHistryStored1d ?? stock.history1D ?? stock.History1D);
 
+            // Record Saved State (null, 0, or 1)
+            state.savedState[id] = {
+                isActive: isActive,
+                history1M: is1m,
+                history5M: is5m,
+                history15M: is15m,
+                history60M: is60m,
+                history1D: is1d
+            };
+
+            // Initialize Draft State if not modified yet
+            if (!state.draftState[id] || !isRowDirty(id)) {
+                state.draftState[id] = { ...state.savedState[id] };
+            }
+
+            const draft = state.draftState[id];
             const isSelected = state.selectedStockId === id;
+            const dirty = isRowDirty(id);
 
-            const statusBadge = isActive
-                ? '<span class="badge badge-active"><span class="status-dot green"></span>Active</span>'
-                : '<span class="badge badge-inactive"><span class="status-dot gray"></span>Inactive</span>';
-
-            const tfBadges = `
-                <div class="tf-badges-group">
-                    <span class="tf-badge ${is1m ? 'tf-stored' : 'tf-missing'}" title="1m History: ${is1m ? 'Stored' : 'Missing'}">1M</span>
-                    <span class="tf-badge ${is5m ? 'tf-stored' : 'tf-missing'}" title="5m History: ${is5m ? 'Stored' : 'Missing'}">5M</span>
-                    <span class="tf-badge ${is15m ? 'tf-stored' : 'tf-missing'}" title="15m History: ${is15m ? 'Stored' : 'Missing'}">15M</span>
-                    <span class="tf-badge ${is60m ? 'tf-stored' : 'tf-missing'}" title="60m History: ${is60m ? 'Stored' : 'Missing'}">60M</span>
-                    <span class="tf-badge ${is1d ? 'tf-stored' : 'tf-missing'}" title="1d History: ${is1d ? 'Stored' : 'Missing'}">1D</span>
+            const statusCell = `
+                <div class="inline-status-toggle">
+                    <label class="switch switch-sm" title="Toggle Active Status">
+                        <input type="checkbox" class="row-status-checkbox" data-id="${id}" ${draft.isActive ? 'checked' : ''} />
+                        <span class="slider"></span>
+                    </label>
+                    <span class="status-label ${draft.isActive ? 'active-color' : 'inactive-color'}" id="statusLabel_${id}">
+                        ${draft.isActive ? 'Active' : 'Inactive'}
+                    </span>
                 </div>
             `;
 
+            const tfCheckboxes = renderTfGroupHtml(id);
+            const historyStatusBadges = renderHistoryStatusGroupHtml(id);
             const lastSyncText = lastCandleDate ? formatDate(lastCandleDate) : '<span style="color:var(--text-muted);font-style:italic;">No Candles</span>';
+
+            const actionsCell = `
+                <div class="row-actions-group">
+                    <button type="button" class="btn-row-save ${dirty ? '' : 'btn-disabled'}" data-id="${id}" ${dirty ? '' : 'disabled'} title="Save changes for this stock">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                        Save
+                    </button>
+                    <button type="button" class="btn-row-delete" data-id="${id}" title="Delete stock record">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        Delete
+                    </button>
+                </div>
+            `;
 
             const rowHtml = `
                 <tr class="stock-row ${isSelected ? 'selected-row' : ''}" data-id="${id}">
-                    <td onclick="event.stopPropagation();">
-                        <input type="checkbox" class="row-checkbox" data-id="${id}" />
-                    </td>
                     <td>
                         <div class="symbol-cell">
                             <span class="symbol-code">${escapeHtml(symbol)}</span>
                             <span class="exchange-tag">${escapeHtml(exchange)}</span>
                             ${token ? `<span class="token-tag">${token}</span>` : ''}
+                            <span class="unsaved-tag" id="unsavedTag_${id}" style="${dirty ? '' : 'display:none;'}">● Unsaved</span>
                         </div>
                     </td>
                     <td>
                         <div class="company-name-cell" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
                     </td>
-                    <td>${tfBadges}</td>
+                    <td>${tfCheckboxes}</td>
+                    <td>${historyStatusBadges}</td>
                     <td style="font-size: 12.5px;">${lastSyncText}</td>
-                    <td>${statusBadge}</td>
+                    <td>${statusCell}</td>
+                    <td style="text-align: center;">${actionsCell}</td>
                 </tr>
             `;
 
@@ -159,10 +220,272 @@ $(document).ready(function () {
         });
     }
 
+    // Render Editable Timeframe Checkboxes
+    function getTfCheckboxHtml(id, tfKey, label) {
+        const val = state.draftState[id] ? state.draftState[id][tfKey] : null;
+        const isChecked = (val === 0 || val === 1);
+
+        let stateClass = '';
+        let title = `${label} History Disabled (Missing)`;
+        if (val === 1) {
+            stateClass = 'is-stored';
+            title = `${label}: Stored by Worker Job (Value = 1)`;
+        } else if (val === 0) {
+            stateClass = 'is-pending';
+            title = `${label}: Enabled via Web UI / Pending Worker Job (Value = 0)`;
+        }
+
+        return `
+            <label class="tf-checkbox-item ${isChecked ? 'is-checked' : ''} ${stateClass}" title="${title}">
+                <input type="checkbox" class="tf-checkbox" data-id="${id}" data-tf="${tfKey}" ${isChecked ? 'checked' : ''} />
+                <span class="tf-label">${label}</span>
+            </label>
+        `;
+    }
+
+    function renderTfGroupHtml(id) {
+        const draft = state.draftState[id] || {};
+        const isAllChecked = Boolean(
+            (draft.history1M === 0 || draft.history1M === 1) &&
+            (draft.history5M === 0 || draft.history5M === 1) &&
+            (draft.history15M === 0 || draft.history15M === 1) &&
+            (draft.history60M === 0 || draft.history60M === 1) &&
+            (draft.history1D === 0 || draft.history1D === 1)
+        );
+
+        return `
+            <div class="tf-checkboxes-group">
+                <label class="tf-checkbox-item tf-all-item ${isAllChecked ? 'is-checked' : ''}" title="Select / Deselect All Timeframes">
+                    <input type="checkbox" class="tf-all-checkbox" data-id="${id}" ${isAllChecked ? 'checked' : ''} />
+                    <span class="tf-label">All</span>
+                </label>
+                ${getTfCheckboxHtml(id, 'history1M', '1M')}
+                ${getTfCheckboxHtml(id, 'history5M', '5M')}
+                ${getTfCheckboxHtml(id, 'history15M', '15M')}
+                ${getTfCheckboxHtml(id, 'history60M', '60M')}
+                ${getTfCheckboxHtml(id, 'history1D', '1D')}
+            </div>
+        `;
+    }
+
+    // Render Read-Only History Status Badges
+    function getSingleHsBadgeHtml(label, val) {
+        let cssClass = 'hs-disabled';
+        let icon = '○';
+        let text = 'Disabled';
+
+        if (val === 1) {
+            cssClass = 'hs-stored';
+            icon = '✓';
+            text = 'Stored';
+        } else if (val === 0) {
+            cssClass = 'hs-pending';
+            icon = '⏳';
+            text = 'Pending';
+        }
+
+        return `
+            <span class="hs-badge ${cssClass}" title="${label}: ${text}">
+                <span class="hs-label">${label}</span>
+                <span class="hs-icon">${icon}</span>
+                <span class="hs-text">${text}</span>
+            </span>
+        `;
+    }
+
+    function renderHistoryStatusGroupHtml(id) {
+        const saved = state.savedState[id] || {};
+        return `
+            <div class="history-status-group" id="hsGroup_${id}">
+                ${getSingleHsBadgeHtml('1M', saved.history1M)}
+                ${getSingleHsBadgeHtml('5M', saved.history5M)}
+                ${getSingleHsBadgeHtml('15M', saved.history15M)}
+                ${getSingleHsBadgeHtml('60M', saved.history60M)}
+                ${getSingleHsBadgeHtml('1D', saved.history1D)}
+            </div>
+        `;
+    }
+
+    // Check Dirty State for Row
+    function isRowDirty(id) {
+        const saved = state.savedState[id];
+        const draft = state.draftState[id];
+        if (!saved || !draft) return false;
+
+        if (saved.isActive !== draft.isActive) return true;
+
+        const keys = ['history1M', 'history5M', 'history15M', 'history60M', 'history1D'];
+        for (let k of keys) {
+            const sVal = saved[k] ?? null;
+            const dVal = draft[k] ?? null;
+            if (sVal !== dVal) return true;
+        }
+        return false;
+    }
+
+    function checkRowDirtyState(id) {
+        const dirty = isRowDirty(id);
+        const $btnSave = $(`.btn-row-save[data-id="${id}"]`);
+        const $unsavedBadge = $(`#unsavedTag_${id}`);
+
+        if (dirty) {
+            $btnSave.prop('disabled', false).removeClass('btn-disabled');
+            $unsavedBadge.show();
+        } else {
+            $btnSave.prop('disabled', true).addClass('btn-disabled');
+            $unsavedBadge.hide();
+        }
+    }
+
+    // Save Row Changes
+    function saveRow(id) {
+        if (!isRowDirty(id)) return;
+
+        const draft = state.draftState[id];
+        if (!draft) return;
+
+        const $btnSave = $(`.btn-row-save[data-id="${id}"]`);
+        const $btnDelete = $(`.btn-row-delete[data-id="${id}"]`);
+
+        const payload = {
+            id: id,
+            isActive: draft.isActive,
+            history1M: draft.history1M,
+            history5M: draft.history5M,
+            history15M: draft.history15M,
+            history60M: draft.history60M,
+            history1D: draft.history1D
+        };
+
+        const originalHtml = $btnSave.html();
+        $btnSave.addClass('is-saving').prop('disabled', true).html(`
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="spin-icon"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line></svg>
+            Saving...
+        `);
+        $btnDelete.prop('disabled', true);
+
+        const url = getEndpointUrl('/datacoverage/' + id);
+
+        $.ajax({
+            url: url,
+            type: 'PUT',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                // Synchronize savedState to match saved draft
+                state.savedState[id] = { ...draft };
+
+                $btnSave.removeClass('is-saving').html(originalHtml);
+                $btnDelete.prop('disabled', false);
+
+                // Update History Status badges for this row automatically
+                $(`#hsGroup_${id}`).replaceWith(renderHistoryStatusGroupHtml(id));
+
+                Toast.fire({
+                    icon: 'success',
+                    title: 'Stock updated successfully.'
+                });
+
+                checkRowDirtyState(id);
+                loadSummary();
+            },
+            error: function (xhr, status, err) {
+                $btnSave.removeClass('is-saving').html(originalHtml);
+                $btnDelete.prop('disabled', false);
+                checkRowDirtyState(id);
+
+                Toast.fire({
+                    icon: 'error',
+                    title: 'Unable to update stock.'
+                });
+            }
+        });
+    }
+
+    // Delete Single Stock Record
+    function deleteStockRow(id) {
+        const stock = state.stocksMap[id];
+        const symbol = stock ? (stock.symbol || stock.Symbol || '') : 'Stock';
+        const name = stock ? (stock.name || stock.Name || symbol) : symbol;
+
+        Swal.fire({
+            title: 'Delete Stock',
+            html: `
+                <div style="text-align: left; font-size: 13.5px; line-height: 1.6; color: var(--text-secondary, #cbd5e1);">
+                    <p style="margin-bottom: 12px; font-weight: 500; color: var(--text-primary, #f8fafc);">Are you sure you want to delete this stock?</p>
+                    <div style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-subtle, #334155); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                        <div style="margin-bottom: 6px;"><span style="color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase;">Company:</span><br><strong style="color: #f8fafc;">${escapeHtml(name)}</strong></div>
+                        <div><span style="color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase;">Symbol:</span><br><strong style="color: var(--theme-accent, #60a5fa); font-family: monospace;">${escapeHtml(symbol)}</strong></div>
+                    </div>
+                    <p style="color: #f87171; font-size: 12px; font-weight: 600; margin: 0;">This action cannot be undone.</p>
+                </div>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#475569',
+            confirmButtonText: 'Delete',
+            cancelButtonText: 'Cancel',
+            background: 'var(--bg-card, #1e293b)',
+            color: '#f8fafc'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                const $btnDelete = $(`.btn-row-delete[data-id="${id}"]`);
+                const $btnSave = $(`.btn-row-save[data-id="${id}"]`);
+                $btnDelete.prop('disabled', true).html(`
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="spin-icon"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line></svg>
+                    Deleting...
+                `);
+                $btnSave.prop('disabled', true);
+
+                const url = getEndpointUrl('/datacoverage/' + id);
+
+                $.ajax({
+                    url: url,
+                    type: 'DELETE',
+                    success: function (res) {
+                        Toast.fire({
+                            icon: 'success',
+                            title: 'Stock deleted successfully.'
+                        });
+
+                        delete state.savedState[id];
+                        delete state.draftState[id];
+                        delete state.stocksMap[id];
+
+                        if (state.selectedStockId === id) {
+                            $('#detailCard').slideUp(200);
+                            state.selectedStockId = null;
+                        }
+
+                        const $row = $(`.stock-row[data-id="${id}"]`);
+                        $row.fadeOut(250, function () {
+                            $(this).remove();
+                        });
+
+                        loadSummary();
+                    },
+                    error: function (xhr, status, err) {
+                        $btnDelete.prop('disabled', false).html(`
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            Delete
+                        `);
+                        checkRowDirtyState(id);
+
+                        Toast.fire({
+                            icon: 'error',
+                            title: 'Unable to delete stock.'
+                        });
+                    }
+                });
+            }
+        });
+    }
+
     function renderEmptyTable(message) {
         $('#coverageTableBody').html(`
             <tr>
-                <td colspan="6" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
+                <td colspan="7" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
                     <div style="font-size: 14px; font-weight: 500;">${escapeHtml(message)}</div>
                 </td>
             </tr>
@@ -174,7 +497,7 @@ $(document).ready(function () {
     function showTableLoading() {
         $('#coverageTableBody').html(`
             <tr>
-                <td colspan="6" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
+                <td colspan="7" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon" style="vertical-align: middle; margin-right: 8px;">
                         <line x1="12" y1="2" x2="12" y2="6"></line>
                         <line x1="12" y1="18" x2="12" y2="22"></line>
@@ -215,7 +538,7 @@ $(document).ready(function () {
             <button class="btn-page btn-nav-page" data-page="${state.currentPage - 1}" ${state.currentPage === 1 ? 'disabled' : ''}>‹ Prev</button>
         `);
 
-        // Visible Page Numbers (window of max 5 buttons around current page)
+        // Visible Page Numbers
         let startPage = Math.max(1, state.currentPage - 2);
         let endPage = Math.min(state.totalPages, startPage + 4);
         if (endPage - startPage < 4) {
@@ -235,7 +558,7 @@ $(document).ready(function () {
         `);
     }
 
-    // 3. Select Stock & Populate Detail Card with Edit Form
+    // Select Stock & Populate Detail Card
     function selectStock(stockId) {
         state.selectedStockId = stockId;
         const stock = state.stocksMap[stockId];
@@ -258,79 +581,10 @@ $(document).ready(function () {
         $('#detailStatus').html(isActive ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Inactive</span>');
         $('#detailLastCandleDate').text(lastCandleDate ? formatDate(lastCandleDate) : 'No data');
 
-        // Populate Form Controls
-        $('#editStockId').val(stockId);
-        $('#chkIsActive').prop('checked', isActive);
-        $('#chkHistory1m').prop('checked', (stock.isHistryStored1m ?? stock.IsHistryStored1m ?? 0) === 1);
-        $('#chkHistory5m').prop('checked', (stock.isHistryStored5m ?? stock.IsHistryStored5m ?? 0) === 1);
-        $('#chkHistory15m').prop('checked', (stock.isHistryStored15m ?? stock.IsHistryStored15m ?? 0) === 1);
-        $('#chkHistory60m').prop('checked', (stock.isHistryStored60m ?? stock.IsHistryStored60m ?? 0) === 1);
-        $('#chkHistory1d').prop('checked', (stock.isHistryStored1d ?? stock.IsHistryStored1d ?? 0) === 1);
-
         $('#detailCard').slideDown(250);
         $('html, body').animate({
             scrollTop: $('#detailCard').offset().top - 100
         }, 300);
-    }
-
-    // 4. Save / Update Stock Coverage Flags
-    function saveCoverageFlags() {
-        const id = parseInt($('#editStockId').val(), 10);
-        if (!id) return;
-
-        const payload = {
-            id: id,
-            isActive: $('#chkIsActive').is(':checked'),
-            isHistryStored1m: $('#chkHistory1m').is(':checked') ? 1 : 0,
-            isHistryStored5m: $('#chkHistory5m').is(':checked') ? 1 : 0,
-            isHistryStored15m: $('#chkHistory15m').is(':checked') ? 1 : 0,
-            isHistryStored60m: $('#chkHistory60m').is(':checked') ? 1 : 0,
-            isHistryStored1d: $('#chkHistory1d').is(':checked') ? 1 : 0
-        };
-
-        const $btn = $('#btnSaveCoverageFlags');
-        $btn.prop('disabled', true).html('Saving...');
-
-        $.ajax({
-            url: apiBaseUrl + '/datacoverage/update',
-            type: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(payload),
-            success: function (res) {
-                $btn.prop('disabled', false).html(`
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
-                        <polyline points="7 3 7 8 15 8"></polyline>
-                    </svg>
-                    Save / Update Flags
-                `);
-
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Stock Flags Updated',
-                    text: 'Active status and timeframe history flags saved successfully.',
-                    timer: 2000,
-                    showConfirmButton: false,
-                    background: 'var(--bg-card, #1e293b)',
-                    color: '#f8fafc'
-                });
-
-                // Reload data
-                loadSummary();
-                loadPaginatedList();
-            },
-            error: function (xhr, status, err) {
-                $btn.prop('disabled', false).html('Save / Update Flags');
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Update Failed',
-                    text: xhr.responseText || err || 'Failed to save stock flags.',
-                    background: 'var(--bg-card, #1e293b)',
-                    color: '#f8fafc'
-                });
-            }
-        });
     }
 
     // Bind Event Handlers
@@ -344,6 +598,13 @@ $(document).ready(function () {
 
         $('#historyFilter').on('change', function () {
             state.historyFilter = $(this).val();
+            state.currentPage = 1;
+            loadPaginatedList();
+        });
+
+        // Page Size change
+        $('#pageSizeSelect').on('change', function () {
+            state.pageSize = parseInt($(this).val(), 10) || 25;
             state.currentPage = 1;
             loadPaginatedList();
         });
@@ -364,15 +625,6 @@ $(document).ready(function () {
             $('.stock-row').removeClass('selected-row');
         });
 
-        $(document).on('click', '.btn-delete-row', function (e) {
-            e.stopPropagation();
-            const id = parseInt($(this).data('id'), 10);
-            if (id) {
-                $('#editStockId').val(id);
-                deleteStock();
-            }
-        });
-
         // Search Input with Debounce
         $('#searchInput').on('input', function () {
             const query = $(this).val();
@@ -384,25 +636,102 @@ $(document).ready(function () {
             }, 350);
         });
 
-        // Select All Checkbox
-        $('#selectAllCheckbox').on('change', function () {
-            const isChecked = $(this).is(':checked');
-            $('.row-checkbox').prop('checked', isChecked);
-            updateBulkDeleteButton();
-        });
-
-        $(document).on('change', '.row-checkbox', function () {
-            updateBulkDeleteButton();
-        });
-
-        // Row Click & Action Button Click
-        $(document).on('click', '.stock-row', function () {
-            const id = parseInt($(this).data('id'), 10);
-            selectStock(id);
-        });
-
-        $(document).on('click', '.btn-view-detail, .btn-edit-flag', function (e) {
+        // Prevent row selection when clicking inline controls
+        $(document).on('click', '.inline-status-toggle, .tf-checkboxes-group, .history-status-group, .row-actions-group', function (e) {
             e.stopPropagation();
+        });
+
+        // "All" Timeframes Checkbox Change
+        $(document).on('change', '.tf-all-checkbox', function (e) {
+            e.stopPropagation();
+            const id = parseInt($(this).data('id'), 10);
+            if (!id || !state.draftState[id]) return;
+
+            const isChecked = $(this).is(':checked');
+            const keys = ['history1M', 'history5M', 'history15M', 'history60M', 'history1D'];
+
+            keys.forEach(k => {
+                const prevVal = state.draftState[id][k];
+                if (isChecked) {
+                    // Enabling sets 0 (pending worker job backfill) if it was null
+                    state.draftState[id][k] = (prevVal === 1 || prevVal === 0) ? prevVal : 0;
+                } else {
+                    // Disabling sets null
+                    state.draftState[id][k] = null;
+                }
+            });
+
+            const $group = $(this).closest('.tf-checkboxes-group');
+            $group.replaceWith(renderTfGroupHtml(id));
+
+            checkRowDirtyState(id);
+        });
+
+        // Individual Timeframe Checkbox Change
+        $(document).on('change', '.tf-checkbox', function (e) {
+            e.stopPropagation();
+            const id = parseInt($(this).data('id'), 10);
+            const tfKey = $(this).data('tf');
+            if (!id || !tfKey || !state.draftState[id]) return;
+
+            const isChecked = $(this).is(':checked');
+            const prevVal = state.draftState[id][tfKey];
+
+            let newVal;
+            if (isChecked) {
+                // If previously null, enable sets 0 (pending worker job backfill)
+                newVal = (prevVal === 1 || prevVal === 0) ? prevVal : 0;
+            } else {
+                // Unchecking sets null (disabled)
+                newVal = null;
+            }
+
+            state.draftState[id][tfKey] = newVal;
+
+            const $group = $(this).closest('.tf-checkboxes-group');
+            $group.replaceWith(renderTfGroupHtml(id));
+
+            checkRowDirtyState(id);
+        });
+
+        // Active Status Switch Change
+        $(document).on('change', '.row-status-checkbox', function (e) {
+            e.stopPropagation();
+            const id = parseInt($(this).data('id'), 10);
+            if (!id || !state.draftState[id]) return;
+
+            const isChecked = $(this).is(':checked');
+            state.draftState[id].isActive = isChecked;
+
+            const $label = $(`#statusLabel_${id}`);
+            $label.text(isChecked ? 'Active' : 'Inactive');
+            if (isChecked) {
+                $label.addClass('active-color').removeClass('inactive-color');
+            } else {
+                $label.addClass('inactive-color').removeClass('active-color');
+            }
+
+            checkRowDirtyState(id);
+        });
+
+        // Row Save Button Click
+        $(document).on('click', '.btn-row-save', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = parseInt($(this).data('id'), 10);
+            if (id) saveRow(id);
+        });
+
+        // Row Delete Button Click
+        $(document).on('click', '.btn-row-delete', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = parseInt($(this).data('id'), 10);
+            if (id) deleteStockRow(id);
+        });
+
+        // Row Click
+        $(document).on('click', '.stock-row', function () {
             const id = parseInt($(this).data('id'), 10);
             selectStock(id);
         });
@@ -414,155 +743,6 @@ $(document).ready(function () {
             if (targetPage && targetPage !== state.currentPage) {
                 state.currentPage = targetPage;
                 loadPaginatedList();
-            }
-        });
-
-        // Save Flags Button
-        $('#btnSaveCoverageFlags').on('click', function (e) {
-            e.preventDefault();
-            saveCoverageFlags();
-        });
-
-        // Delete Stock Button
-        $('#btnDeleteStock').on('click', function (e) {
-            e.preventDefault();
-            deleteStock();
-        });
-
-        // Bulk Delete Button
-        $('#btnBulkDelete').on('click', function (e) {
-            e.preventDefault();
-            bulkDeleteStocks();
-        });
-    }
-
-    function updateBulkDeleteButton() {
-        const selectedIds = getSelectedStockIds();
-        const count = selectedIds.length;
-        $('#selectedCount').text(count);
-        if (count > 0) {
-            $('#btnBulkDelete').fadeIn(150);
-        } else {
-            $('#btnBulkDelete').fadeOut(150);
-            $('#selectAllCheckbox').prop('checked', false);
-        }
-    }
-
-    function getSelectedStockIds() {
-        const ids = [];
-        $('.row-checkbox:checked').each(function () {
-            const id = parseInt($(this).data('id'), 10);
-            if (id) ids.push(id);
-        });
-        return ids;
-    }
-
-    // 5. Delete Single Stock Record
-    function deleteStock(targetStockId) {
-        const id = targetStockId || parseInt($('#editStockId').val(), 10);
-        if (!id) return;
-
-        const stock = state.stocksMap[id];
-        const symbol = stock ? (stock.symbol || stock.Symbol || '') : 'this stock';
-
-        Swal.fire({
-            title: 'Delete Stock?',
-            text: `Are you sure you want to permanently delete ${symbol} from the database?`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#ef4444',
-            cancelButtonColor: '#475569',
-            confirmButtonText: 'Yes, Delete',
-            background: 'var(--bg-card, #1e293b)',
-            color: '#f8fafc'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: apiBaseUrl + '/datacoverage/' + id,
-                    type: 'DELETE',
-                    success: function (res) {
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Deleted!',
-                            text: `${symbol} has been deleted successfully.`,
-                            timer: 2000,
-                            showConfirmButton: false,
-                            background: 'var(--bg-card, #1e293b)',
-                            color: '#f8fafc'
-                        });
-
-                        $('#detailCard').slideUp(200);
-                        state.selectedStockId = null;
-
-                        loadSummary();
-                        loadPaginatedList();
-                    },
-                    error: function (xhr, status, err) {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Delete Failed',
-                            text: xhr.responseText || err || 'Failed to delete stock.',
-                            background: 'var(--bg-card, #1e293b)',
-                            color: '#f8fafc'
-                        });
-                    }
-                });
-            }
-        });
-    }
-
-    // 6. Bulk Delete Stocks
-    function bulkDeleteStocks() {
-        const selectedIds = getSelectedStockIds();
-        if (selectedIds.length === 0) return;
-
-        Swal.fire({
-            title: `Delete ${selectedIds.length} Selected Stocks?`,
-            text: `Are you sure you want to permanently delete ${selectedIds.length} selected stocks from the database?`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#ef4444',
-            cancelButtonColor: '#475569',
-            confirmButtonText: `Yes, Delete ${selectedIds.length} Stocks`,
-            background: 'var(--bg-card, #1e293b)',
-            color: '#f8fafc'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: apiBaseUrl + '/datacoverage/bulk-delete',
-                    type: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify(selectedIds),
-                    success: function (res) {
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Bulk Delete Complete',
-                            text: `${selectedIds.length} stocks deleted successfully.`,
-                            timer: 2000,
-                            showConfirmButton: false,
-                            background: 'var(--bg-card, #1e293b)',
-                            color: '#f8fafc'
-                        });
-
-                        if (selectedIds.includes(state.selectedStockId)) {
-                            $('#detailCard').slideUp(200);
-                            state.selectedStockId = null;
-                        }
-
-                        updateBulkDeleteButton();
-                        loadSummary();
-                        loadPaginatedList();
-                    },
-                    error: function (xhr, status, err) {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Bulk Delete Failed',
-                            text: xhr.responseText || err || 'Failed to bulk delete selected stocks.',
-                            background: 'var(--bg-card, #1e293b)',
-                            color: '#f8fafc'
-                        });
-                    }
-                });
             }
         });
     }

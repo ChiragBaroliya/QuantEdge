@@ -88,33 +88,24 @@
         </div>
     </div>
 
-    <!-- Bulk Action Toolbar -->
-    <div id="bulkActionsBar" class="bulk-actions-bar">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-        <span><span id="selectedCount">0</span> items selected</span>
-        <button type="button" id="btnBulkDelete" class="btn-delete-stock btn-sm">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-            Delete Selected
-        </button>
-    </div>
-
     <!-- Data Table Card -->
     <div class="table-card">
         <div style="overflow-x: auto;">
             <table class="coverage-table">
                 <thead>
                     <tr>
-                        <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox" /></th>
                         <th style="min-width: 140px;">Symbol & Exchange</th>
-                        <th style="min-width: 200px;">Company Name</th>
-                        <th style="min-width: 240px;">Timeframe History Flags</th>
-                        <th style="min-width: 150px;">Last Candle Sync</th>
-                        <th style="min-width: 110px;">Status</th>
+                        <th style="min-width: 180px;">Company Name</th>
+                        <th style="min-width: 220px;">Timeframe History Flags</th>
+                        <th style="min-width: 260px;">History Status</th>
+                        <th style="min-width: 130px;">Last Candle Sync</th>
+                        <th style="min-width: 120px;">Status</th>
+                        <th style="min-width: 160px; text-align: center;">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="coverageTableBody">
                     <tr>
-                        <td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">
+                        <td colspan="7" style="text-align: center; padding: 40px; color: #94a3b8;">
                             Loading stock data coverage...
                         </td>
                     </tr>
@@ -175,100 +166,6 @@
                 <span class="detail-item-label">Instrument Token</span>
                 <span id="detailInstrumentToken" class="detail-item-value monospace">...</span>
             </div>
-        </div>
-
-        <!-- Flags Edit / Save Section -->
-        <div class="flags-edit-section">
-            <div class="flags-section-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                </svg>
-                Manage Active Status & Timeframe History Flags
-            </div>
-            <form id="editFlagsForm">
-                <input type="hidden" id="editStockId" value="" />
-                
-                <div class="flags-grid">
-                    <div class="flag-toggle-card">
-                        <div>
-                            <span class="flag-label">Active Status</span>
-                            <span class="flag-sublabel">Track symbol in data service</span>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="chkIsActive" />
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div class="flag-toggle-card">
-                        <div>
-                            <span class="flag-label">1 Min History</span>
-                            <span class="flag-sublabel">1m candle data stored</span>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="chkHistory1m" />
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div class="flag-toggle-card">
-                        <div>
-                            <span class="flag-label">5 Min History</span>
-                            <span class="flag-sublabel">5m candle data stored</span>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="chkHistory5m" />
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div class="flag-toggle-card">
-                        <div>
-                            <span class="flag-label">15 Min History</span>
-                            <span class="flag-sublabel">15m candle data stored</span>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="chkHistory15m" />
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div class="flag-toggle-card">
-                        <div>
-                            <span class="flag-label">60 Min History</span>
-                            <span class="flag-sublabel">60m candle data stored</span>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="chkHistory60m" />
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div class="flag-toggle-card">
-                        <div>
-                            <span class="flag-label">Daily History</span>
-                            <span class="flag-sublabel">1d candle data stored</span>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="chkHistory1d" />
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="detail-actions-row">
-                    <button type="button" id="btnDeleteStock" class="btn-delete-stock">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                        Delete Stock
-                    </button>
-                    <button type="button" id="btnSaveCoverageFlags" class="btn-save-coverage">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-                            <polyline points="17 21 17 13 7 13 7 21"></polyline>
-                            <polyline points="7 3 7 8 15 8"></polyline>
-                        </svg>
-                        Save / Update Flags
-                    </button>
-                </div>
-            </form>
         </div>
     </div>
 
