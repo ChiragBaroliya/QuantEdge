@@ -19,7 +19,7 @@
                 </svg>
                 Rules & Formulas
             </button>
-            <button id="btnRunBackfill" class="btn-trigger" title="Runs a clean 2-year historical backtest of the strategy to generate historical performance.">
+            <button id="btnRunBackfill" class="btn-trigger" title="Runs a clean 2-year historical backtest of the strategy in background without locking the UI.">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
                     <path d="M16 3h5v5"></path>
@@ -101,50 +101,180 @@
         </div>
     </div>
 
-    <!-- Main Dashboard Body Grid -->
-    <div class="dashboard-main-grid">
+    <!-- Nifty Market Filter Banner -->
+    <div class="nifty-status-banner">
+        <div class="nifty-banner-left">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <h3 class="nifty-title">NIFTY MARKET FILTER</h3>
+                <span id="niftyBadge" class="nifty-badge passed">Passed</span>
+            </div>
+            <div class="nifty-price-row">
+                <span id="niftyClose" class="nifty-price">22,450.25</span>
+                <span style="font-size: 11px; color: rgba(255,255,255,0.4); font-weight: 600;">EOD CLOSE</span>
+            </div>
+        </div>
         
-        <!-- Top Horizontal Nifty Market Filter Banner -->
-        <div class="nifty-status-banner">
-            <div class="nifty-banner-left">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <h3 class="nifty-title">NIFTY MARKET FILTER</h3>
-                    <span id="niftyBadge" class="nifty-badge passed">Passed</span>
+        <div class="nifty-banner-right">
+            <div class="nifty-detail-item">
+                <span class="label">50 Day DMA</span>
+                <span id="niftySma50" class="value">21,950.00</span>
+            </div>
+            <div class="nifty-detail-item">
+                <span class="label">20 Day EMA</span>
+                <span id="niftyEma20" class="value">22,120.40</span>
+            </div>
+            <div class="nifty-detail-item">
+                <span class="label">50 Day EMA</span>
+                <span id="niftyEma50" class="value">21,990.20</span>
+            </div>
+            <div class="nifty-detail-item" style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;">
+                <span class="label">Price > 50 DMA</span>
+                <span id="niftyCond1" class="value pnl-text positive">Yes</span>
+            </div>
+            <div class="nifty-detail-item">
+                <span class="label">EMA20 > EMA50</span>
+                <span id="niftyCond2" class="value pnl-text positive">Yes</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Section Navigation Tabs -->
+    <div class="swing-tabs-nav">
+        <button class="swing-tab-btn active" id="tabBtnRecommendations" data-pane="paneRecommendations">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            Stock Recommendations
+            <span class="tab-badge" id="recommendationsBadge">0</span>
+        </button>
+        <button class="swing-tab-btn" id="tabBtnTradeLog" data-pane="paneTradeLog">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            Simulated Positions & Trade Log
+            <span class="tab-badge" id="tradeLogBadge">0</span>
+        </button>
+        <button class="swing-tab-btn" id="tabBtnParameters" data-pane="paneParameters">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            Strategy Parameters
+        </button>
+    </div>
+
+    <!-- PANE 1: Recommendations Watchlist -->
+    <div class="swing-tab-pane active" id="paneRecommendations">
+        <!-- Executive KPI Metrics Summary for 3,000+ Symbols -->
+        <div class="executive-kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-left">
+                    <span class="kpi-label">Total Symbols Scanned</span>
+                    <span class="kpi-value" id="kpiTotalSymbols">0</span>
                 </div>
-                <div class="nifty-price-row">
-                    <span id="niftyClose" class="nifty-price">22,450.25</span>
-                    <span style="font-size: 11px; color: rgba(255,255,255,0.4); font-weight: 600;">EOD CLOSE</span>
+                <div class="kpi-icon-wrapper">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
                 </div>
             </div>
-            
-            <div class="nifty-banner-right">
-                <div class="nifty-detail-item">
-                    <span class="label">50 Day DMA</span>
-                    <span id="niftySma50" class="value">21,950.00</span>
+
+            <div class="kpi-card" style="border-color: rgba(52, 211, 153, 0.25);">
+                <div class="kpi-left">
+                    <span class="kpi-label" style="color: #34d399;">🟢 BUY Recommendations</span>
+                    <span class="kpi-value buy-glow" id="kpiBuyCount">0</span>
                 </div>
-                <div class="nifty-detail-item">
-                    <span class="label">20 Day EMA</span>
-                    <span id="niftyEma20" class="value">22,120.40</span>
+                <div class="kpi-icon-wrapper" style="background: rgba(52, 211, 153, 0.1); color: #34d399;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                        <polyline points="16 7 22 7 22 13"></polyline>
+                    </svg>
                 </div>
-                <div class="nifty-detail-item">
-                    <span class="label">50 Day EMA</span>
-                    <span id="niftyEma50" class="value">21,990.20</span>
+            </div>
+
+            <div class="kpi-card" style="border-color: rgba(251, 191, 36, 0.25);">
+                <div class="kpi-left">
+                    <span class="kpi-label" style="color: #fbbf24;">⭐ High Met Watchlist (6+)</span>
+                    <span class="kpi-value met-glow" id="kpiHighMetCount">0</span>
                 </div>
-                <div class="nifty-detail-item" style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;">
-                    <span class="label">Price > 50 DMA</span>
-                    <span id="niftyCond1" class="value pnl-text positive">Yes</span>
+                <div class="kpi-icon-wrapper" style="background: rgba(251, 191, 36, 0.1); color: #fbbf24;">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                 </div>
-                <div class="nifty-detail-item">
-                    <span class="label">EMA20 > EMA50</span>
-                    <span id="niftyCond2" class="value pnl-text positive">Yes</span>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-left">
+                    <span class="kpi-label">🟡 Neutral / Hold</span>
+                    <span class="kpi-value" id="kpiNeutralCount" style="color: rgba(255,255,255,0.6);">0</span>
+                </div>
+                <div class="kpi-icon-wrapper">
+                    <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2"></line>
                 </div>
             </div>
         </div>
 
-        <!-- Full Width Stock Signal Watchlist -->
         <div class="card-glow">
-            <h3 class="nifty-title" style="margin-top: 0; margin-bottom: 16px;">STOCK & ETF EOD RECOMMENDATIONS</h3>
-            <div class="table-responsive">
+            <!-- Search, Filter & View Control Bar -->
+            <div class="stock-filter-bar">
+                <div class="filter-left-group">
+                    <div class="filter-search-box">
+                        <svg class="filter-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <input type="text" id="stockSearchInput" placeholder="Search symbol (e.g. RELIANCE, TATA)..." />
+                    </div>
+
+                    <div class="filter-pills-group">
+                        <!-- Actionable Default: BUY Signals active by default for 3000+ stocks -->
+                        <span class="filter-pill pill-buy active" id="pillBuy" data-filter="buy">🟢 BUY Signals (<span id="countBuyPill">0</span>)</span>
+                        <span class="filter-pill" id="pillTopMet" data-filter="topmet">⭐ High Met (6+)</span>
+                        <span class="filter-pill" id="pillNeutral" data-filter="neutral">🟡 Neutral (<span id="countNeutralPill">0</span>)</span>
+                        <span class="filter-pill" id="pillAll" data-filter="all">All Symbols</span>
+                    </div>
+                </div>
+
+                <div class="filter-right-group">
+                    <span class="results-counter" id="resultsCounterText">Showing 0 stocks</span>
+                    <div class="view-mode-toggle">
+                        <button class="view-btn" id="btnViewGrid" title="Switch to Mobile/Tablet Card Grid View">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                            </svg>
+                            Cards
+                        </button>
+                        <button class="view-btn active" id="btnViewTable" title="Switch to Desktop Compact Table View">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="8" y1="6" x2="21" y2="6"></line>
+                                <line x1="8" y1="12" x2="21" y2="12"></line>
+                                <line x1="8" y1="18" x2="21" y2="18"></line>
+                                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                            </svg>
+                            Table
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mobile & Tablet Responsive Cards Grid View -->
+            <div id="stockCardsGrid" class="stock-cards-grid" style="display: none;">
+                <div class="text-center text-muted py-4 w-100">Loading recommendations...</div>
+            </div>
+
+            <!-- Fixed-Height Scrollable Table View (Desktop) -->
+            <div id="stockTableView" class="table-scroll-container">
                 <table class="swing-table">
                     <thead>
                         <tr>
@@ -170,38 +300,119 @@
                     </tbody>
                 </table>
             </div>
-        </div>
 
-    </div>
+            <!-- Interactive Pagination Bar for Scalable 3,000+ Symbols -->
+            <div class="pagination-wrapper">
+                <div class="page-size-selector">
+                    <span>Rows per page:</span>
+                    <select id="pageSizeSelect">
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="3000">All</option>
+                    </select>
+                </div>
 
-    <!-- Bottom Row: Recent Trade Log & Simulated Positions -->
-    <div class="card-glow">
-        <h3 class="nifty-title" style="margin-top: 0; margin-bottom: 16px;">SIMULATED POSITIONS & RECENT TRADE LOG</h3>
-        <div class="table-responsive">
-            <table class="swing-table">
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>Status</th>
-                        <th>Entry Date</th>
-                        <th>Entry Price</th>
-                        <th>Exit Date</th>
-                        <th>Exit Price</th>
-                        <th>Reason / Exit Factor</th>
-                        <th>Hold Days</th>
-                        <th>P&L (%)</th>
-                    </tr>
-                </thead>
-                <tbody id="tradeLogTableBody">
-                    <tr>
-                        <td colspan="9" class="text-center py-4">
-                            <span class="text-muted">Loading trade logs...</span>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+                <div class="pagination-controls">
+                    <button class="page-nav-btn" id="btnPrevPage" disabled>◄ Prev</button>
+                    <div class="page-numbers-group" id="pageNumbersContainer">
+                        <button class="page-num-btn active">1</button>
+                    </div>
+                    <button class="page-nav-btn" id="btnNextPage" disabled>Next ►</button>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- PANE 2: Simulated Positions & Recent Trade Log -->
+    <div class="swing-tab-pane" id="paneTradeLog">
+        <div class="card-glow">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 class="nifty-title" style="margin: 0;">SIMULATED POSITIONS & RECENT TRADE LOG</h3>
+                <span class="text-muted" style="font-size: 12px;">Auto-simulated by EOD Backtest engine</span>
+            </div>
+            <div class="table-scroll-container" style="max-height: 600px;">
+                <table class="swing-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Status</th>
+                            <th>Entry Date</th>
+                            <th>Entry Price</th>
+                            <th>Exit Date</th>
+                            <th>Exit Price</th>
+                            <th>Reason / Exit Factor</th>
+                            <th>Hold Days</th>
+                            <th>P&L (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tradeLogTableBody">
+                        <tr>
+                            <td colspan="9" class="text-center py-4">
+                                <span class="text-muted">Loading trade logs...</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- PANE 3: Strategy Parameters & Rules -->
+    <div class="swing-tab-pane" id="paneParameters">
+        <div class="card-glow">
+            <h3 class="nifty-title" style="margin-top: 0; margin-bottom: 16px;">EOD SWING TRADING STRATEGY SPECIFICATIONS</h3>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 12px;">
+                    <h4 style="color: var(--theme-accent); font-size: 15px; margin-top: 0;">1. Market Filter (Nifty 50)</h4>
+                    <p style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
+                        Trade recommendations are only valid when the overall market condition passes:
+                        <br/>• <strong>Nifty Price > 50-Day SMA</strong>
+                        <br/>• <strong>Nifty 20 EMA > 50 EMA</strong> (Bullish alignment)
+                    </p>
+                </div>
+
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 12px;">
+                    <h4 style="color: var(--theme-accent); font-size: 15px; margin-top: 0;">2. 8-Point Entry Checklist</h4>
+                    <p style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
+                        A <strong>BUY</strong> signal requires meeting <strong>ALL 8 conditions</strong>:
+                        <br/>1. Close > 200 EMA & 2. Close > 50 EMA & 3. Close > 20 EMA
+                        <br/>4. EMA Alignment: EMA20 > EMA50 > EMA200
+                        <br/>5. RSI (14) between 55 and 70 (Bullish Momentum)
+                        <br/>6. ADX (14) > 25 (Strong Trend)
+                        <br/>7. MACD Line > MACD Signal Line
+                        <br/>8. Volume Spike ≥ 1.5x of 20-day Average Volume
+                    </p>
+                </div>
+
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 12px;">
+                    <h4 style="color: var(--theme-accent); font-size: 15px; margin-top: 0;">3. Risk & Exit Management</h4>
+                    <p style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
+                        Simulated trade positions enforce strict exit rules:
+                        <br/>• <strong class="pnl-text positive">+5% Profit Target</strong> from entry
+                        <br/>• <strong class="pnl-text negative">-3% Stop Loss</strong> from entry
+                        <br/>• <strong>Time Stop: Exit after 20 Trading Days</strong> if neither Target nor Stop Loss is triggered.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Floating Non-Blocking Background Job Progress Card -->
+<div id="jobFloatCard" class="job-float-card">
+    <div class="job-float-header">
+        <div class="job-float-title">
+            <div class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></div>
+            <span id="jobFloatTitle">Historical Backtest Running...</span>
+        </div>
+        <span id="jobFloatProgressText" class="job-float-progress-text">0%</span>
+    </div>
+    <div class="job-float-bar">
+        <div id="jobFloatBarFill" class="job-float-fill"></div>
+    </div>
+    <div id="jobFloatDesc" class="job-float-desc">Initiating background processing...</div>
 </div>
 
 <!-- Global Loading Overlay -->
@@ -217,10 +428,79 @@
 @section Scripts {
     <script>
         const API_BASE_URL = "@ViewBag.ApiBaseUrl";
+        
+        let allStockSignals = [];
+        let allTrades = [];
+        let currentFilter = "buy"; // Actionable-First: BUY signals active by default for 3000+ stocks!
+        let searchQuery = "";
+        let currentViewMode = window.innerWidth < 768 ? "grid" : "table";
+        let currentPage = 1;
+        let pageSize = 25;
+        let jobPollInterval = null;
 
         $(document).ready(function() {
-            // Load dashboard data on startup
+            updateViewModeUI();
             loadDashboard();
+
+            // Check if any job is currently running in background on startup
+            checkRunningBackgroundJobs();
+
+            // Section Tabs Switching
+            $(".swing-tab-btn").click(function() {
+                const paneId = $(this).data("pane");
+                $(".swing-tab-btn").removeClass("active");
+                $(".swing-tab-pane").removeClass("active");
+                
+                $(this).addClass("active");
+                $(`#${paneId}`).addClass("active");
+            });
+
+            // Live Search Input Listener
+            $("#stockSearchInput").on("input", function() {
+                searchQuery = $(this).val().toLowerCase().trim();
+                currentPage = 1;
+                filterAndRenderStocks();
+            });
+
+            // Filter Pills Listener
+            $(".filter-pill").click(function() {
+                $(".filter-pill").removeClass("active");
+                $(this).addClass("active");
+                currentFilter = $(this).data("filter");
+                currentPage = 1;
+                filterAndRenderStocks();
+            });
+
+            // Page Size Selector Listener
+            $("#pageSizeSelect").change(function() {
+                pageSize = parseInt($(this).val(), 10) || 25;
+                currentPage = 1;
+                filterAndRenderStocks();
+            });
+
+            // Pagination Button Listeners
+            $("#btnPrevPage").click(function() {
+                if (currentPage > 1) {
+                    currentPage--;
+                    filterAndRenderStocks();
+                }
+            });
+
+            $("#btnNextPage").click(function() {
+                currentPage++;
+                filterAndRenderStocks();
+            });
+
+            // View Mode Toggle Listeners
+            $("#btnViewGrid").click(function() {
+                currentViewMode = "grid";
+                updateViewModeUI();
+            });
+
+            $("#btnViewTable").click(function() {
+                currentViewMode = "table";
+                updateViewModeUI();
+            });
 
             // Open Modal
             $("#btnOpenReference").click(function() {
@@ -243,7 +523,7 @@
                 }
             });
 
-            // Tab switching
+            // Modal Tab switching
             $(".qe-modal-nav-btn").click(function() {
                 const tabId = $(this).data("tab");
                 $(".qe-modal-nav-btn").removeClass("active");
@@ -252,41 +532,73 @@
                 $(`#${tabId}`).addClass("active");
             });
 
-            // Hook action triggers
+            // Trigger Background Actions (Non-Blocking!)
             $("#btnRunJob").click(function() {
-                triggerJob("/api/swing/run-job", "Running EOD Daily analysis job. Downloading candles and evaluating signals...");
+                triggerBackgroundJob("/api/swing/run-job", "eod", "Executing EOD Daily Analysis Job...");
             });
 
             $("#btnRunBackfill").click(function() {
-                triggerJob("/api/swing/backfill", "Executing 2-year historical backtest. Re-simulating EOD recommendations day-by-day...");
+                triggerBackgroundJob("/api/swing/backfill", "backfill", "Historical 2-Year Backtest Running...");
             });
         });
 
-        function showLoading(msg) {
-            $("#loadingMessage").text(msg);
-            $("#loadingOverlay").addClass("active");
+        function updateViewModeUI() {
+            if (currentViewMode === "grid") {
+                $("#btnViewGrid").addClass("active");
+                $("#btnViewTable").removeClass("active");
+                $("#stockCardsGrid").show();
+                $("#stockTableView").hide();
+            } else {
+                $("#btnViewTable").addClass("active");
+                $("#btnViewGrid").removeClass("active");
+                $("#stockTableView").show();
+                $("#stockCardsGrid").hide();
+            }
         }
 
-        function hideLoading() {
-            $("#loadingOverlay").removeClass("active");
+        function getEndpointUrl(path) {
+            let base = (API_BASE_URL || '').replace(/\/+$/, '');
+            let endpoint = path.startsWith('/') ? path : '/' + path;
+
+            if (base.endsWith('/api') && endpoint.startsWith('/api/')) {
+                endpoint = endpoint.substring(4);
+            }
+            return base + endpoint;
         }
 
         function loadDashboard() {
             $.ajax({
-                url: `${API_BASE_URL}/api/swing/dashboard`,
+                url: getEndpointUrl('/api/swing/dashboard'),
                 type: "GET",
                 success: function(data) {
                     populateNifty(data.niftyStatus);
-                    populateWatchlist(data.stockSignals);
+                    allStockSignals = data.stockSignals || [];
+                    allTrades = data.recentTrades || [];
+
+                    // Update Executive KPI Badges for 3000+ stocks
+                    const totalScanned = allStockSignals.length;
+                    const buyCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "BUY").length;
+                    const highMetCount = allStockSignals.filter(s => (s.checklist ? s.checklist.metCount : 0) >= 6).length;
+                    const neutralCount = totalScanned - buyCount;
+
+                    $("#kpiTotalSymbols").text(totalScanned.toLocaleString());
+                    $("#kpiBuyCount").text(buyCount.toLocaleString());
+                    $("#kpiHighMetCount").text(highMetCount.toLocaleString());
+                    $("#kpiNeutralCount").text(neutralCount.toLocaleString());
+
+                    $("#recommendationsBadge").text(buyCount);
+                    $("#tradeLogBadge").text(allTrades.length);
+
+                    filterAndRenderStocks();
                     populatePerformance(data.backtestStats15Days, data.backtestStats30Days);
-                    populateTrades(data.recentTrades);
+                    populateTrades(allTrades);
                 },
                 error: function(err) {
                     console.error("Failed to load dashboard data.", err);
                     Swal.fire({
                         icon: 'error',
                         title: 'Connection Error',
-                        text: 'Error loading dashboard data. Check if API is running.',
+                        text: 'Error loading dashboard data. Check if API is running at ' + API_BASE_URL,
                         confirmButtonColor: 'var(--theme-accent)',
                         background: 'var(--bg-card)',
                         color: 'var(--text-primary)'
@@ -295,29 +607,28 @@
             });
         }
 
-        function triggerJob(endpoint, loadingMessage) {
-            showLoading(loadingMessage);
+        function triggerBackgroundJob(endpoint, jobType, titleText) {
             $.ajax({
-                url: `${API_BASE_URL}${endpoint}`,
+                url: getEndpointUrl(endpoint),
                 type: "POST",
                 success: function(res) {
-                    hideLoading();
                     Swal.fire({
-                        icon: 'success',
-                        title: 'Success',
-                        text: res.message,
-                        confirmButtonColor: 'var(--theme-accent)',
-                        background: 'var(--bg-card)',
-                        color: 'var(--text-primary)'
+                        icon: 'info',
+                        title: 'Background Process Started',
+                        text: res.message || 'Job initiated in background.',
+                        toast: true,
+                        position: 'top-end',
+                        showConfirmButton: false,
+                        timer: 4000
                     });
-                    loadDashboard();
+
+                    startJobStatusPolling(jobType, titleText);
                 },
                 error: function(err) {
-                    hideLoading();
-                    console.error("Job execution failed.", err);
+                    console.error("Job trigger failed.", err);
                     Swal.fire({
                         icon: 'error',
-                        title: 'Job Failed',
+                        title: 'Trigger Failed',
                         text: err.responseText || "Internal server error",
                         confirmButtonColor: 'var(--theme-accent)',
                         background: 'var(--bg-card)',
@@ -325,6 +636,59 @@
                     });
                 }
             });
+        }
+
+        function checkRunningBackgroundJobs() {
+            $.get(getEndpointUrl(`/api/swing/job-status?jobType=backfill`), function(res) {
+                if (res && res.isRunning) {
+                    startJobStatusPolling("backfill", "Historical 2-Year Backtest Running...");
+                }
+            });
+        }
+
+        function startJobStatusPolling(jobType, titleText) {
+            $("#jobFloatTitle").text(titleText);
+            $("#jobFloatCard").fadeIn();
+
+            if (jobPollInterval) clearInterval(jobPollInterval);
+
+            jobPollInterval = setInterval(function() {
+                $.get(getEndpointUrl(`/api/swing/job-status?jobType=${jobType}`), function(status) {
+                    if (!status) return;
+
+
+                    if (status.isRunning) {
+                        const pct = status.progressPercent || 0;
+                        $("#jobFloatProgressText").text(`${pct}%`);
+                        $("#jobFloatBarFill").css("width", `${pct}%`);
+                        $("#jobFloatDesc").text(status.statusMessage || "Processing...");
+                    } else {
+                        clearInterval(jobPollInterval);
+                        $("#jobFloatCard").fadeOut();
+
+                        if (status.lastError) {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Job Failed',
+                                text: status.lastError,
+                                confirmButtonColor: 'var(--theme-accent)',
+                                background: 'var(--bg-card)',
+                                color: 'var(--text-primary)'
+                            });
+                        } else if (status.progressPercent === 100) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Task Completed!',
+                                text: status.statusMessage || 'Background process finished successfully.',
+                                confirmButtonColor: 'var(--theme-accent)',
+                                background: 'var(--bg-card)',
+                                color: 'var(--text-primary)'
+                            });
+                            loadDashboard();
+                        }
+                    }
+                });
+            }, 2000);
         }
 
         function populateNifty(ns) {
@@ -358,48 +722,118 @@
         }
 
         function toggleChecklist(symbol) {
-            const row = $(`#checklist-row-${symbol}`);
-            const btn = $(`#btn-toggle-${symbol}`);
-            row.toggle();
-            btn.toggleClass("active");
+            const tableRow = $(`#checklist-row-${symbol}`);
+            const tableBtn = $(`#btn-toggle-${symbol}`);
+            if (tableRow.length) {
+                tableRow.toggle();
+                tableBtn.toggleClass("active");
+            }
+
+            const cardDrawer = $(`#card-drawer-${symbol}`);
+            const cardBtn = $(`#btn-card-toggle-${symbol}`);
+            if (cardDrawer.length) {
+                cardDrawer.toggleClass("active");
+                cardBtn.toggleClass("active");
+            }
         }
 
-        function populateWatchlist(signals) {
+        function filterAndRenderStocks() {
+            let filtered = allStockSignals;
+
+            // Summary counts for filter pills
+            const buyCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "BUY").length;
+            const neutralCount = allStockSignals.filter(s => !s.decision || s.decision.toUpperCase() !== "BUY").length;
+            $("#countBuyPill").text(buyCount);
+            $("#countNeutralPill").text(neutralCount);
+
+            // Filter logic
+            if (currentFilter === "buy") {
+                filtered = filtered.filter(s => s.decision && s.decision.toUpperCase() === "BUY");
+            } else if (currentFilter === "neutral") {
+                filtered = filtered.filter(s => !s.decision || s.decision.toUpperCase() !== "BUY");
+            } else if (currentFilter === "topmet") {
+                filtered = filtered.filter(s => (s.checklist ? s.checklist.metCount : 0) >= 6);
+            }
+
+            // Search query logic
+            if (searchQuery) {
+                filtered = filtered.filter(s => s.symbol.toLowerCase().includes(searchQuery));
+            }
+
+            const totalFiltered = filtered.length;
+            const totalPages = Math.ceil(totalFiltered / pageSize) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            const startIdx = (currentPage - 1) * pageSize;
+            const endIdx = Math.min(startIdx + pageSize, totalFiltered);
+            const pageSlice = filtered.slice(startIdx, endIdx);
+
+            if (totalFiltered === 0) {
+                $("#resultsCounterText").text("Showing 0 stocks");
+            } else {
+                $("#resultsCounterText").text(`Showing ${startIdx + 1}–${endIdx} of ${totalFiltered} stocks`);
+            }
+
+            renderStockTable(pageSlice);
+            renderStockCards(pageSlice);
+            renderPaginationControls(totalPages);
+        }
+
+        function renderPaginationControls(totalPages) {
+            $("#btnPrevPage").prop("disabled", currentPage <= 1);
+            $("#btnNextPage").prop("disabled", currentPage >= totalPages);
+
+            const container = $("#pageNumbersContainer");
+            container.empty();
+
+            let pagesToShow = [];
+            if (totalPages <= 5) {
+                for (let p = 1; p <= totalPages; p++) pagesToShow.push(p);
+            } else {
+                pagesToShow.push(1);
+                if (currentPage > 2 && currentPage < totalPages) {
+                    pagesToShow.push(currentPage);
+                } else if (currentPage <= 2) {
+                    pagesToShow.push(2);
+                } else if (currentPage >= totalPages - 1) {
+                    pagesToShow.push(totalPages - 1);
+                }
+                pagesToShow.push(totalPages);
+                pagesToShow = [...new Set(pagesToShow)].sort((a, b) => a - b);
+            }
+
+            pagesToShow.forEach(p => {
+                const btn = $(`<button class="page-num-btn ${p === currentPage ? 'active' : ''}">${p}</button>`);
+                btn.click(function() {
+                    currentPage = p;
+                    filterAndRenderStocks();
+                });
+                container.append(btn);
+            });
+        }
+
+        function renderStockTable(signals) {
             const tbody = $("#watchlistTableBody");
             tbody.empty();
 
             if (!signals || signals.length === 0) {
-                tbody.append('<tr><td colspan="11" class="text-center text-muted">No stock data available. Run EOD Job.</td></tr>');
+                tbody.append('<tr><td colspan="11" class="text-center text-muted py-4">No matching stocks found.</td></tr>');
                 return;
             }
 
             signals.forEach((s, index) => {
-                const decClass = s.decision.toLowerCase();
+                const decClass = s.decision ? s.decision.toLowerCase() : "neutral";
                 const meetsEma = s.ema20 > s.ema50 && s.ema50 > s.ema200;
                 
-                let volClass = "";
-                if (s.volumeMultiplier >= 1.5) {
-                    volClass = "positive";
-                }
-
-                let rsiClass = "";
-                if (s.rsi14 >= 55 && s.rsi14 <= 70) {
-                    rsiClass = "positive";
-                } else if (s.rsi14 < 45) {
-                    rsiClass = "negative";
-                }
+                let volClass = s.volumeMultiplier >= 1.5 ? "positive" : "";
+                let rsiClass = s.rsi14 >= 55 && s.rsi14 <= 70 ? "positive" : (s.rsi14 < 45 ? "negative" : "");
 
                 const checklist = s.checklist || { metCount: 0, totalCount: 8, conditions: [] };
                 const metCount = checklist.metCount;
                 const totalCount = checklist.totalCount || 8;
                 const pct = Math.round((metCount / totalCount) * 100);
 
-                let badgeClass = "low-met";
-                if (metCount === totalCount) {
-                    badgeClass = "all-met";
-                } else if (metCount >= 5) {
-                    badgeClass = "partial-met";
-                }
+                let badgeClass = metCount === totalCount ? "all-met" : (metCount >= 5 ? "partial-met" : "low-met");
 
                 let condCardsHtml = "";
                 if (checklist.conditions && checklist.conditions.length > 0) {
@@ -424,15 +858,15 @@
                         </div>
                     `).join("");
                 } else {
-                    condCardsHtml = '<div class="text-muted" style="font-size: 12px;">No condition checklist details available.</div>';
+                    condCardsHtml = '<div class="text-muted" style="font-size: 12px;">No checklist details available.</div>';
                 }
 
                 const mainRow = `
-                    <tr class="stock-main-row stagger-row" style="animation-delay: ${index * 0.05}s">
+                    <tr class="stock-main-row stagger-row" style="animation-delay: ${Math.min(index * 0.02, 0.4)}s">
                         <td class="td-symbol">${s.symbol}</td>
                         <td class="td-monospace">${Number(s.close).toFixed(2)}</td>
                         <td>
-                            <span class="rec-badge ${decClass}" title="${s.reason}">${s.decision}</span>
+                            <span class="rec-badge ${decClass}" title="${s.reason || ''}">${s.decision}</span>
                         </td>
                         <td>
                             <div class="cond-pill-container" onclick="toggleChecklist('${s.symbol}')" title="Click to view detailed condition checklist">
@@ -490,6 +924,84 @@
             });
         }
 
+        function renderStockCards(signals) {
+            const container = $("#stockCardsGrid");
+            container.empty();
+
+            if (!signals || signals.length === 0) {
+                container.append('<div class="text-center text-muted py-4 w-100">No matching stocks found.</div>');
+                return;
+            }
+
+            signals.forEach(s => {
+                const decClass = s.decision ? s.decision.toLowerCase() : "neutral";
+                const checklist = s.checklist || { metCount: 0, totalCount: 8, conditions: [] };
+                const metCount = checklist.metCount;
+                const totalCount = checklist.totalCount || 8;
+                const pct = Math.round((metCount / totalCount) * 100);
+                let badgeClass = metCount === totalCount ? "all-met" : (metCount >= 5 ? "partial-met" : "low-met");
+
+                let condCardsHtml = "";
+                if (checklist.conditions && checklist.conditions.length > 0) {
+                    condCardsHtml = checklist.conditions.map(c => `
+                        <div class="cond-card ${c.isMet ? 'met' : 'pending'}">
+                            <div class="cond-card-header">
+                                <span class="cond-status-icon">${c.isMet ? '✓' : '✕'}</span>
+                                <span class="cond-name">${c.name}</span>
+                                <span class="cond-badge ${c.isMet ? 'pass' : 'pending'}">${c.isMet ? 'PASSED' : 'PENDING'}</span>
+                            </div>
+                            <div class="cond-desc">${c.description}</div>
+                        </div>
+                    `).join("");
+                }
+
+                const cardHtml = `
+                    <div class="stock-card">
+                        <div class="stock-card-top">
+                            <div class="stock-card-symbol-block">
+                                <span class="stock-card-symbol">${s.symbol}</span>
+                                <span class="stock-card-price">₹${Number(s.close).toFixed(2)}</span>
+                            </div>
+                            <span class="rec-badge ${decClass}">${s.decision}</span>
+                        </div>
+
+                        <div class="stock-card-progress">
+                            <div class="stock-card-progress-header">
+                                <span>Conditions Met</span>
+                                <span class="${badgeClass}">${metCount}/${totalCount} (${pct}%)</span>
+                            </div>
+                            <div class="cond-progress-mini">
+                                <div class="cond-progress-fill ${badgeClass}" style="width: ${pct}%"></div>
+                            </div>
+                        </div>
+
+                        <div class="stock-card-chips">
+                            <span class="stock-chip ${s.rsi14 >= 55 && s.rsi14 <= 70 ? 'positive' : ''}">RSI: ${Number(s.rsi14).toFixed(1)}</span>
+                            <span class="stock-chip ${s.adx14 > 25 ? 'positive' : ''}">ADX: ${Number(s.adx14).toFixed(1)}</span>
+                            <span class="stock-chip ${s.volumeMultiplier >= 1.5 ? 'positive' : ''}">Vol: ${s.volumeMultiplier.toFixed(1)}x</span>
+                            <span class="stock-chip ${s.is52WeekHigh ? 'positive' : ''}">${s.is52WeekHigh ? '52W High' : 'Normal'}</span>
+                        </div>
+
+                        <div class="stock-card-footer">
+                            <button class="btn-card-toggle" id="btn-card-toggle-${s.symbol}" onclick="toggleChecklist('${s.symbol}')">
+                                <span>Checklist Details (${metCount}/${totalCount})</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div class="card-checklist-drawer" id="card-drawer-${s.symbol}">
+                            <div class="checklist-cards-grid">
+                                ${condCardsHtml}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.append(cardHtml);
+            });
+        }
+
         function populatePerformance(stats15, stats30) {
             updatePnlCard(stats15, "#pnl15", "#winRate15", "#tradesCount15");
             updatePnlCard(stats30, "#pnl30", "#winRate30", "#tradesCount30");
@@ -524,7 +1036,7 @@
             tbody.empty();
 
             if (!trades || trades.length === 0) {
-                tbody.append('<tr><td colspan="9" class="text-center text-muted">No simulated trades executed yet. Click Run Historical Backtest to generate data.</td></tr>');
+                tbody.append('<tr><td colspan="9" class="text-center text-muted py-4">No simulated trades executed yet. Click Run Historical Backtest to generate data.</td></tr>');
                 return;
             }
 
@@ -541,7 +1053,7 @@
                     : '<span class="rec-badge buy">OPEN</span>';
 
                 const row = `
-                    <tr class="stagger-row" style="animation-delay: ${index * 0.05}s">
+                    <tr class="stagger-row" style="animation-delay: ${Math.min(index * 0.02, 0.4)}s">
                         <td class="td-symbol">${t.symbol}</td>
                         <td>${statusBadge}</td>
                         <td class="td-monospace">${entryD}</td>

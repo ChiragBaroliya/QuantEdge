@@ -89,3 +89,14 @@ public record SwingTradeDto
     public int HoldDays { get; init; }
     public decimal ProfitLossPct { get; init; }
 }
+
+public record SwingJobStatusDto(
+    string JobType,
+    bool IsRunning,
+    int ProgressPercent,
+    string StatusMessage,
+    DateTime? StartedAt,
+    DateTime? CompletedAt,
+    string? LastError
+);
+

@@ -116,20 +116,22 @@ public class SwingTradingService : ISwingTradingService
 
                 if (latestAnalysis != null)
                 {
-                    decimal closeVal = (decimal)latestAnalysis.close_price;
-                    decimal ema20Val = latestAnalysis.ema20 != null ? (decimal)latestAnalysis.ema20 : 0m;
-                    decimal ema50Val = latestAnalysis.ema50 != null ? (decimal)latestAnalysis.ema50 : 0m;
-                    decimal ema200Val = latestAnalysis.ema200 != null ? (decimal)latestAnalysis.ema200 : 0m;
-                    decimal rsi14Val = latestAnalysis.rsi14 != null ? (decimal)latestAnalysis.rsi14 : 0m;
-                    decimal macdVal = latestAnalysis.macd != null ? (decimal)latestAnalysis.macd : 0m;
-                    decimal macdSigVal = latestAnalysis.macd_signal != null ? (decimal)latestAnalysis.macd_signal : 0m;
-                    decimal adx14Val = latestAnalysis.adx14 != null ? (decimal)latestAnalysis.adx14 : 0m;
-                    decimal atr14Val = latestAnalysis.atr14 != null ? (decimal)latestAnalysis.atr14 : 0m;
-                    long volVal = (long)latestAnalysis.volume;
-                    decimal avgVol20Val = latestAnalysis.average_volume20 != null ? (decimal)latestAnalysis.average_volume20 : 0m;
-                    decimal volMultVal = avgVol20Val > 0m ? Math.Round((decimal)volVal / avgVol20Val, 2) : 0m;
-                    bool is52WVal = (bool)latestAnalysis.is_52_week_high;
-                    string reasonStr = (string)latestAnalysis.reason ?? "";
+                    decimal closeVal = latestAnalysis.close_price != null ? Convert.ToDecimal(latestAnalysis.close_price) : 0m;
+                    decimal ema20Val = latestAnalysis.ema20 != null ? Convert.ToDecimal(latestAnalysis.ema20) : 0m;
+                    decimal ema50Val = latestAnalysis.ema50 != null ? Convert.ToDecimal(latestAnalysis.ema50) : 0m;
+                    decimal ema200Val = latestAnalysis.ema200 != null ? Convert.ToDecimal(latestAnalysis.ema200) : 0m;
+                    decimal rsi14Val = latestAnalysis.rsi14 != null ? Convert.ToDecimal(latestAnalysis.rsi14) : 0m;
+                    decimal macdVal = latestAnalysis.macd != null ? Convert.ToDecimal(latestAnalysis.macd) : 0m;
+                    decimal macdSigVal = latestAnalysis.macd_signal != null ? Convert.ToDecimal(latestAnalysis.macd_signal) : 0m;
+                    decimal adx14Val = latestAnalysis.adx14 != null ? Convert.ToDecimal(latestAnalysis.adx14) : 0m;
+                    decimal atr14Val = latestAnalysis.atr14 != null ? Convert.ToDecimal(latestAnalysis.atr14) : 0m;
+                    long volVal = latestAnalysis.volume != null ? Convert.ToInt64(latestAnalysis.volume) : 0L;
+                    decimal avgVol20Val = latestAnalysis.average_volume20 != null ? Convert.ToDecimal(latestAnalysis.average_volume20) : 0m;
+                    decimal volMultVal = avgVol20Val > 0m ? Math.Round(volVal / avgVol20Val, 2) : 0m;
+                    bool is52WVal = latestAnalysis.is_52_week_high != null && Convert.ToBoolean(latestAnalysis.is_52_week_high);
+                    string reasonStr = latestAnalysis.reason != null ? Convert.ToString(latestAnalysis.reason) : "";
+                    bool buySig = latestAnalysis.buy_signal != null && Convert.ToBoolean(latestAnalysis.buy_signal);
+                    string recStr = latestAnalysis.recommendation != null ? Convert.ToString(latestAnalysis.recommendation) : "HOLD";
 
                     var checklist = BuildConditionChecklist(
                         niftyStatus, closeVal, ema20Val, ema50Val, ema200Val, rsi14Val, macdVal, macdSigVal, adx14Val, volMultVal, volVal, avgVol20Val, is52WVal, true, reasonStr
@@ -156,9 +158,9 @@ public class SwingTradingService : ISwingTradingService
                         High52Week: 0m,
                         ClosenessTo52WeekHighPct: 0m,
                         IsLastCandleBullish: true,
-                        MeetsStockFilter: (bool)latestAnalysis.buy_signal,
-                        MeetsAllBuyRules: (bool)latestAnalysis.buy_signal && niftyStatus.IsMarketFilterPassed,
-                        Decision: (string)latestAnalysis.recommendation,
+                        MeetsStockFilter: buySig,
+                        MeetsAllBuyRules: buySig && niftyStatus.IsMarketFilterPassed,
+                        Decision: recStr,
                         Reason: reasonStr,
                         Checklist: checklist
                     ));
@@ -174,18 +176,59 @@ public class SwingTradingService : ISwingTradingService
             }
 
             // 3. Fetch active positions and trades
-            var allTrades = (await conn.QueryAsync<SwingTradeDto>(@"
-                SELECT id, symbol, entry_date, entry_price, quantity, is_closed, exit_date, exit_price, exit_reason,
-                       CASE 
-                           WHEN is_closed = TRUE THEN (exit_date - entry_date)
-                           ELSE (CURRENT_DATE - entry_date)
-                       END AS hold_days,
-                       CASE 
-                           WHEN is_closed = TRUE THEN ROUND(((exit_price - entry_price) / entry_price * 100)::numeric, 2)
-                           ELSE ROUND((((SELECT close_price FROM daily_stock_analysis d JOIN stock_master s ON d.stock_id = s.id WHERE s.symbol = t.symbol ORDER BY d.trade_date DESC LIMIT 1) - entry_price) / entry_price * 100)::numeric, 2)
-                       END AS profit_loss_pct
+            var allTradesRaw = (await conn.QueryAsync<dynamic>(@"
+                SELECT id, symbol, 
+                       entry_date::text AS entry_date_str, 
+                       entry_price, quantity, is_closed, 
+                       exit_date::text AS exit_date_str, 
+                       exit_price, exit_reason,
+                       COALESCE(
+                           CASE 
+                               WHEN is_closed = TRUE THEN (exit_date - entry_date)
+                               ELSE (CURRENT_DATE - entry_date)
+                           END, 0) AS hold_days,
+                       COALESCE(
+                           CASE 
+                               WHEN is_closed = TRUE THEN ROUND(((exit_price - entry_price) / entry_price * 100)::numeric, 2)
+                               ELSE ROUND((((SELECT close_price FROM daily_stock_analysis d JOIN stock_master s ON d.stock_id = s.id WHERE s.symbol = t.symbol ORDER BY d.trade_date DESC LIMIT 1) - entry_price) / entry_price * 100)::numeric, 2)
+                           END, 0) AS profit_loss_pct
                 FROM swing_positions t
                 ORDER BY entry_date DESC")).ToList();
+
+            var allTrades = new List<SwingTradeDto>();
+            foreach (var r in allTradesRaw)
+            {
+                DateTime entryD = DateTime.UtcNow;
+                DateTime pEntry = DateTime.UtcNow;
+                if (r.entry_date_str != null && DateTime.TryParse(Convert.ToString(r.entry_date_str), out pEntry))
+                {
+                    entryD = pEntry;
+                }
+
+                DateTime? exitD = null;
+                DateTime pExit = DateTime.UtcNow;
+                if (r.exit_date_str != null && DateTime.TryParse(Convert.ToString(r.exit_date_str), out pExit))
+                {
+                    exitD = pExit;
+                }
+
+                allTrades.Add(new SwingTradeDto
+                {
+                    Id = (int)r.id,
+                    Symbol = (string)r.symbol,
+                    EntryDate = entryD,
+                    EntryPrice = r.entry_price != null ? Convert.ToDecimal(r.entry_price) : 0m,
+                    Quantity = r.quantity != null ? Convert.ToInt32(r.quantity) : 0,
+                    IsClosed = r.is_closed != null && Convert.ToBoolean(r.is_closed),
+                    ExitDate = exitD,
+                    ExitPrice = r.exit_price != null ? Convert.ToDecimal(r.exit_price) : null,
+                    ExitReason = r.exit_reason != null ? Convert.ToString(r.exit_reason) : null,
+                    HoldDays = r.hold_days != null ? Convert.ToInt32(r.hold_days) : 0,
+                    ProfitLossPct = r.profit_loss_pct != null ? Convert.ToDecimal(r.profit_loss_pct) : 0m
+                });
+            }
+
+
 
             // Calculate backtest stats for 15 days
             var trades15 = allTrades.Where(t => t.EntryDate >= DateTime.UtcNow.AddDays(-15)).ToList();
@@ -203,6 +246,8 @@ public class SwingTradingService : ISwingTradingService
                 RecentTrades: allTrades.Take(30).ToList()
             );
         }
+
+
     }
 
     private static BacktestStatsDto CalculatePeriodStats(List<SwingTradeDto> trades, int days)
@@ -258,6 +303,7 @@ public class SwingTradingService : ISwingTradingService
             symbolsToSync.Add("NIFTY 50");
         }
 
+        UpdateJobProgress("eod", true, 10, "Syncing daily market candles for active stocks...");
         foreach (var symbol in symbolsToSync)
         {
             if (cancellationToken.IsCancellationRequested) break;
@@ -271,6 +317,8 @@ public class SwingTradingService : ISwingTradingService
             }
         }
 
+        UpdateJobProgress("eod", true, 60, "Evaluating 8-Point BUY/SELL recommendations...");
+
         // Step 3: Run daily analysis
         using (var conn = _connectionFactory.CreateConnection())
         {
@@ -282,6 +330,7 @@ public class SwingTradingService : ISwingTradingService
             if (niftyCandles.Count < 50)
             {
                 _logger.LogWarning("Insufficient Nifty 50 daily data. Expected 50 candles, found {Count}.", niftyCandles.Count);
+                UpdateJobProgress("eod", false, 0, "Failed: Insufficient Nifty 50 data", "Insufficient Nifty 50 candles");
                 return;
             }
 
@@ -319,7 +368,9 @@ public class SwingTradingService : ISwingTradingService
         }
 
         _logger.LogInformation("EOD Job completed successfully!");
+        UpdateJobProgress("eod", false, 100, "Swing Trading EOD Daily Job completed successfully!");
     }
+
 
     private async Task AnalyzeStockForDateAsync(
         IDbConnection conn, 
@@ -415,8 +466,8 @@ public class SwingTradingService : ISwingTradingService
         if (openPosition != null)
         {
             // Stock is currently held, check SELL conditions
-            decimal entryPrice = (decimal)openPosition.entry_price;
-            DateTime entryDate = (DateTime)openPosition.entry_date;
+            decimal entryPrice = Convert.ToDecimal(openPosition.entry_price);
+            DateTime entryDate = ConvertToDateTime(openPosition.entry_date);
 
             // Hold days (candles between entry date and tradeDate)
             int holdDays = candles.Count(c => c.CandleTime.Date >= entryDate.Date && c.CandleTime.Date <= tradeDate.Date) - 1;
@@ -593,6 +644,7 @@ public class SwingTradingService : ISwingTradingService
     public async Task BackfillHistoricalAnalysesAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Backfilling historical daily analyses for all active stocks...");
+        UpdateJobProgress("backfill", true, 5, "Preparing clean historical backtest environment...");
 
         // Ensure active stocks are populated
         var activeStocks = (await _stockMasterRepository.GetActiveStocksAsync()).ToList();
@@ -611,6 +663,7 @@ public class SwingTradingService : ISwingTradingService
             if (niftyCandles.Count < 250)
             {
                 _logger.LogWarning("Insufficient Nifty daily candles for backfill. Expected at least 250, found {Count}.", niftyCandles.Count);
+                UpdateJobProgress("backfill", false, 0, "Failed: Insufficient Nifty candles for backfill", "Insufficient Nifty candles");
                 return;
             }
 
@@ -619,12 +672,19 @@ public class SwingTradingService : ISwingTradingService
             var niftyEma20 = IndicatorCalculator.CalculateEma(niftyCloses, 20);
             var niftyEma50 = IndicatorCalculator.CalculateEma(niftyCloses, 50);
 
+            int totalDays = niftyCandles.Count - 250;
+
             // We will run daily simulation day-by-day starting from index 250 to current day
             for (int i = 250; i < niftyCandles.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested) break;
 
+                int step = i - 250;
+                int pct = (int)((double)step / Math.Max(1, totalDays) * 90) + 5;
                 DateTime currentDate = niftyCandles[i].CandleTime.Date;
+
+                UpdateJobProgress("backfill", true, pct, $"Re-simulating trading day {step + 1}/{totalDays} ({currentDate:yyyy-MM-dd})...");
+
                 bool niftyAboveSma50 = niftyCloses[i] > niftySma50[i];
                 bool niftyEmaBullish = niftyEma20[i] > niftyEma50[i];
                 bool marketFilterPassed = niftyAboveSma50 && niftyEmaBullish;
@@ -632,6 +692,7 @@ public class SwingTradingService : ISwingTradingService
                 foreach (var stock in activeStocks)
                 {
                     if (stock.Symbol == "NIFTY 50") continue;
+
 
                     // Load stock history up to currentDate
                     var stockHistory = (await conn.QueryAsync<MarketCandle>(@"
@@ -719,8 +780,8 @@ public class SwingTradingService : ISwingTradingService
 
                     if (openPosition != null)
                     {
-                        decimal entryPrice = (decimal)openPosition.entry_price;
-                        DateTime entryDate = (DateTime)openPosition.entry_date;
+                        decimal entryPrice = Convert.ToDecimal(openPosition.entry_price);
+                        DateTime entryDate = ConvertToDateTime(openPosition.entry_date);
 
                         int holdDays = stockHistory.Count(c => c.CandleTime.Date >= entryDate.Date && c.CandleTime.Date <= currentDate.Date) - 1;
                         if (holdDays < 0) holdDays = 0;
@@ -812,8 +873,8 @@ public class SwingTradingService : ISwingTradingService
 
                             if (nextCandle != null)
                             {
-                                nextOpen = (decimal)nextCandle.open;
-                                nextDate = (DateTime)nextCandle.candle_time;
+                                nextOpen = Convert.ToDecimal(nextCandle.open);
+                                nextDate = ConvertToDateTime(nextCandle.candle_time);
                             }
 
                             await conn.ExecuteAsync(@"
@@ -883,7 +944,9 @@ public class SwingTradingService : ISwingTradingService
         }
 
         _logger.LogInformation("Backfill of historical analyses completed!");
+        UpdateJobProgress("backfill", false, 100, "Historical 2-year backtest completed successfully!");
     }
+
 
     private static ConditionChecklistDto BuildConditionChecklist(
         NiftyStatusDto niftyStatus,
@@ -950,4 +1013,42 @@ public class SwingTradingService : ISwingTradingService
         int metCount = conditions.Count(c => c.IsMet);
         return new ConditionChecklistDto(metCount, conditions.Count, conditions);
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SwingJobStatusDto> _jobStatuses = new();
+
+    public SwingJobStatusDto GetJobStatus(string jobType)
+    {
+        string key = (jobType ?? "backfill").ToLowerInvariant();
+        if (_jobStatuses.TryGetValue(key, out var status))
+        {
+            return status;
+        }
+        return new SwingJobStatusDto(key, false, 0, "Idle", null, null, null);
+    }
+
+    public bool IsJobRunning(string jobType)
+    {
+        var status = GetJobStatus(jobType);
+        return status.IsRunning;
+    }
+
+    public void UpdateJobProgress(string jobType, bool running, int progress, string message, string? error = null)
+    {
+        string key = (jobType ?? "backfill").ToLowerInvariant();
+        _jobStatuses.AddOrUpdate(
+            key,
+            new SwingJobStatusDto(key, running, progress, message, DateTime.UtcNow, running ? null : DateTime.UtcNow, error),
+            (k, old) => new SwingJobStatusDto(key, running, progress, message, old.StartedAt ?? DateTime.UtcNow, running ? null : DateTime.UtcNow, error)
+        );
+    }
+
+    private static DateTime ConvertToDateTime(object value)
+    {
+        if (value is null) return DateTime.MinValue;
+        if (value is DateTime dt) return dt;
+        if (value is DateOnly d) return d.ToDateTime(TimeOnly.MinValue);
+        if (DateTime.TryParse(Convert.ToString(value), out var parsed)) return parsed;
+        return DateTime.MinValue;
+    }
 }
+

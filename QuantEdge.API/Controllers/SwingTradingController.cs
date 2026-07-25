@@ -10,6 +10,7 @@ namespace QuantEdge.API.Controllers;
 [ApiController]
 [Route("swing")]
 public class SwingTradingController : ControllerBase
+
 {
     private readonly ISwingTradingService _swingTradingService;
     private readonly ILogger<SwingTradingController> _logger;
@@ -38,35 +39,65 @@ public class SwingTradingController : ControllerBase
         }
     }
 
-    [HttpPost("run-job")]
-    public async Task<IActionResult> RunJob(CancellationToken cancellationToken)
+    [HttpGet("job-status")]
+    public IActionResult GetJobStatus([FromQuery] string jobType = "backfill")
     {
-        _logger.LogInformation("API POST Request: Triggering daily Swing Trading EOD Job manually.");
-        try
+        var status = _swingTradingService.GetJobStatus(jobType);
+        return Ok(status);
+    }
+
+    [HttpPost("run-job")]
+    public IActionResult RunJob()
+    {
+        _logger.LogInformation("API POST Request: Triggering daily Swing Trading EOD Job in background.");
+        if (_swingTradingService.IsJobRunning("eod"))
         {
-            await _swingTradingService.RunEodJobAsync(cancellationToken);
-            return Ok(new { Message = "Swing Trading EOD Daily Job completed successfully!" });
+            return Ok(new { Message = "Swing Trading EOD Job is already running in background.", TaskStarted = false });
         }
-        catch (Exception ex)
+
+        _swingTradingService.UpdateJobProgress("eod", true, 0, "Initiating EOD Daily Analysis...");
+
+        _ = Task.Run(async () =>
         {
-            _logger.LogError(ex, "Failed manually executing Swing Trading EOD Job.");
-            return StatusCode(500, $"Internal server error: {ex.Message}");
-        }
+            try
+            {
+                await _swingTradingService.RunEodJobAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background EOD Job failed.");
+                _swingTradingService.UpdateJobProgress("eod", false, 0, "EOD Job failed.", ex.Message);
+            }
+        });
+
+        return Accepted(new { Message = "Swing Trading EOD Daily Job initiated in background.", TaskStarted = true });
     }
 
     [HttpPost("backfill")]
-    public async Task<IActionResult> Backfill(CancellationToken cancellationToken)
+    public IActionResult Backfill()
     {
-        _logger.LogInformation("API POST Request: Triggering historical backfill/backtest.");
-        try
+        _logger.LogInformation("API POST Request: Triggering historical backfill in background.");
+        if (_swingTradingService.IsJobRunning("backfill"))
         {
-            await _swingTradingService.BackfillHistoricalAnalysesAsync(cancellationToken);
-            return Ok(new { Message = "Historical daily analyses backfilled successfully!" });
+            return Ok(new { Message = "Historical backtest job is already running in background.", TaskStarted = false });
         }
-        catch (Exception ex)
+
+        _swingTradingService.UpdateJobProgress("backfill", true, 0, "Initiating historical 2-year backtest...");
+
+        _ = Task.Run(async () =>
         {
-            _logger.LogError(ex, "Failed executing historical backfill.");
-            return StatusCode(500, $"Internal server error: {ex.Message}");
-        }
+            try
+            {
+                await _swingTradingService.BackfillHistoricalAnalysesAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background historical backfill failed.");
+                _swingTradingService.UpdateJobProgress("backfill", false, 0, "Backtest failed.", ex.Message);
+            }
+        });
+
+        return Accepted(new { Message = "Historical backtest task started in background. Processing symbols and backtesting historical performance...", TaskStarted = true });
     }
 }
+
