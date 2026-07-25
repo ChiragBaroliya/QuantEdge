@@ -42,4 +42,13 @@ public class MemoryCacheService : ICacheService
         _memoryCache.Remove(key);
         return Task.CompletedTask;
     }
+
+    public Task ClearAllAsync()
+    {
+        if (_memoryCache is MemoryCache mc)
+        {
+            mc.Compact(1.0); // Evicts 100% of cached entries immediately
+        }
+        return Task.CompletedTask;
+    }
 }

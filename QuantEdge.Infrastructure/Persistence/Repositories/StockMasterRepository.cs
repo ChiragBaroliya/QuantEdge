@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Dapper;
 using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.DTOs;
+using QuantEdge.Infrastructure.Interfaces;
 
 namespace QuantEdge.Infrastructure.Persistence.Repositories;
 
@@ -16,38 +17,72 @@ namespace QuantEdge.Infrastructure.Persistence.Repositories;
 public class StockMasterRepository : IStockMasterRepository
 {
     private readonly IDbConnectionFactory _connectionFactory;
+    private readonly ICacheService? _cacheService;
 
     static StockMasterRepository()
     {
         DefaultTypeMap.MatchNamesWithUnderscores = true;
     }
 
-    public StockMasterRepository(IDbConnectionFactory connectionFactory)
+    public StockMasterRepository(IDbConnectionFactory connectionFactory, ICacheService? cacheService = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+        _cacheService = cacheService;
     }
 
     /// <summary>
     /// Retrieves all active stock symbols and instrument tokens using sp_get_active_stocks.
+    /// Uses Memory Cache (TTL: 24 hours) for high-performance reads during market sessions.
     /// </summary>
     public async Task<IEnumerable<StockMaster>> GetActiveStocksAsync()
     {
+        string cacheKey = "stock_master_active_stocks";
+        if (_cacheService != null)
+        {
+            var cached = await _cacheService.GetAsync<IEnumerable<StockMaster>>(cacheKey);
+            if (cached != null) return cached;
+        }
+
         using var connection = _connectionFactory.CreateConnection();
-        return await connection.QueryAsync<StockMaster>(
+        var result = (await connection.QueryAsync<StockMaster>(
             "SELECT * FROM sp_get_active_stocks();"
-        );
+        )).ToList();
+
+        if (_cacheService != null && result.Any())
+        {
+            await _cacheService.SetAsync(cacheKey, result, TimeSpan.FromHours(24));
+        }
+
+        return result;
     }
 
     /// <summary>
     /// Retrieves a specific stock master record by symbol using sp_get_stock_by_symbol.
+    /// Uses Memory Cache (TTL: 24 hours) for high-performance reads during market sessions.
     /// </summary>
     public async Task<StockMaster?> GetBySymbolAsync(string symbol)
     {
+        if (string.IsNullOrWhiteSpace(symbol)) return null;
+
+        string cacheKey = $"stock_master_symbol_{symbol.ToUpper()}";
+        if (_cacheService != null)
+        {
+            var cached = await _cacheService.GetAsync<StockMaster>(cacheKey);
+            if (cached != null) return cached;
+        }
+
         using var connection = _connectionFactory.CreateConnection();
-        return await connection.QueryFirstOrDefaultAsync<StockMaster>(
+        var result = await connection.QueryFirstOrDefaultAsync<StockMaster>(
             "SELECT * FROM sp_get_stock_by_symbol(@p_symbol);",
             new { p_symbol = symbol }
         );
+
+        if (_cacheService != null && result != null)
+        {
+            await _cacheService.SetAsync(cacheKey, result, TimeSpan.FromHours(24));
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -63,6 +98,7 @@ public class StockMasterRepository : IStockMasterRepository
 
     /// <summary>
     /// Updates the timeframe-specific history stored field for a stock master record.
+    /// Invalidates affected memory cache keys.
     /// </summary>
     public async Task UpdateHistoryStoredAsync(int id, string timeframe, int? status)
     {
@@ -80,6 +116,11 @@ public class StockMasterRepository : IStockMasterRepository
             $"UPDATE stock_master SET {column} = @Status WHERE id = @Id;",
             new { Id = id, Status = status }
         );
+
+        if (_cacheService != null)
+        {
+            await _cacheService.RemoveAsync("stock_master_active_stocks");
+        }
     }
 
     /// <summary>

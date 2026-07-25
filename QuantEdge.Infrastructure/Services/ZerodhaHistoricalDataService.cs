@@ -27,6 +27,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IStockMasterRepository _stockMasterRepository;
     private readonly IIndicatorService _indicatorService;
+    private readonly ICacheService? _cacheService;
     private readonly ILogger<ZerodhaHistoricalDataService> _logger;
 
     public ZerodhaHistoricalDataService(
@@ -35,13 +36,15 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         IDbConnectionFactory connectionFactory,
         IStockMasterRepository stockMasterRepository,
         IIndicatorService indicatorService,
-        ILogger<ZerodhaHistoricalDataService> logger)
+        ICacheService? cacheService = null,
+        ILogger<ZerodhaHistoricalDataService> logger = null!)
     {
         _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
         _indicatorService = indicatorService ?? throw new ArgumentNullException(nameof(indicatorService));
+        _cacheService = cacheService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -65,19 +68,34 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
 
         uint instrumentToken = (uint)stock.InstrumentToken;
 
-        _logger.LogInformation("Resolving active Zerodha session from database...");
+        _logger.LogInformation("Resolving active Zerodha session token...");
         string? token = null;
-        try
+        string cacheKey = $"zerodha_session_token_{_config.ApiKey}";
+
+        if (_cacheService != null)
         {
-            using var conn = _connectionFactory.CreateConnection();
-            token = await conn.QueryFirstOrDefaultAsync<string?>(
-                "SELECT access_token FROM zerodha_sessions WHERE api_key = @ApiKey AND is_active = TRUE LIMIT 1;",
-                new { ApiKey = _config.ApiKey }
-            );
+            token = await _cacheService.GetAsync<string>(cacheKey);
         }
-        catch (Exception ex)
+
+        if (string.IsNullOrWhiteSpace(token))
         {
-            _logger.LogWarning(ex, "Failed to resolve active AccessToken from the database.");
+            try
+            {
+                using var conn = _connectionFactory.CreateConnection();
+                token = await conn.QueryFirstOrDefaultAsync<string?>(
+                    "SELECT access_token FROM zerodha_sessions WHERE api_key = @ApiKey AND is_active = TRUE LIMIT 1;",
+                    new { ApiKey = _config.ApiKey }
+                );
+
+                if (!string.IsNullOrWhiteSpace(token) && _cacheService != null)
+                {
+                    await _cacheService.SetAsync(cacheKey, token, TimeSpan.FromHours(24));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to resolve active AccessToken from the database.");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(token))
@@ -123,6 +141,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
 
                 if (historicalList != null && historicalList.Any())
                 {
+                    var chunkCandles = new List<MarketCandle>();
                     foreach (var record in historicalList)
                     {
                         if (cancellationToken.IsCancellationRequested)
@@ -130,7 +149,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
 
                         int deterministicId = GenerateDeterministicIntId(symbol, timeframe, record.TimeStamp);
 
-                        var candle = new MarketCandle
+                        chunkCandles.Add(new MarketCandle
                         {
                             Id = deterministicId,
                             Symbol = symbol.ToUpper(),
@@ -142,10 +161,13 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                             Volume = (long)record.Volume,
                             CandleTime = record.TimeStamp.ToUniversalTime(),
                             CreatedAt = DateTime.UtcNow
-                        };
+                        });
+                    }
 
-                        await _candleRepository.InsertAsync(candle);
-                        savedCandles.Add(candle);
+                    if (chunkCandles.Any())
+                    {
+                        await _candleRepository.InsertBatchAsync(chunkCandles);
+                        savedCandles.AddRange(chunkCandles);
                     }
                 }
 

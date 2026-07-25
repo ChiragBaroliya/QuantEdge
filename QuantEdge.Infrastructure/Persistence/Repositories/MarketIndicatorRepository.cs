@@ -57,6 +57,46 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
     }
 
     /// <summary>
+    /// High-performance bulk insert for market indicators reusing a single database connection.
+    /// </summary>
+    public async Task InsertBatchAsync(IEnumerable<MarketIndicator> indicators)
+    {
+        if (indicators == null || !indicators.Any()) return;
+
+        var groups = indicators.GroupBy(i => i.Timeframe.ToLower());
+        using var connection = _connectionFactory.CreateConnection();
+
+        foreach (var group in groups)
+        {
+            string safeTimeframe = group.Key;
+            if (!new[] { "1m", "5m", "15m", "60m", "1d" }.Contains(safeTimeframe))
+            {
+                safeTimeframe = "1m";
+            }
+            string tableName = $"market_indicators_{safeTimeframe}";
+
+            string sql = $@"
+                INSERT INTO {tableName} (id, symbol, timeframe, rsi, ema20, ema50, macd, signal_line, vwap, candle_time, created_at)
+                VALUES (@Id, @Symbol, @Timeframe, @RSI, @EMA20, @EMA50, @MACD, @SignalLine, @VWAP, @CandleTime, @CreatedAt)
+                ON CONFLICT (id, candle_time) DO UPDATE
+                SET rsi = EXCLUDED.rsi,
+                    ema20 = EXCLUDED.ema20,
+                    ema50 = EXCLUDED.ema50,
+                    macd = EXCLUDED.macd,
+                    signal_line = EXCLUDED.signal_line,
+                    vwap = EXCLUDED.vwap;";
+
+            const int chunkSize = 1000;
+            var list = group.ToList();
+            for (int i = 0; i < list.Count; i += chunkSize)
+            {
+                var chunk = list.Skip(i).Take(chunkSize);
+                await connection.ExecuteAsync(sql, chunk);
+            }
+        }
+    }
+
+    /// <summary>
     /// Retrieves indicator logs using direct SQL query on timeframe table for maximum performance and reliability.
     /// </summary>
     public async Task<IEnumerable<MarketIndicator>> GetHistoryAsync(string symbol, string timeframe, int limit, DateTime? beforeTime = null)

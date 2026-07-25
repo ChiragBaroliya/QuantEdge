@@ -116,7 +116,7 @@ public class IndicatorService : IIndicatorService
 
             _logger.LogInformation("Calculated indicators for {Count} candles. Writing to database...", historyCandles.Count);
 
-            int savedCount = 0;
+            var batchIndicators = new List<MarketIndicator>();
             for (int i = 0; i < historyCandles.Count; i++)
             {
                 var candle = historyCandles[i];
@@ -128,7 +128,7 @@ public class IndicatorService : IIndicatorService
                 long sumV = dayCandles.Sum(c => c.Volume);
                 decimal vwap = sumV > 0 ? sumPV / sumV : candle.Close;
 
-                var indicator = new MarketIndicator
+                batchIndicators.Add(new MarketIndicator
                 {
                     Id = candle.Id,
                     Symbol = symbol.ToUpper(),
@@ -141,13 +141,15 @@ public class IndicatorService : IIndicatorService
                     VWAP = vwap,
                     CandleTime = candle.CandleTime.ToUniversalTime(),
                     CreatedAt = DateTime.UtcNow
-                };
-
-                await _indicatorRepository.InsertAsync(indicator);
-                savedCount++;
+                });
             }
 
-            _logger.LogInformation("Completed backfill of {Count} historical indicators for {Symbol} ({Timeframe}).", savedCount, symbol, timeframe);
+            if (batchIndicators.Any())
+            {
+                await _indicatorRepository.InsertBatchAsync(batchIndicators);
+            }
+
+            _logger.LogInformation("Completed backfill of {Count} historical indicators for {Symbol} ({Timeframe}).", batchIndicators.Count, symbol, timeframe);
         }
         catch (Exception ex)
         {

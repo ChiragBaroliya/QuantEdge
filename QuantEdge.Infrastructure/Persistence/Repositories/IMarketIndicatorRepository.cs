@@ -15,6 +15,11 @@ public interface IMarketIndicatorRepository
     Task InsertAsync(MarketIndicator indicator);
 
     /// <summary>
+    /// Efficiently batch inserts multiple market indicators using a single database connection.
+    /// </summary>
+    Task InsertBatchAsync(IEnumerable<MarketIndicator> indicators);
+
+    /// <summary>
     /// Retrieves historical indicators using a Stored Procedure, returning auto-mapped entities.
     /// </summary>
     Task<IEnumerable<MarketIndicator>> GetHistoryAsync(string symbol, string timeframe, int limit, System.DateTime? beforeTime = null);

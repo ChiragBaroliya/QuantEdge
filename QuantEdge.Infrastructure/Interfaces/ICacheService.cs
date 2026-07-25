@@ -22,4 +22,9 @@ public interface ICacheService
     /// Removes an item from the cache.
     /// </summary>
     Task RemoveAsync(string key);
+
+    /// <summary>
+    /// Evicts all cached items from memory.
+    /// </summary>
+    Task ClearAllAsync();
 }

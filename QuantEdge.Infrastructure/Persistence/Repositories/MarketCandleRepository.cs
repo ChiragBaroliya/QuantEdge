@@ -56,6 +56,45 @@ public class MarketCandleRepository : IMarketCandleRepository
     }
 
     /// <summary>
+    /// High-performance bulk insert for market candles reusing a single database connection.
+    /// </summary>
+    public async Task InsertBatchAsync(IEnumerable<MarketCandle> candles)
+    {
+        if (candles == null || !candles.Any()) return;
+
+        var groups = candles.GroupBy(c => c.Timeframe.ToLower());
+        using var connection = _connectionFactory.CreateConnection();
+
+        foreach (var group in groups)
+        {
+            string safeTimeframe = group.Key;
+            if (!new[] { "1m", "5m", "15m", "60m", "1d" }.Contains(safeTimeframe))
+            {
+                safeTimeframe = "1m";
+            }
+            string tableName = $"market_candles_{safeTimeframe}";
+
+            string sql = $@"
+                INSERT INTO {tableName} (id, symbol, timeframe, open, high, low, close, volume, candle_time, created_at)
+                VALUES (@Id, @Symbol, @Timeframe, @Open, @High, @Low, @Close, @Volume, @CandleTime, @CreatedAt)
+                ON CONFLICT (id, candle_time) DO UPDATE
+                SET open = EXCLUDED.open,
+                    high = EXCLUDED.high,
+                    low = EXCLUDED.low,
+                    close = EXCLUDED.close,
+                    volume = EXCLUDED.volume;";
+
+            const int chunkSize = 1000;
+            var list = group.ToList();
+            for (int i = 0; i < list.Count; i += chunkSize)
+            {
+                var chunk = list.Skip(i).Take(chunkSize);
+                await connection.ExecuteAsync(sql, chunk);
+            }
+        }
+    }
+
+    /// <summary>
     /// Retrieves historical candles using direct SQL query on timeframe table for maximum performance and reliability.
     /// </summary>
     public async Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int limit, DateTime? beforeTime = null)

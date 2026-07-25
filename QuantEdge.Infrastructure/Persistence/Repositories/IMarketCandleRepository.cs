@@ -15,6 +15,11 @@ public interface IMarketCandleRepository
     Task InsertAsync(MarketCandle candle);
 
     /// <summary>
+    /// Efficiently batch inserts multiple market candles using a single database connection.
+    /// </summary>
+    Task InsertBatchAsync(IEnumerable<MarketCandle> candles);
+
+    /// <summary>
     /// Retrieves historical candles using a Stored Procedure, returning auto-mapped entities.
     /// </summary>
     Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int limit, System.DateTime? beforeTime = null);

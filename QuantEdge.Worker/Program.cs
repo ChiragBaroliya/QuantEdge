@@ -68,12 +68,9 @@ try
         {
             builder.Services.AddHostedService<SwingTradingDailyJobWorker>();
         }
-
-        // Also run the InstrumentSyncWorker in all other job conditions to support Monday morning scheduling
-        // and immediate startup sync for testing.
-        if (!actualJobType.Equals("instrumentsync", StringComparison.OrdinalIgnoreCase))
+        else if (actualJobType.Equals("clearcache", StringComparison.OrdinalIgnoreCase))
         {
-            builder.Services.AddHostedService<InstrumentSyncWorker>();
+            builder.Services.AddHostedService<ClearCacheWorker>();
         }
     }
 

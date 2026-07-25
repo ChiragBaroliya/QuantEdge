@@ -22,6 +22,7 @@ scp -r "D:\QuantEdge\Job\*" root@217.216.79.53:/opt/quantedge/worker/
 | `instrumentsync` | `Worker_instrumentsync` | `quantedge-worker-instrumentsync` | Zerodha Master Instrument List Sync |
 | `history:<timeframe>` | `Worker_history_<tf>` | `quantedge-worker-history-<tf>` | Historical Data Backfill Sync |
 | `swingtradingjob` | `Worker_swingtradingjob` | `quantedge-worker-swingtradingjob` | Daily Swing Trading Strategy Scan Job |
+| `clearcache` | `Worker_clearcache` | `quantedge-worker-clearcache` | On-Demand Memory Cache Reset Job |
 
 ---
 
