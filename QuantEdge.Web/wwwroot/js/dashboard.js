@@ -34,9 +34,19 @@ $(document).ready(async function () {
     initCharts();
   
 
-    // Initialize Select2 dropdown with search disabled for few assets, styled nicely
+    // Initialize Select2 dropdown with search enabled
     $("#stockSelector").select2({
-        minimumResultsForSearch: Infinity
+        placeholder: "Select Stock Symbol...",
+        allowClear: false
+    });
+
+    $('#stockSelector').on('select2:open', function() {
+        setTimeout(function() {
+            const searchField = document.querySelector('.select2-container--open .select2-search__field');
+            if (searchField) {
+                searchField.setAttribute('placeholder', 'Search stock symbol (e.g. CIPLA, RELIANCE)...');
+            }
+        }, 10);
     });
 
     // Set up select2 dropdown change event
@@ -234,7 +244,7 @@ async function loadStocksDropdown() {
 
         // Auto-select first stock and load
         if (stocksList.length > 0) {
-            selector.val(stocksList[0].symbol);
+            selector.val(stocksList[0].symbol).trigger('change.select2');
             switchSymbol(stocksList[0].symbol);
         }
     } catch (ex) {

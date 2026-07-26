@@ -43,8 +43,16 @@ $(document).ready(function () {
 
                 if ($.fn.select2) {
                     $select.select2({
-                        theme: 'bootstrap-5',
-                        width: '100%'
+                        width: '100%',
+                        placeholder: 'Search Stock Symbol...'
+                    });
+                    $select.on('select2:open', function() {
+                        setTimeout(function() {
+                            const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                            if (searchField) {
+                                searchField.setAttribute('placeholder', 'Search stock symbol...');
+                            }
+                        }, 10);
                     });
                 }
             },
