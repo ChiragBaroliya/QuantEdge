@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
+using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Web.Models;
 
 namespace QuantEdge.Web.Controllers;
@@ -9,16 +10,20 @@ namespace QuantEdge.Web.Controllers;
 /// </summary>
 public class TokenController : Controller
 {
+    private const string CacheKeySessionStatus = "zerodha_session_status";
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ICacheService _cacheService;
     private readonly ILogger<TokenController> _logger;
     private readonly string _apiBaseUrl;
 
     public TokenController(
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
+        ICacheService cacheService,
         ILogger<TokenController> logger)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _apiBaseUrl = configuration["ApiBaseUrl"] ?? "https://localhost:44370";
     }
@@ -37,32 +42,43 @@ public class TokenController : Controller
 
         try
         {
-            var client = _httpClientFactory.CreateClient("QuantEdgeApi");
-            var response = await client.GetAsync("/api/zerodha/session-status");
-
-            if (response.IsSuccessStatusCode)
+            var cachedStatus = await _cacheService.GetAsync<TokenViewModel>(CacheKeySessionStatus);
+            if (cachedStatus != null)
             {
-                string json = await response.Content.ReadAsStringAsync();
-                var node = JsonNode.Parse(json);
-                bool hasActiveToken = node?["hasActiveToken"]?.GetValue<bool>() ?? false;
+                _logger.LogDebug("Retrieved Zerodha session status from MemoryCache.");
+                vm = cachedStatus;
+            }
+            else
+            {
+                var client = _httpClientFactory.CreateClient("QuantEdgeApi");
+                var response = await client.GetAsync("/api/zerodha/session-status");
 
-                vm.HasActiveToken = hasActiveToken;
-                vm.ApiKey = node?["apiKey"]?.ToString();
-                vm.AccessTokenMasked = node?["accessTokenMasked"]?.ToString();
-                vm.CreatedAtIst = node?["createdAtIst"]?.ToString();
-                vm.ExpiresAtIst = node?["expiresAtIst"]?.ToString();
+                if (response.IsSuccessStatusCode)
+                {
+                    string json = await response.Content.ReadAsStringAsync();
+                    var node = JsonNode.Parse(json);
+                    bool hasActiveToken = node?["hasActiveToken"]?.GetValue<bool>() ?? false;
 
-                if (hasActiveToken)
-                {
-                    vm.IsSuccess = true;
-                    vm.StatusType = "success";
-                    vm.StatusMessage = "Zerodha access token is ACTIVE and valid for today.";
-                }
-                else
-                {
-                    vm.IsSuccess = false;
-                    vm.StatusType = "info";
-                    vm.StatusMessage = "No active token for today. Click \"Create Token\" to authenticate.";
+                    vm.HasActiveToken = hasActiveToken;
+                    vm.ApiKey = node?["apiKey"]?.ToString();
+                    vm.AccessTokenMasked = node?["accessTokenMasked"]?.ToString();
+                    vm.CreatedAtIst = node?["createdAtIst"]?.ToString();
+                    vm.ExpiresAtIst = node?["expiresAtIst"]?.ToString();
+
+                    if (hasActiveToken)
+                    {
+                        vm.IsSuccess = true;
+                        vm.StatusType = "success";
+                        vm.StatusMessage = "Zerodha access token is ACTIVE and valid for today.";
+                    }
+                    else
+                    {
+                        vm.IsSuccess = false;
+                        vm.StatusType = "info";
+                        vm.StatusMessage = "No active token for today. Click \"Create Token\" to authenticate.";
+                    }
+
+                    await _cacheService.SetAsync(CacheKeySessionStatus, vm, TimeSpan.FromMinutes(2));
                 }
             }
         }
@@ -158,7 +174,7 @@ public class TokenController : Controller
     /// Renders the result in the Web UI instead of raw JSON.
     /// </summary>
     [HttpGet]
-    public IActionResult Callback(
+    public async Task<IActionResult> Callback(
         [FromQuery] bool success,
         [FromQuery] string? message,
         [FromQuery] string? apiKey,
@@ -167,6 +183,9 @@ public class TokenController : Controller
         [FromQuery] string? email)
     {
         _logger.LogInformation("Received Zerodha callback in Web UI. Success: {Success}, User: {User}", success, userName);
+
+        // Invalidate session status cache on callback
+        await _cacheService.RemoveAsync(CacheKeySessionStatus);
 
         // Mask the token — show only first 8 and last 4 characters for security
         string? maskedToken = null;

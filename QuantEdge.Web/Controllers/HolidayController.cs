@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Web.Models;
 
 namespace QuantEdge.Web.Controllers;
@@ -14,12 +15,18 @@ namespace QuantEdge.Web.Controllers;
 /// </summary>
 public class HolidayController : Controller
 {
+    private const string CacheKeyHolidays = "holidays_web_list";
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ICacheService _cacheService;
     private readonly ILogger<HolidayController> _logger;
 
-    public HolidayController(IHttpClientFactory httpClientFactory, ILogger<HolidayController> logger)
+    public HolidayController(
+        IHttpClientFactory httpClientFactory,
+        ICacheService cacheService,
+        ILogger<HolidayController> logger)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -29,20 +36,30 @@ public class HolidayController : Controller
     [HttpGet]
     public async Task<IActionResult> Index()
     {
-        var holidays = new List<HolidayViewModel>();
-        try
+        var holidays = await _cacheService.GetAsync<List<HolidayViewModel>>(CacheKeyHolidays);
+        if (holidays != null)
         {
-            var client = _httpClientFactory.CreateClient("QuantEdgeApi");
-            var response = await client.GetFromJsonAsync<List<HolidayViewModel>>("/api/holidays");
-            if (response != null)
-            {
-                holidays = response;
-            }
+            _logger.LogDebug("Retrieved holidays list from MemoryCache.");
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogError(ex, "Failed to retrieve holidays in Web UI.");
-            ViewBag.ErrorMessage = $"Failed to fetch holidays from API: {ex.Message}";
+            holidays = new List<HolidayViewModel>();
+            try
+            {
+                var client = _httpClientFactory.CreateClient("QuantEdgeApi");
+                var response = await client.GetFromJsonAsync<List<HolidayViewModel>>("/api/holidays");
+                if (response != null)
+                {
+                    holidays = response;
+                    await _cacheService.SetAsync(CacheKeyHolidays, holidays, TimeSpan.FromHours(1));
+                    _logger.LogInformation("Fetched holidays from API and cached in MemoryCache.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to retrieve holidays in Web UI.");
+                ViewBag.ErrorMessage = $"Failed to fetch holidays from API: {ex.Message}";
+            }
         }
 
         // Retrieve validation or transaction results from post-redirect
@@ -78,6 +95,7 @@ public class HolidayController : Controller
             
             if (response.IsSuccessStatusCode)
             {
+                await _cacheService.RemoveAsync(CacheKeyHolidays);
                 TempData["SuccessMessage"] = "Holiday added successfully!";
             }
             else
@@ -108,6 +126,7 @@ public class HolidayController : Controller
             
             if (response.IsSuccessStatusCode)
             {
+                await _cacheService.RemoveAsync(CacheKeyHolidays);
                 TempData["SuccessMessage"] = "Holiday deleted successfully.";
             }
             else

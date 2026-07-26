@@ -7,6 +7,8 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 
+using QuantEdge.Infrastructure.Interfaces;
+
 namespace QuantEdge.Web.Controllers;
 
 /// <summary>
@@ -16,10 +18,12 @@ namespace QuantEdge.Web.Controllers;
 public class LogController : Controller
 {
     private readonly IConfiguration _configuration;
+    private readonly ICacheService _cacheService;
 
-    public LogController(IConfiguration configuration)
+    public LogController(IConfiguration configuration, ICacheService cacheService)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
     }
 
     /// <summary>

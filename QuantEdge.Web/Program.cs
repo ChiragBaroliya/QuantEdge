@@ -1,4 +1,6 @@
 using QuantEdge.Infrastructure.Extensions;
+using QuantEdge.Infrastructure.Interfaces;
+using QuantEdge.Infrastructure.Services;
 using Serilog;
 using Microsoft.AspNetCore.HttpOverrides;
 
@@ -10,6 +12,10 @@ try
     builder.Services.AddQuantEdgeLogging(builder.Configuration, "Web");
 
     Log.Information("Starting QuantEdge.Web...");
+
+    // Register Memory Cache
+    builder.Services.AddMemoryCache();
+    builder.Services.AddSingleton<ICacheService, MemoryCacheService>();
 
     // Add MVC
     builder.Services.AddControllersWithViews();

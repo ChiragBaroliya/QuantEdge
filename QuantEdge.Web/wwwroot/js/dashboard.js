@@ -230,12 +230,22 @@ function initCharts() {
     });
 }
 
+// Client-side JavaScript Memory Cache
+const jsMemoryCache = new Map();
+
 // Fetch active stock instruments
 async function loadStocksDropdown() {
     try {
-        const response = await fetch(`${API_BASE_URL}/api/marketdata/stocks`);
-        if (!response.ok) throw new Error("Failed to load active stocks from API.");
-        const stocksList = await response.json();
+        let stocksList;
+        if (jsMemoryCache.has('stocks_dropdown')) {
+            stocksList = jsMemoryCache.get('stocks_dropdown');
+            console.log("[JS MemoryCache] Loaded stocks dropdown from client cache.");
+        } else {
+            const response = await fetch(`${API_BASE_URL}/api/marketdata/stocks`);
+            if (!response.ok) throw new Error("Failed to load active stocks from API.");
+            stocksList = await response.json();
+            jsMemoryCache.set('stocks_dropdown', stocksList);
+        }
         
         const selector = $("#stockSelector");
         stocksList.forEach(stock => {
@@ -256,9 +266,17 @@ async function loadStocksDropdown() {
 async function fetchStockMasterDetails(symbol) {
     if (!symbol) return;
     try {
-        const response = await fetch(`${API_BASE_URL}/api/marketdata/stock-details/${symbol}`);
-        if (!response.ok) throw new Error("Failed to load stock details.");
-        const data = await response.json();
+        let data;
+        const cacheKey = `stock_details_${symbol}`;
+        if (jsMemoryCache.has(cacheKey)) {
+            data = jsMemoryCache.get(cacheKey);
+            console.log(`[JS MemoryCache] Loaded details for ${symbol} from client cache.`);
+        } else {
+            const response = await fetch(`${API_BASE_URL}/api/marketdata/stock-details/${symbol}`);
+            if (!response.ok) throw new Error("Failed to load stock details.");
+            data = await response.json();
+            jsMemoryCache.set(cacheKey, data);
+        }
         
         $("#specName").text(data.name || "-");
         $("#specSymbol").text(data.symbol || "-");
