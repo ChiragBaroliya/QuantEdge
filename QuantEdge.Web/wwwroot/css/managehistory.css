@@ -270,3 +270,55 @@
 .log-entry.error {
     color: #f87171;
 }
+
+/* =====================================================
+   RESPONSIVENESS — MANAGE HISTORY
+   ===================================================== */
+@media (max-width: 767.98px) {
+    .history-container {
+        padding: 12px;
+        gap: 16px;
+    }
+
+    .history-header-card {
+        padding: 16px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .history-form-card {
+        padding: 16px;
+        gap: 16px;
+    }
+
+    .history-form-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .timeframe-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .action-trigger-row {
+        width: 100%;
+    }
+
+    .btn-execute-reset {
+        width: 100%;
+        justify-content: center;
+        min-height: 44px;
+    }
+}
+
+@media (max-width: 480px) {
+    .timeframe-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .history-header-title h2 {
+        font-size: 17px;
+    }
+}

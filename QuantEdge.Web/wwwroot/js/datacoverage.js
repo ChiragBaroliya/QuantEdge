@@ -534,8 +534,8 @@ $(document).ready(function () {
 
         // First & Prev buttons
         $container.append(`
-            <button class="btn-page btn-nav-page" data-page="1" ${state.currentPage === 1 ? 'disabled' : ''}>« First</button>
-            <button class="btn-page btn-nav-page" data-page="${state.currentPage - 1}" ${state.currentPage === 1 ? 'disabled' : ''}>‹ Prev</button>
+            <button class="btn-page btn-nav-page" data-page="1" title="First Page" ${state.currentPage === 1 ? 'disabled' : ''}>« <span class="btn-nav-text">First</span></button>
+            <button class="btn-page btn-nav-page" data-page="${state.currentPage - 1}" title="Previous Page" ${state.currentPage === 1 ? 'disabled' : ''}>‹ <span class="btn-nav-text">Prev</span></button>
         `);
 
         // Visible Page Numbers
@@ -553,8 +553,8 @@ $(document).ready(function () {
 
         // Next & Last buttons
         $container.append(`
-            <button class="btn-page btn-nav-page" data-page="${state.currentPage + 1}" ${state.currentPage === state.totalPages ? 'disabled' : ''}>Next ›</button>
-            <button class="btn-page btn-nav-page" data-page="${state.totalPages}" ${state.currentPage === state.totalPages ? 'disabled' : ''}>Last »</button>
+            <button class="btn-page btn-nav-page" data-page="${state.currentPage + 1}" title="Next Page" ${state.currentPage === state.totalPages ? 'disabled' : ''}><span class="btn-nav-text">Next</span> ›</button>
+            <button class="btn-page btn-nav-page" data-page="${state.totalPages}" title="Last Page" ${state.currentPage === state.totalPages ? 'disabled' : ''}><span class="btn-nav-text">Last</span> »</button>
         `);
     }
 

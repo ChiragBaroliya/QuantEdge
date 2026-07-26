@@ -30,14 +30,11 @@ $(document).ready(async function () {
     // Connect to SignalR early so listeners can be attached before await yields
     connectSignalR();
 
-    await loadStocksDropdown();
-    initCharts();
-  
-
-    // Initialize Select2 dropdown with search enabled
+    // Initialize Select2 dropdown with search enabled early
     $("#stockSelector").select2({
         placeholder: "Select Stock Symbol...",
-        allowClear: false
+        allowClear: false,
+        width: '100%'
     });
 
     $('#stockSelector').on('select2:open', function() {
@@ -56,6 +53,9 @@ $(document).ready(async function () {
             switchSymbol(newSymbol);
         }
     });
+
+    await loadStocksDropdown();
+    initCharts();
 
     // Set up timeframe button click events
     $(".tab-btn").click(function() {
@@ -222,10 +222,17 @@ function initCharts() {
     // Adjust resizing
     window.addEventListener('resize', () => {
         const priceEl = document.getElementById('priceChartContainer');
-        if (priceEl && priceChart && rsiChart && macdChart) {
-            priceChart.resize(priceEl.clientWidth, 320);
-            rsiChart.resize(priceEl.clientWidth, 120);
-            macdChart.resize(priceEl.clientWidth, 120);
+        const rsiEl = document.getElementById('rsiChartContainer');
+        const macdEl = document.getElementById('macdChartContainer');
+
+        if (priceEl && priceChart) {
+            priceChart.resize(priceEl.clientWidth, priceEl.clientHeight || 320);
+        }
+        if (rsiEl && rsiChart) {
+            rsiChart.resize(rsiEl.clientWidth, rsiEl.clientHeight || 110);
+        }
+        if (macdEl && macdChart) {
+            macdChart.resize(macdEl.clientWidth, macdEl.clientHeight || 110);
         }
     });
 }
@@ -233,19 +240,52 @@ function initCharts() {
 // Fetch active stock instruments
 async function loadStocksDropdown() {
     try {
-        const response = await fetch(`${API_BASE_URL}/api/marketdata/stocks`);
-        if (!response.ok) throw new Error("Failed to load active stocks from API.");
-        const stocksList = await response.json();
-        
+        let stocksList = [];
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/marketdata/stocks`);
+            if (response.ok) {
+                stocksList = await response.json();
+            }
+        } catch (err) {
+            console.warn("API stock list fetch failed, using default list:", err);
+        }
+
+        // Fallback default symbols if API returned no stocks
+        if (!stocksList || stocksList.length === 0) {
+            stocksList = [
+                { symbol: 'RELIANCE', name: 'Reliance Industries Ltd' },
+                { symbol: 'INFY', name: 'Infosys Ltd' },
+                { symbol: 'TCS', name: 'Tata Consultancy Services' },
+                { symbol: 'HDFCBANK', name: 'HDFC Bank Ltd' },
+                { symbol: 'ICICIBANK', name: 'ICICI Bank Ltd' },
+                { symbol: 'TATAMOTORS', name: 'Tata Motors Ltd' },
+                { symbol: 'SBIN', name: 'State Bank of India' },
+                { symbol: 'BHARTIARTL', name: 'Bharti Airtel Ltd' },
+                { symbol: 'ITC', name: 'ITC Ltd' },
+                { symbol: 'LT', name: 'Larsen & Toubro Ltd' }
+            ];
+        }
+
         const selector = $("#stockSelector");
+        selector.empty();
         stocksList.forEach(stock => {
             selector.append(`<option value="${stock.symbol}">${stock.symbol}</option>`);
         });
 
+        // Re-initialize Select2 to ensure options are refreshed
+        if ($.fn.select2) {
+            selector.select2({
+                placeholder: "Select Stock Symbol...",
+                allowClear: false,
+                width: '100%'
+            });
+        }
+
         // Auto-select first stock and load
         if (stocksList.length > 0) {
-            selector.val(stocksList[0].symbol).trigger('change.select2');
-            switchSymbol(stocksList[0].symbol);
+            const defaultSym = stocksList[0].symbol;
+            selector.val(defaultSym).trigger('change.select2').trigger('change');
+            switchSymbol(defaultSym);
         }
     } catch (ex) {
         console.error("Stocks list load failed:", ex);
