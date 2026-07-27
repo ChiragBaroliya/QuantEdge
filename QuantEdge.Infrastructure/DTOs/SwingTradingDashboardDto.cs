@@ -62,7 +62,17 @@ public record SwingStockSignalDto(
     bool MeetsAllBuyRules,
     string Decision,
     string Reason,
-    ConditionChecklistDto Checklist = null!
+    ConditionChecklistDto Checklist = null!,
+    int Score = 0,
+    decimal ConfidencePct = 0m,
+    decimal EntryPrice = 0m,
+    decimal StopLoss = 0m,
+    decimal Target1 = 0m,
+    decimal Target2 = 0m,
+    decimal RiskRewardRatio = 0m,
+    List<string>? PassedRules = null,
+    List<string>? FailedRules = null,
+    string Sector = ""
 );
 
 public record BacktestStatsDto(

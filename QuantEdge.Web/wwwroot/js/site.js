@@ -158,3 +158,211 @@ window.showToast = function (message, type, duration) {
 
     return toast;
 };
+
+/* ============================================================
+   QUANTEDGE GLOBAL GLASSMORPHIC TOOLTIP SYSTEM
+   ============================================================ */
+(function () {
+    let tooltipEl = null;
+
+    function getOrCreateTooltip() {
+        if (!tooltipEl) {
+            tooltipEl = document.createElement('div');
+            tooltipEl.id = 'qe-global-tooltip';
+            tooltipEl.className = 'qe-global-tooltip';
+            document.body.appendChild(tooltipEl);
+        }
+        return tooltipEl;
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function formatTooltipContent(rawText, el) {
+        if (!rawText) return '';
+
+        const text = rawText.trim();
+        const decisionText = (el.textContent || '').trim();
+
+        // Check if string contains decision or score patterns
+        const scoreMatch = text.match(/^(Downgraded to HOLD\s*\/?[^()]*|STRONG BUY|BUY|SELL|AVOID|HOLD|NEUTRAL)?\s*\*?\*?\(?(Score:\s*\d+\/\d+|\d+\/\d+)\)?\.?\s*(.*)/i);
+        const isDecisionBadge = el.classList.contains('rec-badge') || /^(BUY|STRONG BUY|AVOID|SELL|HOLD|NEUTRAL)$/i.test(decisionText) || scoreMatch;
+
+        if (isDecisionBadge && (scoreMatch || text.includes('Score:') || text.includes('Failed factors') || text.includes('Passed'))) {
+            let decision = decisionText || (scoreMatch && scoreMatch[1]) || 'INFO';
+            if (decision.toLowerCase().includes('hold')) decision = 'HOLD';
+            else if (decision.toLowerCase().includes('avoid')) decision = 'AVOID';
+            else if (decision.toLowerCase().includes('strong buy')) decision = 'STRONG BUY';
+            else if (decision.toLowerCase().includes('buy')) decision = 'BUY';
+            else if (decision.toLowerCase().includes('sell')) decision = 'SELL';
+
+            let scoreStr = (scoreMatch && scoreMatch[2]) ? scoreMatch[2] : '';
+            if (scoreStr && !scoreStr.toLowerCase().startsWith('score')) {
+                scoreStr = 'Score: ' + scoreStr;
+            }
+
+            let remainder = text;
+            // Remove decision/score prefix from remainder
+            remainder = remainder.replace(/^(Downgraded to HOLD\s*\/?[^()]*|STRONG BUY|BUY|SELL|AVOID|HOLD|NEUTRAL)?\s*\(?Score:\s*\d+\/\d+\)?\.?\s*/i, '').trim();
+
+            let decClass = 'neutral';
+            const dUpper = decision.toUpperCase();
+            if (dUpper.includes('STRONG BUY')) decClass = 'strong-buy';
+            else if (dUpper.includes('BUY')) decClass = 'buy';
+            else if (dUpper.includes('SELL')) decClass = 'sell';
+            else if (dUpper.includes('AVOID')) decClass = 'avoid';
+            else if (dUpper.includes('HOLD')) decClass = 'hold';
+
+            let bodyHtml = '';
+            
+            if (remainder) {
+                let sectionTitle = 'Analysis Details';
+                let sectionClass = 'info';
+
+                if (/failed factors/i.test(remainder)) {
+                    sectionTitle = 'Failed Factors';
+                    sectionClass = 'fail';
+                    const parts = remainder.split(/failed factors:?/i);
+                    remainder = parts[1] || parts[0];
+                } else if (/passed/i.test(remainder)) {
+                    sectionTitle = 'Passed Conditions';
+                    sectionClass = 'pass';
+                    const parts = remainder.split(/passed (key criteria|factors|conditions)?:?/i);
+                    remainder = parts[parts.length - 1];
+                }
+
+                // Split into list items by semicolon, period before capital, or new line
+                const items = remainder.split(/;\s*|\.\s+(?=[A-Z])/).map(s => s.trim().replace(/\.$/, '')).filter(Boolean);
+                
+                if (items.length > 0) {
+                    const listItemsHtml = items.map(item => {
+                        let formattedItem = escapeHtml(item);
+                        const colonIdx = formattedItem.indexOf(':');
+                        if (colonIdx > 0 && colonIdx < 40) {
+                            const title = formattedItem.substring(0, colonIdx).trim();
+                            const desc = formattedItem.substring(colonIdx + 1).trim();
+                            formattedItem = `<strong>${title}:</strong> ${desc}`;
+                        }
+
+                        const iconChar = sectionClass === 'fail' ? '✕' : (sectionClass === 'pass' ? '✓' : '•');
+                        return `
+                            <li class="qe-tt-item">
+                                <span class="qe-tt-icon ${sectionClass}">${iconChar}</span>
+                                <span>${formattedItem}</span>
+                            </li>
+                        `;
+                    }).join('');
+
+                    bodyHtml = `
+                        <div class="qe-tt-sec-title ${sectionClass}">${sectionTitle}</div>
+                        <ul class="qe-tt-list">
+                            ${listItemsHtml}
+                        </ul>
+                    `;
+                } else {
+                    bodyHtml = `<div class="qe-tt-plain-text">${escapeHtml(remainder)}</div>`;
+                }
+            }
+
+            return `
+                <div class="qe-tt-card">
+                    <div class="qe-tt-header">
+                        <span class="qe-tt-badge ${decClass}">${escapeHtml(decision)}</span>
+                        ${scoreStr ? `<span class="qe-tt-score">${escapeHtml(scoreStr)}</span>` : ''}
+                    </div>
+                    ${bodyHtml}
+                </div>
+            `;
+        }
+
+        // Standard descriptive tooltip
+        return `
+            <div class="qe-tt-plain-text">
+                <svg class="qe-tt-plain-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                <span>${escapeHtml(text)}</span>
+            </div>
+        `;
+    }
+
+    function positionTooltip(targetEl, tooltipEl) {
+        const targetRect = targetEl.getBoundingClientRect();
+        
+        // Reset top/left to measure natural size
+        tooltipEl.style.top = '0px';
+        tooltipEl.style.left = '0px';
+
+        const tooltipWidth = tooltipEl.offsetWidth;
+        const tooltipHeight = tooltipEl.offsetHeight;
+
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        // Position above target centered
+        let top = targetRect.top - tooltipHeight - 10;
+        let left = targetRect.left + (targetRect.width / 2) - (tooltipWidth / 2);
+
+        // If overflowing top of screen, place below target
+        if (top < 10) {
+            top = targetRect.bottom + 10;
+        }
+
+        // Keep inside horizontal viewport boundaries with 12px margin
+        if (left < 12) {
+            left = 12;
+        } else if (left + tooltipWidth > viewportWidth - 12) {
+            left = viewportWidth - tooltipWidth - 12;
+        }
+
+        tooltipEl.style.top = `${top}px`;
+        tooltipEl.style.left = `${left}px`;
+    }
+
+    // Intercept mouseover globally
+    document.addEventListener('mouseover', function (e) {
+        const target = e.target.closest('[data-tooltip], [data-bs-toggle="tooltip"], .rec-badge, [title]');
+        if (!target) return;
+
+        let text = target.getAttribute('data-tooltip') || target.getAttribute('data-qe-title');
+        
+        // Suppress native title tooltip by moving title -> data-qe-title
+        if (!text && target.hasAttribute('title')) {
+            const rawTitle = target.getAttribute('title');
+            if (rawTitle) {
+                target.setAttribute('data-qe-title', rawTitle);
+                target.removeAttribute('title');
+                text = rawTitle;
+            }
+        }
+
+        if (!text) return;
+
+        const tt = getOrCreateTooltip();
+        tt.innerHTML = formatTooltipContent(text, target);
+        tt.classList.add('visible');
+
+        positionTooltip(target, tt);
+    });
+
+    document.addEventListener('mouseout', function (e) {
+        const target = e.target.closest('[data-tooltip], [data-bs-toggle="tooltip"], .rec-badge, [data-qe-title]');
+        if (target && tooltipEl) {
+            tooltipEl.classList.remove('visible');
+        }
+    });
+
+    window.addEventListener('scroll', function () {
+        if (tooltipEl) tooltipEl.classList.remove('visible');
+    }, true);
+
+    window.addEventListener('resize', function () {
+        if (tooltipEl) tooltipEl.classList.remove('visible');
+    });
+})();
+

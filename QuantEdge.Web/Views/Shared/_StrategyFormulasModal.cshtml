@@ -155,89 +155,108 @@
                 <!-- Tab 2: Swing Trading Rules -->
                 <div id="tabSwing" class="qe-modal-pane">
                     <div class="qe-ref-section">
-                        <h3>EOD Swing Trading Strategy</h3>
-                        <p>Swing trading runs once daily at End-Of-Day (EOD) after 3:45 PM IST. It requires both a broad market filter to pass and stock-specific parameters to line up perfectly before triggering buying actions.</p>
+                        <h3>Institutional EOD Swing Trading Strategy</h3>
+                        <p>Swing trading executes after EOD market close (3:45 PM IST). It combines a <strong>100-Point Weighted Scoring Engine</strong>, <strong>Breakout Confirmation</strong>, <strong>Relative Strength vs Nifty</strong>, <strong>Multi-Timeframe Validation</strong>, and <strong>ATR-based Risk Management</strong> to minimize false BUY signals.</p>
                     </div>
 
                     <div class="qe-ref-section">
                         <h3>1. NIFTY Market Filter</h3>
-                        <p>To avoid buying in a falling market, the broad market filter must be active. <strong>Both</strong> of the following conditions must be met for NIFTY 50:</p>
+                        <p>To prevent buying into a declining market, broad market filter checks NIFTY 50:</p>
                         <ul>
-                            <li><strong>Condition 1:</strong> Price is above the 50 DMA (Simple Moving Average 50) &rarr; <span class="monospace">Close &gt; SMA50</span></li>
-                            <li><strong>Condition 2:</strong> Short-term trend is bullish &rarr; <span class="monospace">EMA20 &gt; EMA50</span></li>
+                            <li><strong>Condition 1:</strong> Price above 50 DMA &rarr; <span class="monospace">Close &gt; SMA50</span></li>
+                            <li><strong>Condition 2:</strong> Short-term trend bullish &rarr; <span class="monospace">EMA20 &gt; EMA50</span></li>
                         </ul>
                         <div class="qe-alert-box red">
-                            <div class="qe-alert-box-title">Important Market Filter Rule</div>
-                            If the NIFTY Market Filter fails, the system enters <strong>Defensive Mode</strong>. No new BUY recommendations will be generated. The system will only evaluate exits (SELL) or hold existing positions.
+                            <div class="qe-alert-box-title">Defensive Mode Action</div>
+                            If NIFTY Market Filter fails, new BUY signals are locked. Existing positions are managed via trailing ATR stops.
                         </div>
                     </div>
 
                     <div class="qe-ref-section">
-                        <h3>2. Stock Entry Rules (All 8 must be met for BUY)</h3>
-                        <p>For an active stock to receive a <strong>BUY</strong> recommendation at EOD, it must satisfy all 8 conditions:</p>
+                        <h3>2. 100-Point Weighted Scoring Matrix</h3>
+                        <p>Stocks are scored across 9 quantitative factors totaling up to 100 points:</p>
                         <table class="qe-example-table">
                             <thead>
                                 <tr>
-                                    <th>Rule</th>
-                                    <th>Condition / Formula</th>
-                                    <th>Description</th>
+                                    <th>Factor</th>
+                                    <th>Max Weight</th>
+                                    <th>Condition & Scoring Logic</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td>1. Market Filter</td>
-                                    <td>Nifty Filter = Passed</td>
-                                    <td>Broad market must be in a confirmed uptrend.</td>
+                                    <td><strong>1. EMA Trend</strong></td>
+                                    <td>20 Pts</td>
+                                    <td>Close &gt; EMA20 &gt; EMA50 with rising slopes (+15 pts); Bonus for EMA20 &gt; EMA50 &gt; EMA200 (+5 pts). EMA200 not falling.</td>
                                 </tr>
                                 <tr>
-                                    <td>2. Price Trend</td>
-                                    <td>Close &gt; EMA(20) &gt; EMA(50) &gt; EMA(200)</td>
-                                    <td>Requires a clean bullish alignment across all major horizons.</td>
+                                    <td><strong>2. Breakouts</strong></td>
+                                    <td>20 Pts</td>
+                                    <td>Close &gt; Previous Day High or Swing High (+10 pts); Breakout after 10–20 Day Consolidation (+10 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td>3. Volume Spike</td>
-                                    <td>Volume &ge; 1.5 &times; AvgVolume<sub>20</sub></td>
-                                    <td>Volume must be at least 50% above the 20-day trailing average.</td>
+                                    <td><strong>3. Volume</strong></td>
+                                    <td>15 Pts</td>
+                                    <td>Volume &ge; 1.5x Avg (+7 pts); Volume &gt; Prev Day (+4 pts); Volume expanding 2 consecutive sessions (+4 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td>4. RSI Momentum</td>
-                                    <td>55 &le; RSI(14) &le; 70</td>
-                                    <td>RSI must be in the strong momentum zone (not overbought &gt; 70).</td>
+                                    <td><strong>4. ADX Strength</strong></td>
+                                    <td>10 Pts</td>
+                                    <td>ADX &ge; 25 Strong (+10 pts); ADX 20–24 Good (+7 pts); ADX 18–19 Moderate (+4 pts); ADX &lt; 18 Weak (0 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td>5. ADX Trend Strength</td>
-                                    <td>ADX(14) &gt; 25</td>
-                                    <td>ADX above 25 indicates a strong, sustainable trend.</td>
+                                    <td><strong>5. RSI Momentum</strong></td>
+                                    <td>10 Pts</td>
+                                    <td>RSI 55–70 Best (+10 pts); RSI 50–55 Moderate (+7 pts); RSI 70–75 Acceptable (+5 pts); RSI &gt; 80 or &lt; 45 (0 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td>6. MACD Cross</td>
-                                    <td>MACD &gt; Signal AND MACD<sub>prev</sub> &le; Signal<sub>prev</sub></td>
-                                    <td>MACD Line must have crossed above the Signal Line today.</td>
+                                    <td><strong>6. MACD Cross</strong></td>
+                                    <td>10 Pts</td>
+                                    <td>MACD Line &gt; Signal Line (+5 pts); Fresh Crossover today (+5 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td>7. 52W High Closeness</td>
-                                    <td>Close &ge; 0.90 &times; High<sub>52w</sub></td>
-                                    <td>Stock price must be within 10% of its 52-week high (near breakouts).</td>
+                                    <td><strong>7. 52W High</strong></td>
+                                    <td>5 Pts</td>
+                                    <td>New 52-Week High Breakout (+5 pts); Within 5% (+3 pts); Within 10% (+1 pt).</td>
                                 </tr>
                                 <tr>
-                                    <td>8. Candle Bullishness</td>
-                                    <td>Close &gt; Open</td>
-                                    <td>The daily candle must close green.</td>
+                                    <td><strong>8. Relative Strength</strong></td>
+                                    <td>5 Pts</td>
+                                    <td>Stock Return &gt; Nifty 50 Return over 1 Month and 3 Months (+5 pts).</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>9. Market Filter</strong></td>
+                                    <td>5 Pts</td>
+                                    <td>Nifty 50 Price &gt; 50 DMA &amp; EMA20 &gt; EMA50 (+5 pts).</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
 
                     <div class="qe-ref-section">
-                        <h3>3. Simulated Position Exits (Any 1 triggers SELL)</h3>
-                        <p>Once a position is entered, it is held until one of the following exit triggers occurs at EOD close:</p>
+                        <h3>3. Signal Categorization & Risk Filters</h3>
                         <ul>
-                            <li><strong>Profit Target (+5%):</strong> Today's high reached +5% above entry price (<span class="monospace">High &ge; Entry &times; 1.05</span>). Exits at 1.05 limit.</li>
-                            <li><strong>Stop Loss (-3%):</strong> Today's low broke -3% below entry price (<span class="monospace">Low &le; Entry &times; 0.97</span>). Exits at 0.97 stop.</li>
-                            <li><strong>Trend Reversal:</strong> Close price closes below EMA(20) (<span class="monospace">Close &lt; EMA20</span>).</li>
-                            <li><strong>MACD Bearish Cross:</strong> MACD Line crosses below Signal Line (<span class="monospace">MACD &lt; Signal</span>).</li>
-                            <li><strong>RSI Failure:</strong> RSI(14) momentum falls below 45 (<span class="monospace">RSI &lt; 45</span>).</li>
-                            <li><strong>Time Out:</strong> Position has been held for 20 trading days.</li>
+                            <li><strong>90–100 Points:</strong> <strong class="pnl-text positive">STRONG BUY</strong> (Full conviction)</li>
+                            <li><strong>75–89 Points:</strong> <strong class="pnl-text positive">BUY</strong> (Confirmed quality entry)</li>
+                            <li><strong>60–74 Points:</strong> <strong>HOLD / WATCHLIST</strong> (Monitoring)</li>
+                            <li><strong>Below 60 Points:</strong> <strong>AVOID</strong> (Low probability)</li>
+                        </ul>
+                        <div class="qe-alert-box">
+                            <div class="qe-alert-box-title">Risk/Reward & Multi-Timeframe Gates</div>
+                            Before issuing a <strong>BUY</strong> signal:
+                            <br/>• <strong>Minimum 1:2 Risk/Reward Filter:</strong> Expected Target 1 (2x ATR) / Risk (1x ATR) must be &ge; 1:2.0.
+                            <br/>• <strong>Multi-Timeframe Confirmation:</strong> 1-Hour (60m) Close must be &gt; EMA20 and RSI &ge; 40. If 1-Hour is Bearish, signal is downgraded to HOLD.
+                        </div>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>4. ATR Risk & Position Exits</h3>
+                        <p>Simulated trades calculate dynamic volatility-based stops and targets using ATR(14):</p>
+                        <ul>
+                            <li><strong>Suggested Stop Loss:</strong> <span class="monospace">Stop = Entry - (1.0 &times; ATR<sub>14</sub>)</span></li>
+                            <li><strong>Target 1 (1:2 RR):</strong> <span class="monospace">Target 1 = Entry + (2.0 &times; ATR<sub>14</sub>)</span></li>
+                            <li><strong>Target 2 (1:3 RR):</strong> <span class="monospace">Target 2 = Entry + (3.0 &times; ATR<sub>14</sub>)</span></li>
+                            <li><strong>Trend / Momentum Exit:</strong> Exit if Close &lt; EMA20, MACD turns Bearish, RSI &lt; 45, or after 20 Trading Days.</li>
                         </ul>
                     </div>
                 </div>

@@ -2521,3 +2521,183 @@ textarea.form-control {
 .timeline-content { flex: 1; }
 .timeline-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .timeline-desc  { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* ============================================================
+   QUANTEDGE PREMIUM GLASSMORPHIC GLOBAL TOOLTIP SYSTEM
+   ============================================================ */
+.qe-global-tooltip {
+    position: fixed;
+    z-index: 100000;
+    background: rgba(10, 14, 26, 0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 24px var(--theme-glow-card), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: #f1f5f9;
+    font-size: 12px;
+    line-height: 1.5;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(6px) scale(0.97);
+    transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.18s;
+    max-width: 420px;
+    width: max-content;
+    word-wrap: break-word;
+    box-sizing: border-box;
+}
+
+.qe-global-tooltip.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+
+/* Tooltip Card Formatting */
+.qe-tt-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 240px;
+}
+
+.qe-tt-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.qe-tt-badge {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.qe-tt-badge.avoid, .qe-tt-badge.sell {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(185, 28, 28, 0.15));
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    box-shadow: 0 0 12px rgba(248, 113, 113, 0.2);
+}
+
+.qe-tt-badge.buy, .qe-tt-badge.strong-buy {
+    background: linear-gradient(135deg, rgba(52, 211, 153, 0.25), rgba(16, 185, 129, 0.15));
+    color: #34d399;
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    box-shadow: 0 0 12px rgba(52, 211, 153, 0.2);
+}
+
+.qe-tt-badge.neutral, .qe-tt-badge.hold {
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(217, 119, 6, 0.15));
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    box-shadow: 0 0 12px rgba(251, 191, 36, 0.2);
+}
+
+.qe-tt-score {
+    font-family: 'Cascadia Code', Consolas, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #e2e8f0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.qe-tt-sec-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.qe-tt-sec-title.fail { color: #f87171; }
+.qe-tt-sec-title.pass { color: #34d399; }
+.qe-tt-sec-title.info { color: var(--theme-accent, #4f9cf9); }
+
+.qe-tt-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.qe-tt-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.88);
+    background: rgba(255, 255, 255, 0.02);
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.qe-tt-icon {
+    flex-shrink: 0;
+    font-weight: 800;
+    font-size: 11px;
+    margin-top: 1px;
+}
+
+.qe-tt-icon.fail { color: #f87171; }
+.qe-tt-icon.pass { color: #34d399; }
+.qe-tt-icon.info { color: var(--theme-accent, #4f9cf9); }
+
+.qe-tt-plain-text {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #e2e8f0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.qe-tt-plain-icon {
+    color: var(--theme-accent, #4f9cf9);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+/* Standard Bootstrap Tooltip Overrides */
+.tooltip {
+    z-index: 100000 !important;
+}
+.tooltip-inner {
+    background: rgba(10, 14, 26, 0.96) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 24px var(--theme-glow-card) !important;
+    color: #f1f5f9 !important;
+    border-radius: 10px !important;
+    padding: 10px 14px !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    max-width: 400px !important;
+    text-align: left !important;
+}
+.bs-tooltip-top .tooltip-arrow::before { border-top-color: rgba(255, 255, 255, 0.14) !important; }
+.bs-tooltip-bottom .tooltip-arrow::before { border-bottom-color: rgba(255, 255, 255, 0.14) !important; }
+.bs-tooltip-start .tooltip-arrow::before { border-left-color: rgba(255, 255, 255, 0.14) !important; }
+.bs-tooltip-end .tooltip-arrow::before { border-right-color: rgba(255, 255, 255, 0.14) !important; }

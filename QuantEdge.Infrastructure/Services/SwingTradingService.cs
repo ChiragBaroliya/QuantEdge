@@ -56,7 +56,7 @@ public class SwingTradingService : ISwingTradingService
         }
 
         // 1. Fetch latest daily Nifty status
-        NiftyStatusDto niftyStatus = null;
+        NiftyStatusDto? niftyStatus = null;
         if (niftyStock != null)
         {
             var niftyCandles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
@@ -97,80 +97,99 @@ public class SwingTradingService : ISwingTradingService
             niftyStatus = new NiftyStatusDto("NIFTY 50", 22000m, 21800m, 21900m, 21850m, true, true, true);
         }
 
-        // 2. Fetch latest daily stock analysis records
+        // 2. Fetch latest daily stock analysis records and evaluate with SwingDecisionEngine
         var stockSignals = new List<SwingStockSignalDto>();
+        var niftyCandlesGlobal = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
+            .OrderBy(c => c.CandleTime)
+            .ToList();
+
         using (var conn = _connectionFactory.CreateConnection())
         {
             foreach (var stock in activeStocks)
             {
                 if (stock.Symbol == "NIFTY 50") continue;
 
-                var latestAnalysis = await conn.QueryFirstOrDefaultAsync<dynamic>(@"
-                    SELECT d.*, s.symbol 
-                    FROM daily_stock_analysis d
-                    JOIN stock_master s ON d.stock_id = s.id
-                    WHERE s.symbol = @Symbol
-                    ORDER BY d.trade_date DESC
-                    LIMIT 1",
-                    new { Symbol = stock.Symbol });
+                var stockCandles = (await _candleRepository.GetHistoryAsync(stock.Symbol, "1d", limit: 300))
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
 
-                if (latestAnalysis != null)
+                var stockCandles60m = (await conn.QueryAsync<MarketCandle>(@"
+                    SELECT * FROM market_candles_60m 
+                    WHERE symbol = @Symbol 
+                    ORDER BY candle_time DESC 
+                    LIMIT 100",
+                    new { Symbol = stock.Symbol }))
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
+
+                if (stockCandles.Count >= 50)
                 {
-                    decimal closeVal = latestAnalysis.close_price != null ? Convert.ToDecimal(latestAnalysis.close_price) : 0m;
-                    decimal ema20Val = latestAnalysis.ema20 != null ? Convert.ToDecimal(latestAnalysis.ema20) : 0m;
-                    decimal ema50Val = latestAnalysis.ema50 != null ? Convert.ToDecimal(latestAnalysis.ema50) : 0m;
-                    decimal ema200Val = latestAnalysis.ema200 != null ? Convert.ToDecimal(latestAnalysis.ema200) : 0m;
-                    decimal rsi14Val = latestAnalysis.rsi14 != null ? Convert.ToDecimal(latestAnalysis.rsi14) : 0m;
-                    decimal macdVal = latestAnalysis.macd != null ? Convert.ToDecimal(latestAnalysis.macd) : 0m;
-                    decimal macdSigVal = latestAnalysis.macd_signal != null ? Convert.ToDecimal(latestAnalysis.macd_signal) : 0m;
-                    decimal adx14Val = latestAnalysis.adx14 != null ? Convert.ToDecimal(latestAnalysis.adx14) : 0m;
-                    decimal atr14Val = latestAnalysis.atr14 != null ? Convert.ToDecimal(latestAnalysis.atr14) : 0m;
-                    long volVal = latestAnalysis.volume != null ? Convert.ToInt64(latestAnalysis.volume) : 0L;
-                    decimal avgVol20Val = latestAnalysis.average_volume20 != null ? Convert.ToDecimal(latestAnalysis.average_volume20) : 0m;
-                    decimal volMultVal = avgVol20Val > 0m ? Math.Round(volVal / avgVol20Val, 2) : 0m;
-                    bool is52WVal = latestAnalysis.is_52_week_high != null && Convert.ToBoolean(latestAnalysis.is_52_week_high);
-                    string reasonStr = latestAnalysis.reason != null ? Convert.ToString(latestAnalysis.reason) : "";
-                    bool buySig = latestAnalysis.buy_signal != null && Convert.ToBoolean(latestAnalysis.buy_signal);
-                    string recStr = latestAnalysis.recommendation != null ? Convert.ToString(latestAnalysis.recommendation) : "HOLD";
+                    var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles, stockCandles60m, niftyCandlesGlobal);
+                    int idx = stockCandles.Count - 1;
+                    var c = stockCandles[idx];
 
-                    var checklist = BuildConditionChecklist(
-                        niftyStatus, closeVal, ema20Val, ema50Val, ema200Val, rsi14Val, macdVal, macdSigVal, adx14Val, volMultVal, volVal, avgVol20Val, is52WVal, true, reasonStr
-                    );
+                    var closes = stockCandles.Select(x => x.Close).ToList();
+                    var highs = stockCandles.Select(x => x.High).ToList();
+                    var lows = stockCandles.Select(x => x.Low).ToList();
+                    var volumes = stockCandles.Select(x => x.Volume).ToList();
+
+                    var ema20 = IndicatorCalculator.CalculateEma(closes, 20);
+                    var ema50 = IndicatorCalculator.CalculateEma(closes, 50);
+                    var ema200 = IndicatorCalculator.CalculateEma(closes, 200);
+                    var rsi14 = IndicatorCalculator.CalculateRsi(closes, 14);
+                    var (macd, macdSignal) = IndicatorCalculator.CalculateMacd(closes);
+                    var adx14 = IndicatorCalculator.CalculateAdx(highs, lows, closes, 14);
+                    var atr14 = IndicatorCalculator.CalculateAtr(highs, lows, closes, 14);
+                    var high52W = IndicatorCalculator.Calculate52WeekHigh(highs, Math.Min(250, highs.Count));
+
+                    var prev20Vol = volumes.Skip(Math.Max(0, idx - 20)).Take(Math.Min(20, idx)).ToList();
+                    decimal avgVol20 = prev20Vol.Any() ? (decimal)prev20Vol.Average(v => (double)v) : 0m;
+                    decimal volMult = avgVol20 > 0m ? Math.Round(c.Volume / avgVol20, 2) : 0m;
+                    bool is52W = c.Close >= 0.90m * high52W[idx];
 
                     stockSignals.Add(new SwingStockSignalDto(
                         Symbol: stock.Symbol,
-                        Close: closeVal,
-                        Open: 0m,
-                        High: 0m,
-                        Low: 0m,
-                        Ema20: ema20Val,
-                        Ema50: ema50Val,
-                        Ema200: ema200Val,
-                        Rsi14: rsi14Val,
-                        Macd: macdVal,
-                        MacdSignal: macdSigVal,
-                        Adx14: adx14Val,
-                        Atr14: atr14Val,
-                        Volume: volVal,
-                        AvgVolume20: avgVol20Val,
-                        VolumeMultiplier: volMultVal,
-                        Is52WeekHigh: is52WVal,
-                        High52Week: 0m,
-                        ClosenessTo52WeekHighPct: 0m,
-                        IsLastCandleBullish: true,
-                        MeetsStockFilter: buySig,
-                        MeetsAllBuyRules: buySig && niftyStatus.IsMarketFilterPassed,
-                        Decision: recStr,
-                        Reason: reasonStr,
-                        Checklist: checklist
+                        Close: c.Close,
+                        Open: c.Open,
+                        High: c.High,
+                        Low: c.Low,
+                        Ema20: Math.Round(ema20[idx], 2),
+                        Ema50: Math.Round(ema50[idx], 2),
+                        Ema200: Math.Round(ema200[idx], 2),
+                        Rsi14: Math.Round(rsi14[idx], 2),
+                        Macd: Math.Round(macd[idx], 2),
+                        MacdSignal: Math.Round(macdSignal[idx], 2),
+                        Adx14: Math.Round(adx14[idx], 2),
+                        Atr14: Math.Round(atr14[idx], 2),
+                        Volume: c.Volume,
+                        AvgVolume20: (long)avgVol20,
+                        VolumeMultiplier: volMult,
+                        Is52WeekHigh: is52W,
+                        High52Week: Math.Round(high52W[idx], 2),
+                        ClosenessTo52WeekHighPct: high52W[idx] > 0m ? Math.Round(c.Close / high52W[idx] * 100m, 2) : 0m,
+                        IsLastCandleBullish: c.Close > c.Open,
+                        MeetsStockFilter: evalResult.IsBuySignal,
+                        MeetsAllBuyRules: evalResult.IsBuySignal && niftyStatus.IsMarketFilterPassed,
+                        Decision: evalResult.Decision,
+                        Reason: evalResult.Reason,
+                        Checklist: evalResult.Checklist,
+                        Score: evalResult.Score,
+                        ConfidencePct: evalResult.ConfidencePct,
+                        EntryPrice: evalResult.EntryPrice,
+                        StopLoss: evalResult.StopLoss,
+                        Target1: evalResult.Target1,
+                        Target2: evalResult.Target2,
+                        RiskRewardRatio: evalResult.RiskRewardRatio,
+                        PassedRules: evalResult.PassedRules,
+                        FailedRules: evalResult.FailedRules,
+                        Sector: evalResult.Sector
                     ));
                 }
                 else
                 {
                     var emptyChecklist = BuildConditionChecklist(niftyStatus, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, false, false, "");
-                    // Fallback placeholders if no analysis is in DB yet
                     stockSignals.Add(new SwingStockSignalDto(
-                        stock.Symbol, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, 0m, false, 0m, 0m, false, false, false, "HOLD", "No EOD analysis found. Please run EOD Job.", emptyChecklist
+                        stock.Symbol, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, 0m, false, 0m, 0m, false, false, false, "HOLD", "Insufficient candle data. Please run EOD Job.", emptyChecklist
                     ));
                 }
             }
@@ -383,48 +402,16 @@ public class SwingTradingService : ISwingTradingService
             .OrderBy(c => c.CandleTime)
             .ToList();
 
-        if (candles.Count < 250)
+        if (candles.Count < 50)
         {
-            _logger.LogWarning("Insufficient candle data for {Symbol} daily analysis. Required 250, found {Count}.", stock.Symbol, candles.Count);
+            _logger.LogWarning("Insufficient candle data for {Symbol} daily analysis. Required 50, found {Count}.", stock.Symbol, candles.Count);
             return;
         }
 
-        // Align indices
-        var closes = candles.Select(c => c.Close).ToList();
-        var highs = candles.Select(c => c.High).ToList();
-        var lows = candles.Select(c => c.Low).ToList();
-        var opens = candles.Select(c => c.Open).ToList();
-        var volumes = candles.Select(c => c.Volume).ToList();
+        var niftyCandles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
+            .OrderBy(c => c.CandleTime)
+            .ToList();
 
-        var ema20 = IndicatorCalculator.CalculateEma(closes, 20);
-        var ema50 = IndicatorCalculator.CalculateEma(closes, 50);
-        var ema200 = IndicatorCalculator.CalculateEma(closes, 200);
-        var rsi14 = IndicatorCalculator.CalculateRsi(closes, 14);
-        var (macd, macdSignal) = IndicatorCalculator.CalculateMacd(closes);
-        var adx14 = IndicatorCalculator.CalculateAdx(highs, lows, closes, 14);
-        var atr14 = IndicatorCalculator.CalculateAtr(highs, lows, closes, 14);
-        var high52W = IndicatorCalculator.Calculate52WeekHigh(highs, 250);
-
-        int idx = candles.Count - 1;
-        decimal price = closes[idx];
-        decimal open = opens[idx];
-        decimal high = highs[idx];
-        decimal low = lows[idx];
-        long vol = volumes[idx];
-
-        // 20-day Average Volume (calculated from index idx-1 to idx-20)
-        var prev20VolList = volumes.Skip(Math.Max(0, idx - 20)).Take(Math.Min(20, idx)).ToList();
-        decimal avgVol20 = prev20VolList.Any() ? (decimal)prev20VolList.Average(v => (double)v) : 0m;
-
-        bool priceTrend = price > ema20[idx] && ema20[idx] > ema50[idx] && ema50[idx] > ema200[idx];
-        bool volSpike = avgVol20 > 0m && vol >= (long)(avgVol20 * 1.5m);
-        bool rsiZone = rsi14[idx] >= 55m && rsi14[idx] <= 70m;
-        bool adxZone = adx14[idx] > 25m;
-        bool macdBullish = macd[idx] > macdSignal[idx] && macd[idx - 1] <= macdSignal[idx - 1];
-        bool near52W = price >= 0.90m * high52W[idx];
-        bool isBullishCandle = price > open;
-
-        // Fetch 60m candles for this stock up to the end of the trading hours of tradeDate (e.g. 16:00) to prevent look-ahead bias
         var candles60m = (await conn.QueryAsync<MarketCandle>(@"
             SELECT * FROM market_candles_60m 
             WHERE symbol = @Symbol AND candle_time <= @MaxTime
@@ -434,47 +421,54 @@ public class SwingTradingService : ISwingTradingService
             .OrderBy(c => c.CandleTime)
             .ToList();
 
-        bool is60mFilterPassed = false;
-        decimal last60mClose = 0m;
-        decimal last60mEma20 = 0m;
-        decimal last60mRsi = 0m;
+        var evalResult = SwingDecisionEngine.Evaluate(stock, candles, candles60m, niftyCandles);
 
-        if (candles60m.Count >= 20)
-        {
-            var closes60m = candles60m.Select(c => c.Close).ToList();
-            var ema20_60m = IndicatorCalculator.CalculateEma(closes60m, 20);
-            var rsi_60m = IndicatorCalculator.CalculateRsi(closes60m, 14);
+        int idx = candles.Count - 1;
+        decimal price = candles[idx].Close;
+        decimal high = candles[idx].High;
+        decimal low = candles[idx].Low;
+        long vol = candles[idx].Volume;
 
-            int idx60m = candles60m.Count - 1;
-            last60mClose = closes60m[idx60m];
-            last60mEma20 = ema20_60m[idx60m];
-            last60mRsi = rsi_60m[idx60m];
+        var closes = candles.Select(c => c.Close).ToList();
+        var highs = candles.Select(c => c.High).ToList();
+        var lows = candles.Select(c => c.Low).ToList();
 
-            is60mFilterPassed = last60mClose > last60mEma20 && last60mRsi >= 40m && last60mRsi <= 65m;
-        }
+        var ema20 = IndicatorCalculator.CalculateEma(closes, 20);
+        var ema50 = IndicatorCalculator.CalculateEma(closes, 50);
+        var ema200 = IndicatorCalculator.CalculateEma(closes, 200);
+        var rsi14 = IndicatorCalculator.CalculateRsi(closes, 14);
+        var (macd, macdSignal) = IndicatorCalculator.CalculateMacd(closes);
+        var adx14 = IndicatorCalculator.CalculateAdx(highs, lows, closes, 14);
+        var atr14 = IndicatorCalculator.CalculateAtr(highs, lows, closes, 14);
+        var high52W = IndicatorCalculator.Calculate52WeekHigh(highs, Math.Min(250, highs.Count));
 
-        // Check if there is an active/open position in swing_positions
+        var prev20VolList = candles.Select(c => c.Volume).Skip(Math.Max(0, idx - 20)).Take(Math.Min(20, idx)).ToList();
+        decimal avgVol20 = prev20VolList.Any() ? (decimal)prev20VolList.Average(v => (double)v) : 0m;
+
+        // Position evaluation
         var openPosition = await conn.QueryFirstOrDefaultAsync<dynamic>(@"
             SELECT * FROM swing_positions WHERE symbol = @Symbol AND is_closed = FALSE LIMIT 1",
             new { Symbol = stock.Symbol });
 
         bool buySignal = false;
         bool sellSignal = false;
-        string recommendation = "HOLD";
-        string reason = "";
+        string recommendation = evalResult.Decision;
+        string reason = evalResult.Reason;
 
         if (openPosition != null)
         {
-            // Stock is currently held, check SELL conditions
             decimal entryPrice = Convert.ToDecimal(openPosition.entry_price);
             DateTime entryDate = ConvertToDateTime(openPosition.entry_date);
 
-            // Hold days (candles between entry date and tradeDate)
             int holdDays = candles.Count(c => c.CandleTime.Date >= entryDate.Date && c.CandleTime.Date <= tradeDate.Date) - 1;
             if (holdDays < 0) holdDays = 0;
 
-            bool hitTarget = high >= entryPrice * 1.05m;
-            bool hitStop = low <= entryPrice * 0.97m;
+            decimal curAtr = Math.Max(0.1m, atr14[idx]);
+            decimal stopLossPrice = Math.Max(0.01m, entryPrice - (1.0m * curAtr));
+            decimal targetPrice = entryPrice + (2.0m * curAtr);
+
+            bool hitTarget = high >= targetPrice || high >= entryPrice * 1.05m;
+            bool hitStop = low <= stopLossPrice || low <= entryPrice * 0.97m;
             bool trendExit = price < ema20[idx];
             bool macdBearish = macd[idx] < macdSignal[idx] && macd[idx - 1] >= macdSignal[idx - 1];
             bool rsiExit = rsi14[idx] < 45m;
@@ -490,19 +484,18 @@ public class SwingTradingService : ISwingTradingService
 
                 if (hitStop && hitTarget)
                 {
-                    // Conservative: assume stop loss hit first if both hit on the same day
-                    exitPrice = entryPrice * 0.97m;
+                    exitPrice = stopLossPrice;
                     exitReason = "Stop Loss & Profit Target Hit (Conservative Exit)";
                 }
                 else if (hitStop)
                 {
-                    exitPrice = entryPrice * 0.97m;
-                    exitReason = "Stop Loss (-3%)";
+                    exitPrice = stopLossPrice;
+                    exitReason = $"ATR Stop Loss Hit (₹{stopLossPrice:F2})";
                 }
                 else if (hitTarget)
                 {
-                    exitPrice = entryPrice * 1.05m;
-                    exitReason = "Profit Target (+5%)";
+                    exitPrice = targetPrice;
+                    exitReason = $"ATR Profit Target 1 Hit (₹{targetPrice:F2})";
                 }
                 else if (trendExit)
                 {
@@ -527,7 +520,6 @@ public class SwingTradingService : ISwingTradingService
 
                 reason = $"SELL Order triggered on {tradeDate:yyyy-MM-dd}. Reason: {exitReason}. Hold Days: {holdDays}. P&L: {Math.Round((exitPrice - entryPrice) / entryPrice * 100, 2)}%";
 
-                // Update database
                 await conn.ExecuteAsync(@"
                     UPDATE swing_positions 
                     SET is_closed = TRUE, exit_date = @ExitDate, exit_price = @ExitPrice, exit_reason = @ExitReason 
@@ -539,48 +531,27 @@ public class SwingTradingService : ISwingTradingService
             else
             {
                 recommendation = "HOLD";
-                reason = $"HOLD active position. entry={entryPrice}, current={price}, hold_days={holdDays}";
+                reason = $"HOLD active position. entry={entryPrice:F2}, current={price:F2}, stop={stopLossPrice:F2}, target={targetPrice:F2}, hold_days={holdDays}";
             }
         }
         else
         {
-            // Stock is not held, check BUY conditions
-            if (marketFilterPassed && priceTrend && volSpike && rsiZone && adxZone && macdBullish && near52W && isBullishCandle && is60mFilterPassed)
+            if (evalResult.IsBuySignal)
             {
                 buySignal = true;
-                recommendation = "BUY";
-                reason = $"All BUY conditions met: Market Trend Up, Stock Price Trend (EMA20>50>200), Volume Spike (>1.5x), RSI in momentum zone (55-70), ADX > 25, MACD Bullish Cross, Close within 10% of 52W High, Last candle Bullish. 60m Filter passed (Close: {last60mClose:F2} > EMA20: {last60mEma20:F2}, RSI: {last60mRsi:F2}).";
+                recommendation = evalResult.Decision;
+                reason = evalResult.Reason;
 
-                // Calculate next day's open price (simulated)
-                // In actual backtesting, we enter at next day's open. For EOD live signal, we assume we buy tomorrow morning at open.
-                // We record it in swing_positions. In EOD live, we use today's Close as entry price placeholder, which can be updated.
                 await conn.ExecuteAsync(@"
                     INSERT INTO swing_positions (symbol, entry_date, entry_price, quantity, is_closed)
                     VALUES (@Symbol, @EntryDate, @EntryPrice, 100, FALSE)",
                     new { Symbol = stock.Symbol, EntryDate = tradeDate.Date.AddDays(1), EntryPrice = price });
 
-                _logger.LogInformation("BUY Order Generated for {Symbol} at EOD Close price {Price} for next day.", stock.Symbol, price);
-            }
-            else
-            {
-                recommendation = "HOLD";
-                var failedList = new List<string>();
-                if (!marketFilterPassed) failedList.Add("Market Filter");
-                if (!priceTrend) failedList.Add("Price > EMA20 > EMA50 > EMA200");
-                if (!volSpike) failedList.Add("Volume Spike (>1.5x)");
-                if (!rsiZone) failedList.Add("RSI in 55-70");
-                if (!adxZone) failedList.Add("ADX > 25");
-                if (!macdBullish) failedList.Add("MACD Bullish Cross");
-                if (!near52W) failedList.Add("Close within 10% of 52W High");
-                if (!isBullishCandle) failedList.Add("Last candle Bullish");
-                if (!is60mFilterPassed) failedList.Add($"60m Filter (Close: {last60mClose:F2}, EMA20: {last60mEma20:F2}, RSI: {last60mRsi:F2})");
-
-                reason = $"HOLD. Failed factors: {string.Join(", ", failedList)}";
+                _logger.LogInformation("BUY Order ({Decision}, Score {Score}) Generated for {Symbol} at EOD Close price {Price}.", evalResult.Decision, evalResult.Score, stock.Symbol, price);
             }
         }
 
-        // Save EOD Analysis
-        int buyScore = (marketFilterPassed ? 10 : 0) + (priceTrend ? 15 : 0) + (volSpike ? 15 : 0) + (rsiZone ? 15 : 0) + (adxZone ? 15 : 0) + (macdBullish ? 15 : 0) + (near52W ? 15 : 0);
+        int buyScore = evalResult.Score;
         int sellScore = (price < ema20[idx] ? 30 : 0) + (rsi14[idx] < 45m ? 30 : 0) + (macd[idx] < macdSignal[idx] ? 40 : 0);
 
         await conn.ExecuteAsync(@"
@@ -660,41 +631,32 @@ public class SwingTradingService : ISwingTradingService
                 .OrderBy(c => c.CandleTime)
                 .ToList();
 
-            if (niftyCandles.Count < 250)
+            if (niftyCandles.Count < 50)
             {
-                _logger.LogWarning("Insufficient Nifty daily candles for backfill. Expected at least 250, found {Count}.", niftyCandles.Count);
+                _logger.LogWarning("Insufficient Nifty daily candles for backfill. Expected at least 50, found {Count}.", niftyCandles.Count);
                 UpdateJobProgress("backfill", false, 0, "Failed: Insufficient Nifty candles for backfill", "Insufficient Nifty candles");
                 return;
             }
 
-            var niftyCloses = niftyCandles.Select(c => c.Close).ToList();
-            var niftySma50 = IndicatorCalculator.CalculateSma(niftyCloses, 50);
-            var niftyEma20 = IndicatorCalculator.CalculateEma(niftyCloses, 20);
-            var niftyEma50 = IndicatorCalculator.CalculateEma(niftyCloses, 50);
+            int startIndex = Math.Min(250, niftyCandles.Count - 1);
+            int totalDays = niftyCandles.Count - startIndex;
 
-            int totalDays = niftyCandles.Count - 250;
-
-            // We will run daily simulation day-by-day starting from index 250 to current day
-            for (int i = 250; i < niftyCandles.Count; i++)
+            for (int i = startIndex; i < niftyCandles.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested) break;
 
-                int step = i - 250;
+                int step = i - startIndex;
                 int pct = (int)((double)step / Math.Max(1, totalDays) * 90) + 5;
                 DateTime currentDate = niftyCandles[i].CandleTime.Date;
 
                 UpdateJobProgress("backfill", true, pct, $"Re-simulating trading day {step + 1}/{totalDays} ({currentDate:yyyy-MM-dd})...");
 
-                bool niftyAboveSma50 = niftyCloses[i] > niftySma50[i];
-                bool niftyEmaBullish = niftyEma20[i] > niftyEma50[i];
-                bool marketFilterPassed = niftyAboveSma50 && niftyEmaBullish;
+                var niftySub = niftyCandles.Take(i + 1).ToList();
 
                 foreach (var stock in activeStocks)
                 {
                     if (stock.Symbol == "NIFTY 50") continue;
 
-
-                    // Load stock history up to currentDate
                     var stockHistory = (await conn.QueryAsync<MarketCandle>(@"
                         SELECT * FROM market_candles_1d 
                         WHERE symbol = @Symbol AND candle_time <= @CurrentDate
@@ -704,42 +666,8 @@ public class SwingTradingService : ISwingTradingService
                         .OrderBy(c => c.CandleTime)
                         .ToList();
 
-                    if (stockHistory.Count < 250) continue;
+                    if (stockHistory.Count < 50) continue;
 
-                    var closes = stockHistory.Select(c => c.Close).ToList();
-                    var highs = stockHistory.Select(c => c.High).ToList();
-                    var lows = stockHistory.Select(c => c.Low).ToList();
-                    var opens = stockHistory.Select(c => c.Open).ToList();
-                    var volumes = stockHistory.Select(c => c.Volume).ToList();
-
-                    var ema20 = IndicatorCalculator.CalculateEma(closes, 20);
-                    var ema50 = IndicatorCalculator.CalculateEma(closes, 50);
-                    var ema200 = IndicatorCalculator.CalculateEma(closes, 200);
-                    var rsi14 = IndicatorCalculator.CalculateRsi(closes, 14);
-                    var (macd, macdSignal) = IndicatorCalculator.CalculateMacd(closes);
-                    var adx14 = IndicatorCalculator.CalculateAdx(highs, lows, closes, 14);
-                    var atr14 = IndicatorCalculator.CalculateAtr(highs, lows, closes, 14);
-                    var high52W = IndicatorCalculator.Calculate52WeekHigh(highs, 250);
-
-                    int idx = stockHistory.Count - 1;
-                    decimal price = closes[idx];
-                    decimal open = opens[idx];
-                    decimal high = highs[idx];
-                    decimal low = lows[idx];
-                    long vol = volumes[idx];
-
-                    var prev20VolList = volumes.Skip(Math.Max(0, idx - 20)).Take(Math.Min(20, idx)).ToList();
-                    decimal avgVol20 = prev20VolList.Any() ? (decimal)prev20VolList.Average(v => (double)v) : 0m;
-
-                    bool priceTrend = price > ema20[idx] && ema20[idx] > ema50[idx] && ema50[idx] > ema200[idx];
-                    bool volSpike = avgVol20 > 0m && vol >= (long)(avgVol20 * 1.5m);
-                    bool rsiZone = rsi14[idx] >= 55m && rsi14[idx] <= 70m;
-                    bool adxZone = adx14[idx] > 25m;
-                    bool macdBullish = macd[idx] > macdSignal[idx] && macd[idx - 1] <= macdSignal[idx - 1];
-                    bool near52W = price >= 0.90m * high52W[idx];
-                    bool isBullishCandle = price > open;
-
-                    // Fetch 60m stock history up to currentDate 16:00 to prevent look-ahead bias
                     var stockHistory60m = (await conn.QueryAsync<MarketCandle>(@"
                         SELECT * FROM market_candles_60m 
                         WHERE symbol = @Symbol AND candle_time <= @MaxTime
@@ -749,34 +677,39 @@ public class SwingTradingService : ISwingTradingService
                         .OrderBy(c => c.CandleTime)
                         .ToList();
 
-                    bool is60mFilterPassed = false;
-                    decimal last60mClose = 0m;
-                    decimal last60mEma20 = 0m;
-                    decimal last60mRsi = 0m;
+                    var evalResult = SwingDecisionEngine.Evaluate(stock, stockHistory, stockHistory60m, niftySub);
 
-                    if (stockHistory60m.Count >= 20)
-                    {
-                        var closes60m = stockHistory60m.Select(c => c.Close).ToList();
-                        var ema20_60m = IndicatorCalculator.CalculateEma(closes60m, 20);
-                        var rsi_60m = IndicatorCalculator.CalculateRsi(closes60m, 14);
+                    var closes = stockHistory.Select(c => c.Close).ToList();
+                    var highs = stockHistory.Select(c => c.High).ToList();
+                    var lows = stockHistory.Select(c => c.Low).ToList();
+                    var volumes = stockHistory.Select(c => c.Volume).ToList();
 
-                        int idx60m = stockHistory60m.Count - 1;
-                        last60mClose = closes60m[idx60m];
-                        last60mEma20 = ema20_60m[idx60m];
-                        last60mRsi = rsi_60m[idx60m];
+                    var ema20 = IndicatorCalculator.CalculateEma(closes, 20);
+                    var ema50 = IndicatorCalculator.CalculateEma(closes, 50);
+                    var ema200 = IndicatorCalculator.CalculateEma(closes, 200);
+                    var rsi14 = IndicatorCalculator.CalculateRsi(closes, 14);
+                    var (macd, macdSignal) = IndicatorCalculator.CalculateMacd(closes);
+                    var adx14 = IndicatorCalculator.CalculateAdx(highs, lows, closes, 14);
+                    var atr14 = IndicatorCalculator.CalculateAtr(highs, lows, closes, 14);
+                    var high52W = IndicatorCalculator.Calculate52WeekHigh(highs, Math.Min(250, highs.Count));
 
-                        is60mFilterPassed = last60mClose > last60mEma20 && last60mRsi >= 40m && last60mRsi <= 65m;
-                    }
+                    int idx = stockHistory.Count - 1;
+                    decimal price = closes[idx];
+                    decimal high = highs[idx];
+                    decimal low = lows[idx];
+                    long vol = volumes[idx];
 
-                    // Evaluate position
+                    var prev20VolList = volumes.Skip(Math.Max(0, idx - 20)).Take(Math.Min(20, idx)).ToList();
+                    decimal avgVol20 = prev20VolList.Any() ? (decimal)prev20VolList.Average(v => (double)v) : 0m;
+
                     var openPosition = await conn.QueryFirstOrDefaultAsync<dynamic>(@"
                         SELECT * FROM swing_positions WHERE symbol = @Symbol AND is_closed = FALSE LIMIT 1",
                         new { Symbol = stock.Symbol });
 
                     bool buySignal = false;
                     bool sellSignal = false;
-                    string recommendation = "HOLD";
-                    string reason = "";
+                    string recommendation = evalResult.Decision;
+                    string reason = evalResult.Reason;
 
                     if (openPosition != null)
                     {
@@ -786,8 +719,12 @@ public class SwingTradingService : ISwingTradingService
                         int holdDays = stockHistory.Count(c => c.CandleTime.Date >= entryDate.Date && c.CandleTime.Date <= currentDate.Date) - 1;
                         if (holdDays < 0) holdDays = 0;
 
-                        bool hitTarget = high >= entryPrice * 1.05m;
-                        bool hitStop = low <= entryPrice * 0.97m;
+                        decimal curAtr = Math.Max(0.1m, atr14[idx]);
+                        decimal stopLossPrice = Math.Max(0.01m, entryPrice - (1.0m * curAtr));
+                        decimal targetPrice = entryPrice + (2.0m * curAtr);
+
+                        bool hitTarget = high >= targetPrice || high >= entryPrice * 1.05m;
+                        bool hitStop = low <= stopLossPrice || low <= entryPrice * 0.97m;
                         bool trendExit = price < ema20[idx];
                         bool macdBearish = macd[idx] < macdSignal[idx] && macd[idx - 1] >= macdSignal[idx - 1];
                         bool rsiExit = rsi14[idx] < 45m;
@@ -803,18 +740,18 @@ public class SwingTradingService : ISwingTradingService
 
                             if (hitStop && hitTarget)
                             {
-                                exitPrice = entryPrice * 0.97m;
+                                exitPrice = stopLossPrice;
                                 exitReason = "Stop Loss & Profit Target Hit (Conservative)";
                             }
                             else if (hitStop)
                             {
-                                exitPrice = entryPrice * 0.97m;
-                                exitReason = "Stop Loss (-3%)";
+                                exitPrice = stopLossPrice;
+                                exitReason = $"ATR Stop Loss Hit (₹{stopLossPrice:F2})";
                             }
                             else if (hitTarget)
                             {
-                                exitPrice = entryPrice * 1.05m;
-                                exitReason = "Profit Target (+5%)";
+                                exitPrice = targetPrice;
+                                exitReason = $"ATR Profit Target 1 Hit (₹{targetPrice:F2})";
                             }
                             else if (trendExit)
                             {
@@ -848,23 +785,20 @@ public class SwingTradingService : ISwingTradingService
                         else
                         {
                             recommendation = "HOLD";
-                            reason = $"HOLD active position. entry={entryPrice}, current={price}, hold_days={holdDays}";
+                            reason = $"HOLD active position. entry={entryPrice:F2}, current={price:F2}, stop={stopLossPrice:F2}, target={targetPrice:F2}, hold_days={holdDays}";
                         }
                     }
                     else
                     {
-                        if (marketFilterPassed && priceTrend && volSpike && rsiZone && adxZone && macdBullish && near52W && isBullishCandle && is60mFilterPassed)
+                        if (evalResult.IsBuySignal)
                         {
                             buySignal = true;
-                            recommendation = "BUY";
-                            reason = $"All BUY conditions met. 60m Filter passed (Close: {last60mClose:F2} > EMA20: {last60mEma20:F2}, RSI: {last60mRsi:F2}).";
+                            recommendation = evalResult.Decision;
+                            reason = evalResult.Reason;
 
-                            // In backtest, simulate entry on next day's open. For simplicity, we approximate using current close or next day's open
-                            // Let's find next candle open if available, otherwise current close
                             decimal nextOpen = price;
                             DateTime nextDate = currentDate.AddDays(1);
                             
-                            // Query next day candle open
                             var nextCandle = await conn.QueryFirstOrDefaultAsync<dynamic>(@"
                                 SELECT open, candle_time FROM market_candles_1d 
                                 WHERE symbol = @Symbol AND candle_time > @CurrentDate 
@@ -882,25 +816,9 @@ public class SwingTradingService : ISwingTradingService
                                 VALUES (@Symbol, @EntryDate, @EntryPrice, 100, FALSE)",
                                 new { Symbol = stock.Symbol, EntryDate = nextDate.Date, EntryPrice = nextOpen });
                         }
-                        else
-                        {
-                            recommendation = "HOLD";
-                            var failedList = new List<string>();
-                            if (!marketFilterPassed) failedList.Add("Market Filter");
-                            if (!priceTrend) failedList.Add("Price > EMA20 > EMA50 > EMA200");
-                            if (!volSpike) failedList.Add("Volume Spike (>1.5x)");
-                            if (!rsiZone) failedList.Add("RSI in 55-70");
-                            if (!adxZone) failedList.Add("ADX > 25");
-                            if (!macdBullish) failedList.Add("MACD Bullish Cross");
-                            if (!near52W) failedList.Add("Close within 10% of 52W High");
-                            if (!isBullishCandle) failedList.Add("Last candle Bullish");
-                            if (!is60mFilterPassed) failedList.Add($"60m Filter (Close: {last60mClose:F2}, EMA20: {last60mEma20:F2}, RSI: {last60mRsi:F2})");
-
-                            reason = $"HOLD. Failed factors: {string.Join(", ", failedList)}";
-                        }
                     }
 
-                    int buyScore = (marketFilterPassed ? 10 : 0) + (priceTrend ? 15 : 0) + (volSpike ? 15 : 0) + (rsiZone ? 15 : 0) + (adxZone ? 15 : 0) + (macdBullish ? 15 : 0) + (near52W ? 15 : 0);
+                    int buyScore = evalResult.Score;
                     int sellScore = (price < ema20[idx] ? 30 : 0) + (rsi14[idx] < 45m ? 30 : 0) + (macd[idx] < macdSignal[idx] ? 40 : 0);
 
                     await conn.ExecuteAsync(@"

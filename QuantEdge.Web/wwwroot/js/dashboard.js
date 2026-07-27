@@ -822,58 +822,7 @@ function updateSignalUi(data) {
     }
 }
 
-// Global, responsive hover tooltip handler for elements with data-tooltip
-$(document).ready(function () {
-    const tooltip = $('<div id="global-tooltip" class="global-tooltip"></div>').appendTo('body');
-
-    $(document).on('mouseenter', '[data-tooltip]', function (e) {
-        const target = $(this);
-        const text = target.attr('data-tooltip');
-        if (!text) return;
-
-        tooltip.text(text);
-        tooltip.addClass('visible');
-
-        // Position calculations
-        const targetRect = this.getBoundingClientRect();
-        
-        // Temporarily set position to get actual dimensions
-        tooltip.css({ top: '0px', left: '0px' });
-        const tooltipWidth = tooltip.outerWidth();
-        const tooltipHeight = tooltip.outerHeight();
-
-        // Default position: Centered above the hovered element
-        let top = window.scrollY + targetRect.top - tooltipHeight - 8;
-        let left = window.scrollX + targetRect.left + (targetRect.width / 2) - (tooltipWidth / 2);
-
-        // Adjust if overflowing the left side of the window
-        if (left < 10) {
-            left = 10;
-        }
-        // Adjust if overflowing the right side of the window
-        else if (left + tooltipWidth > window.innerWidth - 10) {
-            left = window.innerWidth - tooltipWidth - 10;
-        }
-
-        // Adjust if overflowing the top of the window (display below target instead)
-        if (targetRect.top - tooltipHeight - 8 < 10) {
-            top = window.scrollY + targetRect.bottom + 8;
-        }
-
-        tooltip.css({
-            top: `${top}px`,
-            left: `${left}px`
-        });
-    });
-
-    $(document).on('mouseleave', '[data-tooltip]', function () {
-        tooltip.removeClass('visible');
-    });
-
-    // Hide tooltip on scroll or window resize to prevent floating artifacts
-    $(window).on('scroll resize', function () {
-        tooltip.removeClass('visible');
-    });
+// Chart Line Highlighting on Indicator Tag Hover
 
     // Chart Line Highlighting on Indicator Tag Hover
     $(document).on('mouseenter', '.indicator-tag.ema20', function () {

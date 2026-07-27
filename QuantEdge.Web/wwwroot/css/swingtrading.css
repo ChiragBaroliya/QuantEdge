@@ -304,6 +304,19 @@
     display: inline-block;
     border: 1px solid transparent;
     letter-spacing: 0.5px;
+    cursor: help;
+    transition: all 0.2s ease;
+}
+
+.rec-badge:hover {
+    transform: translateY(-1px) scale(1.03);
+}
+
+.rec-badge.strong-buy {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(52, 211, 153, 0.1));
+    color: #34d399;
+    border-color: rgba(52, 211, 153, 0.5);
+    box-shadow: 0 0 18px rgba(52, 211, 153, 0.3);
 }
 
 .rec-badge.buy {
@@ -325,6 +338,13 @@
     color: #fbbf24;
     border-color: rgba(251, 191, 36, 0.3);
     box-shadow: 0 0 15px rgba(251, 191, 36, 0.15);
+}
+
+.rec-badge.avoid {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(185, 28, 28, 0.1));
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.4);
+    box-shadow: 0 0 15px rgba(248, 113, 113, 0.2);
 }
 
 .pnl-text {

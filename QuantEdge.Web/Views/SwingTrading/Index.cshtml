@@ -812,6 +812,26 @@
             });
         }
 
+        function getDecisionClass(decision) {
+            if (!decision) return "neutral";
+            const dUpper = decision.toUpperCase();
+            if (dUpper.includes("STRONG BUY")) return "strong-buy";
+            if (dUpper.includes("BUY")) return "buy";
+            if (dUpper.includes("SELL")) return "sell";
+            if (dUpper.includes("AVOID")) return "avoid";
+            return "hold";
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
         function renderStockTable(signals) {
             const tbody = $("#watchlistTableBody");
             tbody.empty();
@@ -822,7 +842,8 @@
             }
 
             signals.forEach((s, index) => {
-                const decClass = s.decision ? s.decision.toLowerCase() : "neutral";
+                const decClass = getDecisionClass(s.decision);
+                const reasonTitle = escapeHtml(s.reason || "Decision based on technical analysis rules.");
                 const meetsEma = s.ema20 > s.ema50 && s.ema50 > s.ema200;
                 
                 let volClass = s.volumeMultiplier >= 1.5 ? "positive" : "";
@@ -866,7 +887,9 @@
                         <td class="td-symbol">${s.symbol}</td>
                         <td class="td-monospace">${Number(s.close).toFixed(2)}</td>
                         <td>
-                            <span class="rec-badge ${decClass}" title="${s.reason || ''}">${s.decision}</span>
+                            <span class="rec-badge ${decClass}" title="${reasonTitle}" style="cursor: help;" data-bs-toggle="tooltip">
+                                ${s.decision}
+                            </span>
                         </td>
                         <td>
                             <div class="cond-pill-container" onclick="toggleChecklist('${s.symbol}')" title="Click to view detailed condition checklist">
@@ -934,7 +957,8 @@
             }
 
             signals.forEach(s => {
-                const decClass = s.decision ? s.decision.toLowerCase() : "neutral";
+                const decClass = getDecisionClass(s.decision);
+                const reasonTitle = escapeHtml(s.reason || "Decision based on technical analysis rules.");
                 const checklist = s.checklist || { metCount: 0, totalCount: 8, conditions: [] };
                 const metCount = checklist.metCount;
                 const totalCount = checklist.totalCount || 8;
@@ -962,7 +986,7 @@
                                 <span class="stock-card-symbol">${s.symbol}</span>
                                 <span class="stock-card-price">₹${Number(s.close).toFixed(2)}</span>
                             </div>
-                            <span class="rec-badge ${decClass}">${s.decision}</span>
+                            <span class="rec-badge ${decClass}" title="${reasonTitle}" style="cursor: help;" data-bs-toggle="tooltip">${s.decision}</span>
                         </div>
 
                         <div class="stock-card-progress">
