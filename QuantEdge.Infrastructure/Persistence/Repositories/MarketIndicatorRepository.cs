@@ -110,17 +110,19 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
 
         using var connection = _connectionFactory.CreateConnection();
 
+        string upperSymbol = symbol.ToUpper();
+
         try
         {
             if (beforeTime.HasValue)
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE UPPER(symbol) = UPPER(@Symbol) AND candle_time < @BeforeTime ORDER BY candle_time DESC LIMIT @Limit;";
-                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = symbol, BeforeTime = beforeTime.Value, Limit = limit });
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol AND candle_time < @BeforeTime ORDER BY candle_time DESC LIMIT @Limit;";
+                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = upperSymbol, BeforeTime = beforeTime.Value, Limit = limit });
             }
             else
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE UPPER(symbol) = UPPER(@Symbol) ORDER BY candle_time DESC LIMIT @Limit;";
-                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = symbol, Limit = limit });
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol ORDER BY candle_time DESC LIMIT @Limit;";
+                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = upperSymbol, Limit = limit });
             }
         }
         finally

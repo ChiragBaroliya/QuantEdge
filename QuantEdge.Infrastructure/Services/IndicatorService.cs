@@ -17,15 +17,18 @@ public class IndicatorService : IIndicatorService
 {
     private readonly IMarketCandleRepository _candleRepository;
     private readonly IMarketIndicatorRepository _indicatorRepository;
+    private readonly IMarketDataCacheService _cacheService;
     private readonly ILogger<IndicatorService> _logger;
 
     public IndicatorService(
         IMarketCandleRepository candleRepository,
         IMarketIndicatorRepository indicatorRepository,
+        IMarketDataCacheService cacheService,
         ILogger<IndicatorService> logger)
     {
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _indicatorRepository = indicatorRepository ?? throw new ArgumentNullException(nameof(indicatorRepository));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -36,10 +39,8 @@ public class IndicatorService : IIndicatorService
 
         try
         {
-            // Fetch the last 200 candles ordered by time DESC, then reverse to ASC for indicator loops
-            var recentCandles = (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: 200))
-                .OrderBy(c => c.CandleTime)
-                .ToList();
+            // Fetch recent candles from In-Memory Cache (< 1ms microsecond lookup) with DB fallback
+            var recentCandles = await _cacheService.GetRecentCandlesAsync(symbol, timeframe, limit: 200);
 
             if (recentCandles.Count == 0)
             {
@@ -80,6 +81,9 @@ public class IndicatorService : IIndicatorService
                 CandleTime = latestCandle.CandleTime.ToUniversalTime(),
                 CreatedAt = DateTime.UtcNow
             };
+
+            // Update RAM Cache instantly (< 1ms)
+            _cacheService.AddOrUpdateIndicator(indicator);
 
             await _indicatorRepository.InsertAsync(indicator);
             _logger.LogInformation("Successfully persisted latest indicators for {Symbol} ({Timeframe}) at {Time}.", symbol, timeframe, latestCandle.CandleTime);

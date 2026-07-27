@@ -30,6 +30,7 @@ public class MarketDataProcessor : IMarketDataProcessor
     private readonly IIndicatorService _indicatorService;
     private readonly ISignalEngineService _signalEngine;
     private readonly IMarketHoursService _marketHoursService;
+    private readonly IMarketDataCacheService? _cacheService;
     private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly BrokerConfig _config;
     private readonly ILogger<MarketDataProcessor> _logger;
@@ -49,7 +50,8 @@ public class MarketDataProcessor : IMarketDataProcessor
         IMarketHoursService marketHoursService,
         IOptions<BrokerConfig> config,
         ILogger<MarketDataProcessor> logger,
-        IHubContext<MarketDataHub>? hubContext = null)
+        IHubContext<MarketDataHub>? hubContext = null,
+        IMarketDataCacheService? cacheService = null)
     {
         _webSocketService = webSocketService ?? throw new ArgumentNullException(nameof(webSocketService));
         _candleBuilder = candleBuilder ?? throw new ArgumentNullException(nameof(candleBuilder));
@@ -62,6 +64,7 @@ public class MarketDataProcessor : IMarketDataProcessor
         _hubContext = hubContext;
         _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cacheService = cacheService;
     }
 
     /// <summary>
@@ -201,6 +204,9 @@ public class MarketDataProcessor : IMarketDataProcessor
                 CreatedAt = DateTime.UtcNow
             };
 
+            // Update In-Memory RAM Cache instantly (< 1ms)
+            _cacheService?.AddOrUpdateCandle(marketCandle);
+
             await _candleRepository.InsertAsync(marketCandle);
             _logger.LogInformation("Successfully saved closed candle to PostgreSQL for {Symbol} ({Timeframe})", candleDto.Symbol, timeframeStr);
 
@@ -210,8 +216,10 @@ public class MarketDataProcessor : IMarketDataProcessor
             // 2. Evaluate signals based on newly updated indicators
             var signal = await _signalEngine.EvaluateSignalAsync(candleDto.Symbol, timeframeStr, CancellationToken.None);
 
-            // 3. Load latest indicators for the closed candle
-            var indicators = (await _indicatorRepository.GetHistoryAsync(candleDto.Symbol, timeframeStr, limit: 1)).FirstOrDefault();
+            // 3. Load latest indicators for the closed candle from RAM Cache (< 1ms)
+            var indicators = _cacheService != null
+                ? await _cacheService.GetLatestIndicatorAsync(candleDto.Symbol, timeframeStr)
+                : (await _indicatorRepository.GetHistoryAsync(candleDto.Symbol, timeframeStr, limit: 1)).FirstOrDefault();
 
             // 4. Broadcast the completed candle + indicators + signals to clients
             string groupName = $"{candleDto.Symbol.ToUpper().Trim()}_{timeframeStr.ToLower().Trim()}";

@@ -22,6 +22,7 @@ public class SignalEngineService : ISignalEngineService
     private readonly ITradingSignalRepository _tradingSignalRepository;
     private readonly SignalScoreCalculator _scoreCalculator;
     private readonly IIndicatorService _indicatorService;
+    private readonly IMarketDataCacheService? _cacheService;
     private readonly ILogger<SignalEngineService> _logger;
 
     public SignalEngineService(
@@ -30,7 +31,8 @@ public class SignalEngineService : ISignalEngineService
         ITradingSignalRepository tradingSignalRepository,
         SignalScoreCalculator scoreCalculator,
         IIndicatorService indicatorService,
-        ILogger<SignalEngineService> logger)
+        ILogger<SignalEngineService> logger,
+        IMarketDataCacheService? cacheService = null)
     {
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _indicatorRepository = indicatorRepository ?? throw new ArgumentNullException(nameof(indicatorRepository));
@@ -38,14 +40,18 @@ public class SignalEngineService : ISignalEngineService
         _scoreCalculator = scoreCalculator ?? throw new ArgumentNullException(nameof(scoreCalculator));
         _indicatorService = indicatorService ?? throw new ArgumentNullException(nameof(indicatorService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cacheService = cacheService;
     }
 
     public async Task<SignalEvaluationResult> EvaluateSignalAsync(string symbol, string timeframe, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Initiating signal evaluation engine for {Symbol} ({Timeframe})...", symbol, timeframe);
 
-        // 1. Fetch latest candles to calculate volume spikes and get current price
-        var candlesList = (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: 21)).ToList();
+        // 1. Fetch latest candles to calculate volume spikes and get current price (from RAM Cache < 1ms)
+        var candlesList = _cacheService != null 
+            ? (await _cacheService.GetRecentCandlesAsync(symbol, timeframe, limit: 21)).OrderByDescending(c => c.CandleTime).ToList()
+            : (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: 21)).ToList();
+
         if (candlesList.Count < 2)
         {
             _logger.LogWarning("Insufficient candle data to evaluate symbol {Symbol}. Minimum required: 2 candles.", symbol);
@@ -64,8 +70,10 @@ public class SignalEngineService : ISignalEngineService
         var previousCandles = candlesList.Skip(1).Take(20).ToList();
         double avgVolume20 = previousCandles.Any() ? previousCandles.Average(c => (double)c.Volume) : 0;
 
-        // 2. Fetch latest indicators to calculate crossovers and load current values
-        var indicatorsList = (await _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit: 2)).ToList();
+        // 2. Fetch latest indicators to calculate crossovers and load current values (from RAM Cache < 1ms)
+        var indicatorsList = _cacheService != null
+            ? (await _cacheService.GetRecentIndicatorsAsync(symbol, timeframe, limit: 2)).OrderByDescending(i => i.CandleTime).ToList()
+            : (await _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit: 2)).ToList();
         if (indicatorsList.Count < 2)
         {
             _logger.LogWarning("Insufficient indicator data to evaluate symbol {Symbol}. Minimum required: 2 indicator records. Attempting self-healing backfill...", symbol);

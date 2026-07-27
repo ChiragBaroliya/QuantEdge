@@ -61,6 +61,7 @@ public static class ServiceCollectionExtensions
         // Register caching infrastructure
         services.AddMemoryCache();
         services.AddSingleton<ICacheService, MemoryCacheService>();
+        services.AddSingleton<IMarketDataCacheService, MarketDataCacheService>();
 
 
         // Register new WebSocket integration infrastructure

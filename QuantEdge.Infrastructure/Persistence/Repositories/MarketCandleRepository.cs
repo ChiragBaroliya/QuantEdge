@@ -108,17 +108,19 @@ public class MarketCandleRepository : IMarketCandleRepository
 
         using var connection = _connectionFactory.CreateConnection();
 
+        string upperSymbol = symbol.ToUpper();
+
         try
         {
             if (beforeTime.HasValue)
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, open, high, low, close, volume, created_at AS CreatedAt FROM {tableName} WHERE UPPER(symbol) = UPPER(@Symbol) AND candle_time < @BeforeTime ORDER BY candle_time DESC LIMIT @Limit;";
-                return await connection.QueryAsync<MarketCandle>(sql, new { Symbol = symbol, BeforeTime = beforeTime.Value, Limit = limit });
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, open, high, low, close, volume, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol AND candle_time < @BeforeTime ORDER BY candle_time DESC LIMIT @Limit;";
+                return await connection.QueryAsync<MarketCandle>(sql, new { Symbol = upperSymbol, BeforeTime = beforeTime.Value, Limit = limit });
             }
             else
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, open, high, low, close, volume, created_at AS CreatedAt FROM {tableName} WHERE UPPER(symbol) = UPPER(@Symbol) ORDER BY candle_time DESC LIMIT @Limit;";
-                return await connection.QueryAsync<MarketCandle>(sql, new { Symbol = symbol, Limit = limit });
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, open, high, low, close, volume, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol ORDER BY candle_time DESC LIMIT @Limit;";
+                return await connection.QueryAsync<MarketCandle>(sql, new { Symbol = upperSymbol, Limit = limit });
             }
         }
         finally

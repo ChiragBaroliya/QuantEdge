@@ -11,8 +11,9 @@ using QuantEdge.Infrastructure.Persistence.Repositories;
 namespace QuantEdge.Infrastructure.Services;
 
 /// <summary>
-/// Thread-safe service validating Indian stock market hours, caching holidays from the database
-/// with a 5-minute timeout and support for immediate programmatic refresh.
+/// Thread-safe service validating Indian stock market hours.
+/// Caches daily trading day status (weekend + holiday check) once per day in memory,
+/// eliminating repeated database queries and complex timezone calculations on every tick.
 /// </summary>
 public class MarketHoursService : IMarketHoursService
 {
@@ -20,8 +21,15 @@ public class MarketHoursService : IMarketHoursService
     private readonly ILogger<MarketHoursService> _logger;
     private readonly TimeZoneInfo _indianTimeZone;
 
+    private static readonly TimeSpan MarketOpenTime = new(9, 0, 0);   // 09:00 AM IST
+    private static readonly TimeSpan MarketCloseTime = new(15, 30, 0); // 03:30 PM IST
+
     private HashSet<DateOnly> _holidays = new();
-    private DateTime _lastCacheUpdate = DateTime.MinValue;
+    private DateTime _lastHolidaysDbFetch = DateTime.MinValue;
+
+    private DateOnly? _cachedDate;
+    private bool _isTodayTradingDay;
+
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
 
     public MarketHoursService(IServiceScopeFactory scopeFactory, ILogger<MarketHoursService> logger)
@@ -40,53 +48,80 @@ public class MarketHoursService : IMarketHoursService
         }
     }
 
+    /// <inheritdoc />
     public async Task<bool> IsWithinMarketHoursAsync(DateTime? time = null)
     {
-        // Check cache staleness (refresh every 5 minutes if needed)
-        if (DateTime.UtcNow - _lastCacheUpdate > TimeSpan.FromMinutes(5))
-        {
-            await RefreshHolidaysCacheAsync();
-        }
-
         var utcTime = time ?? DateTime.UtcNow;
         var istTime = TimeZoneInfo.ConvertTimeFromUtc(utcTime, _indianTimeZone);
-
-        // Stock market is closed on weekends
-        if (istTime.DayOfWeek == DayOfWeek.Saturday || istTime.DayOfWeek == DayOfWeek.Sunday)
-        {
-            return false;
-        }
-
-        // Check if the current date is a configured market holiday
         var dateOnly = DateOnly.FromDateTime(istTime);
-        if (_holidays.Contains(dateOnly))
+
+        // Evaluate daily trading day status (weekend + holiday check) ONLY once per calendar day
+        if (_cachedDate != dateOnly)
+        {
+            await EnsureDailyCacheInitializedAsync(dateOnly);
+        }
+
+        // If today is not a trading day (weekend or holiday), return false immediately (< 0.001 ms)
+        if (!_isTodayTradingDay)
         {
             return false;
         }
 
-        // Indian Stock Market Timings:
-        // Pre-Open Session: 09:00 AM - 09:15 AM
-        // Trading Session: 09:15 AM - 03:30 PM
+        // Check if current IST time of day falls within 09:00 AM to 03:30 PM IST
         var timeOfDay = istTime.TimeOfDay;
-        var startTime = new TimeSpan(9, 0, 0);   // 09:00 AM IST
-        var endTime = new TimeSpan(15, 30, 0);  // 03:30 PM IST
-
-        return timeOfDay >= startTime && timeOfDay < endTime;
+        return timeOfDay >= MarketOpenTime && timeOfDay < MarketCloseTime;
     }
 
+    /// <inheritdoc />
     public async Task RefreshHolidaysCacheAsync()
     {
-        // Avoid stampeding database requests if multiple threads trigger staleness check simultaneously
         await _cacheLock.WaitAsync();
         try
         {
-            // Double-check staleness under lock
-            if (DateTime.UtcNow - _lastCacheUpdate < TimeSpan.FromSeconds(10))
+            await FetchHolidaysFromDbAsync();
+            _cachedDate = null; // Invalidate daily cache so next check re-evaluates
+            _logger.LogInformation("MarketHoursService: Successfully refreshed holidays cache and invalidated daily status.");
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
+    }
+
+    private async Task EnsureDailyCacheInitializedAsync(DateOnly targetDate)
+    {
+        await _cacheLock.WaitAsync();
+        try
+        {
+            if (_cachedDate == targetDate) return;
+
+            // Fetch DB holidays if cache is older than 24 hours or empty
+            if (DateTime.UtcNow - _lastHolidaysDbFetch > TimeSpan.FromHours(24) || _holidays.Count == 0)
             {
-                return;
+                await FetchHolidaysFromDbAsync();
             }
 
-            _logger.LogInformation("Refreshing Indian holidays cache from database...");
+            DayOfWeek dayOfWeek = targetDate.DayOfWeek;
+            bool isWeekend = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;
+            bool isHoliday = _holidays.Contains(targetDate);
+
+            _isTodayTradingDay = !isWeekend && !isHoliday;
+            _cachedDate = targetDate;
+
+            _logger.LogInformation("MarketHoursService: Initialized daily status for {Date} ({DayOfWeek}). IsTradingDay: {IsTradingDay} (Weekend: {IsWeekend}, Holiday: {IsHoliday})",
+                targetDate, dayOfWeek, _isTodayTradingDay, isWeekend, isHoliday);
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
+    }
+
+    private async Task FetchHolidaysFromDbAsync()
+    {
+        try
+        {
+            _logger.LogInformation("MarketHoursService: Fetching Indian holidays from database...");
             using var scope = _scopeFactory.CreateScope();
             var repository = scope.ServiceProvider.GetRequiredService<IIndianHolidayRepository>();
             var holidaysList = await repository.GetAllHolidaysAsync();
@@ -95,16 +130,12 @@ public class MarketHoursService : IMarketHoursService
                 .Select(h => DateOnly.FromDateTime(h.HolidayDate))
                 .ToHashSet();
 
-            _lastCacheUpdate = DateTime.UtcNow;
-            _logger.LogInformation("Successfully loaded {Count} holidays into memory cache.", _holidays.Count);
+            _lastHolidaysDbFetch = DateTime.UtcNow;
+            _logger.LogInformation("MarketHoursService: Successfully loaded {Count} holidays from DB.", _holidays.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to refresh Indian holidays cache.");
-        }
-        finally
-        {
-            _cacheLock.Release();
+            _logger.LogError(ex, "MarketHoursService: Failed to fetch Indian holidays from database.");
         }
     }
 }

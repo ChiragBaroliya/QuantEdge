@@ -1,0 +1,245 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.Interfaces;
+using QuantEdge.Infrastructure.Persistence.Repositories;
+
+namespace QuantEdge.Infrastructure.Services;
+
+/// <summary>
+/// Singleton in-memory market data cache service supporting ultra-fast (< 1ms) candle lookup.
+/// Maintains fixed-capacity lists matching Indian Market trading hours (9:00 AM - 3:30 PM).
+/// </summary>
+public class MarketDataCacheService : IMarketDataCacheService
+{
+    private readonly ConcurrentDictionary<string, List<MarketCandle>> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, List<MarketIndicator>> _indicatorCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, object> _locks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IMarketCandleRepository _candleRepository;
+    private readonly IMarketIndicatorRepository _indicatorRepository;
+    private readonly ILogger<MarketDataCacheService> _logger;
+
+    public MarketDataCacheService(
+        IMarketCandleRepository candleRepository,
+        IMarketIndicatorRepository indicatorRepository,
+        ILogger<MarketDataCacheService> logger)
+    {
+        _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
+        _indicatorRepository = indicatorRepository ?? throw new ArgumentNullException(nameof(indicatorRepository));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    private static int GetMaxCapacityForTimeframe(string timeframe)
+    {
+        return timeframe.ToLower() switch
+        {
+            "1m" => 400,  // Full trading day 375 candles + pre-market & buffer
+            "5m" => 80,   // Full trading day 75 candles + buffer
+            "15m" => 30,  // Full trading day 25 candles + buffer
+            "60m" => 10,  // Full trading day 7 candles + buffer
+            "1d" => 365,  // 1 year daily history
+            _ => 200
+        };
+    }
+
+    private static string GetCacheKey(string symbol, string timeframe) => $"{symbol.Trim().ToUpper()}_{timeframe.Trim().ToLower()}";
+
+    /// <inheritdoc />
+    public async Task<List<MarketCandle>> GetRecentCandlesAsync(string symbol, string timeframe, int limit = 200)
+    {
+        string key = GetCacheKey(symbol, timeframe);
+
+        if (_cache.TryGetValue(key, out var cachedCandles))
+        {
+            lock (GetLockObject(key))
+            {
+                return cachedCandles.TakeLast(limit).ToList();
+            }
+        }
+
+        // Cache miss: Warmup from Database
+        var lockObj = GetLockObject(key);
+        lock (lockObj)
+        {
+            if (_cache.TryGetValue(key, out cachedCandles))
+            {
+                return cachedCandles.TakeLast(limit).ToList();
+            }
+        }
+
+        int maxCap = GetMaxCapacityForTimeframe(timeframe);
+        int fetchLimit = Math.Max(limit, maxCap);
+
+        _logger.LogDebug("Cache miss for {Key}. Fetching top {Limit} candles from DB...", key, fetchLimit);
+        var dbHistory = (await _candleRepository.GetHistoryAsync(symbol, timeframe, fetchLimit))
+            .OrderBy(c => c.CandleTime)
+            .ToList();
+
+        lock (lockObj)
+        {
+            _cache[key] = dbHistory;
+            return dbHistory.TakeLast(limit).ToList();
+        }
+    }
+
+    /// <inheritdoc />
+    public void AddOrUpdateCandle(MarketCandle candle)
+    {
+        if (candle == null || string.IsNullOrWhiteSpace(candle.Symbol) || string.IsNullOrWhiteSpace(candle.Timeframe))
+            return;
+
+        string key = GetCacheKey(candle.Symbol, candle.Timeframe);
+        int maxCap = GetMaxCapacityForTimeframe(candle.Timeframe);
+        var lockObj = GetLockObject(key);
+
+        lock (lockObj)
+        {
+            if (!_cache.TryGetValue(key, out var list))
+            {
+                list = new List<MarketCandle>();
+                _cache[key] = list;
+            }
+
+            int existingIndex = list.FindIndex(c => c.CandleTime == candle.CandleTime);
+            if (existingIndex >= 0)
+            {
+                list[existingIndex] = candle; // Update existing candle bar
+            }
+            else
+            {
+                list.Add(candle); // Append new candle
+                list.Sort((a, b) => a.CandleTime.CompareTo(b.CandleTime));
+
+                if (list.Count > maxCap)
+                {
+                    list.RemoveAt(0); // Evict oldest candle
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public void AddOrUpdateCandleBatch(IEnumerable<MarketCandle> candles)
+    {
+        if (candles == null) return;
+        foreach (var candle in candles)
+        {
+            AddOrUpdateCandle(candle);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<List<MarketIndicator>> GetRecentIndicatorsAsync(string symbol, string timeframe, int limit = 1)
+    {
+        string key = GetCacheKey(symbol, timeframe);
+
+        if (_indicatorCache.TryGetValue(key, out var cachedIndicators))
+        {
+            lock (GetLockObject(key))
+            {
+                return cachedIndicators.TakeLast(limit).ToList();
+            }
+        }
+
+        // Cache miss: Warmup from Database
+        var lockObj = GetLockObject(key);
+        lock (lockObj)
+        {
+            if (_indicatorCache.TryGetValue(key, out cachedIndicators))
+            {
+                return cachedIndicators.TakeLast(limit).ToList();
+            }
+        }
+
+        int maxCap = GetMaxCapacityForTimeframe(timeframe);
+        int fetchLimit = Math.Max(limit, maxCap);
+
+        _logger.LogDebug("Indicator cache miss for {Key}. Fetching top {Limit} indicators from DB...", key, fetchLimit);
+        var dbHistory = (await _indicatorRepository.GetHistoryAsync(symbol, timeframe, fetchLimit))
+            .OrderBy(i => i.CandleTime)
+            .ToList();
+
+        lock (lockObj)
+        {
+            _indicatorCache[key] = dbHistory;
+            return dbHistory.TakeLast(limit).ToList();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<MarketIndicator?> GetLatestIndicatorAsync(string symbol, string timeframe)
+    {
+        var list = await GetRecentIndicatorsAsync(symbol, timeframe, limit: 1);
+        return list.Count > 0 ? list[^1] : null;
+    }
+
+    /// <inheritdoc />
+    public void AddOrUpdateIndicator(MarketIndicator indicator)
+    {
+        if (indicator == null || string.IsNullOrWhiteSpace(indicator.Symbol) || string.IsNullOrWhiteSpace(indicator.Timeframe))
+            return;
+
+        string key = GetCacheKey(indicator.Symbol, indicator.Timeframe);
+        int maxCap = GetMaxCapacityForTimeframe(indicator.Timeframe);
+        var lockObj = GetLockObject(key);
+
+        lock (lockObj)
+        {
+            if (!_indicatorCache.TryGetValue(key, out var list))
+            {
+                list = new List<MarketIndicator>();
+                _indicatorCache[key] = list;
+            }
+
+            int existingIndex = list.FindIndex(i => i.CandleTime == indicator.CandleTime);
+            if (existingIndex >= 0)
+            {
+                list[existingIndex] = indicator;
+            }
+            else
+            {
+                list.Add(indicator);
+                list.Sort((a, b) => a.CandleTime.CompareTo(b.CandleTime));
+
+                if (list.Count > maxCap)
+                {
+                    list.RemoveAt(0);
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public void ClearCache(string? symbol = null, string? timeframe = null)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            _cache.Clear();
+            _locks.Clear();
+            _logger.LogInformation("MarketDataCache cleared completely.");
+        }
+        else if (!string.IsNullOrWhiteSpace(timeframe))
+        {
+            string key = GetCacheKey(symbol, timeframe);
+            _cache.TryRemove(key, out _);
+        }
+        else
+        {
+            string prefix = $"{symbol.Trim().ToUpper()}_";
+            var keysToRemove = _cache.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+            foreach (var k in keysToRemove)
+            {
+                _cache.TryRemove(k, out _);
+            }
+        }
+    }
+
+    private object GetLockObject(string key)
+    {
+        return _locks.GetOrAdd(key, _ => new object());
+    }
+}

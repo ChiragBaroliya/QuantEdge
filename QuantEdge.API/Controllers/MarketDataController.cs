@@ -22,6 +22,7 @@ public class MarketDataController : ControllerBase
     private readonly IInstrumentSyncService _instrumentSyncService;
     private readonly IHistoricalDataService _historicalDataService;
     private readonly ILogger<MarketDataController> _logger;
+    private readonly IMarketDataCacheService? _cacheService;
     private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _scopeFactory;
     private readonly Microsoft.AspNetCore.SignalR.IHubContext<QuantEdge.Infrastructure.Hubs.MarketDataHub> _hubContext;
 
@@ -34,7 +35,8 @@ public class MarketDataController : ControllerBase
         IHistoricalDataService historicalDataService,
         ILogger<MarketDataController> logger,
         Microsoft.Extensions.DependencyInjection.IServiceScopeFactory scopeFactory,
-        Microsoft.AspNetCore.SignalR.IHubContext<QuantEdge.Infrastructure.Hubs.MarketDataHub> hubContext)
+        Microsoft.AspNetCore.SignalR.IHubContext<QuantEdge.Infrastructure.Hubs.MarketDataHub> hubContext,
+        IMarketDataCacheService? cacheService = null)
     {
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
@@ -45,6 +47,7 @@ public class MarketDataController : ControllerBase
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
+        _cacheService = cacheService;
     }
 
     /// <summary>
@@ -138,16 +141,36 @@ public class MarketDataController : ControllerBase
                 ? DateTimeOffset.FromUnixTimeMilliseconds(before.Value).UtcDateTime 
                 : null;
 
-            // Fetch candles and indicators from DB (ordered by candle_time DESC in repos)
-            var candlesTask = _candleRepository.GetHistoryAsync(symbol, timeframe, limit, beforeDateTime);
-            var indicatorsTask = _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit, beforeDateTime);
-            var signalsTask = _tradingSignalRepository.GetRecentSignalsAsync(limit);
+            IEnumerable<QuantEdge.Domain.Entities.MarketCandle> rawCandles;
+            IEnumerable<QuantEdge.Domain.Entities.MarketIndicator> rawIndicators;
+            IEnumerable<QuantEdge.Domain.Entities.TradingSignal> rawSignals;
 
-            await Task.WhenAll(candlesTask, indicatorsTask, signalsTask);
+            if (!beforeDateTime.HasValue && _cacheService != null)
+            {
+                // Serve active chart dataset directly from In-Memory RAM Cache (< 1ms microsecond speed)
+                var candlesTask = _cacheService.GetRecentCandlesAsync(symbol, timeframe, limit);
+                var indicatorsTask = _cacheService.GetRecentIndicatorsAsync(symbol, timeframe, limit);
+                var signalsTask = _tradingSignalRepository.GetRecentSignalsAsync(limit);
 
-            var rawCandles = candlesTask.Result;
-            var rawIndicators = indicatorsTask.Result;
-            var rawSignals = signalsTask.Result;
+                await Task.WhenAll(candlesTask, indicatorsTask, signalsTask);
+
+                rawCandles = candlesTask.Result;
+                rawIndicators = indicatorsTask.Result;
+                rawSignals = signalsTask.Result;
+            }
+            else
+            {
+                // Fallback to PostgreSQL for deep historical pagination
+                var candlesTask = _candleRepository.GetHistoryAsync(symbol, timeframe, limit, beforeDateTime);
+                var indicatorsTask = _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit, beforeDateTime);
+                var signalsTask = _tradingSignalRepository.GetRecentSignalsAsync(limit);
+
+                await Task.WhenAll(candlesTask, indicatorsTask, signalsTask);
+
+                rawCandles = candlesTask.Result;
+                rawIndicators = indicatorsTask.Result;
+                rawSignals = signalsTask.Result;
+            }
 
             // Deduplicate and order candles chronologically (oldest first for Lightweight Charts)
             var candles = rawCandles
