@@ -44,4 +44,9 @@ public interface IMarketDataCacheService
     /// Clears the in-memory cache for a specific symbol or all symbols.
     /// </summary>
     void ClearCache(string? symbol = null, string? timeframe = null);
+
+    /// <summary>
+    /// Returns real-time process memory metrics and in-memory cache statistics.
+    /// </summary>
+    QuantEdge.Infrastructure.DTOs.CacheMemoryMetricsDto GetMemoryMetrics();
 }

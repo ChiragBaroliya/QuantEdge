@@ -381,4 +381,41 @@ public class MarketDataController : ControllerBase
     {
         return ResetHistoryRange(timeframe, fromDate, toDate, symbol);
     }
+
+    /// <summary>
+    /// Gets real-time memory usage statistics and Market Data Cache metrics.
+    /// </summary>
+    [HttpGet("memory-stats")]
+    public IActionResult GetMemoryStats()
+    {
+        try
+        {
+            if (_cacheService != null)
+            {
+                var stats = _cacheService.GetMemoryMetrics();
+                return Ok(stats);
+            }
+
+            long workingSetBytes = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64;
+            long gcHeapBytes = GC.GetTotalMemory(false);
+
+            return Ok(new QuantEdge.Infrastructure.DTOs.CacheMemoryMetricsDto
+            {
+                ProcessWorkingSetMB = Math.Round(workingSetBytes / (1024.0 * 1024.0), 2),
+                GcTotalMemoryMB = Math.Round(gcHeapBytes / (1024.0 * 1024.0), 2),
+                Gen0Collections = GC.CollectionCount(0),
+                Gen1Collections = GC.CollectionCount(1),
+                Gen2Collections = GC.CollectionCount(2),
+                TotalCachedSymbols = 0,
+                TotalCachedCandles = 0,
+                TotalCachedIndicators = 0,
+                EstimatedCacheMemoryMB = 0
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve memory usage statistics.");
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
 }

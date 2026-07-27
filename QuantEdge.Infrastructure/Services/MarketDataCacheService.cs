@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 
@@ -236,6 +238,75 @@ public class MarketDataCacheService : IMarketDataCacheService
                 _cache.TryRemove(k, out _);
             }
         }
+    }
+
+    /// <inheritdoc />
+    public CacheMemoryMetricsDto GetMemoryMetrics()
+    {
+        long workingSetBytes = Process.GetCurrentProcess().WorkingSet64;
+        long gcHeapBytes = GC.GetTotalMemory(false);
+
+        int totalCandles = 0;
+        var timeframeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["1m"] = 0,
+            ["5m"] = 0,
+            ["15m"] = 0,
+            ["60m"] = 0,
+            ["1d"] = 0
+        };
+
+        var symbolsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var kvp in _cache)
+        {
+            var parts = kvp.Key.Split('_');
+            if (parts.Length == 2)
+            {
+                symbolsSet.Add(parts[0]);
+                string tf = parts[1].ToLower();
+                int count = kvp.Value.Count;
+                totalCandles += count;
+
+                if (timeframeCounts.ContainsKey(tf))
+                {
+                    timeframeCounts[tf] += count;
+                }
+                else
+                {
+                    timeframeCounts[tf] = count;
+                }
+            }
+        }
+
+        int totalIndicators = 0;
+        foreach (var kvp in _indicatorCache)
+        {
+            var parts = kvp.Key.Split('_');
+            if (parts.Length == 2)
+            {
+                symbolsSet.Add(parts[0]);
+                totalIndicators += kvp.Value.Count;
+            }
+        }
+
+        // Estimate RAM size: MarketCandle ~200 Bytes, MarketIndicator ~150 Bytes
+        double estimatedBytes = (totalCandles * 200.0) + (totalIndicators * 150.0);
+        double estimatedCacheMB = Math.Round(estimatedBytes / (1024.0 * 1024.0), 3);
+
+        return new CacheMemoryMetricsDto
+        {
+            ProcessWorkingSetMB = Math.Round(workingSetBytes / (1024.0 * 1024.0), 2),
+            GcTotalMemoryMB = Math.Round(gcHeapBytes / (1024.0 * 1024.0), 2),
+            Gen0Collections = GC.CollectionCount(0),
+            Gen1Collections = GC.CollectionCount(1),
+            Gen2Collections = GC.CollectionCount(2),
+            TotalCachedSymbols = symbolsSet.Count,
+            TotalCachedCandles = totalCandles,
+            TotalCachedIndicators = totalIndicators,
+            EstimatedCacheMemoryMB = estimatedCacheMB,
+            TimeframeCandleCounts = timeframeCounts
+        };
     }
 
     private object GetLockObject(string key)

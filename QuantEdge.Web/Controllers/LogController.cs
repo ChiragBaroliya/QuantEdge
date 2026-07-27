@@ -47,6 +47,16 @@ public class LogController : Controller
     }
 
     /// <summary>
+    /// Serves the Memory Usage Monitoring dashboard view.
+    /// </summary>
+    [HttpGet]
+    public IActionResult Memory()
+    {
+        ViewBag.ApiBaseUrl = _configuration["ApiBaseUrl"] ?? "https://localhost:44370";
+        return View();
+    }
+
+    /// <summary>
     /// Invokes the API project's /api/log/logs-by-date endpoint to return API logs.
     /// </summary>
     [HttpGet]
