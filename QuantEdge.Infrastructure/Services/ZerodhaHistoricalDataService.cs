@@ -29,6 +29,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
     private readonly IIndicatorService _indicatorService;
     private readonly ICacheService? _cacheService;
     private readonly ILogger<ZerodhaHistoricalDataService> _logger;
+    private readonly TimeZoneInfo _indianTimeZone;
 
     public ZerodhaHistoricalDataService(
         IOptions<BrokerConfig> config,
@@ -46,6 +47,15 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         _indicatorService = indicatorService ?? throw new ArgumentNullException(nameof(indicatorService));
         _cacheService = cacheService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        try
+        {
+            _indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            _indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
+        }
     }
 
     /// <summary>
@@ -107,26 +117,44 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         string intervalStr = MapTimeframeToKite(timeframe);
         int maxDays = GetMaxDaysForInterval(timeframe);
         
-        var savedCandles = new List<MarketCandle>();
-        DateTime currentStart = fromTime;
+        bool isIntraday = !timeframe.Equals("1d", StringComparison.OrdinalIgnoreCase);
 
-        _logger.LogInformation("Initiating chunked historical fetch for token {Token} ({Symbol}) from {From} to {To} (Interval: {Interval}, Max Days/Chunk: {MaxDays})", 
-            instrumentToken, symbol, fromTime, toTime, intervalStr, maxDays);
+        // Adjust start and end bounds to Indian Stock Market Trading Hours (09:15 AM to 03:30 PM IST) for intraday timeframes
+        DateTime adjustedFromUtc = fromTime.Kind == DateTimeKind.Utc ? fromTime : DateTime.SpecifyKind(fromTime, DateTimeKind.Utc);
+        DateTime adjustedToUtc = toTime.Kind == DateTimeKind.Utc ? toTime : DateTime.SpecifyKind(toTime, DateTimeKind.Utc);
+
+        if (isIntraday)
+        {
+            DateTime fromIst = TimeZoneInfo.ConvertTimeFromUtc(adjustedFromUtc, _indianTimeZone);
+            DateTime toIst = TimeZoneInfo.ConvertTimeFromUtc(adjustedToUtc, _indianTimeZone);
+
+            DateTime marketStartIst = fromIst.Date.Add(new TimeSpan(9, 15, 0));
+            DateTime marketEndIst = toIst.Date.Add(new TimeSpan(15, 30, 0));
+
+            adjustedFromUtc = TimeZoneInfo.ConvertTimeToUtc(marketStartIst, _indianTimeZone);
+            adjustedToUtc = TimeZoneInfo.ConvertTimeToUtc(marketEndIst, _indianTimeZone);
+        }
+
+        var savedCandles = new List<MarketCandle>();
+        DateTime currentStart = adjustedFromUtc;
+
+        _logger.LogInformation("Initiating chunked historical fetch for token {Token} ({Symbol}) from {From} to {To} (Interval: {Interval}, Max Days/Chunk: {MaxDays}, Market Hours: 09:15-15:30 IST)", 
+            instrumentToken, symbol, adjustedFromUtc, adjustedToUtc, intervalStr, maxDays);
 
         try
         {
             var kite = new Kite(_config.ApiKey);
             kite.SetAccessToken(token);
 
-            while (currentStart < toTime)
+            while (currentStart < adjustedToUtc)
             {
                 if (cancellationToken.IsCancellationRequested)
                     break;
 
                 DateTime currentEnd = currentStart.AddDays(maxDays);
-                if (currentEnd > toTime)
+                if (currentEnd > adjustedToUtc)
                 {
-                    currentEnd = toTime;
+                    currentEnd = adjustedToUtc;
                 }
 
                 _logger.LogInformation("Requesting chunk: {Symbol} from {From} to {To}", symbol, currentStart, currentEnd);
@@ -147,7 +175,23 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                         if (cancellationToken.IsCancellationRequested)
                             break;
 
-                        int deterministicId = GenerateDeterministicIntId(symbol, timeframe, record.TimeStamp);
+                        DateTime candleUtc = record.TimeStamp.Kind == DateTimeKind.Utc 
+                            ? record.TimeStamp 
+                            : DateTime.SpecifyKind(record.TimeStamp, DateTimeKind.Utc);
+
+                        // Restrict intraday candles strictly to Indian market trading hours (09:15 AM to 03:30 PM IST)
+                        if (isIntraday)
+                        {
+                            DateTime candleIst = TimeZoneInfo.ConvertTimeFromUtc(candleUtc, _indianTimeZone);
+                            TimeSpan tod = candleIst.TimeOfDay;
+
+                            if (tod < new TimeSpan(9, 15, 0) || tod > new TimeSpan(15, 30, 0))
+                            {
+                                continue; // Skip pre-market / post-market / out-of-hours candles
+                            }
+                        }
+
+                        int deterministicId = GenerateDeterministicIntId(symbol, timeframe, candleUtc);
 
                         chunkCandles.Add(new MarketCandle
                         {
@@ -159,7 +203,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                             Low = record.Low,
                             Close = record.Close,
                             Volume = (long)record.Volume,
-                            CandleTime = record.TimeStamp.ToUniversalTime(),
+                            CandleTime = candleUtc,
                             CreatedAt = DateTime.UtcNow
                         });
                     }
@@ -175,7 +219,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                 currentStart = currentEnd;
 
                 // Add minor rate-limiting delay between sequential chunks to respect 3 requests/sec API rate limit
-                if (currentStart < toTime)
+                if (currentStart < adjustedToUtc)
                 {
                     await Task.Delay(350, cancellationToken);
                 }
