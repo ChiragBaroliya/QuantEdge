@@ -175,14 +175,12 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                         if (cancellationToken.IsCancellationRequested)
                             break;
 
-                        DateTime candleUtc = record.TimeStamp.Kind == DateTimeKind.Utc 
-                            ? record.TimeStamp 
-                            : DateTime.SpecifyKind(record.TimeStamp, DateTimeKind.Utc);
+                        // Zerodha KiteConnect returns timestamps in IST (India Standard Time)
+                        DateTime candleIst = record.TimeStamp;
 
                         // Restrict intraday candles strictly to Indian market trading hours (09:15 AM to 03:30 PM IST)
                         if (isIntraday)
                         {
-                            DateTime candleIst = TimeZoneInfo.ConvertTimeFromUtc(candleUtc, _indianTimeZone);
                             TimeSpan tod = candleIst.TimeOfDay;
 
                             if (tod < new TimeSpan(9, 15, 0) || tod > new TimeSpan(15, 30, 0))
@@ -190,6 +188,11 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                                 continue; // Skip pre-market / post-market / out-of-hours candles
                             }
                         }
+
+                        // Convert IST timestamp to UTC for database storage
+                        DateTime candleUtc = record.TimeStamp.Kind == DateTimeKind.Utc
+                            ? record.TimeStamp
+                            : TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(candleIst, DateTimeKind.Unspecified), _indianTimeZone);
 
                         int deterministicId = GenerateDeterministicIntId(symbol, timeframe, candleUtc);
 
