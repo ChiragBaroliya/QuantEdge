@@ -770,3 +770,98 @@
     color: #6b7280;
     margin: 0;
 }
+
+/* =====================================================
+   RESPONSIVENESS — LOG MANAGER
+   ===================================================== */
+@media (max-width: 991.98px) {
+    .log-manager-container {
+        height: auto;
+        min-height: auto;
+    }
+
+    .log-workspace {
+        flex-direction: column;
+        height: auto;
+        gap: 1rem;
+        overflow: visible;
+    }
+
+    .log-file-sidebar {
+        width: 100%;
+        min-width: 100%;
+        max-height: 380px;
+    }
+
+    .log-content-panel {
+        width: 100%;
+        overflow: visible;
+    }
+
+    .log-table-container {
+        min-height: 400px;
+        max-height: 550px;
+    }
+
+    .table-scroll-wrapper {
+        overflow-x: auto;
+    }
+
+    .log-table {
+        table-layout: auto;
+        min-width: 600px;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .active-file-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.85rem 1rem;
+    }
+
+    .active-file-actions {
+        width: 100%;
+    }
+
+    .active-file-actions .btn-action {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .log-kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+
+    .filter-row {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+
+    .log-table th, .log-table td {
+        padding: 0.5rem 0.65rem;
+        font-size: 0.78rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .log-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .date-picker-row {
+        grid-template-columns: 1fr;
+    }
+
+    .log-file-sidebar {
+        max-height: 320px;
+        padding: 0.75rem;
+    }
+
+    .trace-code-block {
+        font-size: 0.75rem;
+        padding: 0.5rem;
+    }
+}
