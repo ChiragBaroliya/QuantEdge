@@ -22,6 +22,13 @@
     flex-wrap: wrap;
 }
 
+.swing-header-subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: #cbd5e1;
+    font-weight: 400;
+}
+
 .action-buttons-group {
     display: flex;
     gap: 12px;
