@@ -11,9 +11,24 @@ namespace QuantEdge.Infrastructure.Interfaces;
 public interface IMarketDataCacheService
 {
     /// <summary>
-    /// Retrieves recent candles from RAM cache. If missing, fetches from database repository once to warm up the cache.
+    /// Retrieves recent candles from RAM cache.
     /// </summary>
     Task<List<MarketCandle>> GetRecentCandlesAsync(string symbol, string timeframe, int limit = 200);
+
+    /// <summary>
+    /// Retrieves today's candles from RAM cache. If missing/uninitialized, seeds today's candles into cache.
+    /// </summary>
+    Task<List<MarketCandle>> GetTodayCandlesAsync(string symbol, string timeframe);
+
+    /// <summary>
+    /// Retrieves today's indicators from RAM cache.
+    /// </summary>
+    Task<List<MarketIndicator>> GetTodayIndicatorsAsync(string symbol, string timeframe);
+
+    /// <summary>
+    /// Refreshes today's memory cache from PostgreSQL database after market close / reconciliation.
+    /// </summary>
+    Task RefreshTodayCacheFromDbAsync(string symbol, string timeframe);
 
     /// <summary>
     /// Adds or updates a single candle in the in-memory cache for its symbol and timeframe.

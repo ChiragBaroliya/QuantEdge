@@ -202,21 +202,33 @@ function initCharts() {
     });
 
     // Synchronize crosshairs & scaling across all three charts and lazy-load older history on scroll
+    let isSyncingRange = false;
+    function syncLogicalRange(sourceChart, range) {
+        if (isSyncingRange || !range) return;
+        isSyncingRange = true;
+        try {
+            if (sourceChart !== priceChart && priceChart) priceChart.timeScale().setVisibleLogicalRange(range);
+            if (sourceChart !== rsiChart && rsiChart) rsiChart.timeScale().setVisibleLogicalRange(range);
+            if (sourceChart !== macdChart && macdChart) macdChart.timeScale().setVisibleLogicalRange(range);
+        } catch (ex) {
+            console.warn("Logical range sync error:", ex);
+        } finally {
+            isSyncingRange = false;
+        }
+    }
+
     priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        rsiChart.timeScale().setVisibleLogicalRange(range);
-        macdChart.timeScale().setVisibleLogicalRange(range);
+        syncLogicalRange(priceChart, range);
 
         if (range && range.from !== null && range.from < 15 && !isLoadingOlderData && !noMoreHistoryAvailable && chartDataCache.length > 0) {
             fetchOlderChartHistory();
         }
     });
     rsiChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        priceChart.timeScale().setVisibleLogicalRange(range);
-        macdChart.timeScale().setVisibleLogicalRange(range);
+        syncLogicalRange(rsiChart, range);
     });
     macdChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        priceChart.timeScale().setVisibleLogicalRange(range);
-        rsiChart.timeScale().setVisibleLogicalRange(range);
+        syncLogicalRange(macdChart, range);
     });
     
     // Adjust resizing
@@ -542,6 +554,34 @@ function connectSignalR() {
                 low: candleUpdate.low,
                 close: candleUpdate.close
             });
+        }
+
+        // Live indicator updates for current active candle bar
+        if (rsiSeries && candleUpdate.rsi !== null && candleUpdate.rsi !== undefined) {
+            rsiSeries.update({ time: timeSec, value: candleUpdate.rsi });
+        }
+        if (macdLineSeries && candleUpdate.macd !== null && candleUpdate.macd !== undefined) {
+            macdLineSeries.update({ time: timeSec, value: candleUpdate.macd });
+        }
+        if (macdSignalSeries && candleUpdate.signalLine !== null && candleUpdate.signalLine !== undefined) {
+            macdSignalSeries.update({ time: timeSec, value: candleUpdate.signalLine });
+        }
+        if (macdHistSeries && candleUpdate.macd !== null && candleUpdate.signalLine !== null && candleUpdate.macd !== undefined && candleUpdate.signalLine !== undefined) {
+            const hist = candleUpdate.macd - candleUpdate.signalLine;
+            macdHistSeries.update({
+                time: timeSec,
+                value: hist,
+                color: hist >= 0 ? 'rgba(52, 211, 153, 0.4)' : 'rgba(248, 113, 113, 0.4)'
+            });
+        }
+        if (ema20Series && candleUpdate.ema20 !== null && candleUpdate.ema20 !== undefined) {
+            ema20Series.update({ time: timeSec, value: candleUpdate.ema20 });
+        }
+        if (ema50Series && candleUpdate.ema50 !== null && candleUpdate.ema50 !== undefined) {
+            ema50Series.update({ time: timeSec, value: candleUpdate.ema50 });
+        }
+        if (vwapSeries && candleUpdate.vwap !== null && candleUpdate.vwap !== undefined) {
+            vwapSeries.update({ time: timeSec, value: candleUpdate.vwap });
         }
 
         // Update widgets with live LTP

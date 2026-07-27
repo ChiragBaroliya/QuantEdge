@@ -50,6 +50,26 @@ public class MarketDataCacheService : IMarketDataCacheService
 
     private static string GetCacheKey(string symbol, string timeframe) => $"{symbol.Trim().ToUpper()}_{timeframe.Trim().ToLower()}";
 
+    /// <summary>
+    /// Gets the UTC start timestamp for the current Indian Standard Time (IST) trading day (00:00:00 IST).
+    /// </summary>
+    public static DateTime GetTodayStartUtc()
+    {
+        TimeZoneInfo istTz;
+        try
+        {
+            istTz = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            istTz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
+        }
+
+        var istNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, istTz);
+        var istTodayStart = new DateTime(istNow.Year, istNow.Month, istNow.Day, 0, 0, 0, DateTimeKind.Unspecified);
+        return TimeZoneInfo.ConvertTimeToUtc(istTodayStart, istTz);
+    }
+
     /// <inheritdoc />
     public async Task<List<MarketCandle>> GetRecentCandlesAsync(string symbol, string timeframe, int limit = 200)
     {
@@ -63,29 +83,126 @@ public class MarketDataCacheService : IMarketDataCacheService
             }
         }
 
-        // Cache miss: Warmup from Database
+        return await GetTodayCandlesAsync(symbol, timeframe);
+    }
+
+    /// <inheritdoc />
+    public async Task<List<MarketCandle>> GetTodayCandlesAsync(string symbol, string timeframe)
+    {
+        string key = GetCacheKey(symbol, timeframe);
+        DateTime todayStartUtc = GetTodayStartUtc();
         var lockObj = GetLockObject(key);
+
         lock (lockObj)
         {
-            if (_cache.TryGetValue(key, out cachedCandles))
+            if (_cache.TryGetValue(key, out var cachedCandles))
             {
-                return cachedCandles.TakeLast(limit).ToList();
+                var todayList = cachedCandles.Where(c => c.CandleTime >= todayStartUtc).OrderBy(c => c.CandleTime).ToList();
+                if (todayList.Count > 0)
+                {
+                    return todayList;
+                }
             }
         }
 
-        int maxCap = GetMaxCapacityForTimeframe(timeframe);
-        int fetchLimit = Math.Max(limit, maxCap);
-
-        _logger.LogDebug("Cache miss for {Key}. Fetching top {Limit} candles from DB...", key, fetchLimit);
-        var dbHistory = (await _candleRepository.GetHistoryAsync(symbol, timeframe, fetchLimit))
+        // Cache miss for today: Seed today's candles from DB if available
+        _logger.LogDebug("Today memory cache empty for {Key}. Seeding today's candles from DB...", key);
+        var dbCandles = await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: 500);
+        var todayDbCandles = dbCandles
+            .Where(c => c.CandleTime >= todayStartUtc)
             .OrderBy(c => c.CandleTime)
             .ToList();
 
         lock (lockObj)
         {
-            _cache[key] = dbHistory;
-            return dbHistory.TakeLast(limit).ToList();
+            if (!_cache.TryGetValue(key, out var existingList))
+            {
+                existingList = new List<MarketCandle>();
+                _cache[key] = existingList;
+            }
+
+            foreach (var candle in todayDbCandles)
+            {
+                if (!existingList.Any(c => c.CandleTime == candle.CandleTime))
+                {
+                    existingList.Add(candle);
+                }
+            }
+            existingList.Sort((a, b) => a.CandleTime.CompareTo(b.CandleTime));
+            return existingList.Where(c => c.CandleTime >= todayStartUtc).ToList();
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<List<MarketIndicator>> GetTodayIndicatorsAsync(string symbol, string timeframe)
+    {
+        string key = GetCacheKey(symbol, timeframe);
+        DateTime todayStartUtc = GetTodayStartUtc();
+        var lockObj = GetLockObject(key);
+
+        lock (lockObj)
+        {
+            if (_indicatorCache.TryGetValue(key, out var cachedIndicators))
+            {
+                var todayList = cachedIndicators.Where(i => i.CandleTime >= todayStartUtc).OrderBy(i => i.CandleTime).ToList();
+                if (todayList.Count > 0)
+                {
+                    return todayList;
+                }
+            }
+        }
+
+        // Cache miss for today: Seed today's indicators from DB
+        var dbIndicators = await _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit: 500);
+        var todayDbIndicators = dbIndicators
+            .Where(i => i.CandleTime >= todayStartUtc)
+            .OrderBy(i => i.CandleTime)
+            .ToList();
+
+        lock (lockObj)
+        {
+            if (!_indicatorCache.TryGetValue(key, out var existingList))
+            {
+                existingList = new List<MarketIndicator>();
+                _indicatorCache[key] = existingList;
+            }
+
+            foreach (var ind in todayDbIndicators)
+            {
+                if (!existingList.Any(i => i.CandleTime == ind.CandleTime))
+                {
+                    existingList.Add(ind);
+                }
+            }
+            existingList.Sort((a, b) => a.CandleTime.CompareTo(b.CandleTime));
+            return existingList.Where(i => i.CandleTime >= todayStartUtc).ToList();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task RefreshTodayCacheFromDbAsync(string symbol, string timeframe)
+    {
+        string key = GetCacheKey(symbol, timeframe);
+        DateTime todayStartUtc = GetTodayStartUtc();
+
+        var dbCandles = (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: 500))
+            .Where(c => c.CandleTime >= todayStartUtc)
+            .OrderBy(c => c.CandleTime)
+            .ToList();
+
+        var dbIndicators = (await _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit: 500))
+            .Where(i => i.CandleTime >= todayStartUtc)
+            .OrderBy(i => i.CandleTime)
+            .ToList();
+
+        var lockObj = GetLockObject(key);
+        lock (lockObj)
+        {
+            _cache[key] = dbCandles;
+            _indicatorCache[key] = dbIndicators;
+        }
+
+        _logger.LogInformation("Refreshed today's memory cache from DB for {Key}. Count: {Count} candles.", key, dbCandles.Count);
     }
 
     /// <inheritdoc />
@@ -147,29 +264,7 @@ public class MarketDataCacheService : IMarketDataCacheService
             }
         }
 
-        // Cache miss: Warmup from Database
-        var lockObj = GetLockObject(key);
-        lock (lockObj)
-        {
-            if (_indicatorCache.TryGetValue(key, out cachedIndicators))
-            {
-                return cachedIndicators.TakeLast(limit).ToList();
-            }
-        }
-
-        int maxCap = GetMaxCapacityForTimeframe(timeframe);
-        int fetchLimit = Math.Max(limit, maxCap);
-
-        _logger.LogDebug("Indicator cache miss for {Key}. Fetching top {Limit} indicators from DB...", key, fetchLimit);
-        var dbHistory = (await _indicatorRepository.GetHistoryAsync(symbol, timeframe, fetchLimit))
-            .OrderBy(i => i.CandleTime)
-            .ToList();
-
-        lock (lockObj)
-        {
-            _indicatorCache[key] = dbHistory;
-            return dbHistory.TakeLast(limit).ToList();
-        }
+        return await GetTodayIndicatorsAsync(symbol, timeframe);
     }
 
     /// <inheritdoc />

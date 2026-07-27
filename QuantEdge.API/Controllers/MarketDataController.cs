@@ -145,30 +145,48 @@ public class MarketDataController : ControllerBase
             IEnumerable<QuantEdge.Domain.Entities.MarketIndicator> rawIndicators;
             IEnumerable<QuantEdge.Domain.Entities.TradingSignal> rawSignals;
 
-            if (!beforeDateTime.HasValue && _cacheService != null)
-            {
-                // Serve active chart dataset directly from In-Memory RAM Cache (< 1ms microsecond speed)
-                var candlesTask = _cacheService.GetRecentCandlesAsync(symbol, timeframe, limit);
-                var indicatorsTask = _cacheService.GetRecentIndicatorsAsync(symbol, timeframe, limit);
-                var signalsTask = _tradingSignalRepository.GetRecentSignalsAsync(limit);
+            DateTime todayStartUtc = QuantEdge.Infrastructure.Services.MarketDataCacheService.GetTodayStartUtc();
 
-                await Task.WhenAll(candlesTask, indicatorsTask, signalsTask);
-
-                rawCandles = candlesTask.Result;
-                rawIndicators = indicatorsTask.Result;
-                rawSignals = signalsTask.Result;
-            }
-            else
+            if (beforeDateTime.HasValue)
             {
-                // Fallback to PostgreSQL for deep historical pagination
+                // Historical Pagination: Fetch directly from PostgreSQL DB for candles strictly before 'beforeDateTime'
                 var candlesTask = _candleRepository.GetHistoryAsync(symbol, timeframe, limit, beforeDateTime);
                 var indicatorsTask = _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit, beforeDateTime);
                 var signalsTask = _tradingSignalRepository.GetRecentSignalsAsync(limit);
 
                 await Task.WhenAll(candlesTask, indicatorsTask, signalsTask);
 
-                rawCandles = candlesTask.Result;
-                rawIndicators = indicatorsTask.Result;
+                rawCandles = candlesTask.Result.Where(c => c.CandleTime < todayStartUtc || c.CandleTime < beforeDateTime);
+                rawIndicators = indicatorsTask.Result.Where(i => i.CandleTime < todayStartUtc || i.CandleTime < beforeDateTime);
+                rawSignals = signalsTask.Result;
+            }
+            else
+            {
+                // Initial Chart Load: Hybrid Strategy
+                // 1. Fetch Today's Candles & Indicators from In-Memory Cache (< 1ms microsecond speed)
+                Task<List<QuantEdge.Domain.Entities.MarketCandle>> todayCandlesTask = _cacheService != null 
+                    ? _cacheService.GetTodayCandlesAsync(symbol, timeframe)
+                    : Task.FromResult(new List<QuantEdge.Domain.Entities.MarketCandle>());
+
+                Task<List<QuantEdge.Domain.Entities.MarketIndicator>> todayIndicatorsTask = _cacheService != null
+                    ? _cacheService.GetTodayIndicatorsAsync(symbol, timeframe)
+                    : Task.FromResult(new List<QuantEdge.Domain.Entities.MarketIndicator>());
+
+                // 2. Fetch Previous Historical Candles & Indicators directly from PostgreSQL DB (< todayStartUtc)
+                Task<IEnumerable<QuantEdge.Domain.Entities.MarketCandle>> dbHistoryCandlesTask = 
+                    _candleRepository.GetHistoryAsync(symbol, timeframe, limit, beforeTime: todayStartUtc);
+
+                Task<IEnumerable<QuantEdge.Domain.Entities.MarketIndicator>> dbHistoryIndicatorsTask = 
+                    _indicatorRepository.GetHistoryAsync(symbol, timeframe, limit, beforeTime: todayStartUtc);
+
+                Task<IEnumerable<QuantEdge.Domain.Entities.TradingSignal>> signalsTask = 
+                    _tradingSignalRepository.GetRecentSignalsAsync(limit);
+
+                await Task.WhenAll(todayCandlesTask, todayIndicatorsTask, dbHistoryCandlesTask, dbHistoryIndicatorsTask, signalsTask);
+
+                // Combine Historical DB + Today Memory Cache
+                rawCandles = dbHistoryCandlesTask.Result.Concat(todayCandlesTask.Result);
+                rawIndicators = dbHistoryIndicatorsTask.Result.Concat(todayIndicatorsTask.Result);
                 rawSignals = signalsTask.Result;
             }
 
@@ -188,8 +206,15 @@ public class MarketDataController : ControllerBase
                 .GroupBy(s => (s.CandleTime.Kind == DateTimeKind.Utc ? new DateTimeOffset(s.CandleTime) : new DateTimeOffset(DateTime.SpecifyKind(s.CandleTime, DateTimeKind.Utc))).ToUnixTimeSeconds())
                 .ToDictionary(g => g.Key, g => g.First());
 
+            // Compute dynamic fallback indicators for candles lacking database indicator entries
+            var closes = candles.Select(c => c.Close).ToList();
+            var ema20List = QuantEdge.Infrastructure.Services.IndicatorCalculator.CalculateEma(closes, 20);
+            var ema50List = QuantEdge.Infrastructure.Services.IndicatorCalculator.CalculateEma(closes, 50);
+            var rsiList = QuantEdge.Infrastructure.Services.IndicatorCalculator.CalculateRsi(closes, 14);
+            var (macdList, signalList) = QuantEdge.Infrastructure.Services.IndicatorCalculator.CalculateMacd(closes);
+
             // Match and build chart DTO list ordered chronologically (oldest first for Lightweight Charts)
-            var chartData = candles.Select(c =>
+            var chartData = candles.Select((c, i) =>
             {
                 DateTime utcTime = c.CandleTime.Kind == DateTimeKind.Utc 
                     ? c.CandleTime 
@@ -202,6 +227,13 @@ public class MarketDataController : ControllerBase
                 indicators.TryGetValue(key, out var ind);
                 signalsByTimeSec.TryGetValue(timeSec, out var sig);
 
+                decimal rsiVal = ind != null && ind.RSI != 0 ? ind.RSI : rsiList[i];
+                decimal ema20Val = ind != null && ind.EMA20 != 0 ? ind.EMA20 : ema20List[i];
+                decimal ema50Val = ind != null && ind.EMA50 != 0 ? ind.EMA50 : ema50List[i];
+                decimal macdVal = ind != null && ind.MACD != 0 ? ind.MACD : macdList[i];
+                decimal signalVal = ind != null && ind.SignalLine != 0 ? ind.SignalLine : signalList[i];
+                decimal vwapVal = ind != null && ind.VWAP != 0 ? ind.VWAP : c.Close;
+
                 return new
                 {
                     time = timeMs,
@@ -210,12 +242,12 @@ public class MarketDataController : ControllerBase
                     low = c.Low,
                     close = c.Close,
                     volume = c.Volume,
-                    rsi = ind?.RSI,
-                    ema20 = ind?.EMA20,
-                    ema50 = ind?.EMA50,
-                    macd = ind?.MACD,
-                    signalLine = ind?.SignalLine,
-                    vwap = ind?.VWAP,
+                    rsi = Math.Round(rsiVal, 2),
+                    ema20 = Math.Round(ema20Val, 2),
+                    ema50 = Math.Round(ema50Val, 2),
+                    macd = Math.Round(macdVal, 2),
+                    signalLine = Math.Round(signalVal, 2),
+                    vwap = Math.Round(vwapVal, 2),
                     signalType = sig?.SignalType,
                     signalScore = sig?.SignalStrength,
                     signalReason = sig?.Reason

@@ -158,9 +158,76 @@ public class MarketDataProcessor : IMarketDataProcessor
         {
             string timeframeStr = GetTimeframeString(candleDto.Interval);
 
+            decimal? liveRsi = null;
+            decimal? liveEma20 = null;
+            decimal? liveEma50 = null;
+            decimal? liveMacd = null;
+            decimal? liveSignalLine = null;
+            decimal? liveVwap = null;
+
+            // Update live active candle in In-Memory RAM Cache (< 1ms)
+            if (_cacheService != null)
+            {
+                int id = GenerateDeterministicIntId(candleDto.Symbol, timeframeStr, candleDto.Timestamp);
+                var activeMarketCandle = new MarketCandle
+                {
+                    Id = id,
+                    Symbol = candleDto.Symbol,
+                    Timeframe = timeframeStr,
+                    Open = candleDto.Open,
+                    High = candleDto.High,
+                    Low = candleDto.Low,
+                    Close = candleDto.Close,
+                    Volume = candleDto.Volume,
+                    CandleTime = candleDto.Timestamp.ToUniversalTime(),
+                    CreatedAt = DateTime.UtcNow
+                };
+                _cacheService.AddOrUpdateCandle(activeMarketCandle);
+
+                // Compute real-time RSI (14) and MACD (12, 26, 9) for live active candle bar
+                var recentCandles = await _cacheService.GetRecentCandlesAsync(candleDto.Symbol, timeframeStr, limit: 200);
+                if (recentCandles.Count > 0)
+                {
+                    var closes = recentCandles.Select(c => c.Close).ToList();
+                    var ema20List = IndicatorCalculator.CalculateEma(closes, 20);
+                    var ema50List = IndicatorCalculator.CalculateEma(closes, 50);
+                    var rsiList = IndicatorCalculator.CalculateRsi(closes, 14);
+                    var (macdList, signalList) = IndicatorCalculator.CalculateMacd(closes);
+
+                    int lastIdx = recentCandles.Count - 1;
+                    liveEma20 = ema20List[lastIdx];
+                    liveEma50 = ema50List[lastIdx];
+                    liveRsi = rsiList[lastIdx];
+                    liveMacd = macdList[lastIdx];
+                    liveSignalLine = signalList[lastIdx];
+
+                    var targetDate = recentCandles[lastIdx].CandleTime.Date;
+                    var dayCandles = recentCandles.Where(c => c.CandleTime.Date == targetDate).ToList();
+                    decimal sumPV = dayCandles.Sum(c => c.Close * c.Volume);
+                    long sumV = dayCandles.Sum(c => c.Volume);
+                    liveVwap = sumV > 0 ? sumPV / sumV : candleDto.Close;
+
+                    var liveIndicator = new MarketIndicator
+                    {
+                        Id = activeMarketCandle.Id,
+                        Symbol = candleDto.Symbol.ToUpper(),
+                        Timeframe = timeframeStr,
+                        EMA20 = liveEma20 ?? 0m,
+                        EMA50 = liveEma50 ?? 0m,
+                        RSI = liveRsi ?? 50m,
+                        MACD = liveMacd ?? 0m,
+                        SignalLine = liveSignalLine ?? 0m,
+                        VWAP = liveVwap ?? candleDto.Close,
+                        CandleTime = activeMarketCandle.CandleTime,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _cacheService.AddOrUpdateIndicator(liveIndicator);
+                }
+            }
+
             string groupName = $"{candleDto.Symbol.ToUpper().Trim()}_{timeframeStr.ToLower().Trim()}";
 
-            // Broadcast real-time (unfinished) active candle details to subscribers
+            // Broadcast real-time active candle + live indicators to subscribers
             if (_hubContext != null)
             {
                 await _hubContext.Clients.Group(groupName).SendAsync("ReceiveActiveCandle", new
@@ -170,7 +237,13 @@ public class MarketDataProcessor : IMarketDataProcessor
                     high = candleDto.High,
                     low = candleDto.Low,
                     close = candleDto.Close,
-                    volume = candleDto.Volume
+                    volume = candleDto.Volume,
+                    rsi = liveRsi,
+                    ema20 = liveEma20,
+                    ema50 = liveEma50,
+                    macd = liveMacd,
+                    signalLine = liveSignalLine,
+                    vwap = liveVwap
                 });
             }
         }
