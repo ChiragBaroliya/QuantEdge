@@ -26,6 +26,10 @@ let chartDataCache = [];
 let isLoadingOlderData = false;
 let noMoreHistoryAvailable = false;
 
+// Real-time stock price (LTP) & active timeframe candle open price tracking
+let currentLivePrice = null;
+let currentCandleOpenPrice = null;
+
 $(document).ready(async function () {
     // Connect to SignalR early so listeners can be attached before await yields
     connectSignalR();
@@ -305,6 +309,10 @@ async function fetchStockMasterDetails(symbol) {
         $("#specInstrumentType").text(data.instrumentType || "-");
         
         $("#specLastPrice").text(data.lastPrice !== null && data.lastPrice !== undefined ? "₹" + parseFloat(data.lastPrice).toFixed(2) : "-");
+        if (data.lastPrice !== null && data.lastPrice !== undefined && parseFloat(data.lastPrice) > 0) {
+            currentLivePrice = parseFloat(data.lastPrice);
+            refreshLivePriceHeader();
+        }
         $("#specLotSize").text(data.lotSize !== null && data.lotSize !== undefined ? data.lotSize : "-");
         $("#specTickSize").text(data.tickSize !== null && data.tickSize !== undefined ? parseFloat(data.tickSize).toFixed(4) : "-");
         $("#specStrike").text(data.strike !== null && data.strike !== undefined && parseFloat(data.strike) !== 0 ? "₹" + parseFloat(data.strike).toFixed(2) : "-");
@@ -333,6 +341,8 @@ async function fetchStockMasterDetails(symbol) {
 
 // Switch viewed stock symbol
 async function switchSymbol(symbol) {
+    currentLivePrice = null;
+    currentCandleOpenPrice = null;
     const oldSymbol = activeSymbol;
     activeSymbol = symbol;
     
@@ -458,16 +468,30 @@ async function fetchLiveSignalEvaluation() {
     }
 }
 
-function updateLivePriceHeader(price, openPrice) {
-    if (price === null || price === undefined || isNaN(price) || price === 0) return;
+function refreshLivePriceHeader() {
+    if (currentLivePrice === null || currentLivePrice === undefined || isNaN(currentLivePrice) || currentLivePrice === 0) return;
 
-    $("#hdrLivePrice").text("₹" + parseFloat(price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-    
-    if (openPrice && openPrice > 0) {
-        const changePct = ((price - openPrice) / openPrice) * 100;
+    // Real-time stock price (LTP) - independent of timeframe
+    $("#hdrLivePrice").text("₹" + parseFloat(currentLivePrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    $("#widgetLTP").text(parseFloat(currentLivePrice).toFixed(2));
+
+    // Percentage change - calculated based on selected timeframe's open price
+    if (currentCandleOpenPrice && currentCandleOpenPrice > 0) {
+        const changePct = ((currentLivePrice - currentCandleOpenPrice) / currentCandleOpenPrice) * 100;
+        const changeStr = (changePct >= 0 ? "+" : "") + changePct.toFixed(2) + "%";
+        const badgeClass = changePct >= 0 ? "bullish" : "bearish";
+
         const changeEl = $("#hdrLiveChange");
-        changeEl.text((changePct >= 0 ? "+" : "") + changePct.toFixed(2) + "%");
-        changeEl.attr("class", `hdr-change-val ${changePct >= 0 ? "bullish" : "bearish"}`);
+        if (changeEl.length) {
+            changeEl.text(changeStr);
+            changeEl.attr("class", `hdr-change-val ${badgeClass}`);
+        }
+
+        const widgetChangeEl = $("#widgetChange");
+        if (widgetChangeEl.length) {
+            widgetChangeEl.text(changeStr);
+            widgetChangeEl.attr("class", `w-change ${badgeClass}`);
+        }
     }
 }
 
@@ -516,7 +540,11 @@ function bindChartData(dataList) {
 
     if (priceData.length > 0) {
         const latest = priceData[priceData.length - 1];
-        updateLivePriceHeader(latest.close, latest.open);
+        currentCandleOpenPrice = latest.open;
+        if (currentLivePrice === null || currentLivePrice === undefined || currentLivePrice === 0) {
+            currentLivePrice = latest.close;
+        }
+        refreshLivePriceHeader();
     }
 }
 
@@ -544,20 +572,10 @@ function connectSignalR() {
             });
         }
 
-        // Update widgets with live LTP
-        $("#widgetLTP").text(candleUpdate.close.toFixed(2));
-        updateLivePriceHeader(candleUpdate.close, candleUpdate.open);
-        
-        // Calculate percentage change compared to the open price of the active candle
-        const changePct = ((candleUpdate.close - candleUpdate.open) / candleUpdate.open) * 100;
-        const changeEl = $("#widgetChange");
-        changeEl.text((changePct >= 0 ? "+" : "") + changePct.toFixed(2) + "%");
-        
-        if (changePct >= 0) {
-            changeEl.attr("class", "w-change bullish");
-        } else {
-            changeEl.attr("class", "w-change bearish");
-        }
+        // Real-time stock price is the latest live tick price; timeframe candle open is for timeframe % change
+        currentLivePrice = candleUpdate.close;
+        currentCandleOpenPrice = candleUpdate.open;
+        refreshLivePriceHeader();
     });
 
     connection.on("ReceiveClosedCandle", function(closedCandle) {
@@ -726,15 +744,13 @@ function updateSignalUi(data) {
     // 4. Quick indicator widgets
     // LTP
     if (priceVal) {
-        $("#widgetLTP").text(parseFloat(priceVal).toFixed(2));
-        if (openVal) {
-            const changePct = ((priceVal - openVal) / openVal) * 100;
-            const changeEl = $("#widgetChange");
-            if (changeEl.length) {
-                changeEl.text((changePct >= 0 ? "+" : "") + changePct.toFixed(2) + "%");
-                changeEl.attr("class", `w-change ${changePct >= 0 ? "bullish" : "bearish"}`);
-            }
+        if (currentLivePrice === null || currentLivePrice === undefined || currentLivePrice === 0) {
+            currentLivePrice = priceVal;
         }
+        if (openVal && (currentCandleOpenPrice === null || currentCandleOpenPrice === undefined || currentCandleOpenPrice === 0)) {
+            currentCandleOpenPrice = openVal;
+        }
+        refreshLivePriceHeader();
     }
 
     // RSI
