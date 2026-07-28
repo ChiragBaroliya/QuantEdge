@@ -1000,5 +1000,89 @@ public class DatabaseInitializer
             ");
             _logger.LogInformation("Table 'swing_positions' and indexes created successfully.");
         }
+
+        // Check and provision paper trading tables
+        bool paperAccountsExists = await conn.ExecuteScalarAsync<bool>(@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'paper_accounts'
+            );"
+        );
+        if (!paperAccountsExists)
+        {
+            _logger.LogWarning("Paper trading tables not found in database '{Database}'. Provisioning paper trading schema...", targetDb);
+            await conn.ExecuteAsync(@"
+                CREATE TABLE IF NOT EXISTS paper_accounts (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(100) NOT NULL DEFAULT 'default_user',
+                    account_name VARCHAR(100) NOT NULL DEFAULT 'Virtual Trading Account',
+                    initial_balance NUMERIC(18, 4) NOT NULL DEFAULT 100000.00,
+                    current_balance NUMERIC(18, 4) NOT NULL DEFAULT 100000.00,
+                    used_margin NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+                    realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS paper_orders (
+                    id SERIAL PRIMARY KEY,
+                    account_id INT NOT NULL REFERENCES paper_accounts(id) ON DELETE CASCADE,
+                    symbol VARCHAR(50) NOT NULL,
+                    order_type INT NOT NULL,
+                    side INT NOT NULL,
+                    quantity INT NOT NULL,
+                    price NUMERIC(18, 4) NOT NULL,
+                    trigger_price NUMERIC(18, 4),
+                    stop_loss NUMERIC(18, 4),
+                    take_profit NUMERIC(18, 4),
+                    status INT NOT NULL DEFAULT 0,
+                    filled_price NUMERIC(18, 4),
+                    filled_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    remarks VARCHAR(255)
+                );
+
+                CREATE TABLE IF NOT EXISTS paper_positions (
+                    id SERIAL PRIMARY KEY,
+                    account_id INT NOT NULL REFERENCES paper_accounts(id) ON DELETE CASCADE,
+                    symbol VARCHAR(50) NOT NULL,
+                    side INT NOT NULL,
+                    quantity INT NOT NULL,
+                    average_entry_price NUMERIC(18, 4) NOT NULL,
+                    current_price NUMERIC(18, 4) NOT NULL,
+                    unrealized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+                    stop_loss NUMERIC(18, 4),
+                    take_profit NUMERIC(18, 4),
+                    status INT NOT NULL DEFAULT 0,
+                    opened_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    closed_at TIMESTAMP WITH TIME ZONE,
+                    realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00
+                );
+
+                CREATE TABLE IF NOT EXISTS paper_trade_history (
+                    id SERIAL PRIMARY KEY,
+                    account_id INT NOT NULL REFERENCES paper_accounts(id) ON DELETE CASCADE,
+                    order_id INT NOT NULL,
+                    symbol VARCHAR(50) NOT NULL,
+                    side INT NOT NULL,
+                    quantity INT NOT NULL,
+                    executed_price NUMERIC(18, 4) NOT NULL,
+                    realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+                    executed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    remarks VARCHAR(255)
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_paper_orders_account ON paper_orders(account_id, status);
+                CREATE INDEX IF NOT EXISTS ix_paper_positions_account ON paper_positions(account_id, status);
+                CREATE INDEX IF NOT EXISTS ix_paper_trade_history_account ON paper_trade_history(account_id);
+
+                -- Seed default account
+                INSERT INTO paper_accounts (user_id, account_name, initial_balance, current_balance, used_margin, realized_pnl)
+                VALUES ('default_user', 'Virtual Trading Account', 100000.00, 100000.00, 0.00, 0.00);
+            ");
+            _logger.LogInformation("Paper trading schema and default account created successfully.");
+        }
     }
 }
+

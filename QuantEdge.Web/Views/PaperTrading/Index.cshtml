@@ -1,0 +1,262 @@
+@{
+    ViewData["Title"] = "Paper Trading Dashboard";
+}
+
+<div class="paper-workspace-container">
+    <!-- Top Header -->
+    <div class="d-flex justify-content-between align-items-md-center align-items-start flex-column flex-md-row mb-4 gap-3">
+        <div>
+            <h2 class="fw-bold text-light mb-1 d-flex align-items-center gap-2 flex-wrap">
+                <span class="badge bg-primary bg-opacity-25 text-primary p-2 rounded-3">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                </span>
+                Paper Trading Workspace
+            </h2>
+            <p class="paper-subtitle mb-0">Simulate trades with virtual capital (₹1,00,000) using live WebSocket prices and AI signals.</p>
+        </div>
+        <div class="paper-header-actions d-flex align-items-center gap-2 flex-wrap">
+            <div class="paper-switch-box">
+                <input class="form-check-input" type="checkbox" id="autoTradeToggle">
+                <label class="form-check-label text-light fw-medium mb-0 small" for="autoTradeToggle" style="cursor:pointer;">
+                    ⚡ Auto-Trade AI Signals
+                </label>
+            </div>
+            <button id="resetAccountBtn" class="btn btn-outline-danger btn-sm px-3 py-2 rounded-3 d-flex align-items-center gap-1 shadow-sm">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6"></path>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                Reset Virtual Capital
+            </button>
+        </div>
+    </div>
+
+    <!-- Account Summary Stat Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-lg-6 col-md-6 col-6">
+            <div class="card paper-card p-3">
+                <span class="stat-card-title">Total Account Equity</span>
+                <h4 id="statTotalEquity" class="fw-bold text-light mb-0 mt-1">₹1,00,000.00</h4>
+                <div class="progress mt-2" style="height: 4px; background: rgba(255,255,255,0.1);">
+                    <div class="progress-bar bg-primary" role="progressbar" style="width: 100%"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-lg-6 col-md-6 col-6">
+            <div class="card paper-card p-3">
+                <span class="stat-card-title">Available Margin</span>
+                <h4 id="statAvailableMargin" class="fw-bold text-info mb-0 mt-1">₹1,00,000.00</h4>
+                <small id="statUsedMargin" class="stat-card-subtext">Used Margin: ₹0.00</small>
+            </div>
+        </div>
+        <div class="col-xl-3 col-lg-6 col-md-6 col-6">
+            <div class="card paper-card p-3">
+                <span class="stat-card-title">Unrealized P&L</span>
+                <h4 id="statUnrealizedPnl" class="fw-bold text-light mb-0 mt-1">₹0.00</h4>
+                <small class="stat-card-subtext">Live Open Positions</small>
+            </div>
+        </div>
+        <div class="col-xl-3 col-lg-6 col-md-6 col-6">
+            <div class="card paper-card p-3">
+                <span class="stat-card-title">Realized P&L</span>
+                <h4 id="statRealizedPnl" class="fw-bold text-light mb-0 mt-1">₹0.00</h4>
+                <small class="stat-card-subtext">Closed Trades Ledger</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Area: Order Ticket + Positions & Orders -->
+    <div class="row g-4">
+        <!-- Order Placement Ticket (Left Column) -->
+        <div class="col-xl-4 col-lg-5 col-12">
+            <div class="card paper-card p-4">
+                <h5 class="fw-bold text-light mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom border-secondary border-opacity-25 pb-2">
+                    <span>🎯 Order Ticket</span>
+                    <span id="liveLtpBadge" class="badge bg-secondary bg-opacity-25 text-info font-monospace">LTP: --</span>
+                </h5>
+
+                <form id="paperOrderForm" novalidate>
+                    <!-- Symbol Selection -->
+                    <div class="mb-3">
+                        <label class="paper-label" for="orderSymbol">Stock / Index Symbol</label>
+                        <select id="orderSymbol" class="form-select paper-input">
+                            <option value="" disabled selected>Loading Active Stocks...</option>
+                        </select>
+                    </div>
+
+                    <!-- Side Tabs (BUY / SELL) -->
+                    <div class="btn-group w-100 mb-3" role="group">
+                        <input type="radio" class="btn-check" name="orderSide" id="sideBuy" value="BUY" checked>
+                        <label class="btn btn-outline-success fw-bold py-2" for="sideBuy">BUY (LONG)</label>
+
+                        <input type="radio" class="btn-check" name="orderSide" id="sideSell" value="SELL">
+                        <label class="btn btn-outline-danger fw-bold py-2" for="sideSell">SELL (SHORT)</label>
+                    </div>
+
+                    <!-- Order Type (Market / Limit) -->
+                    <div class="mb-3">
+                        <label class="paper-label" for="orderType">Order Type</label>
+                        <select id="orderType" class="form-select paper-input">
+                            <option value="Market">Market (Instant Fill)</option>
+                            <option value="Limit">Limit Order</option>
+                        </select>
+                    </div>
+
+                    <!-- Limit Price (Hidden by default for Market) -->
+                    <div class="mb-3 d-none" id="limitPriceGroup">
+                        <label class="paper-label" for="orderLimitPrice">Limit Price (₹)</label>
+                        <input type="number" step="0.05" id="orderLimitPrice" class="form-control paper-input" placeholder="Target entry price">
+                        <div id="limitPriceError" class="invalid-feedback text-danger small mt-1"></div>
+                    </div>
+
+                    <!-- Quantity -->
+                    <div class="mb-3">
+                        <label class="paper-label" for="orderQuantity">Quantity (Lots / Shares)</label>
+                        <input type="number" id="orderQuantity" class="form-control paper-input" value="25" min="1">
+                        <div id="quantityError" class="invalid-feedback text-danger small mt-1"></div>
+                    </div>
+
+                    <!-- Stop Loss & Take Profit (Optional Brackets) -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="paper-label" for="orderStopLoss">Stop-Loss (₹)</label>
+                            <input type="number" step="0.05" id="orderStopLoss" class="form-control paper-input" placeholder="SL Price">
+                            <div id="stopLossError" class="invalid-feedback text-danger small mt-1"></div>
+                        </div>
+                        <div class="col-6">
+                            <label class="paper-label" for="orderTakeProfit">Target TP (₹)</label>
+                            <input type="number" step="0.05" id="orderTakeProfit" class="form-control paper-input" placeholder="Target Price">
+                            <div id="takeProfitError" class="invalid-feedback text-danger small mt-1"></div>
+                        </div>
+                    </div>
+
+                    <!-- Margin Estimate -->
+                    <div class="d-flex justify-content-between align-items-center bg-dark bg-opacity-75 p-3 rounded-3 mb-3 border border-secondary border-opacity-25">
+                        <span class="paper-label mb-0">Required Margin:</span>
+                        <span id="estimatedMargin" class="fw-bold text-light fs-6">₹0.00</span>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" id="placeOrderBtn" class="btn btn-success w-100 fw-bold py-2 rounded-3 shadow">
+                        Place Paper Order
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Live Positions & Order Book (Right Column) -->
+        <div class="col-xl-8 col-lg-7 col-12">
+            <!-- Open Positions Section -->
+            <div class="card paper-card p-4 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold text-light mb-0">💼 Live Open Positions</h5>
+                    <span id="positionsCountBadge" class="badge bg-primary rounded-pill px-3 py-2">0 Active</span>
+                </div>
+
+                <div class="paper-table-responsive">
+                    <table class="table table-dark table-hover align-middle text-nowrap mb-0 paper-table" id="positionsTable">
+                        <thead class="table-borderless">
+                            <tr>
+                                <th>SYMBOL</th>
+                                <th>SIDE</th>
+                                <th>QTY</th>
+                                <th>AVG ENTRY</th>
+                                <th>LTP</th>
+                                <th>SL / TP</th>
+                                <th>UNREALIZED P&L</th>
+                                <th class="text-end">ACTION</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionsTableBody">
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4">No open positions. Place an order from the ticket to start paper trading.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Orders & Trade History Tabs -->
+            <div class="card paper-card p-4">
+                <ul class="nav nav-tabs paper-tabs mb-3" id="paperTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="orders-tab" data-bs-toggle="tab" data-bs-target="#ordersTabPane" type="button" role="tab">
+                            Active / Pending Orders
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#historyTabPane" type="button" role="tab">
+                            Execution History
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="paperTabsContent">
+                    <!-- Pending Orders Tab -->
+                    <div class="tab-pane fade show active" id="ordersTabPane" role="tabpanel">
+                        <div class="paper-table-responsive">
+                            <table class="table table-dark table-hover align-middle text-nowrap mb-0 paper-table">
+                                <thead>
+                                    <tr>
+                                        <th>TIME</th>
+                                        <th>SYMBOL</th>
+                                        <th>TYPE</th>
+                                        <th>SIDE</th>
+                                        <th>QTY</th>
+                                        <th>PRICE</th>
+                                        <th>STATUS</th>
+                                        <th class="text-end">ACTION</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ordersTableBody">
+                                    <tr>
+                                        <td colspan="8" class="text-center text-muted py-3">No active or pending orders.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- History Tab -->
+                    <div class="tab-pane fade" id="historyTabPane" role="tabpanel">
+                        <div class="paper-table-responsive">
+                            <table class="table table-dark table-hover align-middle text-nowrap mb-0 paper-table">
+                                <thead>
+                                    <tr>
+                                        <th>TIME</th>
+                                        <th>SYMBOL</th>
+                                        <th>SIDE</th>
+                                        <th>QTY</th>
+                                        <th>EXECUTED PRICE</th>
+                                        <th>REALIZED P&L</th>
+                                        <th>REMARKS</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="historyTableBody">
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted py-3">No execution history logged.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Glassmorphism Floating Toast Container for Error / Success alerts -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;" id="toastContainer"></div>
+
+@section Scripts {
+    <script>
+        window.API_BASE_URL = "@ViewBag.ApiBaseUrl";
+    </script>
+    <script src="~/lib/microsoft/signalr/dist/browser/signalr.min.js"></script>
+    <script src="~/js/paperTrading.js" asp-append-version="true"></script>
+}
