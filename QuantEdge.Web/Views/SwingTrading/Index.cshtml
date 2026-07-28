@@ -12,14 +12,14 @@
             <p class="swing-header-subtitle" style="margin: 0; font-size: 13px; color: #cbd5e1;">Daily Swing Trading analysis (EOD) executed after market close (3:45 PM IST).</p>
         </div>
         <div class="action-buttons-group">
-            <button id="btnOpenReference" class="btn-trigger" title="View Strategy Rules, Stock Filters, and Backend Mathematical Formulas.">
+            <button id="btnOpenReference" class="btn-trigger" data-tooltip="📖 **અલ્ગોરિધમ નિયમો**: સ્વિંગ ટ્રેડિંગ ફિલ્ટર્સ અને બેકએન્ડ ગણિતના સૂત્રો જુઓ.">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
                     <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
                 </svg>
                 Rules & Formulas
             </button>
-            <button id="btnRunBackfill" class="btn-trigger" title="Runs a clean 2-year historical backtest of the strategy in background without locking the UI.">
+            <button id="btnRunBackfill" class="btn-trigger" data-tooltip="🔄 **જૂનો બેકટેસ્ટ સિંક કરો**: છેલ્લા 2 વર્ષના ડેટા પર સ્વિંગ ટ્રેડિંગ સ્ટેટિસ્ટિક્સ ટેસ્ટિંગ રન કરો.">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
                     <path d="M16 3h5v5"></path>
@@ -28,7 +28,7 @@
                 </svg>
                 Run Historical Backtest
             </button>
-            <button id="btnRunJob" class="btn-trigger btn-primary-trigger" title="Triggers the daily EOD candle download, indicator calculations, and buy/sell order recommendations.">
+            <button id="btnRunJob" class="btn-trigger btn-primary-trigger" data-tooltip="🚀 **EOD જોબ ચલાવો**: માર્કેટ બંધ થયા પછી (3:45 PM) આજના નવા ખરીદી કે વેચાણના સ્વિંગ ટ્રેડ સ્કેન કરો.">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
                     <polyline points="16 7 22 7 22 13"></polyline>
@@ -41,7 +41,7 @@
     <!-- Performance Stats Grid -->
     <div class="stats-grid">
         <!-- 15-Day Performance -->
-        <div class="card-glow stat-metric-card">
+        <div class="card-glow stat-metric-card" data-tooltip="📊 **15-દિવસ પરફોર્મન્સ**: છેલ્લા 15 દિવસમાં અલ્ગોરિધમ દ્વારા મળેલ કૂલ નફો (%) અને વિનિંગ રેટ (WR %).">
             <div class="stat-metric-header">
                 <span>15-Day Performance</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -63,7 +63,7 @@
         </div>
 
         <!-- 30-Day Performance -->
-        <div class="card-glow stat-metric-card">
+        <div class="card-glow stat-metric-card" data-tooltip="📊 **30-દિવસ પરફોર્મન્સ**: છેલ્લા 1 મહિનાના ટ્રેડ્સનો કૂલ રિટર્ન અને સક્સેસ રેટ (Win Rate).">
             <div class="stat-metric-header">
                 <span>30-Day Performance</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -85,7 +85,7 @@
         </div>
 
         <!-- Strategy Parameters Summary -->
-        <div class="card-glow stat-metric-card" style="justify-content: flex-start; gap: 8px;">
+        <div class="card-glow stat-metric-card" style="justify-content: flex-start; gap: 8px;" data-tooltip="🎯 **ટ્રેડિંગ પેરામીટર્સ**: Target (+5%), Stop Loss (-3%), અને મહત્તમ સમય મર્યાદા (20 દિવસ).">
             <div class="stat-metric-header" style="margin-bottom: 4px;">
                 <span>Trading Parameters</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -102,7 +102,7 @@
     </div>
 
     <!-- Nifty Market Filter Banner -->
-    <div class="nifty-status-banner">
+    <div class="nifty-status-banner" data-tooltip="🏛️ **NIFTY માર્કેટ ફિલ્ટર**: જો Nifty 50 એવરેજથી ઉપર હોય તો જ નવા ખરીદીના સ્વિંગ ટ્રેડ્સ અલોવ થાય છે.">
         <div class="nifty-banner-left">
             <div style="display: flex; align-items: center; gap: 12px;">
                 <h3 class="nifty-title">NIFTY MARKET FILTER</h3>
@@ -115,23 +115,23 @@
         </div>
         
         <div class="nifty-banner-right">
-            <div class="nifty-detail-item">
+            <div class="nifty-detail-item" data-tooltip="50 દિવસની સિમ્પલ મુવિંગ એવરેજ (50 DMA)">
                 <span class="label">50 Day DMA</span>
                 <span id="niftySma50" class="value">21,950.00</span>
             </div>
-            <div class="nifty-detail-item">
+            <div class="nifty-detail-item" data-tooltip="20 દિવસની એક્સ્પોનેન્શિયલ મુવિંગ એવરેજ (EMA 20)">
                 <span class="label">20 Day EMA</span>
                 <span id="niftyEma20" class="value">22,120.40</span>
             </div>
-            <div class="nifty-detail-item">
+            <div class="nifty-detail-item" data-tooltip="50 દિવસની એક્સ્પોનેન્શિયલ મુવિંગ એવરેજ (EMA 50)">
                 <span class="label">50 Day EMA</span>
                 <span id="niftyEma50" class="value">21,990.20</span>
             </div>
-            <div class="nifty-detail-item" style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;">
+            <div class="nifty-detail-item" style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;" data-tooltip="શરત 1: Nifty ક્લોઝિંગ પ્રાઇસ > 50 DMA">
                 <span class="label">Price > 50 DMA</span>
                 <span id="niftyCond1" class="value pnl-text positive">Yes</span>
             </div>
-            <div class="nifty-detail-item">
+            <div class="nifty-detail-item" data-tooltip="શરત 2: 20 EMA > 50 EMA (તેજી મોમેન્ટમ)">
                 <span class="label">EMA20 > EMA50</span>
                 <span id="niftyCond2" class="value pnl-text positive">Yes</span>
             </div>
@@ -140,7 +140,7 @@
 
     <!-- Main Section Navigation Tabs -->
     <div class="swing-tabs-nav">
-        <button class="swing-tab-btn active" id="tabBtnRecommendations" data-pane="paneRecommendations">
+        <button class="swing-tab-btn active" id="tabBtnRecommendations" data-pane="paneRecommendations" data-tooltip="📈 **સ્ટોક ભલામણો**: સ્કેનરમાંથી પસંદ થયેલા નવા ખરીદી કરવા યોગ્ય સ્ટોક્સ.">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="20" x2="18" y2="10"></line>
                 <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -149,7 +149,7 @@
             Stock Recommendations
             <span class="tab-badge" id="recommendationsBadge">0</span>
         </button>
-        <button class="swing-tab-btn" id="tabBtnTradeLog" data-pane="paneTradeLog">
+        <button class="swing-tab-btn" id="tabBtnTradeLog" data-pane="paneTradeLog" data-tooltip="📜 **પોઝિશન્સ અને લોગ**: સિમ્યુલેટેડ પોઝિશન્સ અને બંધ થયેલા જૂના ટ્રેડ્સનો લોગ.">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
@@ -160,7 +160,7 @@
             Simulated Positions & Trade Log
             <span class="tab-badge" id="tradeLogBadge">0</span>
         </button>
-        <button class="swing-tab-btn" id="tabBtnParameters" data-pane="paneParameters">
+        <button class="swing-tab-btn" id="tabBtnParameters" data-pane="paneParameters" data-tooltip="⚙️ **સ્ટ્રેટેજી પેરામીટર્સ**: રિસ્ક મેનેજમેન્ટ, લીવરેજ અને ટ્રાન્ઝેક્શન ચાર્જિસ કન્ફિગ્યુરેશન.">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -173,7 +173,7 @@
     <div class="swing-tab-pane active" id="paneRecommendations">
         <!-- Executive KPI Metrics Summary for 3,000+ Symbols -->
         <div class="executive-kpi-grid">
-            <div class="kpi-card">
+            <div class="kpi-card" data-tooltip="📊 **કૂલ સ્કેન થતા સ્ટોક્સ**: ડેટાબેઝમાં સ્કેન થતા 3,000 થી વધુ NSE કંપની શેરો.">
                 <div class="kpi-left">
                     <span class="kpi-label">Total Symbols Scanned</span>
                     <span class="kpi-value" id="kpiTotalSymbols">0</span>
@@ -186,7 +186,7 @@
                 </div>
             </div>
 
-            <div class="kpi-card" style="border-color: rgba(52, 211, 153, 0.25);">
+            <div class="kpi-card" style="border-color: rgba(52, 211, 153, 0.25);" data-tooltip="🚀 **નવા BUY સિગ્નલ્સ**: આજના EOD સ્કેનિંગ મુજબ ખરીદી માટે યોગ્ય બ્રેકઆઉટ સ્ટોક્સ.">
                 <div class="kpi-left">
                     <span class="kpi-label" style="color: #34d399;">🟢 BUY Recommendations</span>
                     <span class="kpi-value buy-glow" id="kpiBuyCount">0</span>

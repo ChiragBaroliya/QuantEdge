@@ -189,6 +189,55 @@ window.showToast = function (message, type, duration) {
         if (!rawText) return '';
 
         const text = rawText.trim();
+        
+        // If rawText already contains HTML markup (e.g. qe-tt-gu-box), render directly
+        if (text.startsWith('<') && (text.includes('class="') || text.includes("class='"))) {
+            return text;
+        }
+
+        // Check if tooltip contains Gujarati characters
+        const isGujarati = /[\u0A80-\u0AFF]/.test(text);
+
+        if (isGujarati) {
+            // Check for bold title markers like **Title** or Title:
+            let title = '';
+            let body = text;
+            let tip = '';
+
+            // Extract Tip if present (e.g. ⚡ ટિપ: ...)
+            const tipMatch = body.match(/(⚡|💡|📌)?\s*(ટિપ|નોંધ|Tip|Note):\s*(.*)/i);
+            if (tipMatch) {
+                tip = tipMatch[3] || tipMatch[0];
+                body = body.replace(tipMatch[0], '').trim();
+            }
+
+            // Extract Title if present (e.g. 🔑 **ટોકન મેનેજર**: વિગત...)
+            const titleMatch = body.match(/^([^\n:\*]+(?:\*\*)?):?\s*[\n\r]*(.*)/s);
+            if (titleMatch && titleMatch[1] && titleMatch[2] && titleMatch[1].length < 60) {
+                title = titleMatch[1].replace(/\*\*/g, '').trim();
+                body = titleMatch[2].trim();
+            } else {
+                title = el.getAttribute('data-qe-label') || 'માહિતી';
+            }
+
+            // Format body paragraphs/lines
+            body = escapeHtml(body).replace(/\n/g, '<br/>');
+
+            return `
+                <div class="qe-tt-gu-box">
+                    <div class="qe-tt-gu-header">
+                        <span class="qe-tt-gu-title">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                            ${escapeHtml(title)}
+                        </span>
+                        <span class="qe-tt-gu-badge">માહિતી</span>
+                    </div>
+                    <div class="qe-tt-gu-desc">${body}</div>
+                    ${tip ? `<div class="qe-tt-gu-tip"><span>⚡</span><span>${escapeHtml(tip)}</span></div>` : ''}
+                </div>
+            `;
+        }
+
         const decisionText = (el.textContent || '').trim();
 
         // Check if string contains decision or score patterns

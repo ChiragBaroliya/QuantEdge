@@ -823,24 +823,22 @@ function updateSignalUi(data) {
 }
 
 // Chart Line Highlighting on Indicator Tag Hover
-
-    // Chart Line Highlighting on Indicator Tag Hover
-    $(document).on('mouseenter', '.indicator-tag.ema20', function () {
-        if (ema20Series) ema20Series.applyOptions({ lineWidth: 3.5 });
-    }).on('mouseleave', '.indicator-tag.ema20', function () {
-        if (ema20Series) ema20Series.applyOptions({ lineWidth: 1.5 });
-    });
-
-    $(document).on('mouseenter', '.indicator-tag.ema50', function () {
-        if (ema50Series) ema50Series.applyOptions({ lineWidth: 3.5 });
-    }).on('mouseleave', '.indicator-tag.ema50', function () {
-        if (ema50Series) ema50Series.applyOptions({ lineWidth: 1.5 });
-    });
-
-    $(document).on('mouseenter', '.indicator-tag.vwap', function () {
-        if (vwapSeries) vwapSeries.applyOptions({ lineWidth: 3.5 });
-    }).on('mouseleave', '.indicator-tag.vwap', function () {
-        if (vwapSeries) vwapSeries.applyOptions({ lineWidth: 1.2 });
-    });
+$(document).on('mouseenter', '.indicator-tag.ema20', function () {
+    if (ema20Series) ema20Series.applyOptions({ lineWidth: 3.5 });
+}).on('mouseleave', '.indicator-tag.ema20', function () {
+    if (ema20Series) ema20Series.applyOptions({ lineWidth: 1.5 });
 });
+
+$(document).on('mouseenter', '.indicator-tag.ema50', function () {
+    if (ema50Series) ema50Series.applyOptions({ lineWidth: 3.5 });
+}).on('mouseleave', '.indicator-tag.ema50', function () {
+    if (ema50Series) ema50Series.applyOptions({ lineWidth: 1.5 });
+});
+
+$(document).on('mouseenter', '.indicator-tag.vwap', function () {
+    if (vwapSeries) vwapSeries.applyOptions({ lineWidth: 3.5 });
+}).on('mouseleave', '.indicator-tag.vwap', function () {
+    if (vwapSeries) vwapSeries.applyOptions({ lineWidth: 1.2 });
+});
+
 

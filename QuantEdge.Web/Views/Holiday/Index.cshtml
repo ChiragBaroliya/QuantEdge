@@ -42,7 +42,7 @@
 
 <!-- KPI Summary Row -->
 <div class="kpi-row kpi-row-4" style="margin-bottom: 24px;">
-    <div class="kpi-card" style="--kpi-color: var(--theme-accent);">
+    <div class="kpi-card" style="--kpi-color: var(--theme-accent);" data-tooltip="📅 **કૂલ રજાઓ**: ડેટાબેઝમાં કન્ફિગ્યુર થયેલી કૂલ ટ્રેડિંગ રજાઓની સંખ્યા.">
         <div class="kpi-header">
             <span class="kpi-label">Total Holidays</span>
             <div class="kpi-icon">
@@ -52,7 +52,7 @@
         <div class="kpi-value">@allHolidays.Count</div>
         <div class="kpi-subtext">All configured</div>
     </div>
-    <div class="kpi-card" style="--kpi-color: var(--accent-blue);">
+    <div class="kpi-card" style="--kpi-color: var(--accent-blue);" data-tooltip="📆 **ચાલુ વર્ષની રજાઓ**: ચાલુ કેલેન્ડર વર્ષ દરમિયાન આવતી શેરબજારની રજાઓ.">
         <div class="kpi-header">
             <span class="kpi-label">Current Year</span>
             <div class="kpi-icon" style="color: var(--accent-blue);">
@@ -62,7 +62,7 @@
         <div class="kpi-value" style="color: var(--accent-blue);">@thisYearHolidays.Count</div>
         <div class="kpi-subtext">In @currentYear</div>
     </div>
-    <div class="kpi-card" style="--kpi-color: var(--accent-amber);">
+    <div class="kpi-card" style="--kpi-color: var(--accent-amber);" data-tooltip="⏳ **આવનારી રજાઓ**: આજની તારીખ પછી આવનારી માર્કેટ હોલિડેઝ.">
         <div class="kpi-header">
             <span class="kpi-label">Upcoming</span>
             <div class="kpi-icon" style="color: var(--accent-amber);">
@@ -72,7 +72,7 @@
         <div class="kpi-value" style="color: var(--accent-amber);">@upcomingHolidays.Count</div>
         <div class="kpi-subtext">From today</div>
     </div>
-    <div class="kpi-card" style="--kpi-color: var(--accent-green);">
+    <div class="kpi-card" style="--kpi-color: var(--accent-green);" data-tooltip="📈 **બાકી ટ્રેડિંગ દિવસો**: ચાલુ વર્ષમાં માર્કેટ ચાલુ હોય તેવા બાકી રહેતા દિવસો (શનિ-રવિ અને રજાઓ બાદ).">
         <div class="kpi-header">
             <span class="kpi-label">Trading Days Left</span>
             <div class="kpi-icon" style="color: var(--accent-green);">
@@ -100,7 +100,7 @@
                 </div>
             </div>
             <div class="card-header-actions">
-                <button type="button" class="btn-secondary btn-sm" id="btnExportCSV" title="Export as CSV">
+                <button type="button" class="btn-secondary btn-sm" id="btnExportCSV" data-tooltip="📥 **CSV એક્સપોર્ટ**: રજાઓની સંપૂર્ણ યાદી Excel/CSV ફાઇલમાં ડાઉનલોડ કરો.">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     Export
                 </button>
@@ -110,16 +110,16 @@
         <div style="padding: 16px 24px 0;">
             <!-- Search + Filter row -->
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
-                <div style="position: relative; flex: 1; min-width: 180px;">
+                <div style="position: relative; flex: 1; min-width: 180px;" data-tooltip="🔎 **રજા શોધો**: તહેવાર અથવા તારીખ દ્વારા હોલિડે ફિલ્ટર કરો.">
                     <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     <input type="text" id="holidaySearch" placeholder="Search holidays..." 
                            style="width:100%;height:36px;padding:0 12px 0 36px;background:var(--bg-input);border:1px solid var(--border-subtle);border-radius:var(--radius-md);color:var(--text-primary);font-size:13px;outline:none;transition:border-color var(--transition);"
                            oninput="filterHolidays()" onfocus="this.style.borderColor='var(--theme-accent)'" onblur="this.style.borderColor='var(--border-subtle)'">
                 </div>
                 <div style="display:flex;gap:6px;flex-shrink:0;">
-                    <button class="hf-chip hf-chip-active" onclick="setHolidayFilter('all',this)" data-filter="all">All</button>
-                    <button class="hf-chip" onclick="setHolidayFilter('upcoming',this)" data-filter="upcoming">Upcoming</button>
-                    <button class="hf-chip" onclick="setHolidayFilter('past',this)" data-filter="past">Past</button>
+                    <button class="hf-chip hf-chip-active" onclick="setHolidayFilter('all',this)" data-filter="all" data-tooltip="સંપૂર્ણ રજાઓ જુઓ">All</button>
+                    <button class="hf-chip" onclick="setHolidayFilter('upcoming',this)" data-filter="upcoming" data-tooltip="ફક્ત આવનારી રજાઓ જુઓ">Upcoming</button>
+                    <button class="hf-chip" onclick="setHolidayFilter('past',this)" data-filter="past" data-tooltip="જૂની વીતી ગયેલી રજાઓ જુઓ">Past</button>
                 </div>
             </div>
         </div>
@@ -141,10 +141,10 @@
                     <table class="qe-table" id="holidayTable">
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Description</th>
-                                <th>Status</th>
-                                <th class="text-right">Action</th>
+                                <th data-tooltip="📅 **રજાની તારીખ**: જે દિવસે શેરબજાર બંધ રહેશે.">Date</th>
+                                <th data-tooltip="📝 **વર્ણન / તહેવાર**: રજાનું કાવ્ય અને વિગત.">Description</th>
+                                <th data-tooltip="📌 **સ્થિતિ**: Today (આજે), Upcoming (આવનારી), અથવા Past (વીતી ગયેલી).">Status</th>
+                                <th class="text-right" data-tooltip="❌ **કાઢી નાખો**: કન્ફિગ્યુરેશનમાંથી રજા દૂર કરો.">Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -179,7 +179,7 @@
                                     <td class="text-right">
                                         <form asp-controller="Holiday" asp-action="Delete" method="post" style="display:inline;">
                                             <input type="hidden" name="id" value="@holiday.Id" />
-                                            <button type="submit" class="btn-danger btn-xs"
+                                            <button type="submit" class="btn-danger btn-xs" data-tooltip="❌ આ રજા ડિલીટ કરવા માટે ક્લિક કરો"
                                                     onclick="return confirm('Delete holiday: &quot;@holiday.Description&quot;?')">
                                                 Delete
                                             </button>
@@ -202,7 +202,7 @@
     </div>
 
     <!-- Add Holiday Form Card -->
-    <div class="card">
+    <div class="card" data-tooltip="➕ **નવી હોલિડે ઉમેરો**: સોમ-શુક્ર વચ્ચે આવતી શેરબજારની જાહેર રજા દાખલ કરો.">
         <div class="card-header">
             <div class="card-header-inner">
                 <div class="card-header-icon" style="background:rgba(52,211,153,0.12);color:var(--accent-green);border:1px solid rgba(52,211,153,0.2);">
@@ -217,26 +217,26 @@
 
         <div class="card-body">
             <form asp-controller="Holiday" asp-action="Create" method="post">
-                <div class="form-group">
+                <div class="form-group" data-tooltip="📅 **રજાની તારીખ**: કેલેન્ડરમાંથી જે દિવસે માર્કેટ બંધ હોય તે તારીખ સિલેક્ટ કરો.">
                     <label class="form-label" for="holidayDate">Holiday Date</label>
                     <input type="date" class="form-input" id="holidayDate" name="holidayDate"
                            required value="@DateTime.Today.ToString("yyyy-MM-dd")" />
                 </div>
 
-                <div class="form-group" style="margin-bottom: 28px;">
+                <div class="form-group" style="margin-bottom: 28px;" data-tooltip="📝 **રજાનું નામ**: ઉદાહરણ તરીકે દિવાળી, સ્વતંત્રતા દિવસ, હોળી વગેરે.">
                     <label class="form-label" for="description">Description</label>
                     <input type="text" class="form-input" id="description" name="description"
                            placeholder="e.g. Diwali, Independence Day" required autocomplete="off" />
                 </div>
 
-                <button type="submit" class="btn-primary" style="width:100%;justify-content:center;border:none;cursor:pointer;">
+                <button type="submit" class="btn-primary" style="width:100%;justify-content:center;border:none;cursor:pointer;" data-tooltip="💾 **રજા સેવ કરો**: ડેટાબેઝમાં નવી રજા ઉમેરો.">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                     Save Holiday
                 </button>
             </form>
 
             <!-- Info note -->
-            <div style="margin-top:20px;padding:14px 16px;background:rgba(79,156,249,0.06);border:1px solid rgba(79,156,249,0.15);border-radius:var(--radius-md);font-size:12.5px;color:var(--text-secondary);line-height:1.6;">
+            <div style="margin-top:20px;padding:14px 16px;background:rgba(79,156,249,0.06);border:1px solid rgba(79,156,249,0.15);border-radius:var(--radius-md);font-size:12.5px;color:var(--text-secondary);line-height:1.6;" data-tooltip="💡 **નોંધ**: શનિવાર અને રવિવાર સિસ્ટમ દ્વારા આપમેળે સ્કિપ થાય છે. ફક્ત કામકાજના દિવસોની રજાઓ જ અહીં ઉમેરવી.">
                 <strong style="color:var(--accent-blue);display:block;margin-bottom:4px;">ℹ Note</strong>
                 The background service automatically skips weekends. Add only public holidays here that fall on weekdays.
             </div>

@@ -96,7 +96,7 @@
 
     <!-- Sidebar Navigation Drawer -->
     <aside class="sidebar" id="appSidebar">
-        <div class="sidebar-brand">
+        <div class="sidebar-brand" data-tooltip="⚡ **QuantEdge પ્લેટફોર્મ**: આર્ટિફિશિયલ ઇન્ટેલિજન્સ સંચાલિત અલ્ગો ટ્રેડિંગ ડેશબોર્ડ.">
             <div class="brand-left">
                 <div class="brand-icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -106,7 +106,7 @@
                 </div>
                 <span class="brand-name">QuantEdge</span>
             </div>
-            <button class="sidebar-close-btn" id="sidebarClose" type="button" aria-label="Close navigation menu">
+            <button class="sidebar-close-btn" id="sidebarClose" type="button" aria-label="Close navigation menu" data-tooltip="❌ મેનૂ બંધ કરો">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -118,7 +118,7 @@
             <div class="nav-section-label">PLATFORM</div>
             <a asp-controller="Token" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Token" ? "active" : "")"
-               title="Token Manager">
+               data-tooltip="🔑 **ટોકન મેનેજર**: Zerodha સાયલન્ટ API ઓથોરાઇઝેશન અને એક્સેસ ટોકન મેનેજ કરો.&#10;⚡ ટિપ: રોજના ટ્રેડિંગ માટે નવું ટોકન બનાવો.">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
@@ -127,7 +127,7 @@
             </a>
             <a asp-controller="Holiday" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Holiday" ? "active" : "")"
-               title="Holiday Manager">
+               data-tooltip="📅 **હોલિડે મેનેજર**: NSE/BSE શેરબજારની સત્તાવાર રજાઓ અને ટ્રેડિંગ કેલેન્ડર સેટ કરો.">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                     <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -138,7 +138,7 @@
             </a>
             <a asp-controller="Home" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" ? "active" : "")"
-               title="Signal Dashboard">
+               data-tooltip="📊 **સિગ્નલ ડેશબોર્ડ**: લાઇવ માર્કેટ ડેટા, RSI, VWAP અને AI બુલિશ/બેરિશ ટ્રેડિંગ ભલામણો જુઓ.">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="20" x2="18" y2="10"></line>
                     <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -148,7 +148,7 @@
             </a>
             <a asp-controller="SwingTrading" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" ? "active" : "")"
-               title="Swing Trading">
+               data-tooltip="📈 **સ્વિંગ ટ્રેડિંગ**: મલ્ટી-ડે એન્ટ્રી/એક્ઝિટ સ્કેનર, બ્રેકઆઉટ્સ અને રિસ્ક/રિવોર્ડ ટ્રેડ્સ.">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
                 </svg>
@@ -156,7 +156,7 @@
             </a>
             <a asp-controller="DataCoverage" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "DataCoverage" ? "active" : "")"
-               title="Data Coverage Manager">
+               data-tooltip="🗄️ **ડેટા કવરેજ**: 1-મિનિટ કેન્ડલસ્ટિક ડેટા કમ્પ્લીટનેસ અને મિસિંગ કેન્ડલ્સ તપાસો.">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
                     <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
@@ -167,7 +167,7 @@
             </a>
             <a asp-controller="ManageHistory" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "ManageHistory" ? "active" : "")"
-               title="Manage History Data">
+               data-tooltip="🔄 **હિસ્ટ્રી મેનેજર**: ભૂતકાળનો (Historical) કેન્ડલ ડેટા ડાઉનલોડ અને બેકફિલ સિંક કરો.">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
                     <polyline points="12 6 12 12 16 14"></polyline>
@@ -183,7 +183,7 @@
                 bool isWebLogActive = isLogActive && !isApiLogActive && !isMemoryLogActive;
             }
             <div class="nav-item-group @(isLogActive ? "open" : "")">
-                <div class="nav-item-header @(isLogActive ? "active" : "")" title="Log Manager">
+                <div class="nav-item-header @(isLogActive ? "active" : "")" data-tooltip="📜 **લોગ મેનેજર**: સિસ્ટમ એરર, API વિગતો અને RAM મેમરી મોનિટરિંગ.">
                     <div class="nav-item-header-left">
                         <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -200,7 +200,7 @@
                 <div class="nav-submenu">
                     <a asp-controller="Log" asp-action="Index"
                        class="nav-sub-item @(isWebLogActive ? "active" : "")"
-                       title="Web Log">
+                       data-tooltip="🌐 **વેબ લોગ**: વેબ એપ્લિકેશન સિસ્ટમ એરર અને ઈન્ફોર્મેશન લોગ્સ.">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"></circle>
                             <line x1="2" y1="12" x2="22" y2="12"></line>
@@ -210,7 +210,7 @@
                     </a>
                     <a asp-controller="Log" asp-action="ApiLog"
                        class="nav-sub-item @(isApiLogActive ? "active" : "")"
-                       title="API Log">
+                       data-tooltip="🔌 **API લોગ**: API રિક્વેસ્ટ, રેસ્પોન્સ અને લેટન્સી લોગ્સ.">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="16 18 22 12 16 6"></polyline>
                             <polyline points="8 6 2 12 8 18"></polyline>
@@ -219,7 +219,7 @@
                     </a>
                     <a asp-controller="Log" asp-action="Memory"
                        class="nav-sub-item @(isMemoryLogActive ? "active" : "")"
-                       title="Memory Usage">
+                       data-tooltip="💻 **મેમરી યુસેજ**: સર્વર RAM વપરાશ, In-Memory કેશ અને GC પ્રોફાઇલર.">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
                             <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
@@ -233,7 +233,7 @@
         </nav>
 
         <div class="sidebar-footer">
-            <div class="system-badge">
+            <div class="system-badge" data-tooltip="🟢 **સિસ્ટમ એક્ટિવ**: QuantEdge સિસ્ટમ અને એનિમેશન થ્રેડ્સ સામાન્ય રીતે ચાલી રહ્યા છે.">
                 <div class="pulse-dot"></div>
                 <span>System Active</span>
             </div>
@@ -246,7 +246,7 @@
         <!-- Top Header Bar -->
         <header class="top-header">
             <div class="header-left">
-                <button class="mobile-sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle Navigation">
+                <button class="mobile-sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle Navigation" data-tooltip="📱 નેવિગેશન મેનૂ ખોલો">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="3" y1="12" x2="21" y2="12"></line>
                         <line x1="3" y1="6" x2="21" y2="6"></line>
@@ -272,11 +272,11 @@
                 </div>
             </div>
             <div class="header-right">
-                <div class="market-badge" aria-label="NSE Live">
+                <div class="market-badge" aria-label="NSE Live" data-tooltip="📡 **NSE LIVE**: નેશનલ સ્ટોક એક્સચેન્જ સાથે રીઅલ-ટાઇમ માર્કેટ ડેટા કનેક્શન સક્રિય છે.">
                     <span class="market-dot"></span>
                     NSE · LIVE
                 </div>
-                <div class="current-time" id="currentTime" aria-live="polite"></div>
+                <div class="current-time" id="currentTime" aria-live="polite" data-tooltip="⏰ **ભારતીય સમય (IST)**: વર્તમાન ટ્રેડિંગ ઘડિયાળ."></div>
             </div>
         </header>
 
