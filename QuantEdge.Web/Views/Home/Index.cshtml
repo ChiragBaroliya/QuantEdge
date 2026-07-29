@@ -9,14 +9,14 @@
     <!-- Filters & Selection Row -->
     <div class="control-panel card">
         <div class="control-left">
-            <div class="control-select-group" data-tooltip="🔍 **સ્ટોક સિમ્બોલ**: પૃથક્કરણ અને સિગ્નલ માટે કંપનીનો શેર પસંદ કરો (દા.ત. RELIANCE, INFY, NIFTY).">
+            <div class="control-select-group" data-tooltip="🔍 **Stock Symbol**: Select a stock to analyze (e.g. RELIANCE, INFY, NIFTY).">
                 <select id="stockSelector" class="custom-select" aria-label="Asset Symbol">
                     <option value="" disabled selected>Select Stock Symbol...</option>
                 </select>
             </div>
             
             <div class="timeframe-group">
-                <div class="tabs" data-tooltip="⏱️ **ટાઇમફ્રેમ પસંદગી**: કેન્ડલસ્ટિક ચાર્ટ અને ટેકનિકલ એનાલિસિસ માટે સમયગાળો (1 મિનિટથી 1 દિવસ) સેટ કરો.">
+                <div class="tabs" data-tooltip="⏱️ **Timeframe**: Select chart timeframe from 1 minute to 1 day.">
                     <button class="tab-btn active" data-timeframe="1m">1 MIN</button>
                     <button class="tab-btn" data-timeframe="5m">5 MIN</button>
                     <button class="tab-btn" data-timeframe="15m">15 MIN</button>
@@ -27,14 +27,31 @@
         </div>
 
         <div class="control-right">
-            <button id="btnOpenReference" class="btn-trigger" data-tooltip="📖 **અલ્ગોરિધમ નિયમો**: સ્કોરિંગ વજન અને ગણિતના સૂત્રોનું સંપૂર્ણ માર્ગદર્શન જુઓ.">
+            <div class="auto-refresh-group" data-tooltip="🔄 **1m Auto Refresh**: Automatically refreshes chart data and AI signals every 60 seconds.">
+                <button id="btnManualRefresh" class="btn-refresh-icon" title="Manual Refresh Now" aria-label="Manual Refresh">
+                    <svg class="refresh-spin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21.5 2v6h-6M2.5 22v-6h6"></path>
+                        <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M22 12.5a10 10 0 0 1-18.8 4.3L2.5 16"></path>
+                    </svg>
+                </button>
+                <div class="auto-refresh-toggle-box">
+                    <label class="switch switch-sm">
+                        <input type="checkbox" id="toggleAutoRefresh" checked aria-label="Toggle 1m Auto Refresh">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="auto-refresh-title">1m Auto</span>
+                    <span id="autoRefreshBadge" class="refresh-timer-badge">60s</span>
+                </div>
+            </div>
+
+            <button id="btnOpenReference" class="btn-trigger" data-tooltip="📖 **Rules & Formulas**: View algorithm scoring weights and strategy rules.">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
                     <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
                 </svg>
                 Rules & Formulas
             </button>
-            <div id="connectionStatus" class="connection-badge offline" data-tooltip="📡 **લાઇવ કનેક્શન**: 'Connected' એટલે રીઅલ-ટાઇમ માર્કેટ ફીડ સાથે કનેક્ટેડ છે.">
+            <div id="connectionStatus" class="connection-badge offline" data-tooltip="📡 **Live Connection**: Shows real-time market feed connection status.">
                 <span class="status-dot"></span>
                 <span class="status-text">Disconnected</span>
             </div>
@@ -51,7 +68,7 @@
                         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                     </svg>
                     AI RECOMMENDATION
-                    <span class="info-tooltip-trigger" data-tooltip="🤖 **AI ટ્રેડિંગ ભલામણ**: EMA, RSI, VWAP અને MACD ના મલ્ટી-ઇન્ડિકેટર ગણતરીથી ખરીદી કે વેચાણની ભલામણ આપોઆપ જનરેટ થાય છે.">
+                    <span class="info-tooltip-trigger" data-tooltip="🤖 **AI Recommendation**: Generated automatically using EMA, RSI, VWAP, and MACD indicators.">
                         <svg class="info-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
                             <circle cx="12" cy="12" r="10"></circle>
                             <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -59,12 +76,12 @@
                         </svg>
                     </span>
                 </span>
-                <span id="signalBadge" class="recommendation-badge hold" data-tooltip="🎯 **વર્તમાન સિગ્નલ**: BUY (ખરીદો), SELL (વેચો), અથવા HOLD (રાહ જુઓ).">HOLD</span>
+                <span id="signalBadge" class="recommendation-badge hold" data-tooltip="🎯 **Current Signal**: Shows recommendation status: BUY, SELL, or HOLD.">HOLD</span>
             </div>
             
             <div class="signal-card-body">
                 <div class="score-display">
-                    <div class="radial-progress-wrapper" data-tooltip="🎯 **AI સ્કોર (0-100)**: સ્ટોકનું તેજી (Bullish) કે મંદી (Bearish) નું મોમેન્ટમ કેટલું મજબૂત છે તે દર્શાવે છે. 70+ સ્કોર તેજી દર્શાવે છે.">
+                    <div class="radial-progress-wrapper" data-tooltip="🎯 **AI Score (0-100)**: Measures trend strength. Scores above 70 indicate strong bullish momentum.">
                         <svg class="radial-progress" viewBox="0 0 36 36">
                             <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                             <path id="scoreCircle" class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
@@ -77,19 +94,19 @@
                 </div>
 
                 <div class="signal-metrics-grid">
-                    <div class="metric-box" data-tooltip="💪 **સિગ્નલ તાકાત**: ટ્રેન્ડ મોમેન્ટમ કેટલું મજબૂત છે (Strong/Moderate/Neutral).">
+                    <div class="metric-box" data-tooltip="💪 **Signal Strength**: Indicates trend momentum intensity (Strong, Moderate, or Neutral).">
                         <span class="m-label">Strength</span>
                         <span id="signalStrength" class="m-val-badge neutral">Neutral</span>
                     </div>
-                    <div class="metric-box" data-tooltip="🎯 **ટ્રિગર ભાવ**: જે ભાવ પર સિગ્નલ જનરેટ થયો તે ચોક્કસ ભાવ.">
+                    <div class="metric-box" data-tooltip="🎯 **Trigger Price**: Stock price at the moment signal was generated.">
                         <span class="m-label">Trigger Price</span>
                         <span id="signalPrice" class="m-val-text monospace">-</span>
                     </div>
-                    <div class="metric-box" data-tooltip="⏰ **સિગ્નલ સમય**: ભારતીય સમય (IST) મુજબ સિગ્નલ જનરેટ થવાનો સમય.">
+                    <div class="metric-box" data-tooltip="⏰ **Signal Time**: Time when signal was generated (in IST).">
                         <span class="m-label">Time (IST)</span>
                         <span id="signalTime" class="m-val-text monospace">-</span>
                     </div>
-                    <div class="metric-box" data-tooltip="🛡️ **વિશ્વસનીયતા (%)**: અલ્ગોરિધમ મોડેલની ચોકસાઇ અને કન્ફર્મેશન રેશિયો.">
+                    <div class="metric-box" data-tooltip="🛡️ **Confidence (%)**: Algorithm confidence level and indicator match ratio.">
                         <span class="m-label">Confidence</span>
                         <span id="signalConfidence" class="m-val-badge neutral">-</span>
                     </div>
@@ -97,7 +114,7 @@
             </div>
 
             <div class="signal-card-footer">
-                <div class="reasoning-title" data-tooltip="📋 **સિગ્નલનું વિશ્લેષણ**: આ સિગ્નલ જનરેટ થવા પાછળના મુખ્ય કારણો અને ઇન્ડિકેટર શરતો.">
+                <div class="reasoning-title" data-tooltip="📋 **Justification Factors**: Key indicator conditions and reasons behind this signal.">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px;">
                         <circle cx="12" cy="12" r="10"></circle>
                         <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -111,11 +128,11 @@
 
         <!-- Metric Details Quick Widgets -->
         <div class="metrics-widget-grid">
-            <div class="widget card" data-tooltip="💵 **હાલનો ભાવ (LTP)**: શેરોનો લાઇવ માર્કેટ ટ્રેડિંગ ભાવ અને આજના દિવસનો % ટકાવારી ફેરફાર.">
+            <div class="widget card" data-tooltip="💵 **Current Price (LTP)**: Latest live stock price and daily percentage change.">
                 <div class="w-header">
                     <span class="w-label">
                         CURRENT PRICE
-                        <span class="info-tooltip-trigger" data-tooltip="💵 **લાઇવ ભાવ (LTP)**: લાઇવ માર્કેટમાં સ્ટોકનો છેલ્લો ટ્રેડ થયેલો ભાવ.">
+                        <span class="info-tooltip-trigger" data-tooltip="💵 **Live Price (LTP)**: Latest traded stock price in live market.">
                             <svg class="info-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <circle cx="12" cy="12" r="10"></circle>
                                 <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -131,11 +148,11 @@
                 </div>
             </div>
 
-            <div class="widget card" data-tooltip="📉 **RSI (14) મોમેન્ટમ**: 60 થી ઉપર Overbought (અતિશય તેજી) અને 40 થી નીચે Oversold (અતિશય મંદી) દર્શાવે છે.">
+            <div class="widget card" data-tooltip="📉 **RSI (14) Momentum**: Values above 60 indicate bullish momentum, below 40 indicate bearish.">
                 <div class="w-header">
                     <span class="w-label">
                         RSI (14) MOMENTUM
-                        <span class="info-tooltip-trigger" data-tooltip="📉 **RSI (14)**: Relative Strength Index. 60+ ઉપર તેજી, 40- નીચે મંદી.">
+                        <span class="info-tooltip-trigger" data-tooltip="📉 **RSI (14)**: Relative Strength Index (60+ Bullish, 40- Bearish).">
                             <svg class="info-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <circle cx="12" cy="12" r="10"></circle>
                                 <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -148,16 +165,16 @@
                 <div class="w-value-wrapper">
                     <span id="widgetRSI" class="w-value monospace">-</span>
                 </div>
-                <div class="rsi-mini-track" data-tooltip="📊 RSI મીટર (0 - 30 Oversold - 70 Overbought - 100)">
+                <div class="rsi-mini-track" data-tooltip="📊 RSI Meter (0-30 Oversold, 70-100 Overbought)">
                     <div id="rsiBarFill" class="rsi-mini-fill" style="width: 50%;"></div>
                 </div>
             </div>
 
-            <div class="widget card" data-tooltip="⚖️ **VWAP તફાવત**: Volume Weighted Average Price. પોઝિટિવ તફાવત દર્શાવે છે કે ભાવ સંસ્થાકીય એવરેજથી ઉપર છે.">
+            <div class="widget card" data-tooltip="⚖️ **VWAP Difference**: Difference between live price and volume weighted average price.">
                 <div class="w-header">
                     <span class="w-label">
                         VWAP DIFFERENCE
-                        <span class="info-tooltip-trigger" data-tooltip="⚖️ **VWAP**: મોટી બેંકો અને ઇન્સ્ટિટ્યુશન્સના સરેરાશ ખરીદી ભાવથી હાલનો ભાવ કેટલો અલગ છે.">
+                        <span class="info-tooltip-trigger" data-tooltip="⚖️ **VWAP**: Distance of current price from institutional average price.">
                             <svg class="info-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <circle cx="12" cy="12" r="10"></circle>
                                 <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -172,11 +189,11 @@
                 </div>
             </div>
 
-            <div class="widget card" data-tooltip="🔀 **MACD ક્રોસઓવર**: તેજી કે મંદીનો નવો ટ્રેન્ડ શરૂ થાય ત્યારે હિસ્ટોગ્રામ અને સગ્નલ લાઇનનો ક્રોસઓવર બતાવે છે.">
+            <div class="widget card" data-tooltip="🔀 **MACD Crossover**: Indicates trend direction via MACD Line and Signal Line crossover.">
                 <div class="w-header">
                     <span class="w-label">
                         MACD CROSSOVER
-                        <span class="info-tooltip-trigger" data-tooltip="🔀 **MACD**: Moving Average Convergence Divergence ક્રોસઓવર સ્ટેટસ.">
+                        <span class="info-tooltip-trigger" data-tooltip="🔀 **MACD**: Moving Average Convergence Divergence status.">
                             <svg class="info-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <circle cx="12" cy="12" r="10"></circle>
                                 <line x1="12" y1="16" x2="12" y2="12"></line>
