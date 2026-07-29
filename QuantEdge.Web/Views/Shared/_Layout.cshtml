@@ -180,7 +180,8 @@
                 string currentAction = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
                 bool isApiLogActive = isLogActive && currentAction == "ApiLog";
                 bool isMemoryLogActive = isLogActive && currentAction == "Memory";
-                bool isWebLogActive = isLogActive && !isApiLogActive && !isMemoryLogActive;
+                bool isWorkerJobActive = isLogActive && (currentAction == "WorkerJob" || currentAction == "WorkerLog");
+                bool isWebLogActive = isLogActive && !isApiLogActive && !isMemoryLogActive && !isWorkerJobActive;
             }
             <div class="nav-item-group @(isLogActive ? "open" : "")">
                 <div class="nav-item-header @(isLogActive ? "active" : "")" data-tooltip="📜 **લોગ મેનેજર**: સિસ્ટમ એરર, API વિગતો અને RAM મેમરી મોનિટરિંગ.">
@@ -216,6 +217,15 @@
                             <polyline points="8 6 2 12 8 18"></polyline>
                         </svg>
                         <span>API Log</span>
+                    </a>
+                    <a asp-controller="Log" asp-action="WorkerJob"
+                       class="nav-sub-item @(isWorkerJobActive ? "active" : "")"
+                       data-tooltip="⚙️ **વર્કર જોબ લોગ**: Linux systemd journalctl real-time logs for all services (MarketFeed, History, Instrument, Swing Trading).">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="4 17 10 11 4 5"></polyline>
+                            <line x1="12" y1="19" x2="20" y2="19"></line>
+                        </svg>
+                        <span>Worker Job Log</span>
                     </a>
                     <a asp-controller="Log" asp-action="Memory"
                        class="nav-sub-item @(isMemoryLogActive ? "active" : "")"
