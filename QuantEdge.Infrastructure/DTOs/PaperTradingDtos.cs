@@ -48,3 +48,16 @@ public class PaperErrorDto
     public string? Field { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 }
+
+public class AutoTradeSettingsDto
+{
+    public bool IsAutoTradeEnabled { get; set; } = false;
+    public string TradingMode { get; set; } = "Paper"; // "Paper" or "Live"
+    public string AutoTradeTimeframe { get; set; } = "1m";
+    public decimal AutoTradeMinSignalStrength { get; set; } = 70m;
+    public int AutoTradeQuantity { get; set; } = 25;
+    public decimal AutoTradeStopLossPercent { get; set; } = 1.0m;
+    public decimal AutoTradeTakeProfitPercent { get; set; } = 2.0m;
+    public int MaxOpenPositions { get; set; } = 5;
+    public decimal DailyMaxLossLimit { get; set; } = 2000m;
+}

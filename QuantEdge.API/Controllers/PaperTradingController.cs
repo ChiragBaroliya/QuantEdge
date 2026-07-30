@@ -111,6 +111,26 @@ public class PaperTradingController : ControllerBase
         await _paperTradingService.SetAutoTradeStatusAsync(dto.Enabled);
         return Ok(new { success = true, autoTradeEnabled = dto.Enabled });
     }
+
+    /// <summary>
+    /// Retrieves full AutoTrade strategy settings and trading mode.
+    /// </summary>
+    [HttpGet("settings")]
+    public async Task<IActionResult> GetSettings()
+    {
+        var settings = await _paperTradingService.GetAutoTradeSettingsAsync("default_user");
+        return Ok(settings);
+    }
+
+    /// <summary>
+    /// Updates AutoTrade strategy settings, timeframe, risk rules, and trading mode (Paper vs Live).
+    /// </summary>
+    [HttpPost("settings")]
+    public async Task<IActionResult> UpdateSettings([FromBody] AutoTradeSettingsDto dto)
+    {
+        var updated = await _paperTradingService.UpdateAutoTradeSettingsAsync(dto, "default_user");
+        return Ok(updated);
+    }
 }
 
 public class AutoTradeStatusDto

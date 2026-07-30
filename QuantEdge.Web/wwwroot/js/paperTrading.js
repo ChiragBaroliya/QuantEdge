@@ -50,7 +50,21 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadPositions();
         await loadOrders();
         await loadHistory();
+        await loadAutoTradeSettings();
         initSignalR();
+    }
+
+    async function loadAutoTradeSettings() {
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/papertrading/settings`);
+            if (res.ok) {
+                const cfg = await res.json();
+                if (autoTradeToggle) autoTradeToggle.checked = !!cfg.isAutoTradeEnabled;
+                updateTradingModeBadge(cfg.tradingMode || 'Paper');
+            }
+        } catch (ex) {
+            console.error('Failed to load initial AutoTrade settings:', ex);
+        }
     }
 
     function bindEvents() {
@@ -124,6 +138,90 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (autoTradeToggle) {
             autoTradeToggle.addEventListener('change', handleToggleAutoTrade);
+        }
+
+        const btnOpenAutoTradeSettings = document.getElementById('btnOpenAutoTradeSettings');
+        if (btnOpenAutoTradeSettings) {
+            btnOpenAutoTradeSettings.addEventListener('click', openAutoTradeSettingsModal);
+        }
+
+        const btnSaveAutoTradeSettings = document.getElementById('btnSaveAutoTradeSettings');
+        if (btnSaveAutoTradeSettings) {
+            btnSaveAutoTradeSettings.addEventListener('click', handleSaveAutoTradeSettings);
+        }
+    }
+
+    async function openAutoTradeSettingsModal() {
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/papertrading/settings`);
+            if (res.ok) {
+                const cfg = await res.json();
+                document.getElementById('cfgTradingMode').value = cfg.tradingMode || 'Paper';
+                document.getElementById('cfgAutoTradeTimeframe').value = cfg.autoTradeTimeframe || '1m';
+                document.getElementById('cfgMinSignalStrength').value = cfg.autoTradeMinSignalStrength || 70;
+                document.getElementById('cfgAutoTradeQuantity').value = cfg.autoTradeQuantity || 25;
+                document.getElementById('cfgStopLossPercent').value = cfg.autoTradeStopLossPercent || 1.0;
+                document.getElementById('cfgTakeProfitPercent').value = cfg.autoTradeTakeProfitPercent || 2.0;
+                document.getElementById('cfgMaxOpenPositions').value = cfg.maxOpenPositions || 5;
+                document.getElementById('cfgDailyMaxLossLimit').value = cfg.dailyMaxLossLimit || 2000;
+            }
+        } catch (ex) {
+            console.error('Failed to load AutoTrade settings:', ex);
+        }
+
+        const modalEl = document.getElementById('autoTradeSettingsModal');
+        if (modalEl && window.bootstrap) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+        }
+    }
+
+    async function handleSaveAutoTradeSettings() {
+        const payload = {
+            isAutoTradeEnabled: autoTradeToggle ? autoTradeToggle.checked : false,
+            tradingMode: document.getElementById('cfgTradingMode').value,
+            autoTradeTimeframe: document.getElementById('cfgAutoTradeTimeframe').value,
+            autoTradeMinSignalStrength: parseFloat(document.getElementById('cfgMinSignalStrength').value),
+            autoTradeQuantity: parseInt(document.getElementById('cfgAutoTradeQuantity').value),
+            autoTradeStopLossPercent: parseFloat(document.getElementById('cfgStopLossPercent').value),
+            autoTradeTakeProfitPercent: parseFloat(document.getElementById('cfgTakeProfitPercent').value),
+            maxOpenPositions: parseInt(document.getElementById('cfgMaxOpenPositions').value),
+            dailyMaxLossLimit: parseFloat(document.getElementById('cfgDailyMaxLossLimit').value)
+        };
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/papertrading/settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                showToast('Settings Saved', 'Auto-Trade strategy & risk settings updated successfully.', 'success');
+                updateTradingModeBadge(payload.tradingMode);
+                const modalEl = document.getElementById('autoTradeSettingsModal');
+                if (modalEl && window.bootstrap) {
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) modalInstance.hide();
+                }
+            } else {
+                showToast('Error', 'Failed to save strategy settings.', 'danger');
+            }
+        } catch (ex) {
+            console.error('Error saving settings:', ex);
+            showToast('Error', 'Failed to save strategy settings.', 'danger');
+        }
+    }
+
+    function updateTradingModeBadge(mode) {
+        const badge = document.getElementById('tradingModeBadge');
+        if (!badge) return;
+        if (mode === 'Live') {
+            badge.className = 'badge bg-danger ms-1 text-uppercase';
+            badge.innerText = '🚀 LIVE (Zerodha)';
+        } else {
+            badge.className = 'badge bg-primary ms-1 text-uppercase';
+            badge.innerText = '🧪 PAPER';
         }
     }
 
@@ -600,6 +698,13 @@ document.addEventListener('DOMContentLoaded', () => {
         signalRConnection.on('ReceivePaperError', (err) => {
             if (err) {
                 showToast(err.errorCode || 'Trading Error', err.message || 'An error occurred during trade execution.', 'danger');
+            }
+        });
+
+        signalRConnection.on('ReceiveAutoTradeAlert', (alert) => {
+            if (alert && alert.message) {
+                const toastType = alert.mode === 'Live' ? 'danger' : 'success';
+                showToast(`⚡ Auto-Trade (${alert.mode})`, alert.message, toastType);
             }
         });
 

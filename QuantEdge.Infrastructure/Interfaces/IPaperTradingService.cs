@@ -16,6 +16,8 @@ public interface IPaperTradingService
     Task ProcessSignalForAutoTradeAsync(TradingSignal signal);
     Task SetAutoTradeStatusAsync(bool enabled);
     bool GetAutoTradeStatus();
+    Task<AutoTradeSettingsDto> GetAutoTradeSettingsAsync(string userId = "default_user");
+    Task<AutoTradeSettingsDto> UpdateAutoTradeSettingsAsync(AutoTradeSettingsDto settings, string userId = "default_user");
     Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync(string userId = "default_user");
     Task<IEnumerable<PaperOrder>> GetOrdersAsync(string userId = "default_user", bool activeOnly = false);
     Task<IEnumerable<PaperTradeHistory>> GetTradeHistoryAsync(string userId = "default_user", int limit = 50);

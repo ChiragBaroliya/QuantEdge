@@ -19,18 +19,26 @@
             <p class="paper-subtitle mb-0">Simulate trades with virtual capital (₹1,00,000) using live WebSocket prices and AI signals.</p>
         </div>
         <div class="paper-header-actions d-flex align-items-center gap-2 flex-wrap">
-            <div class="paper-switch-box">
+            <div class="paper-switch-box d-flex align-items-center gap-2">
                 <input class="form-check-input" type="checkbox" id="autoTradeToggle">
                 <label class="form-check-label text-light fw-medium mb-0 small" for="autoTradeToggle" style="cursor:pointer;">
                     ⚡ Auto-Trade AI Signals
                 </label>
+                <span id="tradingModeBadge" class="badge bg-primary ms-1" style="font-size: 0.75rem;">PAPER</span>
             </div>
+            <button id="btnOpenAutoTradeSettings" class="btn btn-outline-primary btn-sm px-3 py-2 rounded-3 d-flex align-items-center gap-1 shadow-sm" title="Configure Auto-Trade Strategy & Risk Rules">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                ⚙️ Settings
+            </button>
             <button id="resetAccountBtn" class="btn btn-outline-danger btn-sm px-3 py-2 rounded-3 d-flex align-items-center gap-1 shadow-sm">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M23 4v6h-6"></path>
                     <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                 </svg>
-                Reset Virtual Capital
+                Reset Capital
             </button>
         </div>
     </div>
@@ -252,6 +260,103 @@
 
 <!-- Glassmorphism Floating Toast Container for Error / Success alerts -->
 <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;" id="toastContainer"></div>
+
+<!-- Auto-Trade Configuration Modal -->
+<div class="modal fade" id="autoTradeSettingsModal" tabindex="-1" aria-labelledby="autoTradeSettingsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content paper-card border border-primary border-opacity-25 text-light shadow-lg" style="background-color: #121824;">
+            <div class="modal-header border-bottom border-secondary border-opacity-25">
+                <h5 class="modal-title fw-bold d-flex align-items-center gap-2" id="autoTradeSettingsModalLabel">
+                    <span class="badge bg-primary p-2 rounded-3">⚡</span>
+                    Auto-Trade Strategy & Risk Configuration
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="autoTradeSettingsForm">
+                    <div class="row g-3">
+                        <!-- Trading Execution Mode (Paper vs Live) -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-info">🎯 Trading Execution Mode</label>
+                            <select id="cfgTradingMode" class="form-select paper-input border-info">
+                                <option value="Paper">🧪 Paper Trading (Virtual Capital Sandbox)</option>
+                                <option value="Live">🚀 Live Real-Money Trading (Zerodha Kite API)</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">Paper uses virtual capital. Live routes orders to Zerodha API.</small>
+                        </div>
+
+                        <!-- Target TimeFrame -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-light">⏱️ Target TimeFrame</label>
+                            <select id="cfgAutoTradeTimeframe" class="form-select paper-input">
+                                <option value="1m">1 MIN (Intraday Scalping - Default)</option>
+                                <option value="5m">5 MIN (Intraday Momentum)</option>
+                                <option value="15m">15 MIN (Intraday Trend)</option>
+                                <option value="60m">60 MIN (Hourly Trend)</option>
+                                <option value="1d">1 DAY (Daily Swing)</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">Evaluates signals on closed candles for this timeframe.</small>
+                        </div>
+
+                        <!-- Minimum Signal Strength Threshold -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-light">💪 Min Signal Confidence (%)</label>
+                            <select id="cfgMinSignalStrength" class="form-select paper-input">
+                                <option value="60">60% (Moderate Confidence)</option>
+                                <option value="70" selected>70% (Strong Signal - Recommended)</option>
+                                <option value="80">80% (Very Strong Signal)</option>
+                                <option value="90">90% (Ultra High Probability)</option>
+                            </select>
+                        </div>
+
+                        <!-- Quantity per Trade -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-light">📦 Trade Lot Size / Quantity</label>
+                            <input type="number" id="cfgAutoTradeQuantity" class="form-control paper-input" min="1" max="10000" value="25">
+                            <small class="text-muted d-block mt-1">Number of shares/lots per automated order.</small>
+                        </div>
+
+                        <!-- Stop Loss % -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-danger">🛡️ Automated Stop-Loss (%)</label>
+                            <div class="input-group">
+                                <input type="number" id="cfgStopLossPercent" class="form-control paper-input" step="0.1" min="0.1" max="10" value="1.0">
+                                <span class="input-group-text bg-secondary bg-opacity-25 text-light border-secondary">%</span>
+                            </div>
+                        </div>
+
+                        <!-- Take Profit % -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-success">🎯 Automated Take-Profit (%)</label>
+                            <div class="input-group">
+                                <input type="number" id="cfgTakeProfitPercent" class="form-control paper-input" step="0.1" min="0.1" max="20" value="2.0">
+                                <span class="input-group-text bg-secondary bg-opacity-25 text-light border-secondary">%</span>
+                            </div>
+                        </div>
+
+                        <!-- Max Concurrent Open Positions -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-light">📊 Max Concurrent Open Positions</label>
+                            <input type="number" id="cfgMaxOpenPositions" class="form-control paper-input" min="1" max="20" value="5">
+                        </div>
+
+                        <!-- Daily Max Loss Emergency Limit -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-warning">⚠️ Daily Max Loss Kill-Limit (₹)</label>
+                            <input type="number" id="cfgDailyMaxLossLimit" class="form-control paper-input" step="100" min="500" value="2000">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top border-secondary border-opacity-25">
+                <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="btnSaveAutoTradeSettings" class="btn btn-primary rounded-3 px-4 fw-bold shadow">
+                    💾 Save Strategy Settings
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 @section Scripts {
     <script>

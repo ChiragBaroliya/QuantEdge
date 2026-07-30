@@ -28,6 +28,15 @@ public class PaperTradingRepository : IPaperTradingRepository
                 current_balance AS CurrentBalance,
                 used_margin AS UsedMargin,
                 realized_pnl AS RealizedPnl,
+                is_auto_trade_enabled AS IsAutoTradeEnabled,
+                trading_mode AS TradingMode,
+                auto_trade_timeframe AS AutoTradeTimeframe,
+                auto_trade_min_signal_strength AS AutoTradeMinSignalStrength,
+                auto_trade_quantity AS AutoTradeQuantity,
+                auto_trade_stop_loss_percent AS AutoTradeStopLossPercent,
+                auto_trade_take_profit_percent AS AutoTradeTakeProfitPercent,
+                max_open_positions AS MaxOpenPositions,
+                daily_max_loss_limit AS DailyMaxLossLimit,
                 created_at AS CreatedAt,
                 updated_at AS UpdatedAt
             FROM paper_accounts
@@ -396,5 +405,36 @@ public class PaperTradingRepository : IPaperTradingRepository
             transaction.Rollback();
             throw;
         }
+    }
+
+    public async Task UpdateAutoTradeSettingsAsync(int accountId, QuantEdge.Infrastructure.DTOs.AutoTradeSettingsDto settings)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = @"
+            UPDATE paper_accounts
+            SET is_auto_trade_enabled = @IsAutoTradeEnabled,
+                trading_mode = @TradingMode,
+                auto_trade_timeframe = @AutoTradeTimeframe,
+                auto_trade_min_signal_strength = @AutoTradeMinSignalStrength,
+                auto_trade_quantity = @AutoTradeQuantity,
+                auto_trade_stop_loss_percent = @AutoTradeStopLossPercent,
+                auto_trade_take_profit_percent = @AutoTradeTakeProfitPercent,
+                max_open_positions = @MaxOpenPositions,
+                daily_max_loss_limit = @DailyMaxLossLimit,
+                updated_at = NOW()
+            WHERE id = @accountId;";
+
+        await connection.ExecuteAsync(sql, new {
+            accountId,
+            settings.IsAutoTradeEnabled,
+            settings.TradingMode,
+            settings.AutoTradeTimeframe,
+            settings.AutoTradeMinSignalStrength,
+            settings.AutoTradeQuantity,
+            settings.AutoTradeStopLossPercent,
+            settings.AutoTradeTakeProfitPercent,
+            settings.MaxOpenPositions,
+            settings.DailyMaxLossLimit
+        });
     }
 }

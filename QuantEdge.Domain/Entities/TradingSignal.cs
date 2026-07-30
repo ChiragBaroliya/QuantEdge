@@ -9,6 +9,7 @@ public class TradingSignal
 {
     public int Id { get; set; }
     public string Symbol { get; set; } = string.Empty;
+    public string Timeframe { get; set; } = "1m";
     public string SignalType { get; set; } = string.Empty;
     public decimal SignalStrength { get; set; }
     public decimal EntryPrice { get; set; }

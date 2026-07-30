@@ -263,21 +263,89 @@ public class PaperTradingService : IPaperTradingService
 
     public async Task ProcessSignalForAutoTradeAsync(TradingSignal signal)
     {
-        if (!_autoTradeEnabled || signal == null) return;
-        if (signal.SignalStrength < 50m) return;
+        if (signal == null || string.IsNullOrWhiteSpace(signal.Symbol)) return;
 
-        TradeSide side = string.Equals(signal.SignalType, "BUY", StringComparison.OrdinalIgnoreCase) ? TradeSide.BUY : TradeSide.SELL;
+        var account = await GetOrCreateAccountAsync("default_user");
+        if (!account.IsAutoTradeEnabled) return;
+
+        // 1. Timeframe Matching Check (e.g. signal timeframe must match user setting or default 1m)
+        string targetTf = string.IsNullOrWhiteSpace(account.AutoTradeTimeframe) ? "1m" : account.AutoTradeTimeframe;
+        if (!string.Equals(signal.Timeframe, targetTf, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        // 2. Signal Strength Threshold Check (e.g. >= 70%)
+        decimal minStrength = account.AutoTradeMinSignalStrength > 0 ? account.AutoTradeMinSignalStrength : 70m;
+        if (signal.SignalStrength < minStrength)
+        {
+            _logger.LogInformation("Auto-trade ignored for {Symbol}: Strength {Strength}% below threshold {MinStrength}%",
+                signal.Symbol, signal.SignalStrength, minStrength);
+            return;
+        }
+
+        // 3. Trade Side Evaluation
+        if (!string.Equals(signal.SignalType, "BUY", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(signal.SignalType, "SELL", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        TradeSide newSide = string.Equals(signal.SignalType, "BUY", StringComparison.OrdinalIgnoreCase) ? TradeSide.BUY : TradeSide.SELL;
+        int tradeQty = account.AutoTradeQuantity > 0 ? account.AutoTradeQuantity : 25;
+
+        // 4. Position Reversal & Max Open Position Checks
+        var openPositions = (await _repository.GetPositionsAsync(account.Id, openOnly: true)).ToList();
+        var existingPosition = openPositions.FirstOrDefault(p => string.Equals(p.Symbol, signal.Symbol, StringComparison.OrdinalIgnoreCase));
+
+        if (existingPosition != null)
+        {
+            if (existingPosition.Side == newSide)
+            {
+                _logger.LogInformation("Auto-trade skipped for {Symbol}: Position already open in same direction ({Side})", signal.Symbol, newSide);
+                return;
+            }
+
+            // Signal Reversal: Close opposite position first!
+            _logger.LogInformation("Auto-trade position reversal for {Symbol}: Closing {OldSide} position before opening {NewSide}",
+                signal.Symbol, existingPosition.Side, newSide);
+            await ClosePositionAsync(existingPosition.Id, signal.EntryPrice, "default_user");
+        }
+        else if (openPositions.Count >= account.MaxOpenPositions)
+        {
+            _logger.LogWarning("Auto-trade rejected for {Symbol}: Reached max open positions limit ({Limit})", signal.Symbol, account.MaxOpenPositions);
+            return;
+        }
+
+        // 5. SL / TP Calculation
+        decimal slPct = account.AutoTradeStopLossPercent > 0 ? account.AutoTradeStopLossPercent / 100m : 0.01m;
+        decimal tpPct = account.AutoTradeTakeProfitPercent > 0 ? account.AutoTradeTakeProfitPercent / 100m : 0.02m;
+
+        decimal stopLoss = newSide == TradeSide.BUY ? signal.EntryPrice * (1m - slPct) : signal.EntryPrice * (1m + slPct);
+        decimal takeProfit = newSide == TradeSide.BUY ? signal.EntryPrice * (1m + tpPct) : signal.EntryPrice * (1m - tpPct);
+
         try
         {
-            await PlaceOrderAsync(new PlacePaperOrderDto
+            var placedOrder = await PlaceOrderAsync(new PlacePaperOrderDto
             {
                 Symbol = signal.Symbol,
-                Side = side,
+                Side = newSide,
                 OrderType = PaperOrderType.Market,
-                Quantity = 25, // Default lot size
-                StopLoss = side == TradeSide.BUY ? signal.EntryPrice * 0.99m : signal.EntryPrice * 1.01m,
-                TakeProfit = side == TradeSide.BUY ? signal.EntryPrice * 1.02m : signal.EntryPrice * 0.98m
+                Quantity = tradeQty,
+                StopLoss = stopLoss,
+                TakeProfit = takeProfit
             }, "default_user", signal.EntryPrice);
+
+            // Broadcast Toast Notification to Frontend via SignalR
+            await _hubContext.Clients.All.SendAsync("ReceiveAutoTradeAlert", new {
+                symbol = signal.Symbol,
+                side = signal.SignalType,
+                quantity = tradeQty,
+                price = signal.EntryPrice,
+                mode = account.TradingMode ?? "Paper",
+                strength = signal.SignalStrength,
+                message = $"⚡ Auto-Trade Executed ({account.TradingMode}): {signal.SignalType} {tradeQty} shares of {signal.Symbol} @ ₹{signal.EntryPrice:N2}"
+            });
         }
         catch (Exception ex)
         {
@@ -285,13 +353,44 @@ public class PaperTradingService : IPaperTradingService
         }
     }
 
-    public Task SetAutoTradeStatusAsync(bool enabled)
+    public async Task SetAutoTradeStatusAsync(bool enabled)
     {
-        _autoTradeEnabled = enabled;
-        return Task.CompletedTask;
+        var settings = await GetAutoTradeSettingsAsync();
+        settings.IsAutoTradeEnabled = enabled;
+        await UpdateAutoTradeSettingsAsync(settings);
     }
 
-    public bool GetAutoTradeStatus() => _autoTradeEnabled;
+    public bool GetAutoTradeStatus()
+    {
+        var account = _repository.GetAccountAsync("default_user").GetAwaiter().GetResult();
+        return account?.IsAutoTradeEnabled ?? _autoTradeEnabled;
+    }
+
+    public async Task<AutoTradeSettingsDto> GetAutoTradeSettingsAsync(string userId = "default_user")
+    {
+        var account = await GetOrCreateAccountAsync(userId);
+        return new AutoTradeSettingsDto
+        {
+            IsAutoTradeEnabled = account.IsAutoTradeEnabled,
+            TradingMode = account.TradingMode ?? "Paper",
+            AutoTradeTimeframe = account.AutoTradeTimeframe ?? "1m",
+            AutoTradeMinSignalStrength = account.AutoTradeMinSignalStrength <= 0 ? 70m : account.AutoTradeMinSignalStrength,
+            AutoTradeQuantity = account.AutoTradeQuantity <= 0 ? 25 : account.AutoTradeQuantity,
+            AutoTradeStopLossPercent = account.AutoTradeStopLossPercent <= 0 ? 1.0m : account.AutoTradeStopLossPercent,
+            AutoTradeTakeProfitPercent = account.AutoTradeTakeProfitPercent <= 0 ? 2.0m : account.AutoTradeTakeProfitPercent,
+            MaxOpenPositions = account.MaxOpenPositions <= 0 ? 5 : account.MaxOpenPositions,
+            DailyMaxLossLimit = account.DailyMaxLossLimit <= 0 ? 2000m : account.DailyMaxLossLimit
+        };
+    }
+
+    public async Task<AutoTradeSettingsDto> UpdateAutoTradeSettingsAsync(AutoTradeSettingsDto settings, string userId = "default_user")
+    {
+        var account = await GetOrCreateAccountAsync(userId);
+        await _repository.UpdateAutoTradeSettingsAsync(account.Id, settings);
+        _autoTradeEnabled = settings.IsAutoTradeEnabled;
+        await BroadcastPortfolioUpdateAsync(userId);
+        return settings;
+    }
 
     public async Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync(string userId = "default_user")
     {

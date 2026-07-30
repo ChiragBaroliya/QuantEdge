@@ -96,6 +96,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IPaperTradingRepository, PaperTradingRepository>();
         services.AddTransient<PaperOrderValidator>();
         services.AddSingleton<PaperMatchingEngine>();
+        services.AddTransient<ZerodhaKiteBrokerService>();
         services.AddSingleton<IPaperTradingService, PaperTradingService>();
 
         return services;

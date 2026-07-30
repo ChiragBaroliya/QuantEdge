@@ -1021,6 +1021,15 @@ public class DatabaseInitializer
                     current_balance NUMERIC(18, 4) NOT NULL DEFAULT 100000.00,
                     used_margin NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
                     realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+                    is_auto_trade_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    trading_mode VARCHAR(20) NOT NULL DEFAULT 'Paper',
+                    auto_trade_timeframe VARCHAR(10) NOT NULL DEFAULT '1m',
+                    auto_trade_min_signal_strength NUMERIC(18, 4) NOT NULL DEFAULT 70.00,
+                    auto_trade_quantity INT NOT NULL DEFAULT 25,
+                    auto_trade_stop_loss_percent NUMERIC(18, 4) NOT NULL DEFAULT 1.00,
+                    auto_trade_take_profit_percent NUMERIC(18, 4) NOT NULL DEFAULT 2.00,
+                    max_open_positions INT NOT NULL DEFAULT 5,
+                    daily_max_loss_limit NUMERIC(18, 4) NOT NULL DEFAULT 2000.00,
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
                 );
@@ -1083,6 +1092,19 @@ public class DatabaseInitializer
             ");
             _logger.LogInformation("Paper trading schema and default account created successfully.");
         }
+
+        // Apply dynamic migration for auto-trade columns on paper_accounts if table already exists
+        await conn.ExecuteAsync(@"
+            ALTER TABLE paper_accounts ADD COLUMN IF NOT EXISTS is_auto_trade_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+            ALTER TABLE paper_accounts ADD COLUMN IF NOT EXISTS trading_mode VARCHAR(20) NOT NULL DEFAULT 'Paper';
+            ALTER TABLE paper_accounts ADD COLUMN IF NOT EXISTS auto_trade_timeframe VARCHAR(10) NOT NULL DEFAULT '1m';
+            ALTER TABLE paper_accounts ADD COLUMN IF NOT EXISTS auto_trade_min_signal_strength NUMERIC(18, 4) NOT NULL DEFAULT 70.00;
+            ALTER TABLE paper_accounts ADD COLUMN IF NOT EXISTS auto_trade_quantity INT NOT NULL DEFAULT 25;
+            ALTER TABLE paper_accounts ADD COLUMN IF NOT EXISTS auto_trade_stop_loss_percent NUMERIC(18, 4) NOT NULL DEFAULT 1.00;
+            ALTER TABLE paper_accounts ADD COLUMN IF NOT EXISTS auto_trade_take_profit_percent NUMERIC(18, 4) NOT NULL DEFAULT 2.00;
+            ALTER TABLE paper_accounts ADD COLUMN IF NOT EXISTS max_open_positions INT NOT NULL DEFAULT 5;
+            ALTER TABLE paper_accounts ADD COLUMN IF NOT EXISTS daily_max_loss_limit NUMERIC(18, 4) NOT NULL DEFAULT 2000.00;
+        ");
     }
 }
 

@@ -27,6 +27,10 @@
         </div>
 
         <div class="control-right">
+            <a asp-controller="PaperTrading" asp-action="Index" id="autoTradeDashboardBadge" class="connection-badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25 text-decoration-none ms-1" data-tooltip="⚡ **Auto-Trade Engine**: Shows whether automated signal trading is ACTIVE (Paper/Live) or OFF. Click to configure.">
+                <span class="status-dot"></span>
+                <span id="autoTradeDashboardText" class="status-text fw-semibold">Auto-Trade: OFF</span>
+            </a>
             <button id="btnOpenReference" class="btn-trigger" data-tooltip="📖 **અલ્ગોરિધમ નિયમો**: સ્કોરિંગ વજન અને ગણિતના સૂત્રોનું સંપૂર્ણ માર્ગદર્શન જુઓ.">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
