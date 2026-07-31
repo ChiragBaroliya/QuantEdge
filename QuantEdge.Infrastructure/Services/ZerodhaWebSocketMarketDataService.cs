@@ -86,6 +86,23 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
 
         try
         {
+            if (_ticker != null)
+            {
+                try
+                {
+                    _ticker.Close();
+                    _ticker.OnTick -= OnKiteTick;
+                    _ticker.OnConnect -= OnKiteConnect;
+                    _ticker.OnClose -= OnKiteClose;
+                    _ticker.OnError -= OnKiteError;
+                    _ticker.OnReconnect -= OnKiteReconnect;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error while cleaning up previous Ticker connection instance.");
+                }
+            }
+
             // Initialize Kite Connect Ticker
             _ticker = new Ticker(_config.ApiKey, token);
 
