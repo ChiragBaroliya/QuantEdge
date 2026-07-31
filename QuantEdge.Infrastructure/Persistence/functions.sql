@@ -616,3 +616,185 @@ BEGIN
     );
 END;
 $$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_user_by_identifier
+-- Returns user record matching given email or username.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_get_user_by_identifier(
+    p_identifier VARCHAR(255)
+)
+RETURNS TABLE (
+    id INT,
+    full_name VARCHAR(150),
+    email VARCHAR(255),
+    mobile_no VARCHAR(20),
+    username VARCHAR(100),
+    password_hash VARCHAR(255),
+    role VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT u.id, u.full_name, u.email, u.mobile_no, u.username, u.password_hash, u.role, u.created_at, u.updated_at
+    FROM app_users u
+    WHERE LOWER(u.username) = LOWER(p_identifier) 
+       OR (u.email IS NOT NULL AND LOWER(u.email) = LOWER(p_identifier))
+    LIMIT 1;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_user_by_id
+-- Returns user record matching given user ID.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_get_user_by_id(
+    p_id INT
+)
+RETURNS TABLE (
+    id INT,
+    full_name VARCHAR(150),
+    email VARCHAR(255),
+    mobile_no VARCHAR(20),
+    username VARCHAR(100),
+    password_hash VARCHAR(255),
+    role VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT u.id, u.full_name, u.email, u.mobile_no, u.username, u.password_hash, u.role, u.created_at, u.updated_at
+    FROM app_users u
+    WHERE u.id = p_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_check_email_exists
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_check_email_exists(
+    p_email VARCHAR(255)
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF p_email IS NULL OR p_email = '' THEN
+        RETURN FALSE;
+    END IF;
+
+    RETURN EXISTS (
+        SELECT 1 FROM app_users WHERE LOWER(email) = LOWER(p_email)
+    );
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_check_username_exists
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_check_username_exists(
+    p_username VARCHAR(100)
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM app_users WHERE LOWER(username) = LOWER(p_username)
+    );
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_register_user
+-- Registers a new user and returns the generated user ID.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_register_user(
+    p_full_name VARCHAR(150),
+    p_email VARCHAR(255),
+    p_mobile_no VARCHAR(20),
+    p_username VARCHAR(100),
+    p_password_hash VARCHAR(255),
+    p_role VARCHAR(50) DEFAULT 'User'
+)
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_user_id INT;
+BEGIN
+    INSERT INTO app_users (
+        full_name, 
+        email, 
+        mobile_no, 
+        username, 
+        password_hash, 
+        role, 
+        created_at, 
+        updated_at
+    )
+    VALUES (
+        p_full_name, 
+        NULLIF(LOWER(p_email), ''), 
+        NULLIF(p_mobile_no, ''), 
+        p_username, 
+        p_password_hash, 
+        COALESCE(p_role, 'User'), 
+        NOW(), 
+        NOW()
+    )
+    RETURNING id INTO v_user_id;
+
+    RETURN v_user_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_update_user_password
+-- Updates the password hash of a user.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_update_user_password(
+    p_user_id INT,
+    p_new_password_hash VARCHAR(255)
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE app_users
+    SET password_hash = p_new_password_hash,
+        updated_at = NOW()
+    WHERE id = p_user_id;
+
+    RETURN FOUND;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_has_admin_user
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_has_admin_user()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM app_users WHERE LOWER(role) = 'admin'
+    );
+END;
+$$;
+
+

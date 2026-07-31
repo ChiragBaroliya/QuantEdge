@@ -2,11 +2,14 @@ using System;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace QuantEdge.Web.Controllers;
 
 /// <summary>
 /// Controller serving the dedicated Manage History Data view.
 /// </summary>
+[Authorize(Roles = "Admin")]
 public class ManageHistoryController : Controller
 {
     private readonly IConfiguration _configuration;

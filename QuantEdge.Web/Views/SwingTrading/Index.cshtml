@@ -1,40 +1,65 @@
 @{
     ViewData["Title"] = "Swing Trading";
     ViewData["PageTitle"] = "Swing Trading Strategy & Performance";
+    bool isAdmin = User.IsInRole("Admin");
 }
 
 <link rel="stylesheet" href="~/css/swingtrading.css" asp-append-version="true" />
 
 <div class="swing-container">
+    @if (!isAdmin)
+    {
+        <div class="alert alert-dark border-secondary text-secondary py-2 px-3 mb-3 small d-flex align-items-center justify-content-between">
+            <span class="d-flex align-items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <strong>Read-Only Mode:</strong> Action buttons and EOD execution triggers are disabled for User role.
+            </span>
+            <span class="badge bg-secondary">User Role</span>
+        </div>
+    }
+
     <!-- Header Action Bar -->
     <div class="swing-header-actions">
         <div>
             <p class="swing-header-subtitle" style="margin: 0; font-size: 13px; color: #cbd5e1;">Daily Swing Trading analysis (EOD) executed after market close (3:45 PM IST).</p>
         </div>
         <div class="action-buttons-group">
-            <button id="btnOpenReference" class="btn-trigger" data-tooltip="📖 **Rules & Formulas**: View swing trading filters and strategy math formulas.">
+            <button id="btnOpenReference" class="btn-trigger allow-view" data-tooltip="📖 **Rules & Formulas**: View swing trading filters and strategy math formulas.">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
                     <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
                 </svg>
                 Rules & Formulas
             </button>
-            <button id="btnRunBackfill" class="btn-trigger" data-tooltip="🔄 **Run Backtest**: Run historical backtest on past 2 years of market data.">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-                    <path d="M16 3h5v5"></path>
-                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-                    <path d="M8 21H3v-5"></path>
-                </svg>
-                Run Historical Backtest
-            </button>
-            <button id="btnRunJob" class="btn-trigger btn-primary-trigger" data-tooltip="🚀 **Execute EOD Job**: Scan market after close (3:45 PM IST) for new swing trade setups.">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
-                    <polyline points="16 7 22 7 22 13"></polyline>
-                </svg>
-                Execute EOD Job
-            </button>
+            @if (isAdmin)
+            {
+                <button id="btnRunBackfill" class="btn-trigger" data-tooltip="🔄 **Run Backtest**: Run historical backtest on past 2 years of market data.">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                        <path d="M16 3h5v5"></path>
+                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                        <path d="M8 21H3v-5"></path>
+                    </svg>
+                    Run Historical Backtest
+                </button>
+                <button id="btnRunJob" class="btn-trigger btn-primary-trigger" data-tooltip="🚀 **Execute EOD Job**: Scan market after close (3:45 PM IST) for new swing trade setups.">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                        <polyline points="16 7 22 7 22 13"></polyline>
+                    </svg>
+                    Execute EOD Job
+                </button>
+            }
+            else
+            {
+                <button class="btn-trigger disabled opacity-50" disabled style="cursor: not-allowed;" title="Action triggers disabled for User role">
+                    🔒 Execution Disabled (Read-Only)
+                </button>
+            }
         </div>
     </div>
 

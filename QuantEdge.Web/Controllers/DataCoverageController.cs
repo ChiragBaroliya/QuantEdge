@@ -7,11 +7,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Infrastructure.Interfaces;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace QuantEdge.Web.Controllers;
 
 /// <summary>
 /// Controller serving the Data Coverage Manager view and proxying DataCoverage API endpoints.
 /// </summary>
+[Authorize(Roles = "Admin")]
 public class DataCoverageController : Controller
 {
     private const string CacheKeyDataCoverage = "datacoverage_stock_list";

@@ -76,13 +76,6 @@ try
 
     var host = builder.Build();
 
-    // Perform automatic database provisioning on startup
-    using (var scope = host.Services.CreateScope())
-    {
-        var dbInitializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
-        await dbInitializer.InitializeAsync();
-    }
-
     await host.RunAsync();
 }
 catch (Exception ex)

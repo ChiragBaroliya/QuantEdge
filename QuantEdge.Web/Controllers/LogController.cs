@@ -10,12 +10,15 @@ using Renci.SshNet;
 
 using QuantEdge.Infrastructure.Interfaces;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace QuantEdge.Web.Controllers;
 
 /// <summary>
 /// Controller serving the Log Manager interface and daily log file discovery/reading API.
 /// Includes date range filtering API (startDate & endDate) and category isolation (Web vs API).
 /// </summary>
+[Authorize(Roles = "Admin")]
 public class LogController : Controller
 {
     private readonly IConfiguration _configuration;

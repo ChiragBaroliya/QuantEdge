@@ -1,0 +1,35 @@
+@{
+    ViewData["Title"] = "Access Denied";
+    Layout = "_Layout";
+}
+
+<div class="container-fluid py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card bg-dark text-light border-danger shadow-lg rounded-4 p-4 text-center">
+                <div class="mb-3 text-danger">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                </div>
+                <h2 class="fw-bold text-white mb-2">Access Denied</h2>
+                <p class="text-secondary fs-6 mb-4">
+                    Your account (<span class="badge bg-purple text-wrap">@User.Identity?.Name</span> - <span class="badge bg-secondary">User Role</span>) does not have administrative permissions to access this page.
+                </p>
+                <div class="alert alert-dark border-secondary text-start text-secondary mb-4 small">
+                    ℹ️ <strong>Role Access Policy:</strong> Standard User accounts are permitted to access only the <strong>Signal Dashboard</strong> and <strong>Swing Trading</strong> pages in read-only mode.
+                </div>
+                <div>
+                    <a asp-controller="Home" asp-action="Index" class="btn btn-outline-info px-4 me-2">
+                        📊 Back to Signal Dashboard
+                    </a>
+                    <a asp-controller="SwingTrading" asp-action="Index" class="btn btn-outline-primary px-4">
+                        📈 Go to Swing Trading
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

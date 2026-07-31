@@ -1,0 +1,321 @@
+@model QuantEdge.Infrastructure.DTOs.LoginRequestDto
+@{
+    ViewData["Title"] = "User Login";
+    Layout = null; // Standalone auth page
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login — QuantEdge</title>
+    <link rel="icon" type="image/svg+xml" href="~/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <style>
+        body {
+            background-color: #0b0f19;
+            color: #f1f5f9;
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 1.5rem;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Ambient Glow Background Spheres */
+        body::before {
+            content: '';
+            position: absolute;
+            top: -15%;
+            left: 20%;
+            width: 450px;
+            height: 450px;
+            background: radial-gradient(circle, rgba(167, 139, 250, 0.25) 0%, rgba(124, 58, 237, 0) 70%);
+            filter: blur(80px);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        body::after {
+            content: '';
+            position: absolute;
+            bottom: -15%;
+            right: 20%;
+            width: 450px;
+            height: 450px;
+            background: radial-gradient(circle, rgba(79, 156, 249, 0.2) 0%, rgba(124, 92, 252, 0) 70%);
+            filter: blur(80px);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .auth-card {
+            background: rgba(18, 24, 38, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(167, 139, 250, 0.25);
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 30px rgba(167, 139, 250, 0.1);
+            width: 100%;
+            max-width: 440px;
+            padding: 2.5rem;
+            position: relative;
+            z-index: 10;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .auth-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .brand-icon-lg {
+            width: 54px;
+            height: 54px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(167, 139, 250, 0.2), rgba(124, 58, 237, 0.4));
+            border: 1px solid rgba(167, 139, 250, 0.4);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #a78bfa;
+            margin-bottom: 1rem;
+            box-shadow: 0 8px 16px rgba(124, 58, 237, 0.25);
+        }
+
+        .auth-title {
+            font-size: 1.65rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: #ffffff;
+            margin-bottom: 0.35rem;
+        }
+
+        .auth-subtitle {
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #cbd5e1;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .form-control-custom {
+            background-color: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            border-radius: 10px;
+            color: #ffffff;
+            padding: 0.75rem 1rem;
+            font-size: 0.95rem;
+            width: 100%;
+            transition: all 0.25s ease;
+        }
+
+        .form-control-custom:focus {
+            outline: none;
+            background-color: rgba(30, 41, 59, 0.95);
+            border-color: #a78bfa;
+            box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.25);
+            color: #ffffff;
+        }
+
+        .btn-auth-primary {
+            width: 100%;
+            padding: 0.85rem;
+            border-radius: 10px;
+            border: none;
+            background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 1rem;
+            letter-spacing: 0.3px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
+            margin-top: 0.5rem;
+        }
+
+        .btn-auth-primary:hover {
+            background: linear-gradient(135deg, #6d28d9 0%, #9061f9 100%);
+            box-shadow: 0 6px 20px rgba(124, 58, 237, 0.6);
+            transform: translateY(-1px);
+        }
+
+        .auth-footer {
+            text-align: center;
+            margin-top: 1.75rem;
+            padding-top: 1.25rem;
+            border-top: 1px solid rgba(148, 163, 184, 0.15);
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+
+        .auth-footer a {
+            color: #a78bfa;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s ease;
+        }
+
+        .auth-footer a:hover {
+            color: #c4b5fd;
+            text-decoration: underline;
+        }
+
+        .text-danger-custom {
+            color: #f87171;
+            font-size: 0.8rem;
+            margin-top: 0.35rem;
+            display: block;
+        }
+
+        .alert-custom-danger {
+            background-color: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            color: #fca5a5;
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            font-size: 0.875rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .alert-custom-success {
+            background-color: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            color: #6ee7b7;
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            font-size: 0.875rem;
+            margin-bottom: 1.25rem;
+        }
+
+        /* Parsley Validation Custom Styles */
+        .parsley-errors-list {
+            list-style-type: none;
+            padding-left: 0;
+            margin-top: 0.35rem;
+            margin-bottom: 0;
+            color: #f87171;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .parsley-errors-list li {
+            margin-bottom: 0.15rem;
+        }
+        input.parsley-error {
+            border-color: #f87171 !important;
+            box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.2) !important;
+        }
+        input.parsley-success {
+            border-color: #34d399 !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="brand-icon-lg">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                    <polyline points="16 7 22 7 22 13"></polyline>
+                </svg>
+            </div>
+            <h1 class="auth-title">QuantEdge Login</h1>
+            <p class="auth-subtitle">Welcome back! Please enter your credentials</p>
+        </div>
+
+        @if (TempData["SuccessMessage"] != null)
+        {
+            <div class="alert-custom-success">
+                ✅ @TempData["SuccessMessage"]
+            </div>
+        }
+
+        @if (!ViewData.ModelState.IsValid && ViewData.ModelState[string.Empty]?.Errors.Count > 0)
+        {
+            <div class="alert-custom-danger">
+                @foreach (var error in ViewData.ModelState[string.Empty]!.Errors)
+                {
+                    <div>⚠️ @error.ErrorMessage</div>
+                }
+            </div>
+        }
+
+        <form asp-controller="Account" asp-action="Login" asp-route-returnUrl="@ViewData["ReturnUrl"]" method="post" id="loginForm" data-parsley-validate>
+            @Html.AntiForgeryToken()
+
+            <div class="form-group">
+                <label asp-for="Username" class="form-label">User Name</label>
+                <input asp-for="Username" 
+                       class="form-control-custom" 
+                       placeholder="Enter your username" 
+                       required 
+                       data-parsley-required-message="Please enter your User Name."
+                       data-parsley-minlength="3"
+                       data-parsley-minlength-message="User Name must be at least 3 characters."
+                       autofocus />
+                <span asp-validation-for="Username" class="text-danger-custom"></span>
+            </div>
+
+            <div class="form-group">
+                <label asp-for="Password" class="form-label">Password</label>
+                <input asp-for="Password" 
+                       type="password"
+                       class="form-control-custom" 
+                       placeholder="Enter your password" 
+                       required 
+                       data-parsley-required-message="Please enter your password." />
+                <span asp-validation-for="Password" class="text-danger-custom"></span>
+            </div>
+
+            <div class="form-group d-flex align-items-center justify-content-between my-3">
+                <label class="d-flex align-items-center gap-2 mb-0" style="cursor: pointer;">
+                    <input asp-for="RememberMe" type="checkbox" class="form-check-input mt-0" style="width: 17px; height: 17px; cursor: pointer; accent-color: #a78bfa; background-color: rgba(30, 41, 59, 0.7); border-color: rgba(148, 163, 184, 0.4);" />
+                    <span class="small" style="color: #cbd5e1; font-weight: 500;">Remember Me (Stay signed in for 1 year)</span>
+                </label>
+            </div>
+
+            <button type="submit" class="btn-auth-primary">
+                Sign In
+            </button>
+        </form>
+
+        <div class="auth-footer">
+            Don't have an account? <a asp-controller="Account" asp-action="Register">Create Account</a>
+        </div>
+    </div>
+
+    <!-- Client-side Scripts & Parsley Validation -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/parsley.js/2.9.2/parsley.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('#loginForm').parsley({
+                errorClass: 'parsley-error',
+                successClass: 'parsley-success',
+                errorsWrapper: '<ul class="parsley-errors-list"></ul>',
+                errorTemplate: '<li></li>'
+            });
+        });
+    </script>
+</body>
+</html>

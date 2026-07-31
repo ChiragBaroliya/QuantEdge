@@ -54,6 +54,8 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IStockMasterRepository, StockMasterRepository>();
         services.AddTransient<IZerodhaSessionRepository, ZerodhaSessionRepository>();
         services.AddTransient<IIndianHolidayRepository, IndianHolidayRepository>();
+        services.AddTransient<IUserRepository, UserRepository>();
+        services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddTransient<IIndicatorService, IndicatorService>();
         services.AddSingleton<DatabaseInitializer>();
         services.AddSingleton<IMarketHoursService, MarketHoursService>();

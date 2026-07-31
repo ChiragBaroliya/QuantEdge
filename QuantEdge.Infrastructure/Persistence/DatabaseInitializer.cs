@@ -95,6 +95,9 @@ public class DatabaseInitializer
         using var conn = new NpgsqlConnection(_config.ConnectionString);
         await conn.OpenAsync();
 
+        // Always ensure app_users table exists and default Admin user is seeded
+        await EnsureUsersTableAndSeedAdminAsync(conn, targetDb);
+
         // Check if market_candles_1m table exists as a proxy for schema existence
         bool schemaExists = await conn.ExecuteScalarAsync<bool>(@"
             SELECT EXISTS (
@@ -1000,5 +1003,58 @@ public class DatabaseInitializer
             ");
             _logger.LogInformation("Table 'swing_positions' and indexes created successfully.");
         }
+
+        // Ensure app_users table exists and seed default Admin role user
+        await EnsureUsersTableAndSeedAdminAsync(conn, targetDb);
+    }
+
+    private async Task EnsureUsersTableAndSeedAdminAsync(NpgsqlConnection conn, string targetDb)
+    {
+        _logger.LogInformation("Ensuring 'app_users' table and default Admin seed in database '{Database}'...", targetDb);
+
+        await conn.ExecuteAsync(@"
+            CREATE TABLE IF NOT EXISTS app_users (
+                id SERIAL PRIMARY KEY,
+                full_name VARCHAR(150) NOT NULL,
+                email VARCHAR(255) NULL,
+                mobile_no VARCHAR(20) NULL,
+                username VARCHAR(100) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                role VARCHAR(50) NOT NULL DEFAULT 'User',
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            );
+
+            ALTER TABLE app_users ALTER COLUMN email DROP NOT NULL;
+            ALTER TABLE app_users ALTER COLUMN mobile_no DROP NOT NULL;
+
+            CREATE INDEX IF NOT EXISTS ix_app_users_email ON app_users (LOWER(email));
+            CREATE INDEX IF NOT EXISTS ix_app_users_username ON app_users (LOWER(username));
+        ");
+
+        bool hasAdmin = await conn.ExecuteScalarAsync<bool>("SELECT EXISTS (SELECT 1 FROM app_users WHERE LOWER(role) = 'admin');");
+
+        if (!hasAdmin)
+        {
+            _logger.LogInformation("No Admin user found. Seeding default Admin user ('admin' / 'Admin@123')...");
+            var hasher = new QuantEdge.Infrastructure.Services.PasswordHasher();
+            string adminPasswordHash = hasher.HashPassword("Admin@123");
+
+            await conn.ExecuteAsync(@"
+                INSERT INTO app_users (full_name, email, mobile_no, username, password_hash, role, created_at, updated_at)
+                VALUES (@FullName, @Email, @MobileNo, @Username, @PasswordHash, 'Admin', NOW(), NOW())
+                ON CONFLICT (username) DO NOTHING;",
+                new
+                {
+                    FullName = "System Administrator",
+                    Email = "admin@quantedge.com",
+                    MobileNo = "9999999999",
+                    Username = "admin",
+                    PasswordHash = adminPasswordHash
+                });
+
+            _logger.LogInformation("Default Admin user ('admin') seeded successfully.");
+        }
     }
 }
+

@@ -1,11 +1,26 @@
 @{
     ViewData["Title"] = "Real-time Signals";
     ViewData["PageTitle"] = "Market Signal Dashboard";
+    bool isAdmin = User.IsInRole("Admin");
 }
 
 <link rel="stylesheet" href="~/css/dashboard.css" asp-append-version="true" />
 
 <div class="dashboard-container">
+    @if (!isAdmin)
+    {
+        <div class="alert alert-dark border-secondary text-secondary py-2 px-3 mb-3 small d-flex align-items-center justify-content-between">
+            <span class="d-flex align-items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <strong>Read-Only Access Mode:</strong> You are viewing live signal telemetry with standard User permissions.
+            </span>
+            <span class="badge bg-secondary">User Role</span>
+        </div>
+    }
     <!-- Filters & Selection Row -->
     <div class="control-panel card">
         <div class="control-left">

@@ -54,13 +54,6 @@ try
         ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
     });
 
-    // Perform automatic database provisioning on startup
-    using (var scope = app.Services.CreateScope())
-    {
-        var dbInitializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
-        await dbInitializer.InitializeAsync();
-    }
-
     // Configure the HTTP request pipeline.
     app.UseSwagger(c =>
     {

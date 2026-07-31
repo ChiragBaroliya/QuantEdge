@@ -4,8 +4,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using QuantEdge.Web.Models;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace QuantEdge.Web.Controllers;
 
+[Authorize]
 public class HomeController : Controller
 {
     private readonly IConfiguration _configuration;
