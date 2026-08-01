@@ -20,9 +20,9 @@ public interface IMarketCandleRepository
     Task InsertBatchAsync(IEnumerable<MarketCandle> candles);
 
     /// <summary>
-    /// Retrieves historical candles using a Stored Procedure, returning auto-mapped entities.
+    /// Retrieves historical candles using a Stored Procedure or direct SQL query, returning auto-mapped entities.
     /// </summary>
-    Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int limit, System.DateTime? beforeTime = null);
+    Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int? limit = null, System.DateTime? beforeTime = null);
 
     /// <summary>
     /// Deletes all history for today for a specific symbol and timeframe.

@@ -97,12 +97,12 @@ public class IndicatorService : IIndicatorService
     /// <inheritdoc />
     public async Task BackfillHistoricalIndicatorsAsync(string symbol, string timeframe)
     {
-        _logger.LogInformation("Executing historical indicators backfill for {Symbol} ({Timeframe})...", symbol, timeframe);
+        _logger.LogInformation("Executing historical indicators backfill for ALL candles for {Symbol} ({Timeframe})...", symbol, timeframe);
 
         try
         {
-            // Fetch historical candles (limit 500) and order by time ASC
-            var historyCandles = (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: 500))
+            // Fetch ALL historical candles for this symbol & timeframe (no limit) and order by time ASC
+            var historyCandles = (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: null))
                 .OrderBy(c => c.CandleTime)
                 .ToList();
 
@@ -121,16 +121,27 @@ public class IndicatorService : IIndicatorService
             _logger.LogInformation("Calculated indicators for {Count} candles. Writing to database...", historyCandles.Count);
 
             var batchIndicators = new List<MarketIndicator>();
+            DateTime? currentDay = null;
+            decimal runningSumPV = 0;
+            long runningSumV = 0;
+
             for (int i = 0; i < historyCandles.Count; i++)
             {
                 var candle = historyCandles[i];
-                var targetDate = candle.CandleTime.Date;
+                var candleDate = candle.CandleTime.Date;
 
-                // Cumulative VWAP for this calendar day up to index i
-                var dayCandles = historyCandles.Take(i + 1).Where(c => c.CandleTime.Date == targetDate).ToList();
-                decimal sumPV = dayCandles.Sum(c => c.Close * c.Volume);
-                long sumV = dayCandles.Sum(c => c.Volume);
-                decimal vwap = sumV > 0 ? sumPV / sumV : candle.Close;
+                // Reset intra-day cumulative VWAP tracking at start of new calendar day
+                if (currentDay != candleDate)
+                {
+                    currentDay = candleDate;
+                    runningSumPV = 0;
+                    runningSumV = 0;
+                }
+
+                runningSumPV += candle.Close * candle.Volume;
+                runningSumV += candle.Volume;
+
+                decimal vwap = runningSumV > 0 ? runningSumPV / runningSumV : candle.Close;
 
                 batchIndicators.Add(new MarketIndicator
                 {
@@ -153,7 +164,7 @@ public class IndicatorService : IIndicatorService
                 await _indicatorRepository.InsertBatchAsync(batchIndicators);
             }
 
-            _logger.LogInformation("Completed backfill of {Count} historical indicators for {Symbol} ({Timeframe}).", batchIndicators.Count, symbol, timeframe);
+            _logger.LogInformation("Completed backfill of ALL {Count} historical indicators for {Symbol} ({Timeframe}).", batchIndicators.Count, symbol, timeframe);
         }
         catch (Exception ex)
         {

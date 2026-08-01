@@ -20,9 +20,9 @@ public interface IMarketIndicatorRepository
     Task InsertBatchAsync(IEnumerable<MarketIndicator> indicators);
 
     /// <summary>
-    /// Retrieves historical indicators using a Stored Procedure, returning auto-mapped entities.
+    /// Retrieves historical indicators using a Stored Procedure or direct SQL query, returning auto-mapped entities.
     /// </summary>
-    Task<IEnumerable<MarketIndicator>> GetHistoryAsync(string symbol, string timeframe, int limit, System.DateTime? beforeTime = null);
+    Task<IEnumerable<MarketIndicator>> GetHistoryAsync(string symbol, string timeframe, int? limit = null, System.DateTime? beforeTime = null);
 
     /// <summary>
     /// Deletes today's calculated indicators for a specific symbol and timeframe.

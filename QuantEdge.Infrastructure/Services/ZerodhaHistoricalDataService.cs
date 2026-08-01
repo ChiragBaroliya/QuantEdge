@@ -310,14 +310,6 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to fetch historical candles from Zerodha API for {Symbol} ({Timeframe}). Running mock daily data generator fallback...", symbol, timeframe);
-                if (timeframe.ToLower() == "1d")
-                {
-                    await GenerateMockDailyCandlesAsync(symbol, fromTime, toTime, cancellationToken);
-                }
-                else
-                {
-                    throw;
-                }
             }
             
             // Calculate indicators for backfilled historical data
