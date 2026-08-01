@@ -1120,6 +1120,87 @@ public class DatabaseInitializer
                 ORDER BY c.id ASC;
             END;
             $$;
+
+            -- Ensure sp_purge_history_by_date stored function exists
+            DROP FUNCTION IF EXISTS sp_purge_history_by_date CASCADE;
+            DROP FUNCTION IF EXISTS sp_purge_history_by_date(DATE, VARCHAR) CASCADE;
+
+            CREATE OR REPLACE FUNCTION sp_purge_history_by_date(
+                p_target_date DATE,
+                p_symbol VARCHAR DEFAULT NULL
+            )
+            RETURNS TABLE (
+                ""DeletedCandles"" BIGINT,
+                ""DeletedIndicators"" BIGINT,
+                ""AffectedStocks"" INT
+            )
+            LANGUAGE plpgsql
+            AS $$
+            DECLARE
+                v_deleted_candles BIGINT := 0;
+                v_deleted_indicators BIGINT := 0;
+                v_affected_stocks INT := 0;
+                v_count BIGINT := 0;
+                v_sym VARCHAR(50);
+                r_stock RECORD;
+            BEGIN
+                v_sym := NULLIF(TRIM(p_symbol), '');
+
+                -- Loop through active stock symbols (either single specified symbol or ALL active symbols one by one)
+                FOR r_stock IN 
+                    SELECT symbol 
+                    FROM stock_master 
+                    WHERE is_active = TRUE 
+                      AND (v_sym IS NULL OR UPPER(symbol) = UPPER(v_sym))
+                    ORDER BY symbol ASC
+                LOOP
+                    -- 1. Delete from all market_candles_* tables for current active symbol where created_at::date = p_target_date
+                    EXECUTE 'WITH d AS (DELETE FROM market_candles_1m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_candles := v_deleted_candles + v_count;
+
+                    EXECUTE 'WITH d AS (DELETE FROM market_candles_5m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_candles := v_deleted_candles + v_count;
+
+                    EXECUTE 'WITH d AS (DELETE FROM market_candles_15m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_candles := v_deleted_candles + v_count;
+
+                    EXECUTE 'WITH d AS (DELETE FROM market_candles_60m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_candles := v_deleted_candles + v_count;
+
+                    EXECUTE 'WITH d AS (DELETE FROM market_candles_1d WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_candles := v_deleted_candles + v_count;
+
+                    -- 2. Delete from all market_indicators_* tables for current active symbol where created_at::date = p_target_date
+                    EXECUTE 'WITH d AS (DELETE FROM market_indicators_1m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_indicators := v_deleted_indicators + v_count;
+
+                    EXECUTE 'WITH d AS (DELETE FROM market_indicators_5m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_indicators := v_deleted_indicators + v_count;
+
+                    EXECUTE 'WITH d AS (DELETE FROM market_indicators_15m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_indicators := v_deleted_indicators + v_count;
+
+                    EXECUTE 'WITH d AS (DELETE FROM market_indicators_60m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_indicators := v_deleted_indicators + v_count;
+
+                    EXECUTE 'WITH d AS (DELETE FROM market_indicators_1d WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+                    v_deleted_indicators := v_deleted_indicators + v_count;
+
+                    -- 3. Update stock_master history flags for current symbol based on remaining candles
+                    UPDATE stock_master s
+                    SET is_histry_stored_1m = CASE WHEN EXISTS (SELECT 1 FROM market_candles_1m c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END,
+                        is_histry_stored_5m = CASE WHEN EXISTS (SELECT 1 FROM market_candles_5m c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END,
+                        is_histry_stored_15m = CASE WHEN EXISTS (SELECT 1 FROM market_candles_15m c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END,
+                        is_histry_stored_60m = CASE WHEN EXISTS (SELECT 1 FROM market_candles_60m c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END,
+                        is_histry_stored_1d = CASE WHEN EXISTS (SELECT 1 FROM market_candles_1d c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END
+                    WHERE UPPER(s.symbol) = UPPER(r_stock.symbol);
+
+                    v_affected_stocks := v_affected_stocks + 1;
+                END LOOP;
+
+                RETURN QUERY SELECT v_deleted_candles, v_deleted_indicators, v_affected_stocks;
+            END;
+            $$;
         ");
     }
 }

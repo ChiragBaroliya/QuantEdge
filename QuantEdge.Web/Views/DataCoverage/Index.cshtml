@@ -132,47 +132,105 @@
         </div>
     </div>
 
-    <!-- Stock Details & Edit Card Panel -->
-    <div id="detailCard" class="detail-card" style="display: none;">
-        <div class="detail-card-header">
-            <div class="detail-title">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="20" x2="18" y2="10"></line>
-                    <line x1="12" y1="20" x2="12" y2="4"></line>
-                    <line x1="6" y1="20" x2="6" y2="14"></line>
-                </svg>
-                <span id="detailSymbol">...</span> Stock Specification
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <button type="button" id="btnCloseDetailCard" class="btn-close-detail" title="Close Specification Panel">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <!-- Extended Stock Specification Modal Overlay -->
+    <div id="stockDetailModal" class="modal-backdrop-custom" style="display: none;">
+        <div class="modal-dialog-custom">
+            <div class="modal-header-custom">
+                <div class="modal-title-custom">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--theme-accent, #4f9cf9)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span id="modalSymbol" class="modal-symbol-title">...</span>
+                            <span id="modalStatusBadge">...</span>
+                            <span id="modalExchangeBadge" class="modal-badge-exchange">NSE</span>
+                        </div>
+                        <p class="modal-subtitle-text">Stock Specification & Data Coverage Overview</p>
+                    </div>
+                </div>
+                <button type="button" id="btnCloseStockModal" class="modal-close-btn" title="Close Popup (ESC)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
                 </button>
             </div>
-        </div>
 
-        <div class="detail-grid">
-            <div class="detail-item">
-                <span class="detail-item-label">Company Name</span>
-                <span id="detailName" class="detail-item-value">...</span>
+            <div class="modal-body-custom">
+                <!-- Section 1: Instrument Profile Card -->
+                <div class="modal-section-card">
+                    <div class="modal-section-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        Instrument Specifications & Profile
+                    </div>
+                    <div class="modal-info-grid">
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Company Name</span>
+                            <span id="modalCompanyName" class="modal-info-val">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Symbol Name</span>
+                            <span id="modalSymbolName" class="modal-info-val monospace">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Instrument Token</span>
+                            <span id="modalInstrumentToken" class="modal-info-val monospace">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Exchange / Segment</span>
+                            <span id="modalExchangeSegment" class="modal-info-val">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Instrument Type</span>
+                            <span id="modalInstrumentType" class="modal-info-val">EQ</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Last Traded Price (LTP)</span>
+                            <span id="modalLastPrice" class="modal-info-val text-success">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Lot Size</span>
+                            <span id="modalLotSize" class="modal-info-val">1</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Tick Size</span>
+                            <span id="modalTickSize" class="modal-info-val">₹0.05</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Data Coverage & Last Candle Date Card -->
+                <div class="modal-section-card">
+                    <div class="modal-section-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        History Coverage & Candle Status
+                    </div>
+                    <div class="modal-info-grid">
+                        <div class="modal-info-item" style="grid-column: span 2;">
+                            <span class="modal-info-label">Last Candle Date / Time</span>
+                            <span id="modalLastCandleDate" class="modal-info-val text-accent">No data</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 14px;">
+                        <span class="modal-info-label" style="display:block; margin-bottom: 8px;">Timeframe Coverage Badges</span>
+                        <div id="modalTfBadges" class="modal-tf-badges-row">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="detail-item">
-                <span class="detail-item-label">Exchange</span>
-                <span id="detailExchange" class="detail-item-value">NSE</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-item-label">Status</span>
-                <span id="detailStatus" class="detail-item-value">Active</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-item-label">Last Candle Date</span>
-                <span id="detailLastCandleDate" class="detail-item-value">No data</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-item-label">Instrument Token</span>
-                <span id="detailInstrumentToken" class="detail-item-value monospace">...</span>
+
+            <div class="modal-footer-custom">
+                <button type="button" id="btnModalManageHistory" class="btn-modal-action secondary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    Manage History
+                </button>
+                <button type="button" id="btnModalCloseFooter" class="btn-modal-action primary">
+                    Close
+                </button>
             </div>
         </div>
     </div>

@@ -33,4 +33,9 @@ public interface IMarketCandleRepository
     /// Deletes history within a specific date range for a symbol (or all symbols if symbol is null/empty).
     /// </summary>
     Task DeleteHistoryRangeAsync(string? symbol, string timeframe, System.DateTime fromDate, System.DateTime toDate);
+
+    /// <summary>
+    /// Purges candles and indicators matching created_at date across all timeframes and updates stock_master flags.
+    /// </summary>
+    Task<(long deletedCandles, long deletedIndicators, int affectedStocks)> PurgeHistoryByDateAsync(System.DateTime targetDate, string? symbol);
 }

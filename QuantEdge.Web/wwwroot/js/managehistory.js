@@ -10,10 +10,11 @@ $(document).ready(function () {
     initPage();
 
     function initPage() {
-        // Default FromDate and ToDate to Today
+        // Default FromDate, ToDate, and PurgeDate to Today
         const todayStr = new Date().toISOString().split('T')[0];
         $('#historyFromDate').val(todayStr);
         $('#historyToDate').val(todayStr);
+        $('#purgeDate').val(todayStr);
 
         loadStockDropdown();
         bindEvents();
@@ -27,16 +28,20 @@ $(document).ready(function () {
             type: 'GET',
             success: function (data) {
                 const $select = $('#stockSelector');
+                const $purgeSelect = $('#purgeStockSelector');
                 $select.empty();
+                $purgeSelect.empty();
 
                 // Add "ALL STOCKS" default option
                 $select.append('<option value="" selected>ALL STOCKS (All Active Instruments)</option>');
+                $purgeSelect.append('<option value="" selected>ALL STOCKS (All Active Instruments)</option>');
 
                 if (Array.isArray(data)) {
                     data.forEach(item => {
                         const sym = item.symbol || item.Symbol || item;
                         if (sym) {
                             $select.append(`<option value="${escapeHtml(sym)}">${escapeHtml(sym)}</option>`);
+                            $purgeSelect.append(`<option value="${escapeHtml(sym)}">${escapeHtml(sym)}</option>`);
                         }
                     });
                 }
@@ -46,13 +51,9 @@ $(document).ready(function () {
                         width: '100%',
                         placeholder: 'Search Stock Symbol...'
                     });
-                    $select.on('select2:open', function() {
-                        setTimeout(function() {
-                            const searchField = document.querySelector('.select2-container--open .select2-search__field');
-                            if (searchField) {
-                                searchField.setAttribute('placeholder', 'Search stock symbol...');
-                            }
-                        }, 10);
+                    $purgeSelect.select2({
+                        width: '100%',
+                        placeholder: 'Search Stock Symbol...'
                     });
                 }
             },
@@ -75,6 +76,11 @@ $(document).ready(function () {
         // Execute Reset History button click
         $('#btnStartHistoryReset').click(function () {
             triggerHistoryReset();
+        });
+
+        // Execute Purge History By Date button click
+        $('#btnExecutePurge').click(function () {
+            triggerHistoryPurge();
         });
     }
 
@@ -163,7 +169,84 @@ $(document).ready(function () {
         }
     }
 
-    // 5. SignalR Real-time Progress Setup
+    // 5. Trigger History Purge Action
+    async function triggerHistoryPurge() {
+        const purgeDate = $('#purgeDate').val();
+        const symbol = $('#purgeStockSelector').val() || '';
+
+        if (!purgeDate) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Creation Date Required',
+                text: 'Please select a valid creation date (created_at) to purge records.',
+                background: '#1e293b',
+                color: '#f8fafc'
+            });
+            return;
+        }
+
+        const targetText = symbol ? `Stock: ${symbol}` : 'ALL active stocks';
+        const confirmResult = await Swal.fire({
+            title: 'Purge History Records?',
+            html: `Are you sure you want to <strong>PERMANENTLY DELETE</strong> all timeframe candles and technical indicators matching created date:<br/>` +
+                  `<strong style="color:#ef4444; font-size:16px;">${purgeDate}</strong> for <strong>${escapeHtml(targetText)}</strong>?<br/><br/>` +
+                  `<span style="color:#94a3b8; font-size:12px;">This action will delete matching records from all 5 timeframes (1m, 5m, 15m, 60m, 1d) and update stock coverage flags.</span>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Yes, Purge Selected Date',
+            background: '#1e293b',
+            color: '#f8fafc'
+        });
+
+        if (!confirmResult.isConfirmed) return;
+
+        const $btn = $('#btnExecutePurge');
+        $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Purging Records...');
+
+        $('#progressCard').slideDown();
+        addLogEntry(`[${new Date().toLocaleTimeString()}] Initiating history purge for date ${purgeDate} (${targetText})...`, 'info');
+
+        try {
+            const url = `${apiBaseUrl}/api/marketdata/history/purge-by-date?date=${encodeURIComponent(purgeDate)}&symbol=${encodeURIComponent(symbol)}`;
+            
+            const res = await fetch(url, { method: 'POST' });
+            const data = await res.json();
+
+            if (!res.ok || data.success === false) {
+                throw new Error(data.message || 'Failed to purge history data.');
+            }
+
+            addLogEntry(`[Success] ${data.message}`, 'success');
+            addLogEntry(`[Stats] Deleted Candles: ${data.deletedCandles}, Deleted Indicators: ${data.deletedIndicators}, Updated Stocks: ${data.affectedStocks}`, 'success');
+
+            Swal.fire({
+                icon: 'success',
+                title: 'History Purge Complete',
+                html: `<strong>${escapeHtml(data.message)}</strong><br/><br/>` +
+                      `Deleted Candles: <strong>${data.deletedCandles}</strong><br/>` +
+                      `Deleted Indicators: <strong>${data.deletedIndicators}</strong><br/>` +
+                      `Updated Stock Flags: <strong>${data.affectedStocks}</strong>`,
+                background: '#1e293b',
+                color: '#f8fafc'
+            });
+        } catch (ex) {
+            console.error('History purge error:', ex);
+            addLogEntry(`[Error] ${ex.message}`, 'error');
+            Swal.fire({
+                icon: 'error',
+                title: 'Purge Failed',
+                text: ex.message,
+                background: '#1e293b',
+                color: '#f8fafc'
+            });
+        } finally {
+            $btn.prop('disabled', false).html('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> Purge History Data');
+        }
+    }
+
+    // 6. SignalR Real-time Progress Setup
     function initSignalR() {
         if (typeof signalR === 'undefined') {
             console.warn('SignalR library not loaded.');

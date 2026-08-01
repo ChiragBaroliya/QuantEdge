@@ -173,4 +173,33 @@ public class MarketCandleRepository : IMarketCandleRepository
             }
         }
     }
+
+    /// <summary>
+    /// Purges candles and indicators matching created_at date across all timeframes using sp_purge_history_by_date.
+    /// </summary>
+    public async Task<(long deletedCandles, long deletedIndicators, int affectedStocks)> PurgeHistoryByDateAsync(DateTime targetDate, string? symbol)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        var result = await connection.QueryFirstOrDefaultAsync<PurgeResultDto>(
+            "SELECT * FROM sp_purge_history_by_date(@p_target_date, @p_symbol);",
+            new {
+                p_target_date = targetDate.Date,
+                p_symbol = string.IsNullOrWhiteSpace(symbol) ? null : symbol.Trim()
+            }
+        );
+
+        if (result != null)
+        {
+            return (result.DeletedCandles, result.DeletedIndicators, result.AffectedStocks);
+        }
+
+        return (0, 0, 0);
+    }
+
+    private class PurgeResultDto
+    {
+        public long DeletedCandles { get; set; }
+        public long DeletedIndicators { get; set; }
+        public int AffectedStocks { get; set; }
+    }
 }
