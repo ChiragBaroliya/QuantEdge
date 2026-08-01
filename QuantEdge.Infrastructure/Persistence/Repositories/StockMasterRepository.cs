@@ -4,6 +4,8 @@ using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
+using System.IO;
+using ClosedXML.Excel;
 using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Interfaces;
@@ -209,6 +211,140 @@ public class StockMasterRepository : IStockMasterRepository
             "SELECT sp_bulk_delete_stock_master(@p_ids);",
             new { p_ids = ids.ToArray() }
         );
+    }
+
+    /// <summary>
+    /// Generates and exports Excel report (.xlsx) of stock coverage data based on search and filter criteria.
+    /// </summary>
+    public async Task<byte[]> ExportStockCoverageToExcelAsync(string? search, string? statusFilter, string? historyFilter)
+    {
+        var result = await GetPaginatedCoverageAsync(search, statusFilter, historyFilter, pageNumber: 1, pageSize: 100000);
+        var items = result.Items ?? Enumerable.Empty<StockCoverageDto>();
+
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Stock Coverage");
+
+        // 1. Report Title Banner
+        worksheet.Cell("A1").Value = "QuantEdge — Stock Data Coverage Report";
+        worksheet.Cell("A1").Style.Font.Bold = true;
+        worksheet.Cell("A1").Style.Font.FontSize = 16;
+        worksheet.Cell("A1").Style.Font.FontColor = XLColor.FromHtml("#1E293B");
+
+        string generatedTimeStr = DateTime.Now.ToString("dd-MMM-yyyy HH:mm:ss");
+        worksheet.Cell("A2").Value = $"Generated: {generatedTimeStr} | Status Filter: {statusFilter ?? "All"} | History Filter: {historyFilter ?? "All"} | Search: {search ?? "None"} | Total Records: {result.TotalCount}";
+        worksheet.Cell("A2").Style.Font.Italic = true;
+        worksheet.Cell("A2").Style.Font.FontSize = 10;
+        worksheet.Cell("A2").Style.Font.FontColor = XLColor.FromHtml("#64748B");
+
+        // 2. Table Headers
+        string[] headers = new[]
+        {
+            "#", "Symbol", "Company Name", "Exchange", "Instrument Token", "Status",
+            "1m History", "5m History", "15m History", "60m History", "1D History",
+            "1D Candle Count", "60m Candle Count", "Last Candle Sync Date"
+        };
+
+        int headerRow = 4;
+        for (int col = 0; col < headers.Length; col++)
+        {
+            var cell = worksheet.Cell(headerRow, col + 1);
+            cell.Value = headers[col];
+            cell.Style.Font.Bold = true;
+            cell.Style.Font.FontSize = 11;
+            cell.Style.Font.FontColor = XLColor.White;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E293B");
+            cell.Style.Alignment.Horizontal = (col == 0 || col >= 11) ? XLAlignmentHorizontalValues.Right : XLAlignmentHorizontalValues.Left;
+            if (col == 1 || col == 3 || col == 5 || (col >= 6 && col <= 10)) cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        worksheet.Row(headerRow).Height = 26;
+
+        // 3. Data Rows
+        int currentRow = headerRow + 1;
+        int rowIndex = 1;
+
+        foreach (var item in items)
+        {
+            worksheet.Cell(currentRow, 1).Value = rowIndex++;
+            worksheet.Cell(currentRow, 2).Value = item.Symbol;
+            worksheet.Cell(currentRow, 3).Value = item.Name ?? item.Symbol;
+            worksheet.Cell(currentRow, 4).Value = item.Exchange ?? "NSE";
+            worksheet.Cell(currentRow, 5).Value = item.InstrumentToken;
+            worksheet.Cell(currentRow, 6).Value = item.IsActive ? "Active" : "Inactive";
+            
+            worksheet.Cell(currentRow, 7).Value = FormatHistoryStatus(item.IsHistryStored1m);
+            worksheet.Cell(currentRow, 8).Value = FormatHistoryStatus(item.IsHistryStored5m);
+            worksheet.Cell(currentRow, 9).Value = FormatHistoryStatus(item.IsHistryStored15m);
+            worksheet.Cell(currentRow, 10).Value = FormatHistoryStatus(item.IsHistryStored60m);
+            worksheet.Cell(currentRow, 11).Value = FormatHistoryStatus(item.IsHistryStored1d);
+
+            worksheet.Cell(currentRow, 12).Value = item.Count1d;
+            worksheet.Cell(currentRow, 13).Value = item.Count60m;
+            worksheet.Cell(currentRow, 14).Value = item.LastCandleDate.HasValue 
+                ? item.LastCandleDate.Value.ToString("yyyy-MM-dd HH:mm:ss") 
+                : "No Sync";
+
+            // Zebra striping
+            if (currentRow % 2 == 0)
+            {
+                worksheet.Row(currentRow).Style.Fill.BackgroundColor = XLColor.FromHtml("#F8FAFC");
+            }
+
+            // Cell formatting
+            worksheet.Cell(currentRow, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+            worksheet.Cell(currentRow, 2).Style.Font.Bold = true;
+            worksheet.Cell(currentRow, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            worksheet.Cell(currentRow, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            // Status Badge Formatting
+            var statusCell = worksheet.Cell(currentRow, 6);
+            statusCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            statusCell.Style.Font.Bold = true;
+            if (item.IsActive)
+            {
+                statusCell.Style.Font.FontColor = XLColor.FromHtml("#16A34A"); // Active green
+            }
+            else
+            {
+                statusCell.Style.Font.FontColor = XLColor.FromHtml("#DC2626"); // Inactive red
+            }
+
+            // History status alignment
+            for (int hCol = 7; hCol <= 11; hCol++)
+            {
+                worksheet.Cell(currentRow, hCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+
+            worksheet.Cell(currentRow, 12).Style.NumberFormat.Format = "#,##0";
+            worksheet.Cell(currentRow, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+            worksheet.Cell(currentRow, 13).Style.NumberFormat.Format = "#,##0";
+            worksheet.Cell(currentRow, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+            worksheet.Cell(currentRow, 14).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            currentRow++;
+        }
+
+        // Apply gridlines & auto-fit columns
+        worksheet.ShowGridLines = true;
+        if (currentRow > headerRow + 1)
+        {
+            worksheet.Columns().AdjustToContents(headerRow, currentRow - 1);
+        }
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static string FormatHistoryStatus(int? val)
+    {
+        return val switch
+        {
+            1 => "Stored",
+            0 => "Missing",
+            _ => "Not Stored"
+        };
     }
 }
 

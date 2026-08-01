@@ -78,6 +78,39 @@ public class DataCoverageController : Controller
     }
 
     /// <summary>
+    /// Proxy GET request to download filtered stock coverage Excel file
+    /// </summary>
+    [HttpGet("api/datacoverage/export-excel")]
+    [HttpGet("datacoverage/export-excel")]
+    public async Task<IActionResult> ExportExcel([FromQuery] string? search = null, [FromQuery] string? status = null, [FromQuery] string? historyFilter = null)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient("QuantEdgeApi");
+            var query = $"?search={Uri.EscapeDataString(search ?? "")}&status={Uri.EscapeDataString(status ?? "")}&historyFilter={Uri.EscapeDataString(historyFilter ?? "")}";
+            var response = await client.GetAsync($"api/datacoverage/export-excel{query}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var fileBytes = await response.Content.ReadAsByteArrayAsync();
+                var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                var fileName = response.Content.Headers.ContentDisposition?.FileNameStar 
+                    ?? response.Content.Headers.ContentDisposition?.FileName 
+                    ?? $"Stock_Coverage_Export_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+
+                return File(fileBytes, contentType, fileName.Replace("\"", ""));
+            }
+
+            return StatusCode((int)response.StatusCode, "Failed to generate Excel export file.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to proxy Excel export request.");
+            return StatusCode(500, new { message = "Unable to export Excel file." });
+        }
+    }
+
+    /// <summary>
     /// Proxy PUT request to update stock coverage flags
     /// </summary>
     [HttpPut("api/datacoverage/{id}")]

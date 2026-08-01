@@ -1063,3 +1063,46 @@ input:checked + .slider:before {
     .kpi-grid { grid-template-columns: 1fr; }
     .filter-select { flex: 1 1 100%; width: 100%; }
 }
+
+/* Action Buttons Styling */
+.btn-refresh-coverage,
+.btn-export-excel {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--input-height, 36px);
+    padding: 0 14px;
+    background: var(--bg-input, rgba(30, 41, 59, 0.6));
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+    border-radius: var(--radius-md, 8px);
+    color: var(--text-primary, #f8fafc);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+}
+
+.btn-refresh-coverage:hover {
+    background: rgba(167, 139, 250, 0.15);
+    border-color: var(--theme-accent, #a78bfa);
+    color: var(--theme-accent, #a78bfa);
+}
+
+.btn-export-excel {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.35);
+    color: #34d399;
+}
+
+.btn-export-excel:hover {
+    background: rgba(16, 185, 129, 0.25);
+    border-color: #10b981;
+    color: #6ee7b7;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-export-excel:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
