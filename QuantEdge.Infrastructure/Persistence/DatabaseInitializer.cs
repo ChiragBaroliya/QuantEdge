@@ -1055,6 +1055,72 @@ public class DatabaseInitializer
 
             _logger.LogInformation("Default Admin user ('admin') seeded successfully.");
         }
+
+        // Provision sp_get_paginated_users stored function
+        await conn.ExecuteAsync(@"
+            DROP FUNCTION IF EXISTS sp_get_paginated_users CASCADE;
+            DROP FUNCTION IF EXISTS sp_get_paginated_users(VARCHAR, VARCHAR, INT, INT) CASCADE;
+
+            CREATE OR REPLACE FUNCTION sp_get_paginated_users(
+                p_search VARCHAR DEFAULT NULL,
+                p_role_filter VARCHAR DEFAULT NULL,
+                p_page_number INT DEFAULT 1,
+                p_page_size INT DEFAULT 25
+            )
+            RETURNS TABLE (
+                ""Id"" INT,
+                ""FullName"" VARCHAR(150),
+                ""Email"" VARCHAR(255),
+                ""MobileNo"" VARCHAR(20),
+                ""Username"" VARCHAR(100),
+                ""Role"" VARCHAR(50),
+                ""CreatedAt"" TIMESTAMP WITH TIME ZONE,
+                ""UpdatedAt"" TIMESTAMP WITH TIME ZONE,
+                ""TotalRecords"" INT
+            )
+            LANGUAGE plpgsql
+            AS $$
+            DECLARE
+                v_offset INT;
+            BEGIN
+                v_offset := (GREATEST(1, p_page_number) - 1) * GREATEST(1, p_page_size);
+
+                RETURN QUERY
+                WITH filtered_users AS (
+                    SELECT u.*
+                    FROM app_users u
+                    WHERE 
+                        (p_search IS NULL OR p_search = '' 
+                         OR UPPER(u.username) LIKE '%' || UPPER(p_search) || '%' 
+                         OR UPPER(u.full_name) LIKE '%' || UPPER(p_search) || '%'
+                         OR UPPER(COALESCE(u.email, '')) LIKE '%' || UPPER(p_search) || '%'
+                         OR UPPER(COALESCE(u.mobile_no, '')) LIKE '%' || UPPER(p_search) || '%')
+                        AND (
+                            p_role_filter IS NULL OR p_role_filter = '' OR LOWER(p_role_filter) = 'all'
+                            OR LOWER(u.role) = LOWER(p_role_filter)
+                        )
+                ),
+                counted AS (
+                    SELECT fu.*, COUNT(*) OVER()::INT AS full_count
+                    FROM filtered_users fu
+                    ORDER BY fu.id ASC
+                    LIMIT GREATEST(1, p_page_size) OFFSET v_offset
+                )
+                SELECT 
+                    c.id AS ""Id"",
+                    c.full_name AS ""FullName"",
+                    c.email AS ""Email"",
+                    c.mobile_no AS ""MobileNo"",
+                    c.username AS ""Username"",
+                    c.role AS ""Role"",
+                    c.created_at AS ""CreatedAt"",
+                    c.updated_at AS ""UpdatedAt"",
+                    c.full_count AS ""TotalRecords""
+                FROM counted c
+                ORDER BY c.id ASC;
+            END;
+            $$;
+        ");
     }
 }
 
