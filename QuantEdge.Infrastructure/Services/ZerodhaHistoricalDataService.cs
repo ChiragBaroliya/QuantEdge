@@ -151,13 +151,26 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                 if (cancellationToken.IsCancellationRequested)
                     break;
 
-                DateTime currentEnd = currentStart.AddDays(maxDays);
+                DateTime rawEndUtc = currentStart.AddDays(maxDays);
+                DateTime currentEnd = rawEndUtc;
+
+                if (isIntraday)
+                {
+                    DateTime rawEndIst = TimeZoneInfo.ConvertTimeFromUtc(rawEndUtc, _indianTimeZone);
+                    DateTime marketEndIst = rawEndIst.Date.Add(new TimeSpan(15, 30, 0));
+                    currentEnd = TimeZoneInfo.ConvertTimeToUtc(marketEndIst, _indianTimeZone);
+                }
+
                 if (currentEnd > adjustedToUtc)
                 {
                     currentEnd = adjustedToUtc;
                 }
 
-                _logger.LogInformation("Requesting chunk: {Symbol} from {From} to {To}", symbol, currentStart, currentEnd);
+                DateTime currentStartIst = TimeZoneInfo.ConvertTimeFromUtc(currentStart, _indianTimeZone);
+                DateTime currentEndIst = TimeZoneInfo.ConvertTimeFromUtc(currentEnd, _indianTimeZone);
+
+                _logger.LogInformation("Requesting chunk: {Symbol} from {FromIst:yyyy-MM-dd HH:mm} to {ToIst:yyyy-MM-dd HH:mm} IST", 
+                    symbol, currentStartIst, currentEndIst);
 
                 List<Historical> historicalList = await Task.Run(() => 
                     kite.GetHistoricalData(
@@ -218,8 +231,16 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                     }
                 }
 
-                // Move forward (using currentEnd as next start time is safe as Dapper does UPSERT on conflict)
-                currentStart = currentEnd;
+                // Move forward to next start bound
+                if (isIntraday)
+                {
+                    DateTime nextStartIst = currentEndIst.Date.AddDays(1).Add(new TimeSpan(9, 15, 0));
+                    currentStart = TimeZoneInfo.ConvertTimeToUtc(nextStartIst, _indianTimeZone);
+                }
+                else
+                {
+                    currentStart = currentEnd;
+                }
 
                 // Add minor rate-limiting delay between sequential chunks to respect 3 requests/sec API rate limit
                 if (currentStart < adjustedToUtc)
@@ -289,14 +310,6 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to fetch historical candles from Zerodha API for {Symbol} ({Timeframe}). Running mock daily data generator fallback...", symbol, timeframe);
-                if (timeframe.ToLower() == "1d")
-                {
-                    await GenerateMockDailyCandlesAsync(symbol, fromTime, toTime, cancellationToken);
-                }
-                else
-                {
-                    throw;
-                }
             }
             
             // Calculate indicators for backfilled historical data

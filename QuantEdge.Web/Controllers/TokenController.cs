@@ -3,11 +3,14 @@ using Microsoft.AspNetCore.Mvc;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Web.Models;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace QuantEdge.Web.Controllers;
 
 /// <summary>
 /// Controller managing the Zerodha OAuth token creation flow.
 /// </summary>
+[Authorize(Roles = "Admin")]
 public class TokenController : Controller
 {
     private const string CacheKeySessionStatus = "zerodha_session_status";

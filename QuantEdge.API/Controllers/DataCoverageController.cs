@@ -64,6 +64,28 @@ public class DataCoverageController : ControllerBase
     }
 
     /// <summary>
+    /// GET /datacoverage/export-excel - Downloads an Excel file (.xlsx) containing filtered stock coverage records.
+    /// </summary>
+    [HttpGet("export-excel")]
+    public async Task<IActionResult> ExportExcel(
+        [FromQuery] string? search = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string? historyFilter = null)
+    {
+        try
+        {
+            var excelBytes = await _stockMasterRepository.ExportStockCoverageToExcelAsync(search, status, historyFilter);
+            string fileName = $"Stock_Coverage_Export_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate stock coverage Excel export.");
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// PUT /datacoverage/{id} or /api/datacoverage/{id} - Updates active status and timeframe history flags for a stock by ID.
     /// </summary>
     [HttpPut("{id}")]

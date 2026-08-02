@@ -195,6 +195,41 @@
     box-shadow: none;
 }
 
+/* Purge History Card */
+.purge-card-container {
+    border-left: 4px solid #ef4444;
+}
+
+.btn-execute-purge {
+    padding: 14px 28px;
+    background: linear-gradient(135deg, #b91c1c, #991b1b);
+    color: #ffffff;
+    border: none;
+    border-radius: var(--radius-md, 8px);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 14px rgba(185, 28, 28, 0.35);
+}
+
+.btn-execute-purge:hover {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(220, 38, 38, 0.5);
+}
+
+.btn-execute-purge:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
 /* Progress & Live Log Card */
 .progress-card {
     background: var(--bg-card, #1e293b);

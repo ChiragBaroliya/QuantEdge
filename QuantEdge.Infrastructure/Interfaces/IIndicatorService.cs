@@ -13,7 +13,7 @@ public interface IIndicatorService
     Task CalculateAndSaveLatestIndicatorAsync(string symbol, string timeframe);
 
     /// <summary>
-    /// Recalculates and overwrites indicators for all stored history (up to a limit) for backfilling.
+    /// Recalculates and overwrites indicators for ALL stored historical candles for backfilling.
     /// </summary>
     Task BackfillHistoricalIndicatorsAsync(string symbol, string timeframe);
 }

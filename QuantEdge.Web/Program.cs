@@ -1,8 +1,10 @@
+using System;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using QuantEdge.Infrastructure.Extensions;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Services;
 using Serilog;
-using Microsoft.AspNetCore.HttpOverrides;
 
 try
 {
@@ -13,9 +15,23 @@ try
 
     Log.Information("Starting QuantEdge.Web...");
 
-    // Register Memory Cache
+    // Register Memory Cache & Clean Architecture Services
     builder.Services.AddMemoryCache();
     builder.Services.AddSingleton<ICacheService, MemoryCacheService>();
+    builder.Services.AddMarketDataServices(builder.Configuration);
+
+    // Add Cookie Authentication
+    builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        .AddCookie(options =>
+        {
+            options.LoginPath = "/Account/Login";
+            options.AccessDeniedPath = "/Account/AccessDenied";
+            options.LogoutPath = "/Account/Logout";
+            options.ExpireTimeSpan = TimeSpan.FromDays(365);
+            options.SlidingExpiration = true;
+            options.Cookie.HttpOnly = true;
+            options.Cookie.Name = "QuantEdge.Auth";
+        });
 
     // Add MVC
     builder.Services.AddControllersWithViews();
@@ -48,11 +64,13 @@ try
     app.UseHttpsRedirection();
     app.UseStaticFiles();
     app.UseRouting();
+
+    app.UseAuthentication();
     app.UseAuthorization();
 
     app.MapControllerRoute(
         name: "default",
-        pattern: "{controller=Token}/{action=Index}/{id?}");
+        pattern: "{controller=Home}/{action=Index}/{id?}");
 
     await app.RunAsync();
 }

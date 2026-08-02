@@ -443,6 +443,30 @@ VALUES
 ON CONFLICT (symbol) DO NOTHING;
 
 -- ----------------------------------------------------------------------------
+-- 5. User Authentication & Role Management Schema
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app_users (
+    id SERIAL PRIMARY KEY,
+    full_name VARCHAR(150) NOT NULL,
+    email VARCHAR(255) NULL,
+    mobile_no VARCHAR(20) NULL,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'User',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Schema migration helper: Ensure email and mobile_no are nullable
+ALTER TABLE app_users ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE app_users ALTER COLUMN mobile_no DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS ix_app_users_email ON app_users (LOWER(email));
+CREATE INDEX IF NOT EXISTS ix_app_users_username ON app_users (LOWER(username));
+
+
+
+-- ----------------------------------------------------------------------------
 -- 5. Paper Trading Tables
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS paper_accounts (

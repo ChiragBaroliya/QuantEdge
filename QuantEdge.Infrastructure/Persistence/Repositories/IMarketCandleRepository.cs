@@ -20,9 +20,9 @@ public interface IMarketCandleRepository
     Task InsertBatchAsync(IEnumerable<MarketCandle> candles);
 
     /// <summary>
-    /// Retrieves historical candles using a Stored Procedure, returning auto-mapped entities.
+    /// Retrieves historical candles using a Stored Procedure or direct SQL query, returning auto-mapped entities.
     /// </summary>
-    Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int limit, System.DateTime? beforeTime = null);
+    Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int? limit = null, System.DateTime? beforeTime = null);
 
     /// <summary>
     /// Deletes all history for today for a specific symbol and timeframe.
@@ -33,4 +33,9 @@ public interface IMarketCandleRepository
     /// Deletes history within a specific date range for a symbol (or all symbols if symbol is null/empty).
     /// </summary>
     Task DeleteHistoryRangeAsync(string? symbol, string timeframe, System.DateTime fromDate, System.DateTime toDate);
+
+    /// <summary>
+    /// Purges candles and indicators matching created_at date across all timeframes and updates stock_master flags.
+    /// </summary>
+    Task<(long deletedCandles, long deletedIndicators, int affectedStocks)> PurgeHistoryByDateAsync(System.DateTime targetDate, string? symbol);
 }

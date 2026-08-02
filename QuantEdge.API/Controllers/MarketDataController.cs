@@ -255,6 +255,40 @@ public class MarketDataController : ControllerBase
     }
 
     /// <summary>
+    /// Purges candles and indicators matching created_at date across all timeframes and updates stock coverage flags.
+    /// </summary>
+    [HttpPost("history/purge-by-date")]
+    public async Task<IActionResult> PurgeHistoryByDate(
+        [FromQuery] DateTime date,
+        [FromQuery] string? symbol = null)
+    {
+        try
+        {
+            var (deletedCandles, deletedIndicators, affectedStocks) = await _candleRepository.PurgeHistoryByDateAsync(date, symbol);
+            
+            if (_cacheService != null)
+            {
+                _cacheService.ClearCache(symbol);
+            }
+
+            string symbolText = string.IsNullOrWhiteSpace(symbol) ? "ALL stocks" : $"symbol {symbol}";
+            return Ok(new
+            {
+                success = true,
+                message = $"Successfully purged history created on {date:yyyy-MM-dd} for {symbolText}.",
+                deletedCandles,
+                deletedIndicators,
+                affectedStocks
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to purge history data for date {Date}.", date);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Fetches historical data from Zerodha for today for a specific symbol and timeframe.
     /// </summary>
     [HttpPost("history/today/{symbol}")]

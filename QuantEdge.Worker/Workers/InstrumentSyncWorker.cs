@@ -34,7 +34,7 @@ public class InstrumentSyncWorker : BackgroundService
     {
         _logger.LogInformation("InstrumentSyncWorker started.");
 
-        // Brief delay on startup so DatabaseInitializer has time to run
+        // Brief delay on startup
         await Task.Delay(4000, stoppingToken);
 
         // 1. Immediate sync for testing if configured

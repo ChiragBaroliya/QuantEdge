@@ -558,7 +558,7 @@ $(document).ready(function () {
         `);
     }
 
-    // Select Stock & Populate Detail Card
+    // Select Stock & Open Extended Specification Modal
     function selectStock(stockId) {
         state.selectedStockId = stockId;
         const stock = state.stocksMap[stockId];
@@ -573,18 +573,61 @@ $(document).ready(function () {
         const token = stock.instrumentToken || stock.InstrumentToken || 'N/A';
         const isActive = stock.isActive ?? stock.IsActive ?? false;
         const lastCandleDate = stock.lastCandleDate || stock.LastCandleDate;
+        const lastPrice = stock.lastPrice || stock.LastPrice || stock.ltp || stock.Ltp;
+        const lotSize = stock.lotSize || stock.LotSize || 1;
+        const tickSize = stock.tickSize || stock.TickSize || 0.05;
+        const segment = stock.segment || stock.Segment || (exchange + '_EQ');
+        const instrumentType = stock.instrumentType || stock.InstrumentType || 'EQ';
 
-        $('#detailSymbol').text(symbol);
-        $('#detailName').text(name);
-        $('#detailExchange').text(exchange);
-        $('#detailInstrumentToken').text(token);
-        $('#detailStatus').html(isActive ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Inactive</span>');
-        $('#detailLastCandleDate').text(lastCandleDate ? formatDate(lastCandleDate) : 'No data');
+        $('#modalSymbol').text(symbol);
+        $('#modalCompanyName').text(name);
+        $('#modalSymbolName').text(symbol);
+        $('#modalExchangeBadge').text(exchange);
+        $('#modalExchangeSegment').text(segment);
+        $('#modalInstrumentToken').text(token);
+        $('#modalInstrumentType').text(instrumentType);
+        $('#modalLotSize').text(lotSize);
+        $('#modalTickSize').text('₹' + parseFloat(tickSize).toFixed(2));
+        $('#modalLastPrice').text(lastPrice ? ('₹' + parseFloat(lastPrice).toFixed(2)) : 'N/A');
 
-        $('#detailCard').slideDown(250);
-        $('html, body').animate({
-            scrollTop: $('#detailCard').offset().top - 100
-        }, 300);
+        $('#modalStatusBadge').html(isActive ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Inactive</span>');
+        $('#modalLastCandleDate').text(lastCandleDate ? formatDate(lastCandleDate) : 'No data available');
+
+        // Render Timeframe Badges
+        const draft = state.draftState[stockId] || {};
+        const tfConfig = [
+            { key: 'history1M', label: '1M' },
+            { key: 'history5M', label: '5M' },
+            { key: 'history15M', label: '15M' },
+            { key: 'history60M', label: '60M' },
+            { key: 'history1D', label: '1D' }
+        ];
+
+        let badgesHtml = tfConfig.map(tf => {
+            const val = draft[tf.key];
+            const isStored = (val === 1 || val === '1');
+            return isStored 
+                ? `<span class="modal-tf-badge stored">✓ ${tf.label} Stored</span>`
+                : `<span class="modal-tf-badge missing">✕ ${tf.label} Missing</span>`;
+        }).join('');
+
+        $('#modalTfBadges').html(badgesHtml);
+
+        openModal();
+    }
+
+    function openModal() {
+        const $modal = $('#stockDetailModal');
+        $modal.css('display', 'flex');
+        setTimeout(() => $modal.addClass('show'), 10);
+    }
+
+    function closeModal() {
+        const $modal = $('#stockDetailModal');
+        $modal.removeClass('show');
+        setTimeout(() => $modal.hide(), 250);
+        state.selectedStockId = null;
+        $('.stock-row').removeClass('selected-row');
     }
 
     // Bind Event Handlers
@@ -618,11 +661,68 @@ $(document).ready(function () {
             setTimeout(() => $icon.removeClass('spin-icon'), 750);
         });
 
-        // Close Detail Panel
-        $('#btnCloseDetailCard').on('click', function () {
-            $('#detailCard').slideUp(200);
-            state.selectedStockId = null;
-            $('.stock-row').removeClass('selected-row');
+        // Export Excel Button
+        $('#btnExportExcel').on('click', function () {
+            const $btn = $(this);
+            const originalHtml = $btn.html();
+            $btn.prop('disabled', true).html(`
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon">
+                    <line x1="12" y1="2" x2="12" y2="6"></line>
+                    <line x1="12" y1="18" x2="12" y2="22"></line>
+                    <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                    <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                    <line x1="2" y1="12" x2="6" y2="12"></line>
+                    <line x1="18" y1="12" x2="22" y2="12"></line>
+                </svg>
+                Exporting...
+            `);
+
+            const params = new URLSearchParams({
+                search: state.searchQuery || '',
+                status: state.statusFilter || 'all',
+                historyFilter: state.historyFilter || 'all'
+            });
+
+            const exportUrl = getEndpointUrl('/datacoverage/export-excel?' + params.toString());
+
+            Toast.fire({
+                icon: 'info',
+                title: 'Generating Stock Excel report...'
+            });
+
+            window.location.href = exportUrl;
+
+            setTimeout(() => {
+                $btn.prop('disabled', false).html(originalHtml);
+            }, 2500);
+        });
+
+        // Close Stock Specification Modal
+        $('#btnCloseStockModal, #btnModalCloseFooter').on('click', function () {
+            closeModal();
+        });
+
+        $('#stockDetailModal').on('click', function (e) {
+            if ($(e.target).is('#stockDetailModal')) {
+                closeModal();
+            }
+        });
+
+        $(document).on('keydown', function (e) {
+            if (e.key === 'Escape' && $('#stockDetailModal').is(':visible')) {
+                closeModal();
+            }
+        });
+
+        // Navigate to Manage History from Modal
+        $('#btnModalManageHistory').on('click', function () {
+            const stock = state.stocksMap[state.selectedStockId];
+            const symbol = stock ? (stock.symbol || stock.Symbol || '') : '';
+            if (symbol) {
+                window.location.href = '/ManageHistory?symbol=' + encodeURIComponent(symbol);
+            } else {
+                window.location.href = '/ManageHistory';
+            }
         });
 
         // Search Input with Debounce

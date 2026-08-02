@@ -60,7 +60,16 @@ public class MarketDataFeedWorker : BackgroundService
                     }
                     else if (!_processor.IsConnected)
                     {
-                        _logger.LogWarning("WebSocket connection is offline during active market hours session. Internal auto-reconnect should be in progress.");
+                        _logger.LogWarning("WebSocket connection is offline during active market hours session. Re-initiating connection...");
+                        try
+                        {
+                            await _processor.StartProcessingAsync(stoppingToken);
+                            _logger.LogInformation("Market data processing session re-established successfully.");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to re-establish market data processing. Will retry in the next cycle.");
+                        }
                     }
                 }
                 else

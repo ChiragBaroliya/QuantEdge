@@ -616,3 +616,350 @@ BEGIN
     );
 END;
 $$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_user_by_identifier
+-- Returns user record matching given email or username.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_get_user_by_identifier(
+    p_identifier VARCHAR(255)
+)
+RETURNS TABLE (
+    id INT,
+    full_name VARCHAR(150),
+    email VARCHAR(255),
+    mobile_no VARCHAR(20),
+    username VARCHAR(100),
+    password_hash VARCHAR(255),
+    role VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT u.id, u.full_name, u.email, u.mobile_no, u.username, u.password_hash, u.role, u.created_at, u.updated_at
+    FROM app_users u
+    WHERE LOWER(u.username) = LOWER(p_identifier) 
+       OR (u.email IS NOT NULL AND LOWER(u.email) = LOWER(p_identifier))
+    LIMIT 1;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_user_by_id
+-- Returns user record matching given user ID.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_get_user_by_id(
+    p_id INT
+)
+RETURNS TABLE (
+    id INT,
+    full_name VARCHAR(150),
+    email VARCHAR(255),
+    mobile_no VARCHAR(20),
+    username VARCHAR(100),
+    password_hash VARCHAR(255),
+    role VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT u.id, u.full_name, u.email, u.mobile_no, u.username, u.password_hash, u.role, u.created_at, u.updated_at
+    FROM app_users u
+    WHERE u.id = p_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_check_email_exists
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_check_email_exists(
+    p_email VARCHAR(255)
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF p_email IS NULL OR p_email = '' THEN
+        RETURN FALSE;
+    END IF;
+
+    RETURN EXISTS (
+        SELECT 1 FROM app_users WHERE LOWER(email) = LOWER(p_email)
+    );
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_check_username_exists
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_check_username_exists(
+    p_username VARCHAR(100)
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM app_users WHERE LOWER(username) = LOWER(p_username)
+    );
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_register_user
+-- Registers a new user and returns the generated user ID.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_register_user(
+    p_full_name VARCHAR(150),
+    p_email VARCHAR(255),
+    p_mobile_no VARCHAR(20),
+    p_username VARCHAR(100),
+    p_password_hash VARCHAR(255),
+    p_role VARCHAR(50) DEFAULT 'User'
+)
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_user_id INT;
+BEGIN
+    INSERT INTO app_users (
+        full_name, 
+        email, 
+        mobile_no, 
+        username, 
+        password_hash, 
+        role, 
+        created_at, 
+        updated_at
+    )
+    VALUES (
+        p_full_name, 
+        NULLIF(LOWER(p_email), ''), 
+        NULLIF(p_mobile_no, ''), 
+        p_username, 
+        p_password_hash, 
+        COALESCE(p_role, 'User'), 
+        NOW(), 
+        NOW()
+    )
+    RETURNING id INTO v_user_id;
+
+    RETURN v_user_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_update_user_password
+-- Updates the password hash of a user.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_update_user_password(
+    p_user_id INT,
+    p_new_password_hash VARCHAR(255)
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE app_users
+    SET password_hash = p_new_password_hash,
+        updated_at = NOW()
+    WHERE id = p_user_id;
+
+    RETURN FOUND;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_has_admin_user
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_has_admin_user()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM app_users WHERE LOWER(role) = 'admin'
+    );
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: sp_get_paginated_users
+-- Returns paginated users with filtering on search string and role.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS sp_get_paginated_users CASCADE;
+DROP FUNCTION IF EXISTS sp_get_paginated_users(VARCHAR, VARCHAR, INT, INT) CASCADE;
+
+CREATE OR REPLACE FUNCTION sp_get_paginated_users(
+    p_search VARCHAR DEFAULT NULL,
+    p_role_filter VARCHAR DEFAULT NULL,
+    p_page_number INT DEFAULT 1,
+    p_page_size INT DEFAULT 25
+)
+RETURNS TABLE (
+    "Id" INT,
+    "FullName" VARCHAR(150),
+    "Email" VARCHAR(255),
+    "MobileNo" VARCHAR(20),
+    "Username" VARCHAR(100),
+    "Role" VARCHAR(50),
+    "CreatedAt" TIMESTAMP WITH TIME ZONE,
+    "UpdatedAt" TIMESTAMP WITH TIME ZONE,
+    "TotalRecords" INT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_offset INT;
+BEGIN
+    v_offset := (GREATEST(1, p_page_number) - 1) * GREATEST(1, p_page_size);
+
+    RETURN QUERY
+    WITH filtered_users AS (
+        SELECT u.*
+        FROM app_users u
+        WHERE 
+            (p_search IS NULL OR p_search = '' 
+             OR UPPER(u.username) LIKE '%' || UPPER(p_search) || '%' 
+             OR UPPER(u.full_name) LIKE '%' || UPPER(p_search) || '%'
+             OR UPPER(COALESCE(u.email, '')) LIKE '%' || UPPER(p_search) || '%'
+             OR UPPER(COALESCE(u.mobile_no, '')) LIKE '%' || UPPER(p_search) || '%')
+            AND (
+                p_role_filter IS NULL OR p_role_filter = '' OR LOWER(p_role_filter) = 'all'
+                OR LOWER(u.role) = LOWER(p_role_filter)
+            )
+    ),
+    counted AS (
+        SELECT fu.*, COUNT(*) OVER()::INT AS full_count
+        FROM filtered_users fu
+        ORDER BY fu.id ASC
+        LIMIT GREATEST(1, p_page_size) OFFSET v_offset
+    )
+    SELECT 
+        c.id AS "Id",
+        c.full_name AS "FullName",
+        c.email AS "Email",
+        c.mobile_no AS "MobileNo",
+        c.username AS "Username",
+        c.role AS "Role",
+        c.created_at AS "CreatedAt",
+        c.updated_at AS "UpdatedAt",
+        c.full_count AS "TotalRecords"
+    FROM counted c
+    ORDER BY c.id ASC;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: sp_purge_history_by_date
+-- Deletes market candles and indicators strictly matching created_at::date = p_target_date
+-- and updates stock_master history flags based on remaining data.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS sp_purge_history_by_date CASCADE;
+DROP FUNCTION IF EXISTS sp_purge_history_by_date(DATE, VARCHAR) CASCADE;
+
+CREATE OR REPLACE FUNCTION sp_purge_history_by_date(
+    p_target_date DATE,
+    p_symbol VARCHAR DEFAULT NULL
+)
+RETURNS TABLE (
+    "DeletedCandles" BIGINT,
+    "DeletedIndicators" BIGINT,
+    "AffectedStocks" INT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_deleted_candles BIGINT := 0;
+    v_deleted_indicators BIGINT := 0;
+    v_affected_stocks INT := 0;
+    v_count BIGINT := 0;
+    v_sym VARCHAR(50);
+    r_stock RECORD;
+BEGIN
+    v_sym := NULLIF(TRIM(p_symbol), '');
+
+    -- Loop through active stock symbols (either single specified symbol or ALL active symbols one by one)
+    FOR r_stock IN 
+        SELECT symbol 
+        FROM stock_master 
+        WHERE is_active = TRUE 
+          AND (v_sym IS NULL OR UPPER(symbol) = UPPER(v_sym))
+        ORDER BY symbol ASC
+    LOOP
+        -- 1. Delete from all market_candles_* tables for current active symbol where created_at::date = p_target_date
+        -- market_candles_1m
+        EXECUTE 'WITH d AS (DELETE FROM market_candles_1m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_candles := v_deleted_candles + v_count;
+
+        -- market_candles_5m
+        EXECUTE 'WITH d AS (DELETE FROM market_candles_5m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_candles := v_deleted_candles + v_count;
+
+        -- market_candles_15m
+        EXECUTE 'WITH d AS (DELETE FROM market_candles_15m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_candles := v_deleted_candles + v_count;
+
+        -- market_candles_60m
+        EXECUTE 'WITH d AS (DELETE FROM market_candles_60m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_candles := v_deleted_candles + v_count;
+
+        -- market_candles_1d
+        EXECUTE 'WITH d AS (DELETE FROM market_candles_1d WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_candles := v_deleted_candles + v_count;
+
+        -- 2. Delete from all market_indicators_* tables for current active symbol where created_at::date = p_target_date
+        -- market_indicators_1m
+        EXECUTE 'WITH d AS (DELETE FROM market_indicators_1m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_indicators := v_deleted_indicators + v_count;
+
+        -- market_indicators_5m
+        EXECUTE 'WITH d AS (DELETE FROM market_indicators_5m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_indicators := v_deleted_indicators + v_count;
+
+        -- market_indicators_15m
+        EXECUTE 'WITH d AS (DELETE FROM market_indicators_15m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_indicators := v_deleted_indicators + v_count;
+
+        -- market_indicators_60m
+        EXECUTE 'WITH d AS (DELETE FROM market_indicators_60m WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_indicators := v_deleted_indicators + v_count;
+
+        -- market_indicators_1d
+        EXECUTE 'WITH d AS (DELETE FROM market_indicators_1d WHERE UPPER(symbol) = UPPER($2) AND created_at::date = $1 RETURNING 1) SELECT COUNT(*) FROM d' INTO v_count USING p_target_date, r_stock.symbol;
+        v_deleted_indicators := v_deleted_indicators + v_count;
+
+        -- 3. Update stock_master history flags for current symbol based on remaining candles
+        UPDATE stock_master s
+        SET is_histry_stored_1m = CASE WHEN EXISTS (SELECT 1 FROM market_candles_1m c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END,
+            is_histry_stored_5m = CASE WHEN EXISTS (SELECT 1 FROM market_candles_5m c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END,
+            is_histry_stored_15m = CASE WHEN EXISTS (SELECT 1 FROM market_candles_15m c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END,
+            is_histry_stored_60m = CASE WHEN EXISTS (SELECT 1 FROM market_candles_60m c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END,
+            is_histry_stored_1d = CASE WHEN EXISTS (SELECT 1 FROM market_candles_1d c WHERE UPPER(c.symbol) = UPPER(s.symbol)) THEN 1 ELSE 0 END
+        WHERE UPPER(s.symbol) = UPPER(r_stock.symbol);
+
+        v_affected_stocks := v_affected_stocks + 1;
+    END LOOP;
+
+    RETURN QUERY SELECT v_deleted_candles, v_deleted_indicators, v_affected_stocks;
+END;
+$$;
+
+
+

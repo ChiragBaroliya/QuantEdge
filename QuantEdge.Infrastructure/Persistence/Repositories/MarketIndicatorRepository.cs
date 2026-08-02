@@ -99,7 +99,7 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
     /// <summary>
     /// Retrieves indicator logs using direct SQL query on timeframe table for maximum performance and reliability.
     /// </summary>
-    public async Task<IEnumerable<MarketIndicator>> GetHistoryAsync(string symbol, string timeframe, int limit, DateTime? beforeTime = null)
+    public async Task<IEnumerable<MarketIndicator>> GetHistoryAsync(string symbol, string timeframe, int? limit = null, DateTime? beforeTime = null)
     {
         string safeTimeframe = timeframe.ToLower();
         if (!new[] { "1m", "5m", "15m", "60m", "1d" }.Contains(safeTimeframe))
@@ -114,15 +114,16 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
 
         try
         {
+            string limitClause = (limit.HasValue && limit.Value > 0) ? " LIMIT @Limit" : "";
             if (beforeTime.HasValue)
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol AND candle_time < @BeforeTime ORDER BY candle_time DESC LIMIT @Limit;";
-                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = upperSymbol, BeforeTime = beforeTime.Value, Limit = limit });
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol AND candle_time < @BeforeTime ORDER BY candle_time DESC{limitClause};";
+                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = upperSymbol, BeforeTime = beforeTime.Value, Limit = limit ?? 0 });
             }
             else
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol ORDER BY candle_time DESC LIMIT @Limit;";
-                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = upperSymbol, Limit = limit });
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol ORDER BY candle_time DESC{limitClause};";
+                return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = upperSymbol, Limit = limit ?? 0 });
             }
         }
         finally

@@ -8,7 +8,7 @@
 <div class="coverage-container" data-api-base-url="@ViewBag.ApiBaseUrl">
     <!-- Top KPI Summary Cards -->
     <div class="kpi-grid">
-        <div class="kpi-card dc-total" data-tooltip="📊 **કૂલ ડેટાબેઝ શેરો**: સિસ્ટમમાં રજિસ્ટર થયેલા કૂલ સ્ટોક્સની સંખ્યા.">
+        <div class="kpi-card dc-total" data-tooltip="📊 **Total Stocks**: Total registered stocks in database.">
             <div class="kpi-header">
                 <span class="kpi-label">Total Stocks</span>
                 <div class="kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"></path></svg></div>
@@ -16,7 +16,7 @@
             <div id="kpiTotalStocks" class="kpi-value">...</div>
             <div class="kpi-subtext">All instruments</div>
         </div>
-        <div class="kpi-card dc-active" data-tooltip="🟢 **એક્ટિવ સ્ટોક્સ**: જે શેરો માટે લાઇવ સિગ્નલ સ્કેનિંગ સક્રિય રીતે ચાલી રહ્યું છે.">
+        <div class="kpi-card dc-active" data-tooltip="🟢 **Active Stocks**: Stocks actively tracked for live signals.">
             <div class="kpi-header">
                 <span class="kpi-label">Active</span>
                 <div class="kpi-icon" style="color:var(--accent-green)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="20 6 9 17 4 12"></polyline></svg></div>
@@ -24,7 +24,7 @@
             <div id="kpiActiveCount" class="kpi-value active-color">...</div>
             <div class="kpi-subtext">Being tracked</div>
         </div>
-        <div class="kpi-card dc-inactive" data-tooltip="🔴 **ઇનએક્ટિવ સ્ટોક્સ**: મોનિટરિંગમાંથી કામચલાઉ રીતે બંધ રાખેલા શેરો.">
+        <div class="kpi-card dc-inactive" data-tooltip="🔴 **Inactive Stocks**: Stocks temporarily disabled from monitoring.">
             <div class="kpi-header">
                 <span class="kpi-label">Inactive</span>
                 <div class="kpi-icon" style="color:var(--accent-red)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg></div>
@@ -32,7 +32,7 @@
             <div id="kpiInactiveCount" class="kpi-value inactive-color">...</div>
             <div class="kpi-subtext">Not monitored</div>
         </div>
-        <div class="kpi-card dc-missing" data-tooltip="⚠️ **ખૂટતો કેન્ડલ ડેટા**: જે સ્ટોક્સમાં હિસ્ટોરિકલ 1D કે 60M કેન્ડલ ડેટા ખૂટે છે.">
+        <div class="kpi-card dc-missing" data-tooltip="⚠️ **History Missing**: Stocks with missing historical candlestick data.">
             <div class="kpi-header">
                 <span class="kpi-label">History Missing</span>
                 <div class="kpi-icon" style="color:var(--accent-amber)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
@@ -45,13 +45,13 @@
     <!-- Filter & Control Bar -->
     <div class="filter-bar">
         <div class="filter-group">
-            <select id="statusFilter" class="filter-select" data-tooltip="📌 **સ્ટેટસ ફિલ્ટર**: Active અથવા Inactive શેરો જ દર્શાવો.">
+            <select id="statusFilter" class="filter-select" data-tooltip="📌 **Status Filter**: Show Active or Inactive stocks.">
                 <option value="all">All status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
             </select>
 
-            <select id="historyFilter" class="filter-select" data-tooltip="🔍 **હિસ્ટ્રી ફિલ્ટર**: ખૂટતો ડેટા (Missing Data) ધરાવતા શેરો ફિલ્ટર કરો.">
+            <select id="historyFilter" class="filter-select" data-tooltip="🔍 **History Filter**: Filter stocks by data availability or gaps.">
                 <option value="all">All history</option>
                 <option value="missing">History missing</option>
                 <option value="1d_missing">1D Missing</option>
@@ -60,7 +60,7 @@
                 <option value="has_60m">Has 60m History</option>
             </select>
 
-            <div class="search-input-wrapper" data-tooltip="🔎 **સ્ટોક શોધો**: કંપનીનું નામ અથવા ટ્રેડિંગ સિમ્બોલ દાખલ કરો.">
+            <div class="search-input-wrapper" data-tooltip="🔎 **Search Stock**: Enter company name or trading symbol.">
                 <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="11" cy="11" r="8"></circle>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -70,7 +70,7 @@
         </div>
 
         <div class="filter-group">
-            <button type="button" id="btnRefreshCoverage" class="btn-refresh-coverage" data-tooltip="🔄 **ડેટા સિંક રીફ્રેશ**: તાજેતરની ડેટા કવરેજ યાદી રીફ્રેશ કરો.">
+            <button type="button" id="btnRefreshCoverage" class="btn-refresh-coverage" data-tooltip="🔄 **Refresh**: Refresh data coverage list.">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="23 4 23 10 17 10"></polyline>
                     <polyline points="1 20 1 14 7 14"></polyline>
@@ -78,8 +78,16 @@
                 </svg>
                 Refresh
             </button>
+            <button type="button" id="btnExportExcel" class="btn-export-excel" data-tooltip="📥 **Export Excel**: Export filtered stock records to Excel spreadsheet (.xlsx).">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Export Excel
+            </button>
             <span style="font-size:12px;color:var(--text-muted);font-weight:600;margin-left:8px;">Per page:</span>
-            <select id="pageSizeSelect" class="filter-select" style="min-width:80px;" data-tooltip="📄 **પેજ સાઇઝ**: પ્રતિ પેજ દર્શાવવાની સ્ટોક રોઝની સંખ્યા.">
+            <select id="pageSizeSelect" class="filter-select" style="min-width:80px;" data-tooltip="📄 **Page Size**: Number of rows per page.">
                 <option value="10">10</option>
                 <option value="25" selected>25</option>
                 <option value="50">50</option>
@@ -94,13 +102,13 @@
             <table class="coverage-table">
                 <thead>
                     <tr>
-                        <th style="min-width: 140px;" data-tooltip="📌 **સ્ટોક સિમ્બોલ અને એક્સચેન્જ**: NSE/BSE સ્ટોક કોડ.">Symbol & Exchange</th>
-                        <th style="min-width: 180px;" data-tooltip="🏢 **કંપનીનું નામ**: રજિસ્ટર્ડ કંપનીનું નામ.">Company Name</th>
-                        <th style="min-width: 220px;" data-tooltip="⏱️ **ટાઇમફ્રેમ ફ્લેગ્સ**: 1m, 5m, 15m, 60m, 1d ડેટા ઉપલબ્ધતા.">Timeframe History Flags</th>
-                        <th style="min-width: 260px;" data-tooltip="📊 **હિસ્ટ્રી સ્ટેટસ**: કેન્ડલ્સની શરૂઆત તારીખ, છેલ્લી તારીખ અને રેકોર્ડ્સ.">History Status</th>
-                        <th style="min-width: 130px;" data-tooltip="⏰ **છેલ્લો સિંક સમય**: બ્રોકર API માંથી તાજેતરની કેન્ડલ ડાઉનલોડ થયાનો સમય.">Last Candle Sync</th>
-                        <th style="min-width: 120px;" data-tooltip="🟢 **ટ્રેકિંગ સ્ટેટસ**: Active કે Inactive.">Status</th>
-                        <th style="min-width: 160px; text-align: center;" data-tooltip="🛠️ **એક્શન્સ**: મિસિંગ કેન્ડલ્સ ડાઉનલોડ (Fix Gap) અથવા વિગતો જુઓ.">Actions</th>
+                        <th style="min-width: 140px;" data-tooltip="📌 **Symbol & Exchange**: NSE/BSE trading code.">Symbol & Exchange</th>
+                        <th style="min-width: 180px;" data-tooltip="🏢 **Company Name**: Registered company name.">Company Name</th>
+                        <th style="min-width: 220px;" data-tooltip="⏱️ **Timeframe Flags**: 1m, 5m, 15m, 60m, and 1d data status.">Timeframe History Flags</th>
+                        <th style="min-width: 260px;" data-tooltip="📊 **History Status**: Start date, last date, and total candle records.">History Status</th>
+                        <th style="min-width: 130px;" data-tooltip="⏰ **Last Candle Sync**: Most recent candle download timestamp.">Last Candle Sync</th>
+                        <th style="min-width: 120px;" data-tooltip="🟢 **Tracking Status**: Active or Inactive.">Status</th>
+                        <th style="min-width: 160px; text-align: center;" data-tooltip="🛠️ **Actions**: Download missing candles or view details.">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="coverageTableBody">
@@ -124,47 +132,105 @@
         </div>
     </div>
 
-    <!-- Stock Details & Edit Card Panel -->
-    <div id="detailCard" class="detail-card" style="display: none;">
-        <div class="detail-card-header">
-            <div class="detail-title">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="20" x2="18" y2="10"></line>
-                    <line x1="12" y1="20" x2="12" y2="4"></line>
-                    <line x1="6" y1="20" x2="6" y2="14"></line>
-                </svg>
-                <span id="detailSymbol">...</span> Stock Specification
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <button type="button" id="btnCloseDetailCard" class="btn-close-detail" title="Close Specification Panel">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <!-- Extended Stock Specification Modal Overlay -->
+    <div id="stockDetailModal" class="modal-backdrop-custom" style="display: none;">
+        <div class="modal-dialog-custom">
+            <div class="modal-header-custom">
+                <div class="modal-title-custom">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--theme-accent, #4f9cf9)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span id="modalSymbol" class="modal-symbol-title">...</span>
+                            <span id="modalStatusBadge">...</span>
+                            <span id="modalExchangeBadge" class="modal-badge-exchange">NSE</span>
+                        </div>
+                        <p class="modal-subtitle-text">Stock Specification & Data Coverage Overview</p>
+                    </div>
+                </div>
+                <button type="button" id="btnCloseStockModal" class="modal-close-btn" title="Close Popup (ESC)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
                 </button>
             </div>
-        </div>
 
-        <div class="detail-grid">
-            <div class="detail-item">
-                <span class="detail-item-label">Company Name</span>
-                <span id="detailName" class="detail-item-value">...</span>
+            <div class="modal-body-custom">
+                <!-- Section 1: Instrument Profile Card -->
+                <div class="modal-section-card">
+                    <div class="modal-section-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        Instrument Specifications & Profile
+                    </div>
+                    <div class="modal-info-grid">
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Company Name</span>
+                            <span id="modalCompanyName" class="modal-info-val">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Symbol Name</span>
+                            <span id="modalSymbolName" class="modal-info-val monospace">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Instrument Token</span>
+                            <span id="modalInstrumentToken" class="modal-info-val monospace">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Exchange / Segment</span>
+                            <span id="modalExchangeSegment" class="modal-info-val">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Instrument Type</span>
+                            <span id="modalInstrumentType" class="modal-info-val">EQ</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Last Traded Price (LTP)</span>
+                            <span id="modalLastPrice" class="modal-info-val text-success">...</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Lot Size</span>
+                            <span id="modalLotSize" class="modal-info-val">1</span>
+                        </div>
+                        <div class="modal-info-item">
+                            <span class="modal-info-label">Tick Size</span>
+                            <span id="modalTickSize" class="modal-info-val">₹0.05</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Data Coverage & Last Candle Date Card -->
+                <div class="modal-section-card">
+                    <div class="modal-section-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        History Coverage & Candle Status
+                    </div>
+                    <div class="modal-info-grid">
+                        <div class="modal-info-item" style="grid-column: span 2;">
+                            <span class="modal-info-label">Last Candle Date / Time</span>
+                            <span id="modalLastCandleDate" class="modal-info-val text-accent">No data</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 14px;">
+                        <span class="modal-info-label" style="display:block; margin-bottom: 8px;">Timeframe Coverage Badges</span>
+                        <div id="modalTfBadges" class="modal-tf-badges-row">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="detail-item">
-                <span class="detail-item-label">Exchange</span>
-                <span id="detailExchange" class="detail-item-value">NSE</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-item-label">Status</span>
-                <span id="detailStatus" class="detail-item-value">Active</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-item-label">Last Candle Date</span>
-                <span id="detailLastCandleDate" class="detail-item-value">No data</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-item-label">Instrument Token</span>
-                <span id="detailInstrumentToken" class="detail-item-value monospace">...</span>
+
+            <div class="modal-footer-custom">
+                <button type="button" id="btnModalManageHistory" class="btn-modal-action secondary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    Manage History
+                </button>
+                <button type="button" id="btnModalCloseFooter" class="btn-modal-action primary">
+                    Close
+                </button>
             </div>
         </div>
     </div>

@@ -229,3 +229,26 @@ BEGIN
     DELETE FROM indian_holidays WHERE id = p_id;
 END;
 $$;
+
+
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_register_user
+-- Registers a new user with default 'User' role and returns generated ID.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE sp_register_user(
+    p_full_name VARCHAR(150),
+    p_email VARCHAR(255),
+    p_mobile_no VARCHAR(20),
+    p_username VARCHAR(100),
+    p_password_hash VARCHAR(255),
+    INOUT p_user_id INT DEFAULT NULL
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO app_users (full_name, email, mobile_no, username, password_hash, role, created_at, updated_at)
+    VALUES (p_full_name, LOWER(p_email), p_mobile_no, p_username, p_password_hash, 'User', NOW(), NOW())
+    RETURNING id INTO p_user_id;
+END;
+$$;
+

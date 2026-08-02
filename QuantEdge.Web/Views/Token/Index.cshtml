@@ -30,7 +30,7 @@
 {
     <!-- Status KPI mini-cards -->
     <div class="kpi-row" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
-        <div class="kpi-card" style="--kpi-color: var(--accent-green);" data-tooltip="🟢 **ટોકન સ્ટેટસ**: એક્સેસ ટોકન સક્રિય છે અને આજના સેશન માટે લાઇવ ટ્રેડિંગ માટે તૈયાર છે.">
+        <div class="kpi-card" style="--kpi-color: var(--accent-green);" data-tooltip="🟢 **Token Status**: Access token is active and ready for today's trading session.">
             <div class="kpi-header">
                 <span class="kpi-label">Token Status</span>
                 <div class="kpi-icon" style="color:var(--accent-green);">
@@ -44,7 +44,7 @@
             </div>
             <div class="kpi-subtext">Valid for today</div>
         </div>
-        <div class="kpi-card" style="--kpi-color: var(--theme-accent);" data-tooltip="⏰ **બનાવ્યાનો સમય**: જે સમયે આજે સવારે ટોકન ઓથોરાઇઝ થયું તે ભારતીય સમય (IST).">
+        <div class="kpi-card" style="--kpi-color: var(--theme-accent);" data-tooltip="⏰ **Generated At**: Time when access token was authorized today (in IST).">
             <div class="kpi-header">
                 <span class="kpi-label">Generated At</span>
                 <div class="kpi-icon">
@@ -56,7 +56,7 @@
             </div>
             <div class="kpi-subtext">IST</div>
         </div>
-        <div class="kpi-card" style="--kpi-color: var(--accent-amber);" data-tooltip="⏳ **એક્સપાયરી સમય**: બ્રોકર નિયમો મુજબ દરરોજ સવારે 6:00 AM વાગ્યે જૂનું ટોકન રીસેટ થાય છે.">
+        <div class="kpi-card" style="--kpi-color: var(--accent-amber);" data-tooltip="⏳ **Expires At**: Access token automatically resets daily at 6:00 AM IST.">
             <div class="kpi-header">
                 <span class="kpi-label">Expires At</span>
                 <div class="kpi-icon" style="color:var(--accent-amber);">
@@ -71,7 +71,7 @@
     </div>
 
     <!-- Active Session Card -->
-    <div class="card card-success" style="margin-bottom: 20px;" data-tooltip="🔐 **સક્રિય ટ્રેડિંગ સેશન**: Zerodha Kite API ઓથોરાઇઝેશન સફળતાપૂર્વક સાચવેલ છે.">
+    <div class="card card-success" style="margin-bottom: 20px;" data-tooltip="🔐 **Active Session**: Zerodha Kite API authorization saved successfully.">
         <div class="card-header">
             <div class="card-header-inner">
                 <div class="card-header-icon icon-check">
@@ -92,32 +92,32 @@
             <div class="session-info-grid">
                 @if (!string.IsNullOrEmpty(Model.UserName))
                 {
-                    <div class="info-row" data-tooltip="👤 **યુઝર નામ**: ઓથોરાઇઝ્ડ એકાઉન્ટ હોલ્ડરનું નામ.">
+                    <div class="info-row" data-tooltip="👤 **User Name**: Authorized Zerodha account holder name.">
                         <span class="info-label">User Name</span>
                         <span class="info-value">@Model.UserName</span>
                     </div>
                 }
                 @if (!string.IsNullOrEmpty(Model.Email))
                 {
-                    <div class="info-row" data-tooltip="📧 **ઇમેઇલ**: બ્રોકર એકાઉન્ટ સાથે લિંક થયેલું ઇમેઇલ એડ્રેસ.">
+                    <div class="info-row" data-tooltip="📧 **Email**: Registered broker email address.">
                         <span class="info-label">Email</span>
                         <span class="info-value">@Model.Email</span>
                     </div>
                 }
                 @if (!string.IsNullOrEmpty(Model.ApiKey))
                 {
-                    <div class="info-row" data-tooltip="🔑 **API Key**: Zerodha ડેવલપર કન્સોલમાંથી મળેલ સિક્રેટ API કી.">
+                    <div class="info-row" data-tooltip="🔑 **API Key**: Zerodha developer console API key.">
                         <span class="info-label">API Key</span>
                         <span class="info-value monospace">@Model.ApiKey</span>
                     </div>
                 }
                 @if (!string.IsNullOrEmpty(Model.AccessTokenMasked))
                 {
-                    <div class="info-row" data-tooltip="🛡️ **સુરક્ષિત એક્સેસ ટોકન**: સાયલન્ટ ટ્રેડિંગ ઓથોરાઇઝેશન ટોકન (માસ્ક્ડ).">
+                    <div class="info-row" data-tooltip="🛡️ **Access Token**: Secure trading access token (masked).">
                         <span class="info-label">Access Token</span>
                         <div style="display:flex;align-items:center;gap:10px;">
                             <span class="info-value monospace token-masked" id="tokenDisplay">@Model.AccessTokenMasked</span>
-                            <button type="button" class="btn-icon-only btn-xs" onclick="copyToken()" data-tooltip="📋 ટોકન કોપી કરો" style="width:28px;height:28px;">
+                            <button type="button" class="btn-icon-only btn-xs" onclick="copyToken()" data-tooltip="📋 Copy Access Token" style="width:28px;height:28px;">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                             </button>
                         </div>
@@ -126,13 +126,13 @@
             </div>
 
             <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-                <span style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;" data-tooltip="ℹ️ દરરોજ સવારે ટ્રેડિંગ શરૂ કરતા પહેલાં નવું ટોકન મેળવવું આવશ્યક છે.">
+                <span style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;" data-tooltip="ℹ️ A new token is required daily before trading starts.">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
                     Token resets automatically at 6:00 AM IST
                 </span>
                 <a asp-controller="Token" asp-action="CreateToken"
                    class="btn-secondary btn-sm"
-                   data-tooltip="🔄 **ફરીથી ટોકન બનાવો**: જૂનું ટોકન રિન્યૂ કરવા માટે Zerodha લોગિન ઓપન કરો."
+                   data-tooltip="🔄 **Re-create Token**: Click to renew your access token via Zerodha login."
                    onclick="return confirm('Re-create Zerodha Access Token?')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M16 3h5v5"></path></svg>
                     Re-create Token
@@ -147,7 +147,7 @@
      ============================================================ -->
 @if (!Model.HasActiveToken)
 {
-    <div class="card card-primary" style="margin-bottom: 20px;" data-tooltip="🔑 **નવું એક્સેસ ટોકન બનાવો**: Zerodha OAuth 2.0 પોર્ટલ પર લોગિન કરી ઓથોરાઇઝેશન પૂરું કરો.">
+    <div class="card card-primary" style="margin-bottom: 20px;" data-tooltip="🔑 **Create Access Token**: Log in to Zerodha OAuth 2.0 portal to complete authorization.">
         <div class="card-header">
             <div class="card-header-inner">
                 <div class="card-header-icon icon-key">
@@ -163,7 +163,7 @@
         <div class="card-body">
             <!-- OAuth Flow Steps -->
             <div class="flow-steps">
-                <div class="flow-step" data-tooltip="Step 1: બટન પર ક્લિક કરવાથી સુરક્ષિત ઓથોરાઇઝેશન URL બનશે.">
+                <div class="flow-step" data-tooltip="Step 1: Click button to generate secure authorization URL.">
                     <div class="step-number">1</div>
                     <div class="step-content">
                         <div class="step-title">Initiate OAuth</div>
@@ -171,7 +171,7 @@
                     </div>
                 </div>
                 <div class="flow-arrow">→</div>
-                <div class="flow-step" data-tooltip="Step 2: Zerodha Kite પર તમારા યુઝર આઈડી, પાસવર્ડ અને 2FA TOTP કોડ દાખલ કરો.">
+                <div class="flow-step" data-tooltip="Step 2: Enter Zerodha credentials and 2FA TOTP code.">
                     <div class="step-number">2</div>
                     <div class="step-content">
                         <div class="step-title">Zerodha Login</div>
@@ -179,7 +179,7 @@
                     </div>
                 </div>
                 <div class="flow-arrow">→</div>
-                <div class="flow-step" data-tooltip="Step 3: રિક્વેસ્ટ ટોકન એક્સચેન્જ થઈને નવું એક્સેસ ટોકન ડેટાબેઝમાં આપોઆપ સેવ થશે.">
+                <div class="flow-step" data-tooltip="Step 3: Request token is exchanged and saved automatically to database.">
                     <div class="step-number">3</div>
                     <div class="step-content">
                         <div class="step-title">Callback & Save</div>
@@ -192,7 +192,7 @@
                 <a asp-controller="Token" asp-action="CreateToken"
                    class="btn-create-token"
                    id="createTokenBtn"
-                   data-tooltip="🚀 **નવું ટોકન જનરેટ કરવા માટે અહીં ક્લિક કરો**&#10;અહીં ક્લિક કરવાથી તમને Zerodha Kite સિક્યોર લોગિન પેજ પર રીડાયરેક્ટ કરવામાં આવશે."
+                   data-tooltip="🚀 **Create Token**: Click to open Zerodha Kite secure login page."
                    onclick="handleCreateTokenClick(event, this)">
                     <div class="btn-shimmer"></div>
                     <span class="btn-icon">

@@ -2,8 +2,11 @@ using System;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace QuantEdge.Web.Controllers;
 
+[Authorize]
 public class SwingTradingController : Controller
 {
     private readonly IConfiguration _configuration;

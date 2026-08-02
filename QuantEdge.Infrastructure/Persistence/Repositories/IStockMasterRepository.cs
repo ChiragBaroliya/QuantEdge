@@ -53,6 +53,11 @@ public interface IStockMasterRepository
     /// Deletes multiple stock master records by ID array in bulk.
     /// </summary>
     Task BulkDeleteStocksAsync(IEnumerable<int> ids);
+
+    /// <summary>
+    /// Generates and exports Excel report (.xlsx) of stock coverage data based on search and filter criteria.
+    /// </summary>
+    Task<byte[]> ExportStockCoverageToExcelAsync(string? search, string? statusFilter, string? historyFilter);
 }
 
 

@@ -30,6 +30,12 @@ let noMoreHistoryAvailable = false;
 let currentLivePrice = null;
 let currentCandleOpenPrice = null;
 
+// Auto Refresh (1m / 60 seconds) Tracking
+let autoRefreshTicker = null;
+let autoRefreshRemainingSeconds = 60;
+let isAutoRefreshEnabled = true;
+const AUTO_REFRESH_INTERVAL_SECONDS = 60;
+
 $(document).ready(async function () {
     // Connect to SignalR early so listeners can be attached before await yields
     connectSignalR();
@@ -72,7 +78,85 @@ $(document).ready(async function () {
         
         switchTimeframe(newTimeframe);
     });
+
+    // Auto Refresh toggle & manual refresh click handlers
+    $("#btnManualRefresh").on("click", function() {
+        triggerDashboardRefresh(true);
+    });
+
+    $("#toggleAutoRefresh").on("change", function() {
+        isAutoRefreshEnabled = $(this).is(":checked");
+        if (isAutoRefreshEnabled) {
+            startAutoRefresh();
+        } else {
+            stopAutoRefresh();
+        }
+    });
+
+    // Start 1m Auto Refresh timer
+    startAutoRefresh();
 });
+
+// Start 1m Auto Refresh Countdown & Periodic Fetch
+function startAutoRefresh() {
+    stopAutoRefresh();
+    isAutoRefreshEnabled = true;
+    autoRefreshRemainingSeconds = AUTO_REFRESH_INTERVAL_SECONDS;
+    updateAutoRefreshBadge(autoRefreshRemainingSeconds);
+
+    autoRefreshTicker = setInterval(async () => {
+        if (!isAutoRefreshEnabled) return;
+
+        autoRefreshRemainingSeconds--;
+
+        if (autoRefreshRemainingSeconds <= 0) {
+            autoRefreshRemainingSeconds = AUTO_REFRESH_INTERVAL_SECONDS;
+            updateAutoRefreshBadge(autoRefreshRemainingSeconds);
+            await triggerDashboardRefresh(false);
+        } else {
+            updateAutoRefreshBadge(autoRefreshRemainingSeconds);
+        }
+    }, 1000);
+}
+
+// Stop/Pause Auto Refresh
+function stopAutoRefresh() {
+    if (autoRefreshTicker) {
+        clearInterval(autoRefreshTicker);
+        autoRefreshTicker = null;
+    }
+    isAutoRefreshEnabled = false;
+    $("#autoRefreshBadge").text("OFF").addClass("disabled");
+}
+
+// Update Auto Refresh Countdown Badge
+function updateAutoRefreshBadge(seconds) {
+    const badge = $("#autoRefreshBadge");
+    if (!badge.length) return;
+    badge.removeClass("disabled").text(`${seconds}s`);
+}
+
+// Trigger Manual/Auto Dashboard Refresh
+async function triggerDashboardRefresh(isManual = true) {
+    const refreshBtnIcon = $(".refresh-spin-icon");
+    refreshBtnIcon.addClass("spin");
+
+    try {
+        if (activeSymbol) {
+            await fetchChartHistory();
+            await fetchStockMasterDetails(activeSymbol);
+        }
+    } catch (ex) {
+        console.error("Dashboard refresh error:", ex);
+    } finally {
+        setTimeout(() => refreshBtnIcon.removeClass("spin"), 600);
+    }
+
+    if (isManual && isAutoRefreshEnabled) {
+        autoRefreshRemainingSeconds = AUTO_REFRESH_INTERVAL_SECONDS;
+        updateAutoRefreshBadge(autoRefreshRemainingSeconds);
+    }
+}
 
 // Update AutoTrade Status Badge on Main Dashboard
 async function updateAutoTradeDashboardBadge() {
@@ -378,6 +462,11 @@ async function switchSymbol(symbol) {
     const oldSymbol = activeSymbol;
     activeSymbol = symbol;
     
+    if (isAutoRefreshEnabled) {
+        autoRefreshRemainingSeconds = AUTO_REFRESH_INTERVAL_SECONDS;
+        updateAutoRefreshBadge(autoRefreshRemainingSeconds);
+    }
+
     $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe} - IST)`);
     await fetchChartHistory();
     await fetchStockMasterDetails(symbol);
@@ -397,6 +486,11 @@ async function switchTimeframe(timeframe) {
     const oldTimeframe = activeTimeframe;
     activeTimeframe = timeframe;
     
+    if (isAutoRefreshEnabled) {
+        autoRefreshRemainingSeconds = AUTO_REFRESH_INTERVAL_SECONDS;
+        updateAutoRefreshBadge(autoRefreshRemainingSeconds);
+    }
+
     $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe} - IST)`);
     await fetchChartHistory();
 

@@ -190,152 +190,17 @@ window.showToast = function (message, type, duration) {
 
         const text = rawText.trim();
         
-        // If rawText already contains HTML markup (e.g. qe-tt-gu-box), render directly
+        // If rawText already contains HTML markup, render directly
         if (text.startsWith('<') && (text.includes('class="') || text.includes("class='"))) {
             return text;
         }
 
-        // Check if tooltip contains Gujarati characters
-        const isGujarati = /[\u0A80-\u0AFF]/.test(text);
+        // Clean text: strip markdown bold indicators (**)
+        const cleanText = text.replace(/\*\*/g, '').trim();
 
-        if (isGujarati) {
-            // Check for bold title markers like **Title** or Title:
-            let title = '';
-            let body = text;
-            let tip = '';
-
-            // Extract Tip if present (e.g. ⚡ ટિપ: ...)
-            const tipMatch = body.match(/(⚡|💡|📌)?\s*(ટિપ|નોંધ|Tip|Note):\s*(.*)/i);
-            if (tipMatch) {
-                tip = tipMatch[3] || tipMatch[0];
-                body = body.replace(tipMatch[0], '').trim();
-            }
-
-            // Extract Title if present (e.g. 🔑 **ટોકન મેનેજર**: વિગત...)
-            const titleMatch = body.match(/^([^\n:\*]+(?:\*\*)?):?\s*[\n\r]*(.*)/s);
-            if (titleMatch && titleMatch[1] && titleMatch[2] && titleMatch[1].length < 60) {
-                title = titleMatch[1].replace(/\*\*/g, '').trim();
-                body = titleMatch[2].trim();
-            } else {
-                title = el.getAttribute('data-qe-label') || 'માહિતી';
-            }
-
-            // Format body paragraphs/lines
-            body = escapeHtml(body).replace(/\n/g, '<br/>');
-
-            return `
-                <div class="qe-tt-gu-box">
-                    <div class="qe-tt-gu-header">
-                        <span class="qe-tt-gu-title">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                            ${escapeHtml(title)}
-                        </span>
-                        <span class="qe-tt-gu-badge">માહિતી</span>
-                    </div>
-                    <div class="qe-tt-gu-desc">${body}</div>
-                    ${tip ? `<div class="qe-tt-gu-tip"><span>⚡</span><span>${escapeHtml(tip)}</span></div>` : ''}
-                </div>
-            `;
-        }
-
-        const decisionText = (el.textContent || '').trim();
-
-        // Check if string contains decision or score patterns
-        const scoreMatch = text.match(/^(Downgraded to HOLD\s*\/?[^()]*|STRONG BUY|BUY|SELL|AVOID|HOLD|NEUTRAL)?\s*\*?\*?\(?(Score:\s*\d+\/\d+|\d+\/\d+)\)?\.?\s*(.*)/i);
-        const isDecisionBadge = el.classList.contains('rec-badge') || /^(BUY|STRONG BUY|AVOID|SELL|HOLD|NEUTRAL)$/i.test(decisionText) || scoreMatch;
-
-        if (isDecisionBadge && (scoreMatch || text.includes('Score:') || text.includes('Failed factors') || text.includes('Passed'))) {
-            let decision = decisionText || (scoreMatch && scoreMatch[1]) || 'INFO';
-            if (decision.toLowerCase().includes('hold')) decision = 'HOLD';
-            else if (decision.toLowerCase().includes('avoid')) decision = 'AVOID';
-            else if (decision.toLowerCase().includes('strong buy')) decision = 'STRONG BUY';
-            else if (decision.toLowerCase().includes('buy')) decision = 'BUY';
-            else if (decision.toLowerCase().includes('sell')) decision = 'SELL';
-
-            let scoreStr = (scoreMatch && scoreMatch[2]) ? scoreMatch[2] : '';
-            if (scoreStr && !scoreStr.toLowerCase().startsWith('score')) {
-                scoreStr = 'Score: ' + scoreStr;
-            }
-
-            let remainder = text;
-            // Remove decision/score prefix from remainder
-            remainder = remainder.replace(/^(Downgraded to HOLD\s*\/?[^()]*|STRONG BUY|BUY|SELL|AVOID|HOLD|NEUTRAL)?\s*\(?Score:\s*\d+\/\d+\)?\.?\s*/i, '').trim();
-
-            let decClass = 'neutral';
-            const dUpper = decision.toUpperCase();
-            if (dUpper.includes('STRONG BUY')) decClass = 'strong-buy';
-            else if (dUpper.includes('BUY')) decClass = 'buy';
-            else if (dUpper.includes('SELL')) decClass = 'sell';
-            else if (dUpper.includes('AVOID')) decClass = 'avoid';
-            else if (dUpper.includes('HOLD')) decClass = 'hold';
-
-            let bodyHtml = '';
-            
-            if (remainder) {
-                let sectionTitle = 'Analysis Details';
-                let sectionClass = 'info';
-
-                if (/failed factors/i.test(remainder)) {
-                    sectionTitle = 'Failed Factors';
-                    sectionClass = 'fail';
-                    const parts = remainder.split(/failed factors:?/i);
-                    remainder = parts[1] || parts[0];
-                } else if (/passed/i.test(remainder)) {
-                    sectionTitle = 'Passed Conditions';
-                    sectionClass = 'pass';
-                    const parts = remainder.split(/passed (key criteria|factors|conditions)?:?/i);
-                    remainder = parts[parts.length - 1];
-                }
-
-                // Split into list items by semicolon, period before capital, or new line
-                const items = remainder.split(/;\s*|\.\s+(?=[A-Z])/).map(s => s.trim().replace(/\.$/, '')).filter(Boolean);
-                
-                if (items.length > 0) {
-                    const listItemsHtml = items.map(item => {
-                        let formattedItem = escapeHtml(item);
-                        const colonIdx = formattedItem.indexOf(':');
-                        if (colonIdx > 0 && colonIdx < 40) {
-                            const title = formattedItem.substring(0, colonIdx).trim();
-                            const desc = formattedItem.substring(colonIdx + 1).trim();
-                            formattedItem = `<strong>${title}:</strong> ${desc}`;
-                        }
-
-                        const iconChar = sectionClass === 'fail' ? '✕' : (sectionClass === 'pass' ? '✓' : '•');
-                        return `
-                            <li class="qe-tt-item">
-                                <span class="qe-tt-icon ${sectionClass}">${iconChar}</span>
-                                <span>${formattedItem}</span>
-                            </li>
-                        `;
-                    }).join('');
-
-                    bodyHtml = `
-                        <div class="qe-tt-sec-title ${sectionClass}">${sectionTitle}</div>
-                        <ul class="qe-tt-list">
-                            ${listItemsHtml}
-                        </ul>
-                    `;
-                } else {
-                    bodyHtml = `<div class="qe-tt-plain-text">${escapeHtml(remainder)}</div>`;
-                }
-            }
-
-            return `
-                <div class="qe-tt-card">
-                    <div class="qe-tt-header">
-                        <span class="qe-tt-badge ${decClass}">${escapeHtml(decision)}</span>
-                        ${scoreStr ? `<span class="qe-tt-score">${escapeHtml(scoreStr)}</span>` : ''}
-                    </div>
-                    ${bodyHtml}
-                </div>
-            `;
-        }
-
-        // Standard descriptive tooltip
         return `
             <div class="qe-tt-plain-text">
-                <svg class="qe-tt-plain-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                <span>${escapeHtml(text)}</span>
+                <span>${escapeHtml(cleanText).replace(/\n/g, '<br/>')}</span>
             </div>
         `;
     }

@@ -8,11 +8,14 @@ using Microsoft.Extensions.Logging;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Web.Models;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace QuantEdge.Web.Controllers;
 
 /// <summary>
 /// MVC Controller for rendering the Indian Stock Market Holiday dashboard UI.
 /// </summary>
+[Authorize(Roles = "Admin")]
 public class HolidayController : Controller
 {
     private const string CacheKeyHolidays = "holidays_web_list";

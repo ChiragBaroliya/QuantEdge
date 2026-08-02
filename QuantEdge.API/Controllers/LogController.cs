@@ -14,7 +14,7 @@ namespace QuantEdge.API.Controllers;
 /// API Controller providing system and application log files by date range (startDate & endDate).
 /// </summary>
 [ApiController]
-[Route("api/log")]
+[Route("log")]
 public class LogController : ControllerBase
 {
     private readonly IConfiguration _configuration;

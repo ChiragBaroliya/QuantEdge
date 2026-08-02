@@ -97,7 +97,7 @@ public class MarketCandleRepository : IMarketCandleRepository
     /// <summary>
     /// Retrieves historical candles using direct SQL query on timeframe table for maximum performance and reliability.
     /// </summary>
-    public async Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int limit, DateTime? beforeTime = null)
+    public async Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int? limit = null, DateTime? beforeTime = null)
     {
         string safeTimeframe = timeframe.ToLower();
         if (!new[] { "1m", "5m", "15m", "60m", "1d" }.Contains(safeTimeframe))
@@ -112,15 +112,16 @@ public class MarketCandleRepository : IMarketCandleRepository
 
         try
         {
+            string limitClause = (limit.HasValue && limit.Value > 0) ? " LIMIT @Limit" : "";
             if (beforeTime.HasValue)
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, open, high, low, close, volume, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol AND candle_time < @BeforeTime ORDER BY candle_time DESC LIMIT @Limit;";
-                return await connection.QueryAsync<MarketCandle>(sql, new { Symbol = upperSymbol, BeforeTime = beforeTime.Value, Limit = limit });
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, open, high, low, close, volume, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol AND candle_time < @BeforeTime ORDER BY candle_time DESC{limitClause};";
+                return await connection.QueryAsync<MarketCandle>(sql, new { Symbol = upperSymbol, BeforeTime = beforeTime.Value, Limit = limit ?? 0 });
             }
             else
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, open, high, low, close, volume, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol ORDER BY candle_time DESC LIMIT @Limit;";
-                return await connection.QueryAsync<MarketCandle>(sql, new { Symbol = upperSymbol, Limit = limit });
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, open, high, low, close, volume, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol ORDER BY candle_time DESC{limitClause};";
+                return await connection.QueryAsync<MarketCandle>(sql, new { Symbol = upperSymbol, Limit = limit ?? 0 });
             }
         }
         finally
@@ -171,5 +172,34 @@ public class MarketCandleRepository : IMarketCandleRepository
                 connection.Close();
             }
         }
+    }
+
+    /// <summary>
+    /// Purges candles and indicators matching created_at date across all timeframes using sp_purge_history_by_date.
+    /// </summary>
+    public async Task<(long deletedCandles, long deletedIndicators, int affectedStocks)> PurgeHistoryByDateAsync(DateTime targetDate, string? symbol)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        var result = await connection.QueryFirstOrDefaultAsync<PurgeResultDto>(
+            "SELECT * FROM sp_purge_history_by_date(@p_target_date, @p_symbol);",
+            new {
+                p_target_date = targetDate.Date,
+                p_symbol = string.IsNullOrWhiteSpace(symbol) ? null : symbol.Trim()
+            }
+        );
+
+        if (result != null)
+        {
+            return (result.DeletedCandles, result.DeletedIndicators, result.AffectedStocks);
+        }
+
+        return (0, 0, 0);
+    }
+
+    private class PurgeResultDto
+    {
+        public long DeletedCandles { get; set; }
+        public long DeletedIndicators { get; set; }
+        public int AffectedStocks { get; set; }
     }
 }
