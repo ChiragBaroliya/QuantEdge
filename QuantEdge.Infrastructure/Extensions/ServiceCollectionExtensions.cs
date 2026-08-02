@@ -59,6 +59,9 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IIndicatorService, IndicatorService>();
         services.AddSingleton<IMarketHoursService, MarketHoursService>();
 
+        // Register SignalR infrastructure
+        services.AddSignalR();
+
         // Register caching infrastructure
         services.AddMemoryCache();
         services.AddSingleton<ICacheService, MemoryCacheService>();
@@ -95,11 +98,14 @@ public static class ServiceCollectionExtensions
 
         // Register Paper Trading Infrastructure Services
         services.AddTransient<IPaperTradingRepository, PaperTradingRepository>();
+        services.AddTransient<IAutoTradeRepository, AutoTradeRepository>();
         services.AddTransient<PaperOrderValidator>();
         services.AddSingleton<PaperMatchingEngine>();
         services.AddTransient<ZerodhaKiteBrokerService>();
         services.AddSingleton<IPaperTradingService, PaperTradingService>();
+        services.AddSingleton<IAutoTradeService, AutoTradeService>();
 
         return services;
     }
 }
+

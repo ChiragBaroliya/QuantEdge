@@ -495,6 +495,7 @@ CREATE TABLE IF NOT EXISTS paper_orders (
     status INT NOT NULL DEFAULT 0,
     filled_price NUMERIC(18, 4),
     filled_at TIMESTAMP WITH TIME ZONE,
+    trade_type INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     remarks VARCHAR(255)
 );
@@ -511,6 +512,8 @@ CREATE TABLE IF NOT EXISTS paper_positions (
     stop_loss NUMERIC(18, 4),
     take_profit NUMERIC(18, 4),
     status INT NOT NULL DEFAULT 0,
+    trade_type INT NOT NULL DEFAULT 0,
+    exit_reason VARCHAR(100),
     opened_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     closed_at TIMESTAMP WITH TIME ZONE,
     realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00
@@ -525,11 +528,70 @@ CREATE TABLE IF NOT EXISTS paper_trade_history (
     quantity INT NOT NULL,
     executed_price NUMERIC(18, 4) NOT NULL,
     realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+    trade_type INT NOT NULL DEFAULT 0,
+    exit_reason VARCHAR(100),
     executed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     remarks VARCHAR(255)
 );
 
+-- ----------------------------------------------------------------------------
+-- 6. Auto Paper Trading Tables
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auto_trade_settings (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(100) NOT NULL DEFAULT 'default_user' UNIQUE,
+    is_auto_trade_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    available_capital NUMERIC(18, 4) NOT NULL DEFAULT 100000.00,
+    profit_target_pct NUMERIC(5, 2) NOT NULL DEFAULT 5.00,
+    stop_loss_pct NUMERIC(5, 2) NOT NULL DEFAULT 3.00,
+    max_duration_days INT NOT NULL DEFAULT 20,
+    max_trades_per_day INT NOT NULL DEFAULT 5,
+    fixed_amount_per_trade NUMERIC(18, 4) NOT NULL DEFAULT 20000.00,
+    min_conditions_match INT NOT NULL DEFAULT 12,
+    trading_window_start VARCHAR(10) NOT NULL DEFAULT '09:15',
+    trading_window_end VARCHAR(10) NOT NULL DEFAULT '15:30',
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS auto_trade_execution_logs (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(100) NOT NULL DEFAULT 'default_user',
+    symbol VARCHAR(50) NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    price NUMERIC(18, 4),
+    quantity INT,
+    reason VARCHAR(255),
+    executed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Idempotent Column Additions for existing installations
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='paper_orders' AND column_name='trade_type') THEN
+        ALTER TABLE paper_orders ADD COLUMN trade_type INT NOT NULL DEFAULT 0;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='paper_positions' AND column_name='trade_type') THEN
+        ALTER TABLE paper_positions ADD COLUMN trade_type INT NOT NULL DEFAULT 0;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='paper_positions' AND column_name='exit_reason') THEN
+        ALTER TABLE paper_positions ADD COLUMN exit_reason VARCHAR(100);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='paper_trade_history' AND column_name='trade_type') THEN
+        ALTER TABLE paper_trade_history ADD COLUMN trade_type INT NOT NULL DEFAULT 0;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='paper_trade_history' AND column_name='exit_reason') THEN
+        ALTER TABLE paper_trade_history ADD COLUMN exit_reason VARCHAR(100);
+    END IF;
+END;
+$$;
+
 CREATE INDEX IF NOT EXISTS ix_paper_orders_account ON paper_orders(account_id, status);
 CREATE INDEX IF NOT EXISTS ix_paper_positions_account ON paper_positions(account_id, status);
 CREATE INDEX IF NOT EXISTS ix_paper_trade_history_account ON paper_trade_history(account_id);
+CREATE INDEX IF NOT EXISTS ix_auto_trade_logs_user ON auto_trade_execution_logs(user_id, executed_at);
+
 

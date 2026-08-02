@@ -17,6 +17,8 @@ public class PaperOrder
     public PaperOrderStatus Status { get; set; } = PaperOrderStatus.Pending;
     public decimal? FilledPrice { get; set; }
     public DateTime? FilledAt { get; set; }
+    public TradeType TradeType { get; set; } = TradeType.Manual;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string? Remarks { get; set; }
 }
+

@@ -342,6 +342,17 @@
                 </svg>
                 <span class="nav-label">Paper Trading</span>
             </a>
+            <a asp-controller="AutoTrading" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "AutoTrading" ? "active" : "")"
+               data-tooltip="🤖 **Auto Paper Trading**: Automated strategy execution engine, tick monitor, and live positions dashboard.">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2V4a2 2 0 0 1 2-2z"></path>
+                    <circle cx="9" cy="11" r="1"></circle>
+                    <circle cx="15" cy="11" r="1"></circle>
+                    <line x1="9" y1="15" x2="15" y2="15"></line>
+                </svg>
+                <span class="nav-label">Auto Trading</span>
+            </a>
             <a asp-controller="SwingTrading" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" ? "active" : "")"
                data-tooltip="📈 **Swing Trading**: Multi-day entry/exit scanner and breakout trade setup.">
@@ -350,6 +361,7 @@
                 </svg>
                 <span class="nav-label">Swing Trading</span>
             </a>
+
 
             @if (isAdmin)
             {

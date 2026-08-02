@@ -18,7 +18,7 @@ public class PaperTradingService : IPaperTradingService
     private readonly IPaperTradingRepository _repository;
     private readonly PaperOrderValidator _validator;
     private readonly PaperMatchingEngine _matchingEngine;
-    private readonly IHubContext<MarketDataHub> _hubContext;
+    private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly ILogger<PaperTradingService> _logger;
     private static bool _autoTradeEnabled = false;
 
@@ -26,14 +26,14 @@ public class PaperTradingService : IPaperTradingService
         IPaperTradingRepository repository,
         PaperOrderValidator validator,
         PaperMatchingEngine matchingEngine,
-        IHubContext<MarketDataHub> hubContext,
-        ILogger<PaperTradingService> logger)
+        ILogger<PaperTradingService> logger,
+        IHubContext<MarketDataHub>? hubContext = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _validator = validator ?? throw new ArgumentNullException(nameof(validator));
         _matchingEngine = matchingEngine ?? throw new ArgumentNullException(nameof(matchingEngine));
-        _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _hubContext = hubContext;
     }
 
     public async Task<PaperAccount> GetOrCreateAccountAsync(string userId = "default_user")
@@ -243,6 +243,8 @@ public class PaperTradingService : IPaperTradingService
             Quantity = position.Quantity,
             ExecutedPrice = currentLtp,
             RealizedPnl = realizedPnl,
+            TradeType = position.TradeType,
+            ExitReason = "Manual Close",
             Remarks = "Manual Position Closure"
         });
 
@@ -337,15 +339,18 @@ public class PaperTradingService : IPaperTradingService
             }, "default_user", signal.EntryPrice);
 
             // Broadcast Toast Notification to Frontend via SignalR
-            await _hubContext.Clients.All.SendAsync("ReceiveAutoTradeAlert", new {
-                symbol = signal.Symbol,
-                side = signal.SignalType,
-                quantity = tradeQty,
-                price = signal.EntryPrice,
-                mode = account.TradingMode ?? "Paper",
-                strength = signal.SignalStrength,
-                message = $"⚡ Auto-Trade Executed ({account.TradingMode}): {signal.SignalType} {tradeQty} shares of {signal.Symbol} @ ₹{signal.EntryPrice:N2}"
-            });
+            if (_hubContext != null)
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveAutoTradeAlert", new {
+                    symbol = signal.Symbol,
+                    side = signal.SignalType,
+                    quantity = tradeQty,
+                    price = signal.EntryPrice,
+                    mode = account.TradingMode ?? "Paper",
+                    strength = signal.SignalStrength,
+                    message = $"⚡ Auto-Trade Executed ({account.TradingMode}): {signal.SignalType} {tradeQty} shares of {signal.Symbol} @ ₹{signal.EntryPrice:N2}"
+                });
+            }
         }
         catch (Exception ex)
         {
@@ -426,10 +431,13 @@ public class PaperTradingService : IPaperTradingService
     {
         try
         {
-            var portfolio = await GetPortfolioAsync(userId);
-            var positions = await GetOpenPositionsAsync(userId);
-            await _hubContext.Clients.All.SendAsync("ReceivePaperAccountUpdate", portfolio);
-            await _hubContext.Clients.All.SendAsync("ReceivePaperPositionsUpdate", positions);
+            if (_hubContext != null)
+            {
+                var portfolio = await GetPortfolioAsync(userId);
+                var positions = await GetOpenPositionsAsync(userId);
+                await _hubContext.Clients.All.SendAsync("ReceivePaperAccountUpdate", portfolio);
+                await _hubContext.Clients.All.SendAsync("ReceivePaperPositionsUpdate", positions);
+            }
         }
         catch (Exception ex)
         {

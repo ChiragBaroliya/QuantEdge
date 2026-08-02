@@ -68,11 +68,23 @@ try
         {
             builder.Services.AddHostedService<SwingTradingDailyJobWorker>();
         }
+        else if (actualJobType.Equals("autotrade", StringComparison.OrdinalIgnoreCase) || actualJobType.Equals("autotradescan", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddHostedService<AutoTradeSignalScanWorker>();
+            builder.Services.AddHostedService<AutoTradePositionMonitorWorker>();
+        }
         else if (actualJobType.Equals("clearcache", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddHostedService<ClearCacheWorker>();
         }
     }
+    else
+    {
+        // Default worker registration if no jobType specified
+        builder.Services.AddHostedService<AutoTradeSignalScanWorker>();
+        builder.Services.AddHostedService<AutoTradePositionMonitorWorker>();
+    }
+
 
     var host = builder.Build();
 

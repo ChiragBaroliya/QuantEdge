@@ -26,3 +26,10 @@ public enum PositionStatus
     OPEN = 0,
     CLOSED = 1
 }
+
+public enum TradeType
+{
+    Manual = 0,
+    Auto = 1
+}
+

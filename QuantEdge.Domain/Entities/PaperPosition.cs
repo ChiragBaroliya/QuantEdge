@@ -15,7 +15,10 @@ public class PaperPosition
     public decimal? StopLoss { get; set; }
     public decimal? TakeProfit { get; set; }
     public PositionStatus Status { get; set; } = PositionStatus.OPEN;
+    public TradeType TradeType { get; set; } = TradeType.Manual;
+    public string? ExitReason { get; set; }
     public DateTime OpenedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ClosedAt { get; set; }
     public decimal RealizedPnl { get; set; }
 }
+

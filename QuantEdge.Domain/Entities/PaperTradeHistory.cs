@@ -12,6 +12,9 @@ public class PaperTradeHistory
     public int Quantity { get; set; }
     public decimal ExecutedPrice { get; set; }
     public decimal RealizedPnl { get; set; }
+    public TradeType TradeType { get; set; } = TradeType.Manual;
+    public string? ExitReason { get; set; }
     public DateTime ExecutedAt { get; set; } = DateTime.UtcNow;
     public string Remarks { get; set; } = string.Empty;
 }
+

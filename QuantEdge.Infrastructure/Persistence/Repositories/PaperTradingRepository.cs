@@ -86,11 +86,11 @@ public class PaperTradingRepository : IPaperTradingRepository
         string sql = @"
             INSERT INTO paper_orders (
                 account_id, symbol, order_type, side, quantity, price, 
-                trigger_price, stop_loss, take_profit, status, filled_price, filled_at, created_at, remarks
+                trigger_price, stop_loss, take_profit, status, filled_price, filled_at, trade_type, created_at, remarks
             )
             VALUES (
                 @AccountId, @Symbol, @OrderType, @Side, @Quantity, @Price,
-                @TriggerPrice, @StopLoss, @TakeProfit, @Status, @FilledPrice, @FilledAt, NOW(), @Remarks
+                @TriggerPrice, @StopLoss, @TakeProfit, @Status, @FilledPrice, @FilledAt, @TradeType, NOW(), @Remarks
             )
             RETURNING 
                 id AS Id,
@@ -106,6 +106,7 @@ public class PaperTradingRepository : IPaperTradingRepository
                 status AS Status,
                 filled_price AS FilledPrice,
                 filled_at AS FilledAt,
+                trade_type AS TradeType,
                 created_at AS CreatedAt,
                 remarks AS Remarks;";
 
@@ -123,6 +124,7 @@ public class PaperTradingRepository : IPaperTradingRepository
             Status = (int)order.Status,
             order.FilledPrice,
             order.FilledAt,
+            TradeType = (int)order.TradeType,
             order.Remarks
         });
     }
@@ -145,6 +147,7 @@ public class PaperTradingRepository : IPaperTradingRepository
                 status AS Status,
                 filled_price AS FilledPrice,
                 filled_at AS FilledAt,
+                trade_type AS TradeType,
                 created_at AS CreatedAt,
                 remarks AS Remarks
             FROM paper_orders
@@ -185,6 +188,7 @@ public class PaperTradingRepository : IPaperTradingRepository
                 status AS Status,
                 filled_price AS FilledPrice,
                 filled_at AS FilledAt,
+                trade_type AS TradeType,
                 created_at AS CreatedAt,
                 remarks AS Remarks
             FROM paper_orders
@@ -211,6 +215,8 @@ public class PaperTradingRepository : IPaperTradingRepository
                 stop_loss AS StopLoss,
                 take_profit AS TakeProfit,
                 status AS Status,
+                trade_type AS TradeType,
+                exit_reason AS ExitReason,
                 opened_at AS OpenedAt,
                 closed_at AS ClosedAt,
                 realized_pnl AS RealizedPnl
@@ -229,17 +235,17 @@ public class PaperTradingRepository : IPaperTradingRepository
             string sqlInsert = @"
                 INSERT INTO paper_positions (
                     account_id, symbol, side, quantity, average_entry_price, current_price,
-                    unrealized_pnl, stop_loss, take_profit, status, opened_at, realized_pnl
+                    unrealized_pnl, stop_loss, take_profit, status, trade_type, exit_reason, opened_at, realized_pnl
                 )
                 VALUES (
                     @AccountId, @Symbol, @Side, @Quantity, @AverageEntryPrice, @CurrentPrice,
-                    @UnrealizedPnl, @StopLoss, @TakeProfit, @Status, NOW(), @RealizedPnl
+                    @UnrealizedPnl, @StopLoss, @TakeProfit, @Status, @TradeType, @ExitReason, NOW(), @RealizedPnl
                 )
                 RETURNING 
                     id AS Id, account_id AS AccountId, symbol AS Symbol, side AS Side,
                     quantity AS Quantity, average_entry_price AS AverageEntryPrice, current_price AS CurrentPrice,
                     unrealized_pnl AS UnrealizedPnl, stop_loss AS StopLoss, take_profit AS TakeProfit,
-                    status AS Status, opened_at AS OpenedAt, closed_at AS ClosedAt, realized_pnl AS RealizedPnl;";
+                    status AS Status, trade_type AS TradeType, exit_reason AS ExitReason, opened_at AS OpenedAt, closed_at AS ClosedAt, realized_pnl AS RealizedPnl;";
 
             return await connection.QuerySingleAsync<PaperPosition>(sqlInsert, new
             {
@@ -253,6 +259,8 @@ public class PaperTradingRepository : IPaperTradingRepository
                 position.StopLoss,
                 position.TakeProfit,
                 Status = (int)position.Status,
+                TradeType = (int)position.TradeType,
+                position.ExitReason,
                 position.RealizedPnl
             });
         }
@@ -267,13 +275,14 @@ public class PaperTradingRepository : IPaperTradingRepository
                     stop_loss = @StopLoss,
                     take_profit = @TakeProfit,
                     status = @Status,
+                    exit_reason = COALESCE(@ExitReason, exit_reason),
                     realized_pnl = @RealizedPnl
                 WHERE id = @Id
                 RETURNING 
                     id AS Id, account_id AS AccountId, symbol AS Symbol, side AS Side,
                     quantity AS Quantity, average_entry_price AS AverageEntryPrice, current_price AS CurrentPrice,
                     unrealized_pnl AS UnrealizedPnl, stop_loss AS StopLoss, take_profit AS TakeProfit,
-                    status AS Status, opened_at AS OpenedAt, closed_at AS ClosedAt, realized_pnl AS RealizedPnl;";
+                    status AS Status, trade_type AS TradeType, exit_reason AS ExitReason, opened_at AS OpenedAt, closed_at AS ClosedAt, realized_pnl AS RealizedPnl;";
 
             return await connection.QuerySingleAsync<PaperPosition>(sqlUpdate, new
             {
@@ -285,12 +294,13 @@ public class PaperTradingRepository : IPaperTradingRepository
                 position.StopLoss,
                 position.TakeProfit,
                 Status = (int)position.Status,
+                position.ExitReason,
                 position.RealizedPnl
             });
         }
     }
 
-    public async Task ClosePositionAsync(int positionId, decimal exitPrice, decimal realizedPnl)
+    public async Task ClosePositionAsync(int positionId, decimal exitPrice, decimal realizedPnl, string? exitReason = null)
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
@@ -299,10 +309,11 @@ public class PaperTradingRepository : IPaperTradingRepository
                 current_price = @exitPrice,
                 unrealized_pnl = 0,
                 realized_pnl = @realizedPnl,
+                exit_reason = COALESCE(@exitReason, exit_reason),
                 closed_at = NOW()
             WHERE id = @positionId;";
 
-        await connection.ExecuteAsync(sql, new { positionId, exitPrice, realizedPnl });
+        await connection.ExecuteAsync(sql, new { positionId, exitPrice, realizedPnl, exitReason });
     }
 
     public async Task<IEnumerable<PaperPosition>> GetPositionsAsync(int accountId, bool openOnly = true)
@@ -321,6 +332,8 @@ public class PaperTradingRepository : IPaperTradingRepository
                 stop_loss AS StopLoss,
                 take_profit AS TakeProfit,
                 status AS Status,
+                trade_type AS TradeType,
+                exit_reason AS ExitReason,
                 opened_at AS OpenedAt,
                 closed_at AS ClosedAt,
                 realized_pnl AS RealizedPnl
@@ -336,8 +349,8 @@ public class PaperTradingRepository : IPaperTradingRepository
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
-            INSERT INTO paper_trade_history (account_id, order_id, symbol, side, quantity, executed_price, realized_pnl, executed_at, remarks)
-            VALUES (@AccountId, @OrderId, @Symbol, @Side, @Quantity, @ExecutedPrice, @RealizedPnl, NOW(), @Remarks);";
+            INSERT INTO paper_trade_history (account_id, order_id, symbol, side, quantity, executed_price, realized_pnl, trade_type, exit_reason, executed_at, remarks)
+            VALUES (@AccountId, @OrderId, @Symbol, @Side, @Quantity, @ExecutedPrice, @RealizedPnl, @TradeType, @ExitReason, NOW(), @Remarks);";
 
         await connection.ExecuteAsync(sql, new
         {
@@ -348,6 +361,8 @@ public class PaperTradingRepository : IPaperTradingRepository
             history.Quantity,
             history.ExecutedPrice,
             history.RealizedPnl,
+            TradeType = (int)history.TradeType,
+            history.ExitReason,
             history.Remarks
         });
     }
@@ -365,6 +380,8 @@ public class PaperTradingRepository : IPaperTradingRepository
                 quantity AS Quantity,
                 executed_price AS ExecutedPrice,
                 realized_pnl AS RealizedPnl,
+                trade_type AS TradeType,
+                exit_reason AS ExitReason,
                 executed_at AS ExecutedAt,
                 remarks AS Remarks
             FROM paper_trade_history
