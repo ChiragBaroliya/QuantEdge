@@ -64,11 +64,7 @@ try
         {
             builder.Services.AddHostedService<InstrumentSyncWorker>();
         }
-        else if (actualJobType.Equals("swingtradingjob", StringComparison.OrdinalIgnoreCase))
-        {
-            builder.Services.AddHostedService<SwingTradingDailyJobWorker>();
-        }
-        else if (actualJobType.Equals("swingintraday", StringComparison.OrdinalIgnoreCase) || actualJobType.Equals("swing30min", StringComparison.OrdinalIgnoreCase))
+        else if (actualJobType.Equals("swingintraday", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddHostedService<SwingTradingIntradayJobWorker>();
         }
