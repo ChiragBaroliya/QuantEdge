@@ -45,21 +45,21 @@ public class InstrumentSyncService : IInstrumentSyncService
     {
         _logger.LogInformation("Starting instruments sync from Zerodha...");
         
-        // 0. Query existing active symbols from stock_master to skip them during sync
-        var activeSymbolsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 0. Query all existing symbols from stock_master to skip them during sync
+        var existingSymbolsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             using var conn = _connectionFactory.CreateConnection();
             try
             {
-                var activeSymbols = await conn.QueryAsync<string>("SELECT symbol FROM stock_master WHERE is_active = TRUE;");
-                if (activeSymbols != null)
+                var existingSymbols = await conn.QueryAsync<string>("SELECT symbol FROM stock_master;");
+                if (existingSymbols != null)
                 {
-                    foreach (var sym in activeSymbols)
+                    foreach (var sym in existingSymbols)
                     {
                         if (!string.IsNullOrWhiteSpace(sym))
                         {
-                            activeSymbolsSet.Add(sym);
+                            existingSymbolsSet.Add(sym);
                         }
                     }
                 }
@@ -74,9 +74,9 @@ public class InstrumentSyncService : IInstrumentSyncService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to query active stock symbols prior to instrument sync.");
+            _logger.LogWarning(ex, "Failed to query existing stock symbols prior to instrument sync.");
         }
-        _logger.LogInformation("Loaded {Count} currently active stock symbols from database to skip during sync.", activeSymbolsSet.Count);
+        _logger.LogInformation("Loaded {Count} existing stock symbols from database to skip during sync.", existingSymbolsSet.Count);
 
         using var httpClient = new HttpClient();
         httpClient.Timeout = TimeSpan.FromMinutes(2);
@@ -120,8 +120,8 @@ public class InstrumentSyncService : IInstrumentSyncService
                 var symbol = cols[2].Trim();
                 if (string.IsNullOrEmpty(symbol)) continue;
 
-                // Skip active stocks — active stock data should not be changed during instrument sync
-                if (activeSymbolsSet.Contains(symbol))
+                // Skip existing stocks (both active and inactive) — do not overwrite existing instruments
+                if (existingSymbolsSet.Contains(symbol))
                 {
                     continue;
                 }
@@ -307,7 +307,7 @@ public class InstrumentSyncService : IInstrumentSyncService
                         new { p_instruments = json },
                         transaction);
                     transaction.Commit();
-                    _logger.LogInformation("Successfully synced {Count} non-active instruments to stock_master via stored function.", instrumentsToSave.Count);
+                    _logger.LogInformation("Successfully inserted {Count} missing instruments into stock_master via stored function.", instrumentsToSave.Count);
                 }
                 catch (Exception ex)
                 {
@@ -327,13 +327,13 @@ public class InstrumentSyncService : IInstrumentSyncService
 
         //var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "instruments_output.csv");
         //_logger.LogInformation("Writing {Count} instruments to CSV for testing at {Path}", instrumentsToSave.Count, csvPath);
-        
+
         //var csvLines = new List<string>
         //{
         //    "Symbol,Name,InstrumentToken,ExchangeToken,InstrumentType,Segment,Exchange,IsActive"
         //};
 
-        //foreach(var inst in instrumentsToSave)
+        //foreach (var inst in instrumentsToSave)
         //{
         //    // Escape any existing quotes in the name
         //    var safeName = inst.Name?.Replace("\"", "\"\"") ?? "";

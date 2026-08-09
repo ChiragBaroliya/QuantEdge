@@ -359,19 +359,7 @@ BEGIN
         (rec->>'Segment')::VARCHAR(20),
         (rec->>'Exchange')::VARCHAR(20)
     FROM jsonb_array_elements(p_instruments) AS rec
-    ON CONFLICT (symbol) DO UPDATE SET
-        instrument_token = EXCLUDED.instrument_token,
-        exchange_token = EXCLUDED.exchange_token,
-        name = EXCLUDED.name,
-        last_price = EXCLUDED.last_price,
-        expiry = EXCLUDED.expiry,
-        strike = EXCLUDED.strike,
-        tick_size = EXCLUDED.tick_size,
-        lot_size = EXCLUDED.lot_size,
-        instrument_type = EXCLUDED.instrument_type,
-        segment = EXCLUDED.segment,
-        exchange = EXCLUDED.exchange
-    WHERE stock_master.is_active = FALSE;
+    ON CONFLICT (symbol) DO NOTHING;
 END;
 $$;
 
