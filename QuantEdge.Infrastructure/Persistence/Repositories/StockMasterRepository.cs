@@ -127,14 +127,28 @@ public class StockMasterRepository : IStockMasterRepository
 
     /// <summary>
     /// Retrieves overall data coverage summary statistics via sp_get_data_coverage_summary.
+    /// Uses Memory Cache (TTL: 1 minute) for fast dashboard rendering.
     /// </summary>
     public async Task<CoverageSummaryDto> GetCoverageSummaryAsync()
     {
+        string cacheKey = "stock_master_coverage_summary";
+        if (_cacheService != null)
+        {
+            var cached = await _cacheService.GetAsync<CoverageSummaryDto>(cacheKey);
+            if (cached != null) return cached;
+        }
+
         using var connection = _connectionFactory.CreateConnection();
         var result = await connection.QueryFirstOrDefaultAsync<CoverageSummaryDto>(
             "SELECT * FROM sp_get_data_coverage_summary();"
-        );
-        return result ?? new CoverageSummaryDto();
+        ) ?? new CoverageSummaryDto();
+
+        if (_cacheService != null)
+        {
+            await _cacheService.SetAsync(cacheKey, result, TimeSpan.FromMinutes(1));
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -181,10 +195,14 @@ public class StockMasterRepository : IStockMasterRepository
                 p_histry_1m = request.Get1mValue(),
                 p_histry_5m = request.Get5mValue(),
                 p_histry_15m = request.Get15mValue(),
-                p_histry_60m = request.Get60mValue(),
-                p_histry_1d = request.Get1dValue()
             }
         );
+
+        if (_cacheService != null)
+        {
+            await _cacheService.RemoveAsync("stock_master_active_stocks");
+            await _cacheService.RemoveAsync("stock_master_coverage_summary");
+        }
     }
 
     /// <summary>
@@ -197,6 +215,12 @@ public class StockMasterRepository : IStockMasterRepository
             "SELECT sp_delete_stock_master(@p_id);",
             new { p_id = id }
         );
+
+        if (_cacheService != null)
+        {
+            await _cacheService.RemoveAsync("stock_master_active_stocks");
+            await _cacheService.RemoveAsync("stock_master_coverage_summary");
+        }
     }
 
     /// <summary>

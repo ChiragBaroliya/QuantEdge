@@ -500,7 +500,7 @@ public class LogController : Controller
         {
             return ("Worker", "Worker (InstrumentSync)");
         }
-        if (lower.Contains("swingtrading"))
+        if (lower.Contains("swingtrading") || lower.Contains("swingintraday") || lower.Contains("swing"))
         {
             return ("Worker", "Worker (SwingTrading)");
         }

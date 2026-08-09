@@ -23,6 +23,7 @@ public class SwingTradingService : ISwingTradingService
     private readonly IHistoricalDataService _historicalDataService;
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IHubContext<MarketDataHub>? _hubContext;
+    private readonly ICacheService? _cacheService;
     private readonly ILogger<SwingTradingService> _logger;
 
     public SwingTradingService(
@@ -31,7 +32,8 @@ public class SwingTradingService : ISwingTradingService
         IHistoricalDataService historicalDataService,
         IDbConnectionFactory connectionFactory,
         ILogger<SwingTradingService> logger,
-        IHubContext<MarketDataHub>? hubContext = null)
+        IHubContext<MarketDataHub>? hubContext = null,
+        ICacheService? cacheService = null)
     {
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
@@ -39,11 +41,23 @@ public class SwingTradingService : ISwingTradingService
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _hubContext = hubContext;
+        _cacheService = cacheService;
     }
 
     public async Task<SwingTradingDashboardDto> GetDashboardDataAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Retrieving Swing Trading dashboard data...");
+
+        string cacheKey = "swing_dashboard_data";
+        if (_cacheService != null)
+        {
+            var cached = await _cacheService.GetAsync<SwingTradingDashboardDto>(cacheKey);
+            if (cached != null)
+            {
+                _logger.LogInformation("Returning Swing Trading dashboard data from memory cache.");
+                return cached;
+            }
+        }
 
         // Ensure we have active stocks and NIFTY 50
         var activeStocks = (await _stockMasterRepository.GetActiveStocksAsync()).ToList();
@@ -262,13 +276,20 @@ public class SwingTradingService : ISwingTradingService
             var trades30 = allTrades.Where(t => t.EntryDate >= DateTime.UtcNow.AddDays(-30)).ToList();
             var stats30 = CalculatePeriodStats(trades30, 30);
 
-            return new SwingTradingDashboardDto(
+            var dashboardResult = new SwingTradingDashboardDto(
                 NiftyStatus: niftyStatus,
                 StockSignals: stockSignals,
                 BacktestStats15Days: stats15,
                 BacktestStats30Days: stats30,
                 RecentTrades: allTrades.Take(30).ToList()
             );
+
+            if (_cacheService != null)
+            {
+                await _cacheService.SetAsync("swing_dashboard_data", dashboardResult, TimeSpan.FromMinutes(2));
+            }
+
+            return dashboardResult;
         }
 
 
@@ -424,6 +445,11 @@ public class SwingTradingService : ISwingTradingService
     {
         try
         {
+            if (_cacheService != null)
+            {
+                await _cacheService.RemoveAsync("swing_dashboard_data");
+            }
+
             if (_hubContext != null)
             {
                 var dashboardData = await GetDashboardDataAsync(cancellationToken);

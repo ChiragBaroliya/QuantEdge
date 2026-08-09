@@ -343,6 +343,7 @@ public class LogController : ControllerBase
         if (lower.Contains("marketdatafeed")) return "Worker (MarketData)";
         if (lower.Contains("history")) return "Worker (History)";
         if (lower.Contains("instrumentsync")) return "Worker (InstrumentSync)";
+        if (lower.Contains("swingtrading") || lower.Contains("swingintraday") || lower.Contains("swing")) return "Worker (SwingTrading)";
         if (lower.Contains("worker")) return "Worker";
         return "System";
     }

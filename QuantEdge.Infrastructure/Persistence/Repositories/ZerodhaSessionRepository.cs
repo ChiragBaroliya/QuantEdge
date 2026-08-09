@@ -4,19 +4,24 @@ using System.Threading.Tasks;
 using Dapper;
 using QuantEdge.Infrastructure.Models;
 
+using QuantEdge.Infrastructure.Interfaces;
+
 namespace QuantEdge.Infrastructure.Persistence.Repositories;
 
 /// <summary>
 /// Dapper-based repository for Zerodha session token management.
 /// All data access is funnelled through PostgreSQL stored procedures / functions.
+/// Uses Memory Cache (TTL: 10 minutes) for fast active token lookups.
 /// </summary>
 public class ZerodhaSessionRepository : IZerodhaSessionRepository
 {
     private readonly IDbConnectionFactory _connectionFactory;
+    private readonly ICacheService? _cacheService;
 
-    public ZerodhaSessionRepository(IDbConnectionFactory connectionFactory)
+    public ZerodhaSessionRepository(IDbConnectionFactory connectionFactory, ICacheService? cacheService = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+        _cacheService = cacheService;
     }
 
     /// <inheritdoc />
@@ -27,12 +32,15 @@ public class ZerodhaSessionRepository : IZerodhaSessionRepository
 
         using var conn = _connectionFactory.CreateConnection();
 
-        // sp_activate_zerodha_token is a PostgreSQL FUNCTION (returns SCALAR VARCHAR)
-        // Checks created_at >= today's 6 AM IST; if valid, sets is_active = TRUE and returns token.
         var activatedToken = await conn.ExecuteScalarAsync<string?>(
             "SELECT sp_activate_zerodha_token(@p_api_key)",
             new { p_api_key = apiKey }
         );
+
+        if (_cacheService != null)
+        {
+            await _cacheService.RemoveAsync("zerodha_active_session");
+        }
 
         return activatedToken;
     }
@@ -40,12 +48,23 @@ public class ZerodhaSessionRepository : IZerodhaSessionRepository
     /// <inheritdoc />
     public async Task<ZerodhaSession?> GetActiveSessionAsync()
     {
+        string cacheKey = "zerodha_active_session";
+        if (_cacheService != null)
+        {
+            var cached = await _cacheService.GetAsync<ZerodhaSession>(cacheKey);
+            if (cached != null) return cached;
+        }
+
         using var conn = _connectionFactory.CreateConnection();
 
-        // sp_get_active_zerodha_session is a PostgreSQL FUNCTION returning a TABLE row
         var session = await conn.QueryFirstOrDefaultAsync<ZerodhaSession>(
             "SELECT * FROM sp_get_active_zerodha_session()"
         );
+
+        if (_cacheService != null && session != null)
+        {
+            await _cacheService.SetAsync(cacheKey, session, TimeSpan.FromMinutes(10));
+        }
 
         return session;
     }
