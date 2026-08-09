@@ -25,7 +25,10 @@
     <!-- Header Action Bar -->
     <div class="swing-header-actions">
         <div>
-            <p class="swing-header-subtitle" style="margin: 0; font-size: 13px; color: #cbd5e1;">Daily Swing Trading analysis (EOD) executed after market close (3:45 PM IST).</p>
+            <p class="swing-header-subtitle d-flex align-items-center flex-wrap gap-2" style="margin: 0; font-size: 13px; color: #cbd5e1;">
+                <span>Daily Swing Trading analysis & 30-Min Intraday Scan during market hours (09:15 AM - 03:30 PM IST).</span>
+                <span id="lastScanBadge" class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25 ms-1" style="font-size: 0.75rem;">⚡ 30-Min Intraday Scan Active</span>
+            </p>
         </div>
         <div class="action-buttons-group">
             <button id="btnOpenReference" class="btn-trigger allow-view" data-tooltip="📖 **Rules & Formulas**: View swing trading filters and strategy math formulas.">
@@ -451,6 +454,7 @@
 <partial name="_StrategyFormulasModal" />
 
 @section Scripts {
+    <script src="~/lib/microsoft/signalr/dist/browser/signalr.min.js"></script>
     <script>
         const API_BASE_URL = "@ViewBag.ApiBaseUrl";
         
@@ -463,9 +467,34 @@
         let pageSize = 25;
         let jobPollInterval = null;
 
+        // SignalR Connection Setup for Real-time 30-Min Intraday Scan Auto-Update
+        function initSwingSignalR() {
+            if (typeof signalR === "undefined") return;
+
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl(`${API_BASE_URL}/hubs/marketdata`)
+                .withAutomaticReconnect()
+                .build();
+
+            connection.on("ReceiveSwingDashboardUpdate", function(dashboardData) {
+                console.log("⚡ SignalR Received Swing Dashboard Update:", dashboardData);
+                if (dashboardData) {
+                    applyDashboardData(dashboardData);
+                    const timeStr = new Date().toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    $("#lastScanBadge").text(`⚡ 30-Min Scan Updated (${timeStr})`);
+                }
+            });
+
+            connection.start().then(function() {
+                console.log("SignalR Connected for Swing Dashboard");
+                connection.invoke("SubscribeSwingDashboard").catch(err => console.error("Error subscribing to SwingDashboard:", err));
+            }).catch(err => console.error("SignalR Connection Error:", err));
+        }
+
         $(document).ready(function() {
             updateViewModeUI();
             loadDashboard();
+            initSwingSignalR();
 
             // Check if any job is currently running in background on startup
             checkRunningBackgroundJobs();
@@ -591,34 +620,43 @@
             return base + endpoint;
         }
 
+        function applyDashboardData(data) {
+            if (!data) return;
+            populateNifty(data.niftyStatus);
+            allStockSignals = data.stockSignals || [];
+            allTrades = data.recentTrades || [];
+
+            // Update Executive KPI Badges for 3000+ stocks
+            const totalScanned = allStockSignals.length;
+            const buyCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "BUY").length;
+            const highMetCount = allStockSignals.filter(s => (s.checklist ? s.checklist.metCount : 0) >= 6).length;
+            const neutralCount = totalScanned - buyCount;
+
+            $("#kpiTotalSymbols").text(totalScanned.toLocaleString());
+            $("#kpiBuyCount").text(buyCount.toLocaleString());
+            $("#kpiHighMetCount").text(highMetCount.toLocaleString());
+            $("#kpiNeutralCount").text(neutralCount.toLocaleString());
+
+            $("#recommendationsBadge").text(buyCount);
+            $("#tradeLogBadge").text(allTrades.length);
+
+            filterAndRenderStocks();
+            populatePerformance(data.backtestStats15Days, data.backtestStats30Days);
+            populateTrades(allTrades);
+        }
+
         function loadDashboard() {
             $.ajax({
                 url: getEndpointUrl('/api/swing/dashboard'),
                 type: "GET",
                 success: function(data) {
-                    populateNifty(data.niftyStatus);
-                    allStockSignals = data.stockSignals || [];
-                    allTrades = data.recentTrades || [];
-
-                    // Update Executive KPI Badges for 3000+ stocks
-                    const totalScanned = allStockSignals.length;
-                    const buyCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "BUY").length;
-                    const highMetCount = allStockSignals.filter(s => (s.checklist ? s.checklist.metCount : 0) >= 6).length;
-                    const neutralCount = totalScanned - buyCount;
-
-                    $("#kpiTotalSymbols").text(totalScanned.toLocaleString());
-                    $("#kpiBuyCount").text(buyCount.toLocaleString());
-                    $("#kpiHighMetCount").text(highMetCount.toLocaleString());
-                    $("#kpiNeutralCount").text(neutralCount.toLocaleString());
-
-                    $("#recommendationsBadge").text(buyCount);
-                    $("#tradeLogBadge").text(allTrades.length);
-
-                    filterAndRenderStocks();
-                    populatePerformance(data.backtestStats15Days, data.backtestStats30Days);
-                    populateTrades(allTrades);
+                    applyDashboardData(data);
                 },
                 error: function(err) {
+                    console.error("Failed to load dashboard data.", err);
+                }
+            });
+        }
                     console.error("Failed to load dashboard data.", err);
                     Swal.fire({
                         icon: 'error',

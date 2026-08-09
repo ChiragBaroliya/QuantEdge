@@ -68,6 +68,10 @@ try
         {
             builder.Services.AddHostedService<SwingTradingDailyJobWorker>();
         }
+        else if (actualJobType.Equals("swingintraday", StringComparison.OrdinalIgnoreCase) || actualJobType.Equals("swing30min", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddHostedService<SwingTradingIntradayJobWorker>();
+        }
         else if (actualJobType.Equals("autotrade", StringComparison.OrdinalIgnoreCase) || actualJobType.Equals("autotradescan", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddHostedService<AutoTradeSignalScanWorker>();

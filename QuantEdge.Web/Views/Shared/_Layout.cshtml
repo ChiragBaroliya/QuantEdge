@@ -321,6 +321,16 @@
                     </svg>
                     <span class="nav-label">Holiday Manager</span>
                 </a>
+                <a asp-controller="PaperTrading" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "PaperTrading" ? "active" : "")"
+                   data-tooltip="📝 **Paper Trading**: Real-time simulated trading with virtual capital (₹1,00,000) and automated signal execution.">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                    <span class="nav-label">Paper Trading</span>
+                </a>
             }
             <a asp-controller="Home" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" ? "active" : "")"
@@ -331,16 +341,6 @@
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                 </svg>
                 <span class="nav-label">Signal Dashboard</span>
-            </a>
-            <a asp-controller="PaperTrading" asp-action="Index"
-               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "PaperTrading" ? "active" : "")"
-               data-tooltip="📝 **પેપર ટ્રેડિંગ**: વર્ચ્યુઅલ ફંડ્સ (₹1,00,000) સાથે રિયલ-ટાઇમ સિમ્યુલેટેડ ટ્રેડિંગ અને ઓટો-સિગ્નલ ટ્રેડ્સ.">
-                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                    <line x1="8" y1="21" x2="16" y2="21"></line>
-                    <line x1="12" y1="17" x2="12" y2="21"></line>
-                </svg>
-                <span class="nav-label">Paper Trading</span>
             </a>
             <a asp-controller="AutoTrading" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "AutoTrading" ? "active" : "")"

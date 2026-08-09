@@ -1,9 +1,11 @@
 using System;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 
 namespace QuantEdge.Web.Controllers;
 
+[Authorize]
 public class AutoTradingController : Controller
 {
     private readonly IConfiguration _configuration;
