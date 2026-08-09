@@ -2702,4 +2702,216 @@ textarea.form-control {
 .bs-tooltip-top .tooltip-arrow::before { border-top-color: rgba(255, 255, 255, 0.14) !important; }
 .bs-tooltip-bottom .tooltip-arrow::before { border-bottom-color: rgba(255, 255, 255, 0.14) !important; }
 .bs-tooltip-start .tooltip-arrow::before { border-left-color: rgba(255, 255, 255, 0.14) !important; }
-.bs-tooltip-end .tooltip-arrow::before { border-right-color: rgba(255, 255, 255, 0.14) !important; }
+.bs-tooltip-start .tooltip-arrow::before { border-left-color: rgba(255, 255, 255, 0.14) !important; }
+.bs-tooltip-end .tooltip-arrow::before { border-right-color: rgba(255, 255, 255, 0.14) !important; }
+
+/* ============================================================
+   Paper Trading Module Responsive & High-Contrast Styles
+   ============================================================ */
+.paper-workspace-container {
+    padding: 24px;
+}
+
+@media (max-width: 768px) {
+    .paper-workspace-container {
+        padding: 16px 12px;
+    }
+}
+
+/* Glassmorphism Dark Card */
+.paper-card {
+    background: rgba(13, 18, 33, 0.88) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* High Contrast Labels */
+.paper-label {
+    color: #e2e8f0 !important;
+    font-weight: 600 !important;
+    font-size: 0.82rem !important;
+    letter-spacing: 0.5px !important;
+    text-transform: uppercase !important;
+    margin-bottom: 6px !important;
+    display: block !important;
+}
+
+.paper-subtitle {
+    color: #cbd5e1 !important;
+    font-size: 0.9rem !important;
+}
+
+.stat-card-title {
+    color: #cbd5e1 !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.3px !important;
+}
+
+.stat-card-subtext {
+    color: #94a3b8 !important;
+    font-size: 0.8rem !important;
+}
+
+/* High Contrast Inputs & Selects */
+.paper-input {
+    background: #0f172a !important;
+    color: #f8fafc !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    border-radius: 8px !important;
+    font-size: 0.92rem !important;
+    padding: 10px 14px !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+
+.paper-input:focus {
+    border-color: var(--theme-accent, #a78bfa) !important;
+    box-shadow: 0 0 0 3px var(--theme-glow, rgba(167, 139, 250, 0.25)) !important;
+    outline: none !important;
+}
+
+.paper-input::placeholder {
+    color: #64748b !important;
+}
+
+/* Tabs Styling Overrides */
+.paper-tabs {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.paper-tabs .nav-link {
+    color: #94a3b8 !important;
+    background: transparent !important;
+    border: none !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+    padding: 10px 18px !important;
+    border-bottom: 2px solid transparent !important;
+    transition: all 0.2s ease-in-out !important;
+}
+
+.paper-tabs .nav-link:hover:not(.active) {
+    color: #f1f5f9 !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.paper-tabs .nav-link.active {
+    color: var(--theme-accent, #a78bfa) !important;
+    background: rgba(167, 139, 250, 0.14) !important;
+    border: none !important;
+    border-bottom: 2px solid var(--theme-accent, #a78bfa) !important;
+    border-radius: 8px 8px 0 0 !important;
+}
+
+/* Table Header Text Visibility */
+.paper-table thead th {
+    color: #94a3b8 !important;
+    font-weight: 700 !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 0.5px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.paper-table tbody td {
+    color: #f1f5f9 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Mobile & Tablet Responsive Enhancements for Paper Trading */
+.paper-switch-box {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(15, 23, 42, 0.8) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    padding: 8px 14px !important;
+    border-radius: 10px !important;
+}
+
+.paper-switch-box .form-check-input {
+    margin-top: 0 !important;
+    float: none !important;
+    margin-left: 0 !important;
+    width: 2.2em !important;
+    height: 1.2em !important;
+    cursor: pointer;
+}
+
+.paper-table-responsive {
+    width: 100%;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 8px;
+}
+
+.paper-table-responsive::-webkit-scrollbar {
+    height: 6px;
+}
+
+.paper-table-responsive::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+.paper-table {
+    min-width: 620px; /* Prevents columns from compressing on mobile screens */
+}
+
+@media (max-width: 991px) {
+    .paper-card {
+        padding: 18px !important;
+        margin-bottom: 12px;
+    }
+}
+
+@media (max-width: 575px) {
+    .paper-workspace-container {
+        padding: 10px 8px !important;
+    }
+
+    .paper-card {
+        padding: 14px !important;
+        border-radius: 12px !important;
+    }
+
+    .paper-header-actions {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .paper-switch-box, #resetAccountBtn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .paper-tabs {
+        display: flex;
+        width: 100%;
+    }
+
+    .paper-tabs .nav-item {
+        flex: 1;
+    }
+
+    .paper-tabs .nav-link {
+        width: 100%;
+        text-align: center;
+        padding: 8px 4px !important;
+        font-size: 0.8rem !important;
+    }
+
+    .stat-card-title {
+        font-size: 0.78rem !important;
+    }
+
+    h4#statTotalEquity, h4#statAvailableMargin, h4#statUnrealizedPnl, h4#statRealizedPnl {
+        font-size: 1.25rem !important;
+    }
+}
+
+

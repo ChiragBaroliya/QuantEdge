@@ -64,15 +64,27 @@ try
         {
             builder.Services.AddHostedService<InstrumentSyncWorker>();
         }
-        else if (actualJobType.Equals("swingtradingjob", StringComparison.OrdinalIgnoreCase))
+        else if (actualJobType.Equals("swingintraday", StringComparison.OrdinalIgnoreCase))
         {
-            builder.Services.AddHostedService<SwingTradingDailyJobWorker>();
+            builder.Services.AddHostedService<SwingTradingIntradayJobWorker>();
+        }
+        else if (actualJobType.Equals("autotrade", StringComparison.OrdinalIgnoreCase) || actualJobType.Equals("autotradescan", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddHostedService<AutoTradeSignalScanWorker>();
+            builder.Services.AddHostedService<AutoTradePositionMonitorWorker>();
         }
         else if (actualJobType.Equals("clearcache", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddHostedService<ClearCacheWorker>();
         }
     }
+    else
+    {
+        // Default worker registration if no jobType specified
+        builder.Services.AddHostedService<AutoTradeSignalScanWorker>();
+        builder.Services.AddHostedService<AutoTradePositionMonitorWorker>();
+    }
+
 
     var host = builder.Build();
 

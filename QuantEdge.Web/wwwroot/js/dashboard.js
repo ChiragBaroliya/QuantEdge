@@ -66,6 +66,7 @@ $(document).ready(async function () {
 
     await loadStocksDropdown();
     initCharts();
+    updateAutoTradeDashboardBadge();
 
     // Set up timeframe button click events
     $(".tab-btn").click(function() {
@@ -154,6 +155,37 @@ async function triggerDashboardRefresh(isManual = true) {
     if (isManual && isAutoRefreshEnabled) {
         autoRefreshRemainingSeconds = AUTO_REFRESH_INTERVAL_SECONDS;
         updateAutoRefreshBadge(autoRefreshRemainingSeconds);
+    }
+}
+
+// Update AutoTrade Status Badge on Main Dashboard
+async function updateAutoTradeDashboardBadge() {
+    const badge = $("#autoTradeDashboardBadge");
+    const textEl = $("#autoTradeDashboardText");
+    if (!badge.length || !textEl.length) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/papertrading/settings`);
+        if (response.ok) {
+            const settings = await response.json();
+            const mode = settings.tradingMode || "Paper";
+            const tf = settings.autoTradeTimeframe || "1m";
+            
+            if (settings.isAutoTradeEnabled) {
+                if (mode === "Live") {
+                    badge.removeClass("bg-secondary bg-primary text-light text-info").addClass("bg-danger bg-opacity-25 text-danger border-danger");
+                    textEl.text(`🚀 Auto-Trade: LIVE (${tf})`);
+                } else {
+                    badge.removeClass("bg-secondary bg-danger text-light text-danger").addClass("bg-primary bg-opacity-25 text-info border-info");
+                    textEl.text(`⚡ Auto-Trade: PAPER (${tf})`);
+                }
+            } else {
+                badge.removeClass("bg-primary bg-danger text-info text-danger").addClass("bg-secondary bg-opacity-25 text-light border-secondary");
+                textEl.text("Auto-Trade: OFF");
+            }
+        }
+    } catch (ex) {
+        console.error("Failed to load AutoTrade dashboard badge status:", ex);
     }
 }
 

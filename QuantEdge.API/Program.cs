@@ -56,6 +56,8 @@ try
 
     app.UsePathBase("/api");
 
+    app.UseMiddleware<QuantEdge.API.Middleware.PaperTradingExceptionMiddleware>();
+
     app.UseForwardedHeaders(new ForwardedHeadersOptions
     {
         ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto

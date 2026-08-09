@@ -1,45 +1,57 @@
-# Swing Trading Daily Job Deployment & Execution Plan
+# 30-Minute Intraday Swing Trading Worker Deployment Plan
 
-This plan details how to register, deploy, configure, and monitor the Daily Swing Trading strategy End-of-Day (EOD) analysis worker service on your Linux server.
+This plan details how to register, deploy, configure, and monitor the **30-Minute Intraday Swing Trading Worker Service** (`swingintraday`) on your Linux server or Windows environment.
 
 ---
 
 ## Background Context
-The `SwingTradingDailyJobWorker` is a continuous service configured to execute daily at **15:45 (3:45 PM IST)**. It runs end-of-day calculations and analysis for your swing trading strategy.
-Since this systemd service is currently missing from your Linux server, you need to create and register it first.
+Now that the **`SwingTradingIntradayJobWorker` (`swingintraday`)** runs every 30 minutes during market hours (**09:15 AM – 03:30 PM IST**), it automatically handles intraday scans **and** performs the market close EOD consolidation & analysis during its final 3:30 PM run.
+
+Therefore, the legacy **`SwingTradingDailyJobWorker` (`swingtradingjob`)** service is **no longer required** and can be removed completely to avoid duplicate processing.
 
 ---
 
-## Proposed Steps
+## Service Identifiers
 
-### Step 1: Ensure Latest Binaries are Deployed
-Ensure the latest compiled binaries from `D:\LearningProject\QuantEdge\publish\Worker\` are uploaded to `/opt/quantedge/worker` on the Linux server.
+| Parameter | Value |
+| :--- | :--- |
+| **Job Identifier (`JobType`)** | `swingintraday` |
+| **Windows Service Name** | `Worker_swingintraday` |
+| **Linux systemd Service Name** | `quantedge-worker-swingintraday` |
+| **Schedule / Trigger** | Every 30 mins during market hours (**09:15 AM – 03:30 PM IST**) |
+| **Description** | QuantEdge 30-Minute Intraday Swing Strategy Scan & Auto-Sync Service |
+
+---
+
+## Deployment Steps
+
+### Step 1: Deploy Compiled Worker Binaries
+Publish and upload the latest compiled worker binaries from `D:\LearningProject\QuantEdge\publish\Worker\` to `/opt/quantedge/worker` on the Linux server:
 
 ```powershell
-# Run this from Windows Command Prompt or PowerShell:
+# Run from Windows Command Prompt or PowerShell:
 scp -r "D:\LearningProject\QuantEdge\publish\Worker\*" root@217.216.79.53:/opt/quantedge/worker/
 ```
 
 ---
 
-### Step 2: Create the systemd Service File on Linux
-Since `quantedge-worker-swingtradingjob` is not registered, you must create it:
+### Step 2: Register systemd Service on Linux
 
-1. Open your SSH terminal and create the service configuration:
+1. Create the systemd service file:
    ```bash
-   sudo nano /etc/systemd/system/quantedge-worker-swingtradingjob.service
+   sudo nano /etc/systemd/system/quantedge-worker-swingintraday.service
    ```
 2. Paste the following configuration:
    ```ini
    [Unit]
-   Description=QuantEdge Daily Swing Trading strategy EOD analysis service
+   Description=QuantEdge 30-Minute Intraday Swing Strategy Scan Service
    After=network.target postgresql.service
 
    [Service]
    Type=simple
    User=root
    WorkingDirectory=/opt/quantedge/worker
-   ExecStart=/usr/bin/dotnet QuantEdge.Worker.dll swingtradingjob
+   ExecStart=/usr/bin/dotnet QuantEdge.Worker.dll swingintraday
    Restart=always
    RestartSec=5
    KillMode=process
@@ -48,46 +60,48 @@ Since `quantedge-worker-swingtradingjob` is not registered, you must create it:
    [Install]
    WantedBy=multi-user.target
    ```
-3. Save and close the editor (`Ctrl+O`, `Enter`, and `Ctrl+X`).
 
 ---
 
-### Step 3: Register and Start the Service
-Reload systemd to detect the new service, then start and enable it:
+### Step 3: Enable and Start Service on Linux
 
 ```bash
 # Reload systemd manager configuration
 sudo systemctl daemon-reload
 
-# Enable the service to automatically start on boot
-sudo systemctl enable quantedge-worker-swingtradingjob
+# Enable service to start automatically on boot
+sudo systemctl enable quantedge-worker-swingintraday
 
-# Start the Swing Trading Daily Job service
-sudo systemctl start quantedge-worker-swingtradingjob
+# Start the service
+sudo systemctl start quantedge-worker-swingintraday
 ```
 
 ---
 
-### Step 4: Monitor Logs
-Monitor the logs to confirm the service starts up successfully and schedules its next run:
+### Step 4: Windows Service Setup (Alternative for Windows Servers)
 
+```powershell
+# Register 30-Minute Intraday Worker Service
+sc.exe create "Worker_swingintraday" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe swingintraday" start= auto
+sc.exe description "Worker_swingintraday" "QuantEdge 30-Minute Intraday Swing Strategy Scan Service"
+Start-Service -Name "Worker_swingintraday"
+```
+
+---
+
+## Service Monitoring & Verification
+
+### 1. Check Service Status:
 ```bash
-sudo journalctl -u quantedge-worker-swingtradingjob -f
+sudo systemctl status quantedge-worker-swingintraday
+```
+
+### 2. View Live Logs:
+```bash
+sudo journalctl -u quantedge-worker-swingintraday -f
 ```
 
 ### Key Logs to Watch For:
-- **Startup:**
-  `SwingTradingDailyJobWorker background service starting up...`
-- **Schedule Confirmation:**
-  `Next Swing Trading EOD Job scheduled at <TargetTime> IST (Delay: <TimeRemaining>)`
-
----
-
-## Verification Plan
-
-### Manual Verification
-- Check the service status to verify it's active and running:
-  ```bash
-  sudo systemctl status quantedge-worker-swingtradingjob
-  ```
-- Look for generated trade signals or database logs updated after 3:45 PM IST in your PostgreSQL database.
+- `SwingTradingIntradayJobWorker (30-Minute Job) background service starting up...`
+- `Market open (HH:mm:ss IST). Running 30-Minute Swing Trading Intraday Job...`
+- `30-Minute Intraday Swing Trading Job completed successfully!`

@@ -58,7 +58,7 @@ public class ActiveZerodhaTokenWorker : BackgroundService
             "ActiveZerodhaTokenWorker started. API Key: {ApiKey}. Allowed execution window: 6:00 AM - 8:30 AM IST.",
             _config.ApiKey);
 
-        // Brief startup delay so DatabaseInitializer has time to complete
+        // Brief startup delay
         await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
 
         // Verify startup time is within the allowed window

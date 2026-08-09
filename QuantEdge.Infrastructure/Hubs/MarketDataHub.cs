@@ -32,6 +32,22 @@ public class MarketDataHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
     }
 
+    /// <summary>
+    /// Adds client connection to the Swing Trading Dashboard live streaming group.
+    /// </summary>
+    public async Task SubscribeSwingDashboard()
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, "SwingDashboard");
+    }
+
+    /// <summary>
+    /// Removes client connection from the Swing Trading Dashboard live streaming group.
+    /// </summary>
+    public async Task UnsubscribeSwingDashboard()
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, "SwingDashboard");
+    }
+
     private static string GetGroupName(string symbol, string timeframe)
     {
         return $"{symbol.ToUpper().Trim()}_{timeframe.ToLower().Trim()}";

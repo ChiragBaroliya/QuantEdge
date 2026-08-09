@@ -5,9 +5,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.DTOs;
+using QuantEdge.Infrastructure.Hubs;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence;
 using QuantEdge.Infrastructure.Persistence.Repositories;
@@ -20,6 +22,7 @@ public class SwingTradingService : ISwingTradingService
     private readonly IMarketCandleRepository _candleRepository;
     private readonly IHistoricalDataService _historicalDataService;
     private readonly IDbConnectionFactory _connectionFactory;
+    private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly ILogger<SwingTradingService> _logger;
 
     public SwingTradingService(
@@ -27,13 +30,15 @@ public class SwingTradingService : ISwingTradingService
         IMarketCandleRepository candleRepository,
         IHistoricalDataService historicalDataService,
         IDbConnectionFactory connectionFactory,
-        ILogger<SwingTradingService> logger)
+        ILogger<SwingTradingService> logger,
+        IHubContext<MarketDataHub>? hubContext = null)
     {
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _historicalDataService = historicalDataService ?? throw new ArgumentNullException(nameof(historicalDataService));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _hubContext = hubContext;
     }
 
     public async Task<SwingTradingDashboardDto> GetDashboardDataAsync(CancellationToken cancellationToken)
@@ -388,6 +393,48 @@ public class SwingTradingService : ISwingTradingService
 
         _logger.LogInformation("EOD Job completed successfully!");
         UpdateJobProgress("eod", false, 100, "Swing Trading EOD Daily Job completed successfully!");
+        await BroadcastSwingDashboardUpdateAsync(cancellationToken);
+    }
+
+    public async Task RunIntraday30MinJobAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Executing 30-Minute Intraday Swing Trading Job...");
+        UpdateJobProgress("intraday30m", true, 5, "Initiating 30-minute intraday Swing Trading analysis...");
+
+        try
+        {
+            // Sync candles and execute swing analysis
+            await RunEodJobAsync(cancellationToken);
+
+            UpdateJobProgress("intraday30m", true, 90, "Broadcasting updated Swing Dashboard via SignalR...");
+            await BroadcastSwingDashboardUpdateAsync(cancellationToken);
+
+            UpdateJobProgress("intraday30m", false, 100, "30-minute Swing Trading intraday job completed successfully!");
+            _logger.LogInformation("30-Minute Intraday Swing Trading Job completed successfully!");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred during 30-Minute Intraday Swing Trading Job.");
+            UpdateJobProgress("intraday30m", false, 0, "30-minute Swing Trading job failed.", ex.Message);
+            throw;
+        }
+    }
+
+    private async Task BroadcastSwingDashboardUpdateAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_hubContext != null)
+            {
+                var dashboardData = await GetDashboardDataAsync(cancellationToken);
+                await _hubContext.Clients.Group("SwingDashboard").SendAsync("ReceiveSwingDashboardUpdate", dashboardData, cancellationToken);
+                await _hubContext.Clients.All.SendAsync("ReceiveSwingDashboardUpdate", dashboardData, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to broadcast Swing Dashboard updates over SignalR.");
+        }
     }
 
 

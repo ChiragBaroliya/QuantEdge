@@ -30,6 +30,7 @@ public class MarketDataProcessor : IMarketDataProcessor
     private readonly IIndicatorService _indicatorService;
     private readonly ISignalEngineService _signalEngine;
     private readonly IMarketHoursService _marketHoursService;
+    private readonly IPaperTradingService? _paperTradingService;
     private readonly IMarketDataCacheService? _cacheService;
     private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly BrokerConfig _config;
@@ -51,7 +52,8 @@ public class MarketDataProcessor : IMarketDataProcessor
         IOptions<BrokerConfig> config,
         ILogger<MarketDataProcessor> logger,
         IHubContext<MarketDataHub>? hubContext = null,
-        IMarketDataCacheService? cacheService = null)
+        IMarketDataCacheService? cacheService = null,
+        IPaperTradingService? paperTradingService = null)
     {
         _webSocketService = webSocketService ?? throw new ArgumentNullException(nameof(webSocketService));
         _candleBuilder = candleBuilder ?? throw new ArgumentNullException(nameof(candleBuilder));
@@ -65,6 +67,7 @@ public class MarketDataProcessor : IMarketDataProcessor
         _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cacheService = cacheService;
+        _paperTradingService = paperTradingService;
     }
 
     /// <summary>
@@ -124,6 +127,12 @@ public class MarketDataProcessor : IMarketDataProcessor
             
             // Forward tick data to aggregate candlesticks
             await _candleBuilder.ProcessTickAsync(tick);
+
+            // Forward tick data for paper trading order matching & live position PnL recalculation
+            if (_paperTradingService != null)
+            {
+                await _paperTradingService.ProcessTickForPaperMatchingAsync(tick.Symbol, tick.LTP);
+            }
         }
         catch (Exception ex)
         {
@@ -216,6 +225,18 @@ public class MarketDataProcessor : IMarketDataProcessor
             // 2. Evaluate signals based on newly updated indicators
             var signal = await _signalEngine.EvaluateSignalAsync(candleDto.Symbol, timeframeStr, CancellationToken.None);
 
+            if (signal != null && _paperTradingService != null)
+            {
+                await _paperTradingService.ProcessSignalForAutoTradeAsync(new TradingSignal
+                {
+                    Symbol = candleDto.Symbol,
+                    SignalType = signal.SignalType,
+                    SignalStrength = (decimal)signal.Score,
+                    EntryPrice = candleDto.Close,
+                    Reason = signal.Reason
+                });
+            }
+
             // 3. Load latest indicators for the closed candle from RAM Cache (< 1ms)
             var indicators = _cacheService != null
                 ? await _cacheService.GetLatestIndicatorAsync(candleDto.Symbol, timeframeStr)
@@ -239,10 +260,10 @@ public class MarketDataProcessor : IMarketDataProcessor
                     macd = indicators?.MACD,
                     signalLine = indicators?.SignalLine,
                     vwap = indicators?.VWAP,
-                    signalType = signal.SignalType,
-                    signalScore = signal.Score,
-                    signalStrength = signal.Strength,
-                    signalReason = signal.Reason
+                    signalType = signal?.SignalType,
+                    signalScore = signal?.Score,
+                    signalStrength = signal?.Strength,
+                    signalReason = signal?.Reason
                 });
             }
         }

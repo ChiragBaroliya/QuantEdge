@@ -57,8 +57,10 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IUserRepository, UserRepository>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddTransient<IIndicatorService, IndicatorService>();
-        services.AddSingleton<DatabaseInitializer>();
         services.AddSingleton<IMarketHoursService, MarketHoursService>();
+
+        // Register SignalR infrastructure
+        services.AddSignalR();
 
         // Register caching infrastructure
         services.AddMemoryCache();
@@ -94,6 +96,16 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ISignalEngineService, SignalEngineService>();
         services.AddTransient<ISwingTradingService, SwingTradingService>();
 
+        // Register Paper Trading Infrastructure Services
+        services.AddTransient<IPaperTradingRepository, PaperTradingRepository>();
+        services.AddTransient<IAutoTradeRepository, AutoTradeRepository>();
+        services.AddTransient<PaperOrderValidator>();
+        services.AddSingleton<PaperMatchingEngine>();
+        services.AddTransient<ZerodhaKiteBrokerService>();
+        services.AddSingleton<IPaperTradingService, PaperTradingService>();
+        services.AddSingleton<IAutoTradeService, AutoTradeService>();
+
         return services;
     }
 }
+
