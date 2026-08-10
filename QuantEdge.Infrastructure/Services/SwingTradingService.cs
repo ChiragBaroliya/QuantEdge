@@ -55,7 +55,14 @@ public class SwingTradingService : ISwingTradingService
             if (cached != null)
             {
                 _logger.LogInformation("Returning Swing Trading dashboard data from memory cache.");
-                return cached;
+                var runInfo = CalculateNextRunInfo();
+                return cached with
+                {
+                    NextRunTime = runInfo.NextRunTime,
+                    NextRunSeconds = runInfo.NextRunSeconds,
+                    NextRunFormatted = runInfo.FormattedText,
+                    IsMarketOpen = runInfo.IsMarketOpen
+                };
             }
         }
 
@@ -300,23 +307,96 @@ public class SwingTradingService : ISwingTradingService
             var trades30 = allTrades.Where(t => t.EntryDate >= DateTime.UtcNow.AddDays(-30)).ToList();
             var stats30 = CalculatePeriodStats(trades30, 30);
 
+            var nextRunInfo = CalculateNextRunInfo();
+
             var dashboardResult = new SwingTradingDashboardDto(
                 NiftyStatus: niftyStatus,
                 StockSignals: stockSignals,
                 BacktestStats15Days: stats15,
                 BacktestStats30Days: stats30,
-                RecentTrades: allTrades.Take(30).ToList()
+                RecentTrades: allTrades.Take(30).ToList(),
+                NextRunTime: nextRunInfo.NextRunTime,
+                NextRunSeconds: nextRunInfo.NextRunSeconds,
+                NextRunFormatted: nextRunInfo.FormattedText,
+                IsMarketOpen: nextRunInfo.IsMarketOpen
             );
 
             if (_cacheService != null)
             {
-                await _cacheService.SetAsync("swing_dashboard_data", dashboardResult, TimeSpan.FromMinutes(2));
+                await _cacheService.SetAsync("swing_dashboard_data", dashboardResult, TimeSpan.FromMinutes(1));
             }
 
             return dashboardResult;
         }
 
 
+    }
+
+    public static (DateTime NextRunTime, int NextRunSeconds, string FormattedText, bool IsMarketOpen) CalculateNextRunInfo()
+    {
+        DateTime nowIst;
+        try
+        {
+            var istZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+            nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, istZone);
+        }
+        catch
+        {
+            nowIst = DateTime.UtcNow.AddHours(5).AddMinutes(30);
+        }
+
+        bool isWeekend = nowIst.DayOfWeek == DayOfWeek.Saturday || nowIst.DayOfWeek == DayOfWeek.Sunday;
+        TimeSpan marketStart = new TimeSpan(9, 15, 0);
+        TimeSpan marketEnd = new TimeSpan(15, 30, 0);
+        TimeSpan timeOfDay = nowIst.TimeOfDay;
+
+        bool isWithinMarketHours = !isWeekend && timeOfDay >= marketStart && timeOfDay <= marketEnd;
+
+        DateTime targetNextRun;
+
+        if (isWithinMarketHours)
+        {
+            // Calculate next 30-minute boundary (e.g. 09:45, 10:15, 10:45, 11:15, 11:45, 12:15, 12:45, 13:15, 13:45, 14:15, 14:45, 15:15, 15:30 IST)
+            int currentMinute = nowIst.Minute;
+            int minuteOffset = currentMinute < 15 ? 15 - currentMinute : (currentMinute < 45 ? 45 - currentMinute : 60 - currentMinute + 15);
+            targetNextRun = nowIst.AddMinutes(minuteOffset).AddSeconds(-nowIst.Second).AddMilliseconds(-nowIst.Millisecond);
+
+            if (targetNextRun.TimeOfDay > marketEnd)
+            {
+                targetNextRun = nowIst.Date.AddDays(1).Add(new TimeSpan(9, 45, 0));
+                while (targetNextRun.DayOfWeek == DayOfWeek.Saturday || targetNextRun.DayOfWeek == DayOfWeek.Sunday)
+                {
+                    targetNextRun = targetNextRun.AddDays(1);
+                }
+            }
+        }
+        else
+        {
+            // Market is closed or weekend. Next run is 09:45 AM IST on next trading day
+            DateTime nextDay = nowIst.TimeOfDay > marketEnd ? nowIst.Date.AddDays(1) : nowIst.Date;
+            targetNextRun = nextDay.Add(new TimeSpan(9, 45, 0));
+            while (targetNextRun.DayOfWeek == DayOfWeek.Saturday || targetNextRun.DayOfWeek == DayOfWeek.Sunday)
+            {
+                targetNextRun = targetNextRun.AddDays(1);
+            }
+        }
+
+        int remainingSeconds = Math.Max(0, (int)(targetNextRun - nowIst).TotalSeconds);
+        TimeSpan remainingTime = TimeSpan.FromSeconds(remainingSeconds);
+
+        string formatted;
+        if (isWithinMarketHours)
+        {
+            formatted = remainingTime.Hours > 0 
+                ? $"{remainingTime.Hours}h {remainingTime.Minutes}m {remainingTime.Seconds}s" 
+                : $"{remainingTime.Minutes}m {remainingTime.Seconds}s";
+        }
+        else
+        {
+            formatted = $"Market Closed (Next: {targetNextRun:dd MMM, hh:mm tt} IST)";
+        }
+
+        return (targetNextRun, remainingSeconds, formatted, isWithinMarketHours);
     }
 
     private static BacktestStatsDto CalculatePeriodStats(List<SwingTradeDto> trades, int days)

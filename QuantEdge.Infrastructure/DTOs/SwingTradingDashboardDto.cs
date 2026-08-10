@@ -8,7 +8,11 @@ public record SwingTradingDashboardDto(
     List<SwingStockSignalDto> StockSignals,
     BacktestStatsDto BacktestStats15Days,
     BacktestStatsDto BacktestStats30Days,
-    List<SwingTradeDto> RecentTrades
+    List<SwingTradeDto> RecentTrades,
+    DateTime? NextRunTime = null,
+    int NextRunSeconds = 0,
+    string NextRunFormatted = "",
+    bool IsMarketOpen = false
 );
 
 public record NiftyStatusDto(
@@ -113,6 +117,9 @@ public record SwingJobStatusDto(
     string StatusMessage,
     DateTime? StartedAt,
     DateTime? CompletedAt,
-    string? LastError
+    string? LastError,
+    DateTime? NextRunTime = null,
+    int NextRunSeconds = 0,
+    string NextRunFormatted = ""
 );
 
