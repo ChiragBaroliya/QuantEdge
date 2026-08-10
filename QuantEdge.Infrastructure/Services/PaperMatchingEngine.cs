@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
@@ -8,11 +10,24 @@ using QuantEdge.Infrastructure.Persistence.Repositories;
 
 namespace QuantEdge.Infrastructure.Services;
 
+/// <summary>
+/// Thread-safe in-memory order matching and position monitoring engine.
+/// Caches active orders and positions to prevent database connection pool exhaustion on high-frequency WebSocket ticks.
+/// </summary>
 public class PaperMatchingEngine
 {
     private readonly IPaperTradingRepository _repository;
     private readonly ILogger<PaperMatchingEngine> _logger;
     private readonly ConcurrentDictionary<string, decimal> _latestPrices = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly SemaphoreSlim _cacheLock = new(1, 1);
+    private DateTime _lastCacheRefresh = DateTime.MinValue;
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(5);
+
+    private PaperAccount? _cachedAccount;
+    private List<PaperPosition> _cachedOpenPositions = new();
+    private List<PaperOrder> _cachedPendingLimitOrders = new();
+    private HashSet<string> _monitoredSymbols = new(StringComparer.OrdinalIgnoreCase);
 
     public PaperMatchingEngine(
         IPaperTradingRepository repository,
@@ -35,17 +50,35 @@ public class PaperMatchingEngine
         return _latestPrices.TryGetValue(symbol, out var price) ? price : 0m;
     }
 
+    /// <summary>
+    /// Force invalidates the matching engine's in-memory cache when new orders or positions are modified.
+    /// </summary>
+    public void InvalidateCache()
+    {
+        _lastCacheRefresh = DateTime.MinValue;
+    }
+
     public async Task ProcessTickAsync(string symbol, decimal ltp)
     {
         if (string.IsNullOrWhiteSpace(symbol) || ltp <= 0m) return;
         UpdateLtp(symbol, ltp);
 
-        var account = await _repository.GetAccountAsync("default_user");
+        // Ensure in-memory active orders & positions cache is fresh (< 5s old)
+        await EnsureCacheFreshAsync();
+
+        // High-frequency fast path: If this symbol has no active open positions or pending limit orders, exit immediately (< 0.01 ms, 0 DB queries)
+        if (!_monitoredSymbols.Contains(symbol))
+        {
+            return;
+        }
+
+        var account = _cachedAccount;
         if (account == null) return;
 
         // 1. Process Open Positions for Stop-Loss & Take-Profit Auto-Triggers
-        var openPositions = await _repository.GetPositionsAsync(account.Id, openOnly: true);
-        var matchingPositions = openPositions.Where(p => string.Equals(p.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+        var matchingPositions = _cachedOpenPositions
+            .Where(p => string.Equals(p.Symbol, symbol, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         foreach (var pos in matchingPositions)
         {
@@ -105,15 +138,17 @@ public class PaperMatchingEngine
                     RealizedPnl = realizedPnl,
                     Remarks = $"Auto-Exit: {reason}"
                 });
+
+                InvalidateCache();
             }
         }
 
         // 2. Process Pending Limit Orders
-        var activeOrders = await _repository.GetOrdersAsync(account.Id, activeOnly: true);
-        var pendingLimitOrders = activeOrders.Where(o => 
-            string.Equals(o.Symbol, symbol, StringComparison.OrdinalIgnoreCase) && 
-            o.OrderType == PaperOrderType.Limit &&
-            o.Status == PaperOrderStatus.Pending);
+        var pendingLimitOrders = _cachedPendingLimitOrders
+            .Where(o => string.Equals(o.Symbol, symbol, StringComparison.OrdinalIgnoreCase) && 
+                        o.OrderType == PaperOrderType.Limit && 
+                        o.Status == PaperOrderStatus.Pending)
+            .ToList();
 
         foreach (var order in pendingLimitOrders)
         {
@@ -167,7 +202,54 @@ public class PaperMatchingEngine
                     RealizedPnl = 0m,
                     Remarks = "Limit Order Executed"
                 });
+
+                InvalidateCache();
             }
         }
     }
+
+    private async Task EnsureCacheFreshAsync()
+    {
+        if (DateTime.UtcNow - _lastCacheRefresh < CacheTtl && _cachedAccount != null)
+        {
+            return;
+        }
+
+        await _cacheLock.WaitAsync();
+        try
+        {
+            if (DateTime.UtcNow - _lastCacheRefresh < CacheTtl && _cachedAccount != null)
+            {
+                return;
+            }
+
+            var account = await _repository.GetAccountAsync("default_user");
+            if (account != null)
+            {
+                var positions = (await _repository.GetPositionsAsync(account.Id, openOnly: true)).ToList();
+                var orders = (await _repository.GetOrdersAsync(account.Id, activeOnly: true))
+                    .Where(o => o.OrderType == PaperOrderType.Limit && o.Status == PaperOrderStatus.Pending)
+                    .ToList();
+
+                var newMonitored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var p in positions) newMonitored.Add(p.Symbol);
+                foreach (var o in orders) newMonitored.Add(o.Symbol);
+
+                _cachedAccount = account;
+                _cachedOpenPositions = positions;
+                _cachedPendingLimitOrders = orders;
+                _monitoredSymbols = newMonitored;
+                _lastCacheRefresh = DateTime.UtcNow;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to refresh PaperMatchingEngine in-memory cache from database.");
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
+    }
 }
+

@@ -174,6 +174,9 @@ public class PaperTradingService : IPaperTradingService
             });
         }
 
+        // Invalidate matching engine cache so new order is monitored immediately
+        _matchingEngine.InvalidateCache();
+
         // Broadcast real-time portfolio update via SignalR
         await BroadcastPortfolioUpdateAsync(userId);
         return createdOrder;
@@ -201,6 +204,7 @@ public class PaperTradingService : IPaperTradingService
         decimal newUsedMargin = Math.Max(0m, account.UsedMargin - releasedMargin);
         await _repository.UpdateAccountBalanceAndMarginAsync(account.Id, account.CurrentBalance, newUsedMargin, account.RealizedPnl);
 
+        _matchingEngine.InvalidateCache();
         await BroadcastPortfolioUpdateAsync(userId);
     }
 
@@ -248,6 +252,7 @@ public class PaperTradingService : IPaperTradingService
             Remarks = "Manual Position Closure"
         });
 
+        _matchingEngine.InvalidateCache();
         await BroadcastPortfolioUpdateAsync(userId);
     }
 
@@ -255,8 +260,10 @@ public class PaperTradingService : IPaperTradingService
     {
         var account = await GetOrCreateAccountAsync(userId);
         await _repository.ResetAccountAsync(account.Id, 100000m);
+        _matchingEngine.InvalidateCache();
         await BroadcastPortfolioUpdateAsync(userId);
     }
+
 
     public async Task ProcessTickForPaperMatchingAsync(string symbol, decimal ltp)
     {

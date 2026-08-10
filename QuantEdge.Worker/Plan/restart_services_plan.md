@@ -88,12 +88,12 @@ For a sequenced restart that ensures dependency ordering:
 2. **Restart Background Workers**:
    ```bash
     sudo systemctl restart quantedge-worker-instrumentsync
+     sudo systemctl restart quantedge-worker-activezerodhatoken
    sudo systemctl restart quantedge-worker-marketdatafeed-1m
    sudo systemctl restart quantedge-worker-marketdatafeed-5m
    sudo systemctl restart quantedge-worker-marketdatafeed-15m
    sudo systemctl restart quantedge-worker-marketdatafeed-60m
    sudo systemctl restart quantedge-worker-marketdatafeed-1d
-   sudo systemctl restart quantedge-worker-activezerodhatoken
    sudo systemctl restart quantedge-worker-swingintraday
    sudo systemctl restart quantedge-worker-autotrade
    ```
