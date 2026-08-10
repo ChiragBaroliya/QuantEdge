@@ -94,7 +94,8 @@ For a sequenced restart that ensures dependency ordering:
    sudo systemctl restart quantedge-worker-marketdatafeed-60m
    sudo systemctl restart quantedge-worker-marketdatafeed-1d
    sudo systemctl restart quantedge-worker-activezerodhatoken
-   sudo systemctl restart quantedge-worker-swingtradingjob
+   sudo systemctl restart quantedge-worker-swingintraday
+   sudo systemctl restart quantedge-worker-autotrade
    ```
 
 3. **Verify Status**:

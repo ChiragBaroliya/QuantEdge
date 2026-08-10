@@ -38,9 +38,9 @@ public class IndianHolidayRepository : IIndianHolidayRepository
             "SELECT * FROM sp_get_indian_holidays();"
         )).ToList();
 
-        if (_cacheService != null && holidays.Any())
+        if (_cacheService != null)
         {
-            await _cacheService.SetAsync(cacheKey, holidays, TimeSpan.FromHours(1));
+            await _cacheService.SetAsync(cacheKey, holidays, TimeSpan.FromHours(24));
         }
 
         return holidays;
@@ -77,7 +77,7 @@ public class IndianHolidayRepository : IIndianHolidayRepository
     public async Task<bool> IsHolidayAsync(DateTime date)
     {
         var holidays = await GetAllHolidaysAsync();
-        if (holidays != null && holidays.Any())
+        if (holidays != null)
         {
             return holidays.Any(h => h.HolidayDate.Date == date.Date);
         }
@@ -89,3 +89,4 @@ public class IndianHolidayRepository : IIndianHolidayRepository
         );
     }
 }
+

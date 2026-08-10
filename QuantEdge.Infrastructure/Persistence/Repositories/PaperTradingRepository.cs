@@ -395,7 +395,9 @@ public class PaperTradingRepository : IPaperTradingRepository
     public async Task ResetAccountAsync(int accountId, decimal defaultBalance = 100000m)
     {
         using var connection = _connectionFactory.CreateConnection();
+        connection.Open();
         using var transaction = connection.BeginTransaction();
+
 
         try
         {

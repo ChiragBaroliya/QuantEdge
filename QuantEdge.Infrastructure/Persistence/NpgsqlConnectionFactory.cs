@@ -19,7 +19,7 @@ public class NpgsqlConnectionFactory : IDbConnectionFactory
     }
 
     /// <summary>
-    /// Creates and returns a new NpgsqlConnection instance.
+    /// Creates and returns a new NpgsqlConnection instance configured with connection pooling boundaries.
     /// </summary>
     public IDbConnection CreateConnection()
     {
@@ -27,6 +27,18 @@ public class NpgsqlConnectionFactory : IDbConnectionFactory
         {
             throw new InvalidOperationException("PostgreSQL ConnectionString is not configured.");
         }
-        return new NpgsqlConnection(_config.ConnectionString);
+
+        var builder = new NpgsqlConnectionStringBuilder(_config.ConnectionString)
+        {
+            Pooling = true,
+            MinPoolSize = 0,
+            MaxPoolSize = 30,
+            ConnectionIdleLifetime = 15,
+            Timeout = 15,
+            CommandTimeout = 30
+        };
+
+        return new NpgsqlConnection(builder.ConnectionString);
     }
 }
+
