@@ -342,21 +342,37 @@ public class MarketDataController : ControllerBase
                 var stockRepo = scope.ServiceProvider.GetRequiredService<IStockMasterRepository>();
                 var candleRepo = scope.ServiceProvider.GetRequiredService<IMarketCandleRepository>();
                 var indicatorRepo = scope.ServiceProvider.GetRequiredService<IMarketIndicatorRepository>();
-                var historicalDataService = scope.ServiceProvider.GetRequiredService<IHistoricalDataService>();
-                var indicatorService = scope.ServiceProvider.GetRequiredService<IIndicatorService>();
+
+                string cleanSymbol = symbol?.Trim() ?? "";
+                bool isAllStocks = string.IsNullOrWhiteSpace(cleanSymbol) ||
+                                   cleanSymbol.Equals("all", StringComparison.OrdinalIgnoreCase) ||
+                                   cleanSymbol.Equals("all stocks", StringComparison.OrdinalIgnoreCase) ||
+                                   cleanSymbol.Equals("all_stocks", StringComparison.OrdinalIgnoreCase) ||
+                                   cleanSymbol.Equals("null", StringComparison.OrdinalIgnoreCase) ||
+                                   cleanSymbol.Equals("undefined", StringComparison.OrdinalIgnoreCase);
 
                 List<QuantEdge.Domain.Entities.StockMaster> targetStocks;
-                if (!string.IsNullOrWhiteSpace(symbol))
+                if (!isAllStocks)
                 {
-                    var singleStock = await stockRepo.GetBySymbolAsync(symbol);
+                    var singleStock = await stockRepo.GetBySymbolAsync(cleanSymbol);
                     targetStocks = singleStock != null ? new List<QuantEdge.Domain.Entities.StockMaster> { singleStock } : new List<QuantEdge.Domain.Entities.StockMaster>();
                 }
                 else
                 {
                     targetStocks = (await stockRepo.GetActiveStocksAsync()).ToList();
+                    if (!targetStocks.Any())
+                    {
+                        targetStocks = (await stockRepo.GetAllAsync()).ToList();
+                    }
                 }
 
                 int total = targetStocks.Count;
+                if (total == 0)
+                {
+                    await _hubContext.Clients.All.SendAsync("SyncComplete", new { message = "No active stocks found to sync." });
+                    return;
+                }
+
                 int processed = 0;
 
                 await _hubContext.Clients.All.SendAsync("SyncProgress", new { 
@@ -364,30 +380,54 @@ public class MarketDataController : ControllerBase
                     progress = 0 
                 });
 
-                foreach (var stock in targetStocks)
+                // If symbol is not specified or specifies ALL STOCKS, perform a single bulk delete for candles & indicators for maximum performance
+                if (isAllStocks)
                 {
-                    // 1. Clear records in range
-                    await candleRepo.DeleteHistoryRangeAsync(stock.Symbol, timeframe, startUtc, endUtc);
-                    await indicatorRepo.DeleteIndicatorsRangeAsync(stock.Symbol, timeframe, startUtc, endUtc);
+                    await candleRepo.DeleteHistoryRangeAsync(null, timeframe, startUtc, endUtc);
+                    await indicatorRepo.DeleteIndicatorsRangeAsync(null, timeframe, startUtc, endUtc);
+                }
 
-                    // 2. Fetch & Insert new records
+                // Process stocks concurrently with SemaphoreSlim to limit max parallelism (5 concurrent workers)
+                var semaphore = new SemaphoreSlim(5);
+                var syncTasks = targetStocks.Select(async stock =>
+                {
+                    await semaphore.WaitAsync();
                     try
                     {
-                        await historicalDataService.FetchHistoricalCandlesAsync(stock.Symbol, timeframe, startUtc, endUtc, CancellationToken.None);
-                        await indicatorService.BackfillHistoricalIndicatorsAsync(stock.Symbol, timeframe);
+                        using var innerScope = _scopeFactory.CreateScope();
+                        var innerCandleRepo = innerScope.ServiceProvider.GetRequiredService<IMarketCandleRepository>();
+                        var innerIndicatorRepo = innerScope.ServiceProvider.GetRequiredService<IMarketIndicatorRepository>();
+                        var innerHistService = innerScope.ServiceProvider.GetRequiredService<IHistoricalDataService>();
+                        var innerIndService = innerScope.ServiceProvider.GetRequiredService<IIndicatorService>();
+
+                        // Clear records for specific stock if filtering by a single stock symbol
+                        if (!isAllStocks)
+                        {
+                            await innerCandleRepo.DeleteHistoryRangeAsync(stock.Symbol, timeframe, startUtc, endUtc);
+                            await innerIndicatorRepo.DeleteIndicatorsRangeAsync(stock.Symbol, timeframe, startUtc, endUtc);
+                        }
+
+                        // Fetch fresh historical candles and backfill technical indicators
+                        await innerHistService.FetchHistoricalCandlesAsync(stock.Symbol, timeframe, startUtc, endUtc, CancellationToken.None);
+                        await innerIndService.BackfillHistoricalIndicatorsAsync(stock.Symbol, timeframe);
                     }
                     catch (Exception innerEx)
                     {
                         _logger.LogError(innerEx, "Failed to fetch history from Zerodha for {Symbol} ({Timeframe}) range {Start} to {End}.", stock.Symbol, timeframe, startUtc, endUtc);
                     }
+                    finally
+                    {
+                        semaphore.Release();
+                        int currentCount = Interlocked.Increment(ref processed);
+                        double pct = Math.Round((double)currentCount / total * 100, 1);
+                        await _hubContext.Clients.All.SendAsync("SyncProgress", new { 
+                            message = $"Synced {stock.Symbol} ({currentCount}/{total})", 
+                            progress = pct 
+                        });
+                    }
+                });
 
-                    processed++;
-                    double pct = Math.Round((double)processed / total * 100, 1);
-                    await _hubContext.Clients.All.SendAsync("SyncProgress", new { 
-                        message = $"Synced {stock.Symbol} ({processed}/{total})", 
-                        progress = pct 
-                    });
-                }
+                await Task.WhenAll(syncTasks);
 
                 await _hubContext.Clients.All.SendAsync("SyncComplete", new { 
                     message = $"Successfully synced history for {total} stocks ({timeframe}) from {startUtc:yyyy-MM-dd} to {endUtc:yyyy-MM-dd}." 

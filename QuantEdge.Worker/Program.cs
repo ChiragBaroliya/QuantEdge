@@ -39,6 +39,9 @@ try
     // Register all MarketData configurations, WebSocket ingest, candle aggregators, and persistence services
     builder.Services.AddMarketDataServices(builder.Configuration, jobType);
 
+    // Configure Options for History Reset Worker
+    builder.Services.Configure<HistoryResetOptions>(builder.Configuration);
+
     // Register background hosted workers conditionally based on jobType argument
     if (!string.IsNullOrWhiteSpace(jobType))
     {
@@ -76,6 +79,13 @@ try
         else if (actualJobType.Equals("clearcache", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddHostedService<ClearCacheWorker>();
+        }
+        else if (actualJobType.Equals("todayreset", StringComparison.OrdinalIgnoreCase) || 
+                 actualJobType.Equals("todayhistoryreset", StringComparison.OrdinalIgnoreCase) ||
+                 actualJobType.Equals("historyreset", StringComparison.OrdinalIgnoreCase) ||
+                 actualJobType.Equals("reset", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddHostedService<HistoryResetWorker>();
         }
     }
     else

@@ -158,14 +158,14 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
             if (string.IsNullOrWhiteSpace(symbol))
             {
                 await connection.ExecuteAsync(
-                    $"DELETE FROM {tableName} WHERE created_at >= @FromDate AND created_at <= @ToDate;",
+                    $"DELETE FROM {tableName} WHERE candle_time >= @FromDate AND candle_time <= @ToDate;",
                     new { FromDate = fromDate, ToDate = toDate }
                 );
             }
             else
             {
                 await connection.ExecuteAsync(
-                    $"DELETE FROM {tableName} WHERE symbol = @Symbol AND created_at >= @FromDate AND created_at <= @ToDate;",
+                    $"DELETE FROM {tableName} WHERE symbol = @Symbol AND candle_time >= @FromDate AND candle_time <= @ToDate;",
                     new { Symbol = symbol.ToUpper(), FromDate = fromDate, ToDate = toDate }
                 );
             }
