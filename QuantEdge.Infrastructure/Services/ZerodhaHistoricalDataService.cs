@@ -48,14 +48,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         _cacheService = cacheService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        try
-        {
-            _indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            _indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-        }
+        _indianTimeZone = Helpers.TimeZoneHelper.IndianTimeZone;
     }
 
     /// <summary>
@@ -191,8 +184,14 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                         if (cancellationToken.IsCancellationRequested)
                             break;
 
-                        // Zerodha KiteConnect returns timestamps in IST (India Standard Time)
-                        DateTime candleIst = record.TimeStamp;
+                        // Convert record.TimeStamp to UTC and then to IST for accurate market hour validation
+                        DateTime candleUtc = record.TimeStamp.Kind == DateTimeKind.Utc
+                            ? record.TimeStamp
+                            : record.TimeStamp.Kind == DateTimeKind.Local
+                                ? record.TimeStamp.ToUniversalTime()
+                                : TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(record.TimeStamp, DateTimeKind.Unspecified), _indianTimeZone);
+
+                        DateTime candleIst = TimeZoneInfo.ConvertTimeFromUtc(candleUtc, _indianTimeZone);
 
                         // Restrict intraday candles strictly to Indian market trading hours (09:15 AM to 03:30 PM IST)
                         if (isIntraday)
@@ -204,11 +203,6 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                                 continue; // Skip pre-market / post-market / out-of-hours candles
                             }
                         }
-
-                        // Convert IST timestamp to UTC for database storage
-                        DateTime candleUtc = record.TimeStamp.Kind == DateTimeKind.Utc
-                            ? record.TimeStamp
-                            : TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(candleIst, DateTimeKind.Unspecified), _indianTimeZone);
 
                         int deterministicId = GenerateDeterministicIntId(symbol, timeframe, candleUtc);
 

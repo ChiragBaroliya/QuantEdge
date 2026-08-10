@@ -326,7 +326,7 @@ public class MarketDataController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(timeframe)) return BadRequest("Timeframe parameter is required.");
 
-        var indianTz = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+        var indianTz = QuantEdge.Infrastructure.Helpers.TimeZoneHelper.IndianTimeZone;
         DateTime sDate = fromDate?.Date ?? DateTime.UtcNow.Date;
         DateTime eDate = toDate?.Date ?? DateTime.UtcNow.Date;
 

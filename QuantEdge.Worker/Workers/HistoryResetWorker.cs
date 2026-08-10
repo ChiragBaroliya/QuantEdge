@@ -126,7 +126,7 @@ public class HistoryResetWorker : BackgroundService
                 return;
             }
 
-            var indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+            var indianTimeZone = QuantEdge.Infrastructure.Helpers.TimeZoneHelper.IndianTimeZone;
             DateTime startIst = startDate.Date.Add(new TimeSpan(9, 15, 0));
             DateTime endIst = endDate.Date.Add(new TimeSpan(15, 30, 0));
 
