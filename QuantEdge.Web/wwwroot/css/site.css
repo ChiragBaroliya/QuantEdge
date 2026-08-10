@@ -1781,11 +1781,57 @@ textarea.form-control {
 }
 
 @media (max-width: 767.98px) {
-    .top-header { padding: 0 var(--page-pad-mobile); height: auto; min-height: var(--header-height); padding-top: 8px; padding-bottom: 8px; flex-wrap: wrap; }
+    .top-header {
+        padding: 0 12px;
+        height: 54px;
+        min-height: 54px;
+        max-height: 54px;
+        flex-wrap: nowrap !important;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .header-left {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        gap: 8px;
+    }
+    .header-title-container {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+    }
+    .page-title {
+        font-size: 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+    }
+    .header-right {
+        flex: 0 0 auto;
+        gap: 6px;
+    }
+    .header-profile-divider {
+        display: none !important;
+    }
+    .user-name-text {
+        display: none !important;
+    }
+    .user-profile-btn {
+        height: 34px !important;
+        padding: 4px 6px !important;
+    }
+    .market-badge {
+        font-size: 10px;
+        padding: 3px 7px;
+        letter-spacing: 0;
+    }
+
     .page-content { padding: 12px; }
     .main-wrapper { margin-left: 0; min-width: 0; width: 100%; }
     .mobile-toggle-text { display: none; }
-    .market-badge { font-size: 10.5px; padding: 4px 8px; gap: 5px; }
     .theme-select-label { display: none; }
     .theme-dropdown-select { height: 32px; padding: 0 6px; font-size: 11px; }
 
@@ -1804,14 +1850,14 @@ textarea.form-control {
 @media (max-width: 480px) {
     .kpi-row-4, .kpi-row-3 { grid-template-columns: 1fr; }
     .page-headline { font-size: 19px; }
-    .top-header { gap: 8px; }
-    .header-right { gap: 6px; }
-    .market-badge { font-size: 10px; padding: 3px 6px; }
+    .top-header { gap: 6px; padding: 0 8px; }
+    .header-right { gap: 4px; }
+    .market-badge { font-size: 9.5px; padding: 2px 5px; }
 }
 
 @media (max-width: 360px) {
-    .market-badge { display: none; } /* Hide non-critical status pill on ultra-small 320px screens to preserve space for theme selector & toggle */
-    .top-header { padding: 0 8px; }
+    .top-header { padding: 0 6px; }
+    .market-badge { font-size: 9px; padding: 2px 4px; }
 }
 
 /* ============================================================

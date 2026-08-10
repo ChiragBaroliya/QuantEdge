@@ -20,7 +20,7 @@
                 0 / 5 trades used today
             </div>
             <div class="badge-ws connected" id="ws-status-badge">
-                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#4ade80;"></span> WebSocket Connected
+                <span class="ws-dot"></span> WebSocket Connected
             </div>
             <div class="toggle-switch-container">
                 <span class="switch-label">Auto Trading:</span>
@@ -50,7 +50,7 @@
             <div class="stat-label">Unrealized P&L</div>
             <div class="stat-value" id="stat-unrealized-pnl">₹0.00</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card stat-card-full-mobile">
             <div class="stat-label">Today's Realized P&L</div>
             <div class="stat-value" id="stat-realized-pnl">₹0.00</div>
         </div>
@@ -62,37 +62,43 @@
         <div class="autotrade-main-col">
             <!-- Open Auto Positions Card -->
             <div class="card-box">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                    <h3 style="margin:0; font-size:16px; color:#38bdf8;">⚡ Open Auto Positions (Real-time Ticks)</h3>
-                    <span style="font-size:12px; color:#94a3b8;">Monitored via KiteTicker WebSocket / REST Fallback</span>
+                <div class="card-box-header">
+                    <h3 class="card-title">⚡ Open Auto Positions <span class="card-subtitle-inline">(Real-time Ticks)</span></h3>
+                    <span class="card-badge-info d-none d-sm-inline-block">Monitored via KiteTicker WebSocket / REST Fallback</span>
                 </div>
-                <div class="table-responsive">
-                    <table class="qe-table">
-                        <thead>
-                            <tr>
-                                <th>Symbol</th>
-                                <th>Entry Price</th>
-                                <th>Live LTP</th>
-                                <th>Quantity (Value)</th>
-                                <th>Target (+5%)</th>
-                                <th>Stop Loss (-3%)</th>
-                                <th>Unrealized P&L</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbl-open-positions-body">
-                            <tr>
-                                <td colspan="7" class="text-center" style="padding:24px; text-align:center; color:#ffffff; font-weight:500;">No active OPEN auto positions right now. Scanner will place paper BUY orders when criteria match.</td>
-                            </tr>
-                        </tbody>
-
-
-                    </table>
+                <div class="table-responsive-wrapper">
+                    <div class="table-scroll-hint d-md-none">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                        <span>Swipe horizontally to view all position columns</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="qe-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Entry Price</th>
+                                    <th>Live LTP</th>
+                                    <th>Quantity (Value)</th>
+                                    <th>Target (+5%)</th>
+                                    <th>Stop Loss (-3%)</th>
+                                    <th>Unrealized P&L</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbl-open-positions-body">
+                                <tr>
+                                    <td colspan="7" class="text-center" style="padding:24px; text-align:center; color:#ffffff; font-weight:500;">No active OPEN auto positions right now. Scanner will place paper BUY orders when criteria match.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
             <!-- Live Event Audit Stream Console -->
             <div class="card-box">
-                <h3 style="margin:0 0 12px 0; font-size:16px; color:#38bdf8;">📋 Live Auto Trade Audit Stream</h3>
+                <h3 class="card-title mb-2">📋 Live Auto Trade Audit Stream</h3>
                 <div class="log-terminal" id="log-console-box">
                     <div class="log-entry"><span class="time">[System]</span> Initializing SignalR live audit log listener...</div>
                 </div>
@@ -103,45 +109,45 @@
         <div class="autotrade-side-col">
             <div class="settings-panel">
                 <h3 class="panel-title">⚙️ Auto Trade Settings</h3>
-                <form id="frmAutoSettings">
-                    <div class="form-group">
+                <form id="frmAutoSettings" class="settings-form-grid">
+                    <div class="form-group col-half">
                         <label class="form-label">Available Capital (₹)</label>
                         <input type="number" id="txtCapital" class="form-input" value="100000" min="1000" step="5000" />
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Fixed Amount Per Trade (₹)</label>
+                    <div class="form-group col-half">
+                        <label class="form-label">Fixed Amount / Trade (₹)</label>
                         <input type="number" id="txtFixedAmount" class="form-input" value="20000" min="500" step="1000" />
-                        <small style="color:#94a3b8; font-size:11px;">Trade quantity will be calculated up to this amount.</small>
+                        <small class="form-help-text">Trade qty up to this amount.</small>
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group col-half">
                         <label class="form-label">Profit Target %</label>
                         <input type="number" id="txtTargetPct" class="form-input" value="5.0" min="0.5" max="50" step="0.5" />
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group col-half">
                         <label class="form-label">Stop Loss %</label>
                         <input type="number" id="txtStopLossPct" class="form-input" value="3.0" min="0.5" max="50" step="0.5" />
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Max Duration (Trading Days)</label>
+                    <div class="form-group col-half">
+                        <label class="form-label">Max Duration (Days)</label>
                         <input type="number" id="txtMaxDuration" class="form-input" value="20" min="1" max="100" />
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Max Trades Per Day</label>
+                    <div class="form-group col-half">
+                        <label class="form-label">Max Trades / Day</label>
                         <input type="number" id="txtMaxTrades" class="form-input" value="5" min="1" max="20" />
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group col-full">
                         <label class="form-label">Min Condition Match (Out of 13)</label>
                         <input type="number" id="txtMinConditions" class="form-input" value="12" min="1" max="13" />
-                        <small style="color:#94a3b8; font-size:11px;">Minimum criteria required to trigger auto BUY.</small>
+                        <small class="form-help-text">Minimum criteria required to trigger auto BUY.</small>
                     </div>
 
-                    <button type="button" class="btn-save-settings" id="btnSaveSettings">💾 Save Auto Settings</button>
+                    <button type="button" class="btn-save-settings col-full" id="btnSaveSettings">💾 Save Auto Settings</button>
                 </form>
             </div>
         </div>

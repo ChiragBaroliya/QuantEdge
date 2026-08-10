@@ -282,56 +282,13 @@
         </div>
 
         <nav class="sidebar-nav" aria-label="Main navigation">
-            <div class="nav-section-label">PLATFORM</div>
-            
             @{
                 bool isAdmin = User.IsInRole("Admin");
             }
 
-            @if (isAdmin)
-            {
-                <a asp-controller="User" asp-action="Index"
-                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "User" ? "active" : "")"
-                   data-tooltip="👥 **User Management**: Manage system users, roles, password resets, and permissions.">
-                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="9" cy="7" r="4"></circle>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                    </svg>
-                    <span class="nav-label">User Management</span>
-                </a>
-                <a asp-controller="Token" asp-action="Index"
-                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Token" ? "active" : "")"
-                   data-tooltip="🔑 **Token Manager**: Manage Zerodha API authorization and access tokens.">
-                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                    <span class="nav-label">Token Manager</span>
-                </a>
-                <a asp-controller="Holiday" asp-action="Index"
-                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Holiday" ? "active" : "")"
-                   data-tooltip="📅 **Holiday Manager**: View official stock market trading calendar and holidays.">
-                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                        <line x1="16" y1="2" x2="16" y2="6"></line>
-                        <line x1="8" y1="2" x2="8" y2="6"></line>
-                        <line x1="3" y1="10" x2="21" y2="10"></line>
-                    </svg>
-                    <span class="nav-label">Holiday Manager</span>
-                </a>
-                <a asp-controller="PaperTrading" asp-action="Index"
-                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "PaperTrading" ? "active" : "")"
-                   data-tooltip="📝 **Paper Trading**: Real-time simulated trading with virtual capital (₹1,00,000) and automated signal execution.">
-                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                        <line x1="8" y1="21" x2="16" y2="21"></line>
-                        <line x1="12" y1="17" x2="12" y2="21"></line>
-                    </svg>
-                    <span class="nav-label">Paper Trading</span>
-                </a>
-            }
+            <!-- SECTION 1: TRADING & SIGNALS -->
+            <div class="nav-section-label">TRADING & SIGNALS</div>
+            
             <a asp-controller="Home" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" ? "active" : "")"
                data-tooltip="📊 **Signal Dashboard**: View live market data, indicators, and AI trade recommendations.">
@@ -361,10 +318,25 @@
                 </svg>
                 <span class="nav-label">Swing Trading</span>
             </a>
-
+            @if (isAdmin)
+            {
+                <a asp-controller="PaperTrading" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "PaperTrading" ? "active" : "")"
+                   data-tooltip="📝 **Paper Trading**: Real-time simulated trading with virtual capital (₹1,00,000) and automated signal execution.">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                    <span class="nav-label">Paper Trading</span>
+                </a>
+            }
 
             @if (isAdmin)
             {
+                <!-- SECTION 2: DATA MANAGEMENT -->
+                <div class="nav-section-label mt-3">DATA MANAGEMENT</div>
+
                 <a asp-controller="DataCoverage" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "DataCoverage" ? "active" : "")"
                    data-tooltip="🗄️ **Data Coverage**: Check 1-minute candlestick data completeness and missing candles.">
@@ -385,6 +357,42 @@
                     </svg>
                     <span class="nav-label">Manage History</span>
                 </a>
+                <a asp-controller="Holiday" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Holiday" ? "active" : "")"
+                   data-tooltip="📅 **Holiday Manager**: View official stock market trading calendar and holidays.">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                    <span class="nav-label">Holiday Manager</span>
+                </a>
+
+                <!-- SECTION 3: SYSTEM ADMINISTRATION -->
+                <div class="nav-section-label mt-3">SYSTEM ADMINISTRATION</div>
+
+                <a asp-controller="Token" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Token" ? "active" : "")"
+                   data-tooltip="🔑 **Token Manager**: Manage Zerodha API authorization and access tokens.">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <span class="nav-label">Token Manager</span>
+                </a>
+                <a asp-controller="User" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "User" ? "active" : "")"
+                   data-tooltip="👥 **User Management**: Manage system users, roles, password resets, and permissions.">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                    <span class="nav-label">User Management</span>
+                </a>
+
                 <!-- Main Menu Log with Sub Items -->
                 bool isLogActive = ViewContext.RouteData.Values["controller"]?.ToString() == "Log";
                 string currentAction = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
