@@ -88,7 +88,7 @@ public class TodayHistoryResetWorker : BackgroundService
                     try
                     {
                         await _historicalDataService.FetchHistoricalCandlesAsync(stock.Symbol, tf, todayStartUtc, todayEndUtc, stoppingToken);
-                        await _indicatorService.BackfillHistoricalIndicatorsAsync(stock.Symbol, tf);
+                        await _indicatorService.BackfillHistoricalIndicatorsAsync(stock.Symbol, tf, todayStartUtc, todayEndUtc);
                     }
                     catch (Exception ex)
                     {

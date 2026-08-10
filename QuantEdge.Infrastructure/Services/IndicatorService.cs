@@ -95,16 +95,49 @@ public class IndicatorService : IIndicatorService
     }
 
     /// <inheritdoc />
-    public async Task BackfillHistoricalIndicatorsAsync(string symbol, string timeframe)
+    /// <inheritdoc />
+    public async Task BackfillHistoricalIndicatorsAsync(string symbol, string timeframe, DateTime? fromTime = null, DateTime? toTime = null)
     {
-        _logger.LogInformation("Executing historical indicators backfill for ALL candles for {Symbol} ({Timeframe})...", symbol, timeframe);
+        _logger.LogInformation("Executing historical indicators backfill for {Symbol} ({Timeframe}) Range: {Start} to {End}...", 
+            symbol, timeframe, fromTime.HasValue ? fromTime.Value.ToString("yyyy-MM-dd HH:mm") : "ALL", toTime.HasValue ? toTime.Value.ToString("yyyy-MM-dd HH:mm") : "ALL");
 
         try
         {
-            // Fetch ALL historical candles for this symbol & timeframe (no limit) and order by time ASC
-            var historyCandles = (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: null))
-                .OrderBy(c => c.CandleTime)
-                .ToList();
+            List<MarketCandle> historyCandles;
+
+            if (fromTime.HasValue && toTime.HasValue)
+            {
+                // Fetch up to 200 preceding candles before fromTime to warm up EMA50/RSI/MACD states accurately
+                var warmupCandles = (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: 200, beforeTime: fromTime.Value))
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
+
+                // Fetch target range candles
+                var rangeCandles = (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: null))
+                    .Where(c => c.CandleTime >= fromTime.Value && c.CandleTime <= toTime.Value)
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
+
+                if (!rangeCandles.Any())
+                {
+                    _logger.LogInformation("No historical candles available in specified date range for indicator backfill for {Symbol} ({Timeframe}).", symbol, timeframe);
+                    return;
+                }
+
+                // Combine warmup + target range candles ordered ASC by CandleTime
+                historyCandles = warmupCandles.Concat(rangeCandles)
+                    .GroupBy(c => c.Id)
+                    .Select(g => g.First())
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
+            }
+            else
+            {
+                // Fetch ALL historical candles for this symbol & timeframe (no limit) and order by time ASC
+                historyCandles = (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit: null))
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
+            }
 
             if (historyCandles.Count == 0)
             {
@@ -118,8 +151,6 @@ public class IndicatorService : IIndicatorService
             var rsiList = IndicatorCalculator.CalculateRsi(closes, 14);
             var (macdList, signalList) = IndicatorCalculator.CalculateMacd(closes);
 
-            _logger.LogInformation("Calculated indicators for {Count} candles. Writing to database...", historyCandles.Count);
-
             var batchIndicators = new List<MarketIndicator>();
             DateTime? currentDay = null;
             decimal runningSumPV = 0;
@@ -128,6 +159,27 @@ public class IndicatorService : IIndicatorService
             for (int i = 0; i < historyCandles.Count; i++)
             {
                 var candle = historyCandles[i];
+
+                // Skip warmup candles - only store indicators for the target range when fromTime/toTime are specified
+                if (fromTime.HasValue && candle.CandleTime < fromTime.Value)
+                {
+                    var cDate = candle.CandleTime.Date;
+                    if (currentDay != cDate)
+                    {
+                        currentDay = cDate;
+                        runningSumPV = 0;
+                        runningSumV = 0;
+                    }
+                    runningSumPV += candle.Close * candle.Volume;
+                    runningSumV += candle.Volume;
+                    continue;
+                }
+
+                if (toTime.HasValue && candle.CandleTime > toTime.Value)
+                {
+                    continue;
+                }
+
                 var candleDate = candle.CandleTime.Date;
 
                 // Reset intra-day cumulative VWAP tracking at start of new calendar day
@@ -164,7 +216,7 @@ public class IndicatorService : IIndicatorService
                 await _indicatorRepository.InsertBatchAsync(batchIndicators);
             }
 
-            _logger.LogInformation("Completed backfill of ALL {Count} historical indicators for {Symbol} ({Timeframe}).", batchIndicators.Count, symbol, timeframe);
+            _logger.LogInformation("Completed backfill of {Count} historical indicators for {Symbol} ({Timeframe}).", batchIndicators.Count, symbol, timeframe);
         }
         catch (Exception ex)
         {

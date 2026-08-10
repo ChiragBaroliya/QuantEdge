@@ -407,9 +407,9 @@ public class MarketDataController : ControllerBase
                             await innerIndicatorRepo.DeleteIndicatorsRangeAsync(stock.Symbol, timeframe, startUtc, endUtc);
                         }
 
-                        // Fetch fresh historical candles and backfill technical indicators
+                        // Fetch fresh historical candles and backfill technical indicators for the specified date range
                         await innerHistService.FetchHistoricalCandlesAsync(stock.Symbol, timeframe, startUtc, endUtc, CancellationToken.None);
-                        await innerIndService.BackfillHistoricalIndicatorsAsync(stock.Symbol, timeframe);
+                        await innerIndService.BackfillHistoricalIndicatorsAsync(stock.Symbol, timeframe, startUtc, endUtc);
                     }
                     catch (Exception innerEx)
                     {

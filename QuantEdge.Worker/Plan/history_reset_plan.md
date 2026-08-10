@@ -23,27 +23,39 @@ It can be run interactively via CLI, invoked with batch scripts for historical r
 
 ---
 
-## Execution Commands Guide
+### Option A: Run Interactively via CLI (Windows & Linux)
 
-### 1. Single Stock & Single Date (10/08/2026)
+#### 1. Running on Published Linux Server (`/opt/quantedge/worker/`)
+```bash
+# Navigate to published worker directory on Linux server
+cd /opt/quantedge/worker
+
+# Single Stock (INFY) for 1-Minute timeframe on 10/08/2026
+dotnet QuantEdge.Worker.dll historyreset --symbol INFY --startDate 10/08/2026 --endDate 10/08/2026 --timeframe 1m
+
+# Multiple Stock Symbols (INFY, TCS, RELIANCE) for 1m & 5m timeframes
+dotnet QuantEdge.Worker.dll historyreset --symbol INFY,TCS,RELIANCE --startDate 10/08/2026 --endDate 10/08/2026 --timeframe 1m,5m
+
+# All Active Stocks for Today across All Timeframes
+dotnet QuantEdge.Worker.dll historyreset --symbol All --startDate 10/08/2026 --endDate 10/08/2026 --timeframe all
+
+# Single-line command from any Linux directory (passes --contentRoot for database configuration loading):
+dotnet /opt/quantedge/worker/QuantEdge.Worker.dll historyreset --symbol All --startDate 10/08/2026 --endDate 10/08/2026 --timeframe 1m --contentRoot /opt/quantedge/worker
+
+# Remote SSH execution from Windows to Linux Server (217.216.79.53)
+ssh root@217.216.79.53 "dotnet /opt/quantedge/worker/QuantEdge.Worker.dll historyreset --symbol INFY --startDate 10/08/2026 --endDate 10/08/2026 --timeframe 1m --contentRoot /opt/quantedge/worker"
+```
+
+#### 2. Running via `dotnet run` from Windows Source Directory
 ```powershell
+# Single Stock (INFY) for 1-Minute timeframe on 10/08/2026
 dotnet run --project d:\LearningProject\QuantEdge\QuantEdge.Worker\QuantEdge.Worker.csproj -- historyreset --symbol INFY --startDate 10/08/2026 --endDate 10/08/2026 --timeframe 1m
-```
 
-### 2. Multiple Stock Symbols (Comma-separated)
-```powershell
-# Reset & store history for INFY, TCS, RELIANCE, and HDFCBANK for 1m and 5m timeframes
-dotnet run --project d:\LearningProject\QuantEdge\QuantEdge.Worker\QuantEdge.Worker.csproj -- historyreset --symbol INFY,TCS,RELIANCE,HDFCBANK --startDate 10/08/2026 --endDate 10/08/2026 --timeframe 1m,5m
-```
+# Multiple Stock Symbols (INFY, TCS, RELIANCE)
+dotnet run --project d:\LearningProject\QuantEdge\QuantEdge.Worker\QuantEdge.Worker.csproj -- historyreset --symbol INFY,TCS,RELIANCE --startDate 10/08/2026 --endDate 10/08/2026 --timeframe 1m,5m
 
-### 3. All Active Stocks (`All`) for Today across All Timeframes
-```powershell
+# All Active Stocks for Today across All Timeframes
 dotnet run --project d:\LearningProject\QuantEdge\QuantEdge.Worker\QuantEdge.Worker.csproj -- historyreset --symbol All --startDate 10/08/2026 --endDate 10/08/2026 --timeframe all
-```
-
-### 4. Custom Date Range (01/08/2026 to 10/08/2026) for Multiple Timeframes
-```powershell
-dotnet run --project d:\LearningProject\QuantEdge\QuantEdge.Worker\QuantEdge.Worker.csproj -- historyreset --symbol All --startDate 01/08/2026 --endDate 10/08/2026 --timeframe 1m,5m,15m
 ```
 
 ---
