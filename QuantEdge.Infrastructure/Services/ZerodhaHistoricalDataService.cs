@@ -175,8 +175,8 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                 List<Historical> historicalList = await Task.Run(() => 
                     kite.GetHistoricalData(
                         InstrumentToken: instrumentToken.ToString(),
-                        FromDate: currentStart,
-                        ToDate: currentEnd,
+                        FromDate: currentStartIst,
+                        ToDate: currentEndIst,
                         Interval: intervalStr
                     ), cancellationToken);
 
