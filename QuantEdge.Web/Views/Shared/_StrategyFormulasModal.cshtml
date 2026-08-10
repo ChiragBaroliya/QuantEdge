@@ -155,98 +155,97 @@
                 <!-- Tab 2: Swing Trading Rules -->
                 <div id="tabSwing" class="qe-modal-pane">
                     <div class="qe-ref-section">
-                        <h3>Institutional EOD Swing Trading Strategy</h3>
-                        <p>Swing trading executes after EOD market close (3:45 PM IST). It combines a <strong>100-Point Weighted Scoring Engine</strong>, <strong>Breakout Confirmation</strong>, <strong>Relative Strength vs Nifty</strong>, <strong>Multi-Timeframe Validation</strong>, and <strong>ATR-based Risk Management</strong> to minimize false BUY signals.</p>
+                        <h3>Multi-Timeframe Swing Strategy Architecture (1D + 15M + 60M)</h3>
+                        <p>Swing trading executes on a <strong>3-Timeframe Model</strong> combining <strong>3 Mandatory Hard Filters (1D)</strong>, an <strong>8-Factor 100-Point Weighted Scoring Matrix (15m/60m/1d)</strong>, and <strong>15m ATR Risk Management</strong> to deliver high-probability swing trade entries.</p>
                     </div>
 
                     <div class="qe-ref-section">
-                        <h3>1. NIFTY Market Filter</h3>
-                        <p>To prevent buying into a declining market, broad market filter checks NIFTY 50:</p>
+                        <h3>1. Mandatory Hard Filters (1D Timeframe)</h3>
+                        <p>If ANY of these 3 Hard Filters fail, the stock is immediately <strong>REJECTED</strong> without calculating scores:</p>
                         <ul>
-                            <li><strong>Condition 1:</strong> Price above 50 DMA &rarr; <span class="monospace">Close &gt; SMA50</span></li>
-                            <li><strong>Condition 2:</strong> Short-term trend bullish &rarr; <span class="monospace">EMA20 &gt; EMA50</span></li>
+                            <li><strong>1. MARKET_FILTER:</strong> NIFTY 50 Close &gt; 50 DMA <strong>AND</strong> NIFTY EMA20 &gt; EMA50</li>
+                            <li><strong>2. EMA_TREND:</strong> Stock Close &gt; EMA20 &gt; EMA50 with rising slopes</li>
+                            <li><strong>3. ADX_STRENGTH:</strong> Stock Daily ADX(14) &ge; 20.0 (Filters out weak / choppy markets)</li>
                         </ul>
                         <div class="qe-alert-box red">
-                            <div class="qe-alert-box-title">Defensive Mode Action</div>
-                            If NIFTY Market Filter fails, new BUY signals are locked. Existing positions are managed via trailing ATR stops.
+                            <div class="qe-alert-box-title">Hard Filter Gate Action</div>
+                            If any Hard Filter fails, the stock is marked as <strong>REJECT</strong> and no BUY/WATCH signal is issued.
                         </div>
                     </div>
 
                     <div class="qe-ref-section">
                         <h3>2. 100-Point Weighted Scoring Matrix</h3>
-                        <p>Stocks are scored across 9 quantitative factors totaling up to 100 points:</p>
+                        <p>Stocks passing all Hard Filters are evaluated across 8 factors totaling up to 100 points:</p>
                         <table class="qe-example-table">
                             <thead>
                                 <tr>
                                     <th>Factor</th>
+                                    <th>Timeframe</th>
                                     <th>Max Weight</th>
                                     <th>Condition & Scoring Logic</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td><strong>1. EMA Trend</strong></td>
+                                    <td><strong>1. BREAKOUT_GROUP</strong></td>
+                                    <td>15m / 1d</td>
                                     <td>20 Pts</td>
-                                    <td>Close &gt; EMA20 &gt; EMA50 with rising slopes (+15 pts); Bonus for EMA20 &gt; EMA50 &gt; EMA200 (+5 pts). EMA200 not falling.</td>
+                                    <td>Close &gt; Previous Day High / Swing High, 10–20D Consolidation Breakout, OR 52W High (+20 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td><strong>2. Breakouts</strong></td>
-                                    <td>20 Pts</td>
-                                    <td>Close &gt; Previous Day High or Swing High (+10 pts); Breakout after 10–20 Day Consolidation (+10 pts).</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>3. Volume</strong></td>
+                                    <td><strong>2. VOL_CONFIRMATION</strong></td>
+                                    <td>15m</td>
                                     <td>15 Pts</td>
-                                    <td>Volume &ge; 1.5x Avg (+7 pts); Volume &gt; Prev Day (+4 pts); Volume expanding 2 consecutive sessions (+4 pts).</td>
+                                    <td>15m Volume &ge; 2.5x 20-period Avg Vol (+15 pts); 1.5x Avg Vol (+10 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td><strong>4. ADX Strength</strong></td>
+                                    <td><strong>3. RELATIVE_STRENGTH</strong></td>
+                                    <td>1d</td>
+                                    <td>15 Pts</td>
+                                    <td>Stock 1-Month or 3-Month Return &gt; NIFTY 50 Return (+15 pts).</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>4. MULTITIMEFRAME</strong></td>
+                                    <td>60m</td>
+                                    <td>15 Pts</td>
+                                    <td>60m Hourly Close &gt; 60m EMA20 &amp; 60m RSI &ge; 40 (+15 pts).</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>5. RSI_MOMENTUM</strong></td>
+                                    <td>15m</td>
                                     <td>10 Pts</td>
-                                    <td>ADX &ge; 25 Strong (+10 pts); ADX 20–24 Good (+7 pts); ADX 18–19 Moderate (+4 pts); ADX &lt; 18 Weak (0 pts).</td>
+                                    <td>15m RSI between 55–70 (+10 pts); 50–55 or 70–75 (+7 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td><strong>5. RSI Momentum</strong></td>
+                                    <td><strong>6. MACD_BULLISH</strong></td>
+                                    <td>15m</td>
                                     <td>10 Pts</td>
-                                    <td>RSI 55–70 Best (+10 pts); RSI 50–55 Moderate (+7 pts); RSI 70–75 Acceptable (+5 pts); RSI &gt; 80 or &lt; 45 (0 pts).</td>
+                                    <td>15m MACD Line &gt; Signal Line (+10 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td><strong>6. MACD Cross</strong></td>
-                                    <td>10 Pts</td>
-                                    <td>MACD Line &gt; Signal Line (+5 pts); Fresh Crossover today (+5 pts).</td>
+                                    <td><strong>7. BULLISH_CANDLE</strong></td>
+                                    <td>15m</td>
+                                    <td>8 Pts</td>
+                                    <td>15m Bullish Engulfing, Marubozu, 1.5x ATR breakout, or Close near High (+8 pts).</td>
                                 </tr>
                                 <tr>
-                                    <td><strong>7. 52W High</strong></td>
-                                    <td>5 Pts</td>
-                                    <td>New 52-Week High Breakout (+5 pts); Within 5% (+3 pts); Within 10% (+1 pt).</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>8. Relative Strength</strong></td>
-                                    <td>5 Pts</td>
-                                    <td>Stock Return &gt; Nifty 50 Return over 1 Month and 3 Months (+5 pts).</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>9. Market Filter</strong></td>
-                                    <td>5 Pts</td>
-                                    <td>Nifty 50 Price &gt; 50 DMA &amp; EMA20 &gt; EMA50 (+5 pts).</td>
+                                    <td><strong>8. RISK_REWARD</strong></td>
+                                    <td>15m</td>
+                                    <td>7 Pts</td>
+                                    <td>Target 1 (2x ATR) vs Stop Loss (1.5x ATR) Ratio &ge; 1:2.0 (+7 pts).</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
 
                     <div class="qe-ref-section">
-                        <h3>3. Signal Categorization & Risk Filters</h3>
+                        <h3>3. Signal Decision Thresholds</h3>
                         <ul>
-                            <li><strong>90–100 Points:</strong> <strong class="pnl-text positive">STRONG BUY</strong> (Full conviction)</li>
-                            <li><strong>75–89 Points:</strong> <strong class="pnl-text positive">BUY</strong> (Confirmed quality entry)</li>
-                            <li><strong>60–74 Points:</strong> <strong>HOLD / WATCHLIST</strong> (Monitoring)</li>
-                            <li><strong>Below 60 Points:</strong> <strong>AVOID</strong> (Low probability)</li>
+                            <li><strong>Score &ge; 70 Points:</strong> <strong class="pnl-text positive">BUY</strong> (Validated for Dashboard & Paper Trade Engine)</li>
+                            <li><strong>Score 50–69 Points:</strong> <strong>WATCH</strong> (Building momentum, added to Watchlist)</li>
+                            <li><strong>Score &lt; 50 Points:</strong> <strong>NO SIGNAL</strong> (Insufficient score)</li>
+                            <li><strong>Hard Filter Fail:</strong> <strong class="pnl-text negative">REJECT</strong> (Market, EMA, or ADX filter failed)</li>
                         </ul>
-                        <div class="qe-alert-box">
-                            <div class="qe-alert-box-title">Risk/Reward & Multi-Timeframe Gates</div>
-                            Before issuing a <strong>BUY</strong> signal:
-                            <br/>• <strong>Minimum 1:2 Risk/Reward Filter:</strong> Expected Target 1 (2x ATR) / Risk (1x ATR) must be &ge; 1:2.0.
-                            <br/>• <strong>Multi-Timeframe Confirmation:</strong> 1-Hour (60m) Close must be &gt; EMA20 and RSI &ge; 40. If 1-Hour is Bearish, signal is downgraded to HOLD.
-                        </div>
                     </div>
 
                     <div class="qe-ref-section">

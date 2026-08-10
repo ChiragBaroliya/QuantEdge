@@ -124,11 +124,19 @@ public class SwingTradingService : ISwingTradingService
 
         using (var conn = _connectionFactory.CreateConnection())
         {
+            var openPositionSymbols = (await conn.QueryAsync<string>(
+                "SELECT DISTINCT symbol FROM swing_positions WHERE is_closed = FALSE"))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             foreach (var stock in activeStocks)
             {
                 if (stock.Symbol == "NIFTY 50") continue;
 
                 var stockCandles = (await _candleRepository.GetHistoryAsync(stock.Symbol, "1d", limit: 300))
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
+
+                var stockCandles15m = (await _candleRepository.GetHistoryAsync(stock.Symbol, "15m", limit: 100))
                     .OrderBy(c => c.CandleTime)
                     .ToList();
 
@@ -143,7 +151,17 @@ public class SwingTradingService : ISwingTradingService
 
                 if (stockCandles.Count >= 50)
                 {
-                    var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles, stockCandles60m, niftyCandlesGlobal);
+                    var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles, stockCandles15m, stockCandles60m, niftyCandlesGlobal);
+                    
+                    bool isAlreadyOpen = openPositionSymbols.Contains(stock.Symbol);
+                    if (isAlreadyOpen && evalResult.IsBuySignal)
+                    {
+                        evalResult.IsAlreadyOpen = true;
+                        evalResult.Decision = "WATCH";
+                        evalResult.IsBuySignal = false;
+                        evalResult.Reason = $"Position already active in portfolio for {stock.Symbol}. Duplicate BUY skipped.";
+                    }
+
                     int idx = stockCandles.Count - 1;
                     var c = stockCandles[idx];
 
@@ -168,7 +186,7 @@ public class SwingTradingService : ISwingTradingService
 
                     stockSignals.Add(new SwingStockSignalDto(
                         Symbol: stock.Symbol,
-                        Close: c.Close,
+                        Close: evalResult.EntryPrice > 0m ? evalResult.EntryPrice : c.Close,
                         Open: c.Open,
                         High: c.High,
                         Low: c.Low,
@@ -201,14 +219,20 @@ public class SwingTradingService : ISwingTradingService
                         RiskRewardRatio: evalResult.RiskRewardRatio,
                         PassedRules: evalResult.PassedRules,
                         FailedRules: evalResult.FailedRules,
-                        Sector: evalResult.Sector
+                        Sector: evalResult.Sector,
+                        HardFiltersPassed: evalResult.HardFiltersPassed,
+                        IsAlreadyOpen: isAlreadyOpen,
+                        RecommendedQty: evalResult.RecommendedQty,
+                        CalculatedRiskAmount: evalResult.CalculatedRiskAmount,
+                        TimeframeUsed: evalResult.TimeframeUsed,
+                        ExitSignalReason: evalResult.ExitSignalReason
                     ));
                 }
                 else
                 {
                     var emptyChecklist = BuildConditionChecklist(niftyStatus, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, false, false, "");
                     stockSignals.Add(new SwingStockSignalDto(
-                        stock.Symbol, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, 0m, false, 0m, 0m, false, false, false, "HOLD", "Insufficient candle data. Please run EOD Job.", emptyChecklist
+                        stock.Symbol, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, 0m, false, 0m, 0m, false, false, false, "NO SIGNAL", "Insufficient candle data. Please run EOD Job.", emptyChecklist
                     ));
                 }
             }
@@ -419,13 +443,45 @@ public class SwingTradingService : ISwingTradingService
 
     public async Task RunIntraday30MinJobAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Executing 30-Minute Intraday Swing Trading Job...");
+        _logger.LogInformation("Executing 30-Minute Intraday Swing Trading Job (1D + 15M + 60M)...");
         UpdateJobProgress("intraday30m", true, 5, "Initiating 30-minute intraday Swing Trading analysis...");
 
         try
         {
-            // Sync candles and execute swing analysis
-            await RunEodJobAsync(cancellationToken);
+            var activeStocks = (await _stockMasterRepository.GetActiveStocksAsync()).ToList();
+
+            // Step 1: Sync 15m & 1d candles for active stocks
+            UpdateJobProgress("intraday30m", true, 10, "Syncing 15m & 1D candles for active stocks...");
+            foreach (var stock in activeStocks)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                try
+                {
+                    await _historicalDataService.SyncGapsAsync(stock.Symbol, "15m", cancellationToken);
+                    await _historicalDataService.SyncGapsAsync(stock.Symbol, "1d", cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to sync intraday candles for {Symbol}.", stock.Symbol);
+                }
+            }
+
+            // Sync NIFTY 50 candles
+            try
+            {
+                await _historicalDataService.SyncGapsAsync("NIFTY 50", "1d", cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to sync NIFTY 50 EOD candles during 30m job.");
+            }
+
+            // Step 2: Invalidate memory cache & broadcast updated SignalR dashboard
+            UpdateJobProgress("intraday30m", true, 80, "Evaluating 3-Timeframe Hard Filters & 100-Point Matrix...");
+            if (_cacheService != null)
+            {
+                await _cacheService.RemoveAsync("swing_dashboard_data");
+            }
 
             UpdateJobProgress("intraday30m", true, 90, "Broadcasting updated Swing Dashboard via SignalR...");
             await BroadcastSwingDashboardUpdateAsync(cancellationToken);

@@ -72,7 +72,13 @@ public record SwingStockSignalDto(
     decimal RiskRewardRatio = 0m,
     List<string>? PassedRules = null,
     List<string>? FailedRules = null,
-    string Sector = ""
+    string Sector = "",
+    bool HardFiltersPassed = false,
+    bool IsAlreadyOpen = false,
+    int RecommendedQty = 0,
+    decimal CalculatedRiskAmount = 0m,
+    string TimeframeUsed = "1D + 15M + 60M",
+    string ExitSignalReason = ""
 );
 
 public record BacktestStatsDto(
