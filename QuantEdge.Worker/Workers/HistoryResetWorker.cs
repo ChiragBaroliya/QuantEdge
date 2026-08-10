@@ -35,6 +35,7 @@ public class HistoryResetWorker : BackgroundService
     private readonly IStockMasterRepository _stockMasterRepository;
     private readonly IMarketCandleRepository _candleRepository;
     private readonly IMarketIndicatorRepository _indicatorRepository;
+    private readonly IMarketDataCacheService? _cacheService;
     private readonly BrokerConfig _config;
     private readonly HistoryResetOptions _options;
     private readonly IHostApplicationLifetime _lifetime;
@@ -49,7 +50,8 @@ public class HistoryResetWorker : BackgroundService
         IOptions<BrokerConfig> config,
         IOptions<HistoryResetOptions> options,
         IHostApplicationLifetime lifetime,
-        ILogger<HistoryResetWorker> logger)
+        ILogger<HistoryResetWorker> logger,
+        IMarketDataCacheService? cacheService = null)
     {
         _historicalDataService = historicalDataService ?? throw new ArgumentNullException(nameof(historicalDataService));
         _indicatorService = indicatorService ?? throw new ArgumentNullException(nameof(indicatorService));
@@ -60,6 +62,7 @@ public class HistoryResetWorker : BackgroundService
         _options = options?.Value ?? new HistoryResetOptions();
         _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cacheService = cacheService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -123,8 +126,12 @@ public class HistoryResetWorker : BackgroundService
                 return;
             }
 
-            DateTime startUtc = DateTime.SpecifyKind(startDate.Date, DateTimeKind.Utc);
-            DateTime endUtc = DateTime.SpecifyKind(endDate.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+            var indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+            DateTime startIst = startDate.Date.Add(new TimeSpan(9, 15, 0));
+            DateTime endIst = endDate.Date.Add(new TimeSpan(15, 30, 0));
+
+            DateTime startUtc = TimeZoneInfo.ConvertTimeToUtc(startIst, indianTimeZone);
+            DateTime endUtc = TimeZoneInfo.ConvertTimeToUtc(endIst, indianTimeZone);
 
             // 3. Resolve Target Timeframes
             string rawTf = (_options.Timeframe ?? "").Trim().ToLower();
@@ -165,11 +172,16 @@ public class HistoryResetWorker : BackgroundService
                 {
                     await _candleRepository.DeleteHistoryRangeAsync(null, tf, startUtc, endUtc);
                     await _indicatorRepository.DeleteIndicatorsRangeAsync(null, tf, startUtc, endUtc);
+                    _cacheService?.ClearCache(null, tf);
                 }
                 else
                 {
-                    await _candleRepository.DeleteHistoryRangeAsync(rawSymbol, tf, startUtc, endUtc);
-                    await _indicatorRepository.DeleteIndicatorsRangeAsync(rawSymbol, tf, startUtc, endUtc);
+                    foreach (var stock in targetStocks)
+                    {
+                        await _candleRepository.DeleteHistoryRangeAsync(stock.Symbol, tf, startUtc, endUtc);
+                        await _indicatorRepository.DeleteIndicatorsRangeAsync(stock.Symbol, tf, startUtc, endUtc);
+                        _cacheService?.ClearCache(stock.Symbol, tf);
+                    }
                 }
 
                 int total = targetStocks.Count;
@@ -190,6 +202,7 @@ public class HistoryResetWorker : BackgroundService
                     }
                     finally
                     {
+                        _cacheService?.ClearCache(stock.Symbol, tf);
                         semaphore.Release();
                         int current = Interlocked.Increment(ref processed);
                         double pct = Math.Round((double)current / total * 100, 1);

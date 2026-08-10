@@ -128,8 +128,11 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
             DateTime fromIst = TimeZoneInfo.ConvertTimeFromUtc(adjustedFromUtc, _indianTimeZone);
             DateTime toIst = TimeZoneInfo.ConvertTimeFromUtc(adjustedToUtc, _indianTimeZone);
 
-            DateTime marketStartIst = fromIst.Date.Add(new TimeSpan(9, 15, 0));
-            DateTime marketEndIst = toIst.Date.Add(new TimeSpan(15, 30, 0));
+            DateTime fromDate = fromIst.Date;
+            DateTime toDate = (toIst.TimeOfDay < new TimeSpan(9, 15, 0)) ? toIst.Date.AddDays(-1) : toIst.Date;
+
+            DateTime marketStartIst = fromDate.Add(new TimeSpan(9, 15, 0));
+            DateTime marketEndIst = toDate.Add(new TimeSpan(15, 30, 0));
 
             adjustedFromUtc = TimeZoneInfo.ConvertTimeToUtc(marketStartIst, _indianTimeZone);
             adjustedToUtc = TimeZoneInfo.ConvertTimeToUtc(marketEndIst, _indianTimeZone);

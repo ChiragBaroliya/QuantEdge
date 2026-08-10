@@ -326,13 +326,15 @@ public class MarketDataController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(timeframe)) return BadRequest("Timeframe parameter is required.");
 
-        DateTime startUtc = fromDate.HasValue 
-            ? DateTime.SpecifyKind(fromDate.Value.Date, DateTimeKind.Utc) 
-            : DateTime.UtcNow.Date;
-        
-        DateTime endUtc = toDate.HasValue 
-            ? DateTime.SpecifyKind(toDate.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc) 
-            : DateTime.UtcNow;
+        var indianTz = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+        DateTime sDate = fromDate?.Date ?? DateTime.UtcNow.Date;
+        DateTime eDate = toDate?.Date ?? DateTime.UtcNow.Date;
+
+        DateTime startIst = sDate.Add(new TimeSpan(9, 15, 0));
+        DateTime endIst = eDate.Add(new TimeSpan(15, 30, 0));
+
+        DateTime startUtc = TimeZoneInfo.ConvertTimeToUtc(startIst, indianTz);
+        DateTime endUtc = TimeZoneInfo.ConvertTimeToUtc(endIst, indianTz);
 
         _ = Task.Run(async () =>
         {
@@ -385,6 +387,7 @@ public class MarketDataController : ControllerBase
                 {
                     await candleRepo.DeleteHistoryRangeAsync(null, timeframe, startUtc, endUtc);
                     await indicatorRepo.DeleteIndicatorsRangeAsync(null, timeframe, startUtc, endUtc);
+                    _cacheService?.ClearCache(null, timeframe);
                 }
 
                 // Process stocks concurrently with SemaphoreSlim to limit max parallelism (5 concurrent workers)
@@ -400,11 +403,12 @@ public class MarketDataController : ControllerBase
                         var innerHistService = innerScope.ServiceProvider.GetRequiredService<IHistoricalDataService>();
                         var innerIndService = innerScope.ServiceProvider.GetRequiredService<IIndicatorService>();
 
-                        // Clear records for specific stock if filtering by a single stock symbol
+                        // Clear records & RAM cache for specific stock if filtering by a single stock symbol
                         if (!isAllStocks)
                         {
                             await innerCandleRepo.DeleteHistoryRangeAsync(stock.Symbol, timeframe, startUtc, endUtc);
                             await innerIndicatorRepo.DeleteIndicatorsRangeAsync(stock.Symbol, timeframe, startUtc, endUtc);
+                            _cacheService?.ClearCache(stock.Symbol, timeframe);
                         }
 
                         // Fetch fresh historical candles and backfill technical indicators for the specified date range
@@ -417,6 +421,7 @@ public class MarketDataController : ControllerBase
                     }
                     finally
                     {
+                        _cacheService?.ClearCache(stock.Symbol, timeframe);
                         semaphore.Release();
                         int currentCount = Interlocked.Increment(ref processed);
                         double pct = Math.Round((double)currentCount / total * 100, 1);
