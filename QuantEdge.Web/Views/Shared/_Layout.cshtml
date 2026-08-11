@@ -348,6 +348,16 @@
                     </svg>
                     <span class="nav-label">Data Coverage</span>
                 </a>
+                <a asp-controller="CandleSummary" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "CandleSummary" ? "active" : "")"
+                   data-tooltip="🕯️ **Candle Summary**: View today's stock total candle count timeframe-wise (1D, 15M, 60M) with symbol/date filters.">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="4"></line>
+                        <line x1="12" y1="20" x2="12" y2="10"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                    <span class="nav-label">Candle Summary</span>
+                </a>
                 <a asp-controller="ManageHistory" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "ManageHistory" ? "active" : "")"
                    data-tooltip="🔄 **Manage History**: Download and backfill historical candlestick data.">

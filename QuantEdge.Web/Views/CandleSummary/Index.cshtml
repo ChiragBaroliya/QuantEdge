@@ -1,0 +1,328 @@
+@{
+    ViewData["Title"] = "Candle Summary";
+    ViewData["PageTitle"] = "Stock Candle Audit & Summary";
+    var apiBaseUrl = ViewBag.ApiBaseUrl as string ?? "";
+}
+
+<link rel="stylesheet" href="~/css/datacoverage.css" asp-append-version="true" />
+<div id="candle-summary-config" data-api-base-url="@apiBaseUrl" style="display:none;"></div>
+
+<style>
+    .cs-header-card {
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    .cs-title-group h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #f8fafc;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .cs-subtitle {
+        color: #94a3b8;
+        font-size: 0.9rem;
+        margin: 0;
+    }
+    .cs-refresh-badge {
+        background: rgba(56, 189, 248, 0.15);
+        color: #38bdf8;
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .cs-filter-card {
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+    .cs-filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        align-items: end;
+    }
+    .cs-form-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #cbd5e1;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .cs-form-input, .cs-form-select {
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        color: #f8fafc;
+        padding: 8px 12px;
+        font-size: 0.9rem;
+        width: 100%;
+    }
+    .cs-form-input:focus, .cs-form-select:focus {
+        border-color: var(--theme-accent);
+        outline: none;
+        box-shadow: 0 0 0 2px var(--theme-glow);
+    }
+
+    /* Scoped Dark Glassmorphism Select2 Dropdown Styling */
+    .select2-container--default .select2-selection--single {
+        background-color: rgba(15, 23, 42, 0.85) !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        border-radius: 8px !important;
+        height: 38px !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        color: #f8fafc !important;
+        font-size: 0.9rem !important;
+        line-height: 38px !important;
+        padding-left: 12px !important;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 36px !important;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow b {
+        border-color: #94a3b8 transparent transparent transparent !important;
+    }
+    .select2-container--default.select2-container--open .select2-selection--single .select2-selection__arrow b {
+        border-color: transparent transparent #94a3b8 transparent !important;
+    }
+    .select2-dropdown {
+        background-color: rgba(15, 23, 42, 0.96) !important;
+        border: 1px solid var(--theme-accent, #a78bfa) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+        backdrop-filter: blur(16px) !important;
+        z-index: 9999 !important;
+    }
+    .select2-search--dropdown {
+        padding: 8px !important;
+    }
+    .select2-search--dropdown .select2-search__field {
+        background: rgba(30, 41, 59, 0.9) !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        border-radius: 6px !important;
+        color: #f8fafc !important;
+        padding: 6px 10px !important;
+    }
+    .select2-search--dropdown .select2-search__field:focus {
+        outline: none !important;
+        border-color: var(--theme-accent, #a78bfa) !important;
+    }
+    .select2-results__option {
+        color: #cbd5e1 !important;
+        font-size: 0.88rem !important;
+        padding: 8px 12px !important;
+    }
+    .select2-container--default .select2-results__option--highlighted[aria-selected] {
+        background-color: var(--theme-accent, #a78bfa) !important;
+        color: #0f172a !important;
+        font-weight: 600 !important;
+    }
+    .select2-container--default .select2-results__option[aria-selected=true] {
+        background-color: rgba(167, 139, 250, 0.2) !important;
+        color: #f8fafc !important;
+    }
+    .btn-apply-filter {
+        background: var(--theme-accent);
+        color: #0f172a;
+        font-weight: 700;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 18px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+    .btn-apply-filter:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+    }
+    .cs-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .cs-kpi-card {
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 16px 20px;
+    }
+    .cs-kpi-title {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        font-weight: 600;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+    }
+    .cs-kpi-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #f8fafc;
+    }
+    .tf-badge {
+        font-size: 0.75rem;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+    }
+    .tf-badge-1d { background: rgba(167, 139, 250, 0.15); color: #a78bfa; border: 1px solid rgba(167, 139, 250, 0.3); }
+    .tf-badge-60m { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .tf-badge-15m { background: rgba(74, 222, 128, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); }
+    .tf-badge-5m { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
+    .tf-badge-1m { background: rgba(248, 113, 113, 0.15); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
+</style>
+
+<div class="container-fluid px-0">
+    <!-- Header Card -->
+    <div class="cs-header-card d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div class="cs-title-group">
+            <h1>🕯️ Stock Candle Audit & Timeframe Summary</h1>
+            <p class="cs-subtitle">Timeframe-wise candlestick data monitoring (`1D`, `60M`, `15M`, `5M`, `1M`) for active stocks.</p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary text-white" style="padding:6px 12px; font-size:12px;">🔒 Admin Access</span>
+            <div class="cs-refresh-badge" id="autoRefreshBadge">
+                <span>🔄 Auto Refresh:</span> <strong id="refreshTimerText">05:00</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI Summary Grid -->
+    <div class="cs-kpi-grid">
+        <div class="cs-kpi-card">
+            <div class="cs-kpi-title">Active Stocks Filtered</div>
+            <div class="cs-kpi-value" id="kpiTotalStocks">0</div>
+        </div>
+        <div class="cs-kpi-card">
+            <div class="cs-kpi-title">Total Candles Collected</div>
+            <div class="cs-kpi-value" id="kpiTotalCandles" style="color: #4ade80;">0</div>
+        </div>
+        <div class="cs-kpi-card">
+            <div class="cs-kpi-title">Active Timeframe Tables</div>
+            <div class="cs-kpi-value" style="font-size: 1rem; padding-top: 4px;">
+                <span class="tf-badge tf-badge-1d">1D</span>
+                <span class="tf-badge tf-badge-60m">60M</span>
+                <span class="tf-badge tf-badge-15m">15M</span>
+                <span class="tf-badge tf-badge-5m">5M</span>
+                <span class="tf-badge tf-badge-1m">1M</span>
+            </div>
+        </div>
+        <div class="cs-kpi-card">
+            <div class="cs-kpi-title">Selected Date Range</div>
+            <div class="cs-kpi-value" id="kpiDateRange" style="font-size: 0.95rem; color: #cbd5e1;">Today</div>
+        </div>
+    </div>
+
+    <!-- Filter Card -->
+    <div class="cs-filter-card">
+        <div class="cs-filter-grid">
+            <div>
+                <label class="cs-form-label">From Date</label>
+                <input type="date" id="filterFromDate" class="cs-form-input" />
+            </div>
+            <div>
+                <label class="cs-form-label">To Date</label>
+                <input type="date" id="filterToDate" class="cs-form-input" />
+            </div>
+            <div>
+                <label class="cs-form-label">Stock Symbol</label>
+                <select id="filterSymbol" class="cs-form-select select2-symbol">
+                    <option value="ALL" selected>All Symbols (~190 NSE)</option>
+                </select>
+            </div>
+            <div>
+                <label class="cs-form-label">Timeframe</label>
+                <select id="filterTimeframe" class="cs-form-select">
+                    <option value="ALL" selected>All Timeframes</option>
+                    <option value="1d">1-Day (1D)</option>
+                    <option value="60m">60-Min (Hourly)</option>
+                    <option value="15m">15-Min (15M)</option>
+                    <option value="5m">5-Min (5M)</option>
+                    <option value="1m">1-Min (1M)</option>
+                </select>
+            </div>
+            <div>
+                <button type="button" class="btn-apply-filter" id="btnApplyFilter">
+                    🔍 Apply Filter
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table Box -->
+    <div class="card-box" style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 20px;">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3 class="card-title mb-0" style="font-size: 1.1rem; color: #f8fafc;">📋 Timeframe Candle Audit Data Grid</h3>
+            <span class="text-muted" id="resultsCounterText" style="font-size: 0.85rem;">Showing 0 stocks</span>
+        </div>
+
+        <div class="table-responsive">
+            <table class="qe-table" id="candleSummaryTable">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Company Name</th>
+                        <th>1D Candles</th>
+                        <th>60M Candles</th>
+                        <th>15M Candles</th>
+                        <th>5M Candles</th>
+                        <th>1M Candles</th>
+                        <th>Total Candles</th>
+                        <th>Latest Candle Time</th>
+                    </tr>
+                </thead>
+                <tbody id="tblSummaryBody">
+                    <tr>
+                        <td colspan="9" class="text-center py-4 text-white" style="color: #ffffff !important;">Fetching candlestick summary data...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="d-flex justify-content-between align-items-center mt-3 pt-3" style="border-top: 1px solid rgba(255, 255, 255, 0.08);">
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted" style="font-size: 0.85rem;">Items per page:</span>
+                <select id="selectPageSize" class="cs-form-select" style="width: 80px; padding: 4px 8px;">
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+
+            <div class="pagination-controls d-flex align-items-center gap-1" id="paginationWrapper">
+                <button class="btn btn-sm btn-outline-secondary" id="btnPrevPage" disabled>Previous</button>
+                <div id="pageNumbersContainer" class="d-inline-flex gap-1"></div>
+                <button class="btn btn-sm btn-outline-secondary" id="btnNextPage" disabled>Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="~/js/candlesummary.js" asp-append-version="true"></script>
+}

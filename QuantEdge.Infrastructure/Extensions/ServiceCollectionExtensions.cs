@@ -104,6 +104,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ZerodhaKiteBrokerService>();
         services.AddSingleton<IPaperTradingService, PaperTradingService>();
         services.AddSingleton<IAutoTradeService, AutoTradeService>();
+        services.AddTransient<ICandleSummaryService, CandleSummaryService>();
 
         return services;
     }

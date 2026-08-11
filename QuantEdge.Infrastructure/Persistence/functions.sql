@@ -950,4 +950,124 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- Function: sp_get_candle_timeframe_summary
+-- Aggregates timeframe-wise candle counts for stocks between specified dates.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS sp_get_candle_timeframe_summary CASCADE;
+DROP FUNCTION IF EXISTS sp_get_candle_timeframe_summary(TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, VARCHAR) CASCADE;
+DROP FUNCTION IF EXISTS sp_get_candle_timeframe_summary(TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, VARCHAR, VARCHAR, INT, INT) CASCADE;
+
+CREATE OR REPLACE FUNCTION sp_get_candle_timeframe_summary(
+    p_from_date TIMESTAMP WITH TIME ZONE,
+    p_to_date TIMESTAMP WITH TIME ZONE,
+    p_symbol VARCHAR(50) DEFAULT 'ALL',
+    p_timeframe VARCHAR(20) DEFAULT 'ALL',
+    p_page INT DEFAULT 1,
+    p_page_size INT DEFAULT 25
+)
+RETURNS TABLE (
+    symbol VARCHAR(50),
+    stock_name VARCHAR(255),
+    candles_1d INT,
+    candles_60m INT,
+    candles_15m INT,
+    candles_5m INT,
+    candles_1m INT,
+    total_candles INT,
+    latest_candle_time TIMESTAMP WITH TIME ZONE,
+    total_records BIGINT
+)
+AS $BODY$
+DECLARE
+    v_offset INT;
+    v_limit INT;
+    v_tf VARCHAR(20);
+BEGIN
+    v_offset := (GREATEST(1, p_page) - 1) * GREATEST(1, p_page_size);
+    v_limit := GREATEST(1, p_page_size);
+    v_tf := LOWER(COALESCE(p_timeframe, 'ALL'));
+
+    RETURN QUERY
+    WITH c_1d AS (
+        SELECT c.symbol, COUNT(*)::INT AS count_1d, MAX(c.candle_time) AS max_time
+        FROM market_candles_1d c
+        WHERE c.candle_time >= p_from_date AND c.candle_time <= p_to_date
+        GROUP BY c.symbol
+    ),
+    c_60m AS (
+        SELECT c.symbol, COUNT(*)::INT AS count_60m, MAX(c.candle_time) AS max_time
+        FROM market_candles_60m c
+        WHERE c.candle_time >= p_from_date AND c.candle_time <= p_to_date
+        GROUP BY c.symbol
+    ),
+    c_15m AS (
+        SELECT c.symbol, COUNT(*)::INT AS count_15m, MAX(c.candle_time) AS max_time
+        FROM market_candles_15m c
+        WHERE c.candle_time >= p_from_date AND c.candle_time <= p_to_date
+        GROUP BY c.symbol
+    ),
+    c_5m AS (
+        SELECT c.symbol, COUNT(*)::INT AS count_5m, MAX(c.candle_time) AS max_time
+        FROM market_candles_5m c
+        WHERE c.candle_time >= p_from_date AND c.candle_time <= p_to_date
+        GROUP BY c.symbol
+    ),
+    c_1m AS (
+        SELECT c.symbol, COUNT(*)::INT AS count_1m, MAX(c.candle_time) AS max_time
+        FROM market_candles_1m c
+        WHERE c.candle_time >= p_from_date AND c.candle_time <= p_to_date
+        GROUP BY c.symbol
+    ),
+    all_summary AS (
+        SELECT 
+            s.symbol::VARCHAR(50) AS symbol,
+            COALESCE(s.name, s.symbol)::VARCHAR(255) AS stock_name,
+            COALESCE(d.count_1d, 0)::INT AS candles_1d,
+            COALESCE(h.count_60m, 0)::INT AS candles_60m,
+            COALESCE(m15.count_15m, 0)::INT AS candles_15m,
+            COALESCE(m5.count_5m, 0)::INT AS candles_5m,
+            COALESCE(m1.count_1m, 0)::INT AS candles_1m,
+            (COALESCE(d.count_1d, 0) + COALESCE(h.count_60m, 0) + COALESCE(m15.count_15m, 0) + COALESCE(m5.count_5m, 0) + COALESCE(m1.count_1m, 0))::INT AS total_candles,
+            GREATEST(d.max_time, h.max_time, m15.max_time, m5.max_time, m1.max_time) AS latest_candle_time
+        FROM stock_master s
+        LEFT JOIN c_1d d ON s.symbol = d.symbol
+        LEFT JOIN c_60m h ON s.symbol = h.symbol
+        LEFT JOIN c_15m m15 ON s.symbol = m15.symbol
+        LEFT JOIN c_5m m5 ON s.symbol = m5.symbol
+        LEFT JOIN c_1m m1 ON s.symbol = m1.symbol
+        WHERE s.is_active = TRUE
+          AND (p_symbol IS NULL OR p_symbol = '' OR p_symbol = 'ALL' OR UPPER(s.symbol) = UPPER(p_symbol))
+    ),
+    filtered_summary AS (
+        SELECT 
+            a.*,
+            COUNT(*) OVER() AS total_records
+        FROM all_summary a
+        WHERE (v_tf = 'all' OR v_tf = '')
+           OR (v_tf = '1d' AND a.candles_1d > 0)
+           OR (v_tf = '60m' AND a.candles_60m > 0)
+           OR (v_tf = '15m' AND a.candles_15m > 0)
+           OR (v_tf = '5m' AND a.candles_5m > 0)
+           OR (v_tf = '1m' AND a.candles_1m > 0)
+    )
+    SELECT 
+        f.symbol,
+        f.stock_name,
+        f.candles_1d,
+        f.candles_60m,
+        f.candles_15m,
+        f.candles_5m,
+        f.candles_1m,
+        f.total_candles,
+        f.latest_candle_time,
+        f.total_records
+    FROM filtered_summary f
+    ORDER BY f.total_candles DESC, f.symbol ASC
+    LIMIT v_limit OFFSET v_offset;
+END;
+$BODY$
+LANGUAGE plpgsql;
+
+
 
