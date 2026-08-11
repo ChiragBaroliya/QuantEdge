@@ -13,7 +13,7 @@ public class AutoTradeSettings
     public int MaxDurationDays { get; set; } = 20;
     public int MaxTradesPerDay { get; set; } = 5;
     public decimal FixedAmountPerTrade { get; set; } = 20000.00m;
-    public int MinConditionsMatch { get; set; } = 12;
+    public int MinConditionsMatch { get; set; } = 10;
     public string TradingWindowStart { get; set; } = "09:15";
     public string TradingWindowEnd { get; set; } = "15:30";
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

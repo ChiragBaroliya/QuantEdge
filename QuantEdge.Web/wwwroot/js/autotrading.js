@@ -3,6 +3,7 @@
  */
 
 let apiBaseUrl = "";
+let countdownInterval = null;
 
 document.addEventListener("DOMContentLoaded", function () {
     const configElem = document.getElementById("autotrade-config");
@@ -30,6 +31,56 @@ async function loadDashboardData() {
     }
 }
 
+function startNextScanCountdownTimer(nextRunTimeStr, runTextFormatted, isMarketOpen) {
+    if (countdownInterval) clearInterval(countdownInterval);
+
+    const badge = document.getElementById("nextScanCountdownBadge");
+    if (!badge) return;
+
+    if (!nextRunTimeStr) {
+        badge.innerHTML = `⏳ <span style="opacity: 0.75;">Next Scan: Standby</span>`;
+        return;
+    }
+
+    const targetTimeMs = new Date(nextRunTimeStr).getTime();
+
+    function updateTimer() {
+        const nowMs = new Date().getTime();
+        const diffMs = targetTimeMs - nowMs;
+
+        const badgeElem = document.getElementById("nextScanCountdownBadge");
+        if (!badgeElem) return;
+
+        if (diffMs <= 0) {
+            badgeElem.innerHTML = `🔄 <strong style="color: #60a5fa;">Syncing Market Data & Scanning...</strong>`;
+            return;
+        }
+
+        const totalSecs = Math.floor(diffMs / 1000);
+        const hours = Math.floor(totalSecs / 3600);
+        const mins = Math.floor((totalSecs % 3600) / 60);
+        const secs = totalSecs % 60;
+
+        let timeStr = "";
+        if (hours > 0) {
+            timeStr = `${hours}h ${mins.toString().padStart(2, '0')}m ${secs.toString().padStart(2, '0')}s`;
+        } else {
+            timeStr = `${mins.toString().padStart(2, '0')}m ${secs.toString().padStart(2, '0')}s`;
+        }
+
+        const targetFormattedTime = new Date(targetTimeMs).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' });
+
+        if (isMarketOpen) {
+            badgeElem.innerHTML = `⏳ Next Scan in: <strong style="color: #38bdf8;">${timeStr}</strong> <span style="opacity: 0.75;">(${targetFormattedTime})</span>`;
+        } else {
+            badgeElem.innerHTML = `🌙 Market Closed <span style="opacity: 0.75;">(Next: ${runTextFormatted || targetFormattedTime})</span>`;
+        }
+    }
+
+    updateTimer();
+    countdownInterval = setInterval(updateTimer, 1000);
+}
+
 function updateDashboardUI(data) {
     if (!data) return;
 
@@ -44,6 +95,13 @@ function updateDashboardUI(data) {
     const realPnl = data.totalRealizedPnlToday ?? data.TotalRealizedPnlToday ?? 0;
     const positions = data.openPositions || data.OpenPositions || [];
     const logs = data.todayLogs || data.TodayLogs || [];
+
+    // Trigger Next Scan countdown timer
+    const nextRunTime = data.nextRunTime || data.NextRunTime;
+    const nextRunFormatted = data.nextRunFormatted || data.NextRunFormatted;
+    const isMarketOpen = data.isMarketOpen !== undefined ? data.isMarketOpen : (data.IsMarketOpen !== undefined ? data.IsMarketOpen : false);
+
+    startNextScanCountdownTimer(nextRunTime, nextRunFormatted, isMarketOpen);
 
     // 1. Toggle Switch & Status Badges
     const toggleSwitch = document.getElementById("chkAutoTradeToggle");
@@ -97,7 +155,7 @@ function populateSettingsForm(s) {
     const maxDur = s.maxDurationDays ?? s.MaxDurationDays ?? 20;
     const maxTrd = s.maxTradesPerDay ?? s.MaxTradesPerDay ?? 5;
     const fixedAmt = s.fixedAmountPerTrade ?? s.FixedAmountPerTrade ?? 20000;
-    const minCond = s.minConditionsMatch ?? s.MinConditionsMatch ?? 12;
+    const minCond = s.minConditionsMatch ?? s.MinConditionsMatch ?? 10;
 
     const elCap = document.getElementById("txtCapital"); if (elCap) elCap.value = cap;
     const elTarget = document.getElementById("txtTargetPct"); if (elTarget) elTarget.value = target;

@@ -117,6 +117,8 @@ public class AutoTradeService : IAutoTradeService
             .Where(t => t.TradeType == TradeType.Auto && t.ExecutedAt >= DateTime.UtcNow.Date)
             .Sum(t => t.RealizedPnl);
 
+        var nextRunInfo = Calculate15MinNextRunInfo();
+
         return new AutoTradeDashboardDto
         {
             Settings = settings,
@@ -128,8 +130,80 @@ public class AutoTradeService : IAutoTradeService
             IsRestPollingFallback = false,
             SystemStatus = settings.IsAutoTradeEnabled ? "ACTIVE" : "PAUSED",
             OpenPositions = positions,
-            TodayLogs = todayLogs
+            TodayLogs = todayLogs,
+            NextRunTime = nextRunInfo.NextRunTime,
+            NextRunSeconds = nextRunInfo.NextRunSeconds,
+            NextRunFormatted = nextRunInfo.FormattedText,
+            IsMarketOpen = nextRunInfo.IsMarketOpen
         };
+    }
+
+    public static (DateTime NextRunTime, int NextRunSeconds, string FormattedText, bool IsMarketOpen) Calculate15MinNextRunInfo()
+    {
+        DateTime nowIst;
+        try
+        {
+            var istZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+            nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, istZone);
+        }
+        catch
+        {
+            nowIst = DateTime.UtcNow.AddHours(5).AddMinutes(30);
+        }
+
+        bool isWeekend = nowIst.DayOfWeek == DayOfWeek.Saturday || nowIst.DayOfWeek == DayOfWeek.Sunday;
+        TimeSpan marketStart = new TimeSpan(9, 15, 0);
+        TimeSpan marketEnd = new TimeSpan(15, 30, 0);
+        TimeSpan timeOfDay = nowIst.TimeOfDay;
+
+        bool isWithinMarketHours = !isWeekend && timeOfDay >= marketStart && timeOfDay <= marketEnd;
+
+        DateTime targetNextRun;
+
+        if (isWithinMarketHours)
+        {
+            // Calculate next 15-minute boundary (e.g. 09:30, 09:45, 10:00, 10:15, 10:30...)
+            int currentMinute = nowIst.Minute;
+            int minuteRemainder = currentMinute % 15;
+            int minuteOffset = 15 - minuteRemainder;
+            targetNextRun = nowIst.AddMinutes(minuteOffset).AddSeconds(-nowIst.Second).AddMilliseconds(-nowIst.Millisecond);
+
+            if (targetNextRun.TimeOfDay > marketEnd)
+            {
+                targetNextRun = nowIst.Date.AddDays(1).Add(new TimeSpan(9, 15, 0));
+                while (targetNextRun.DayOfWeek == DayOfWeek.Saturday || targetNextRun.DayOfWeek == DayOfWeek.Sunday)
+                {
+                    targetNextRun = targetNextRun.AddDays(1);
+                }
+            }
+        }
+        else
+        {
+            // Market is closed or weekend. Next run is 09:15 AM IST on next trading day
+            DateTime nextDay = nowIst.TimeOfDay > marketEnd ? nowIst.Date.AddDays(1) : nowIst.Date;
+            targetNextRun = nextDay.Add(new TimeSpan(9, 15, 0));
+            while (targetNextRun.DayOfWeek == DayOfWeek.Saturday || targetNextRun.DayOfWeek == DayOfWeek.Sunday)
+            {
+                targetNextRun = targetNextRun.AddDays(1);
+            }
+        }
+
+        int remainingSeconds = Math.Max(0, (int)(targetNextRun - nowIst).TotalSeconds);
+        TimeSpan remainingTime = TimeSpan.FromSeconds(remainingSeconds);
+
+        string formatted;
+        if (isWithinMarketHours)
+        {
+            formatted = remainingTime.Hours > 0 
+                ? $"{remainingTime.Hours}h {remainingTime.Minutes}m" 
+                : $"{remainingTime.Minutes}m {remainingTime.Seconds}s";
+        }
+        else
+        {
+            formatted = targetNextRun.ToString("ddd, dd MMM HH:mm IST");
+        }
+
+        return (targetNextRun, remainingSeconds, formatted, isWithinMarketHours);
     }
 
     public async Task LogAuditAsync(string symbol, string actionType, decimal? price, int? quantity, string? reason, string userId = "default_user")
@@ -157,7 +231,7 @@ public class AutoTradeService : IAutoTradeService
         return await _repository.GetTodayLogsAsync(userId, limit);
     }
 
-    public async Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user")
+    public async Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false)
     {
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
@@ -183,11 +257,11 @@ public class AutoTradeService : IAutoTradeService
         }
 
 
-        // 3. Condition Match Count Check
-        if (metConditionsCount < settings.MinConditionsMatch)
+        // 3. Condition Match Count Check (Executes if BUY Signal is confirmed or metConditionsCount >= user's MinConditionsMatch)
+        if (!isBuySignal && metConditionsCount < settings.MinConditionsMatch)
         {
             await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
-                $"Condition match score {metConditionsCount}/13 below minimum required {settings.MinConditionsMatch}/13", userId);
+                $"Condition match score {metConditionsCount}/11 below minimum required {settings.MinConditionsMatch}/11", userId);
             return false;
         }
 
@@ -252,7 +326,7 @@ public class AutoTradeService : IAutoTradeService
                 FilledPrice = entryPrice,
                 FilledAt = DateTime.UtcNow,
                 TradeType = TradeType.Auto,
-                Remarks = $"Auto BUY (Score {metConditionsCount}/13)"
+                Remarks = $"Auto BUY (Score {metConditionsCount}/11)"
             });
 
             // Upsert Auto Paper Position
@@ -297,7 +371,7 @@ public class AutoTradeService : IAutoTradeService
 
             // Log Audit Event
             await LogAuditAsync(symbol, "AUTO_BUY", entryPrice, quantity,
-                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity}, Met {metConditionsCount}/13 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2})", userId);
+                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity}, Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2})", userId);
 
             // Broadcast SignalR Toast Alert
             if (_hubContext != null)
@@ -310,7 +384,7 @@ public class AutoTradeService : IAutoTradeService
                     price = entryPrice,
                     target = takeProfit,
                     stopLoss,
-                    message = $"🤖 Auto BUY: {quantity} shares of {symbol} @ ₹{entryPrice:N2} (Met {metConditionsCount}/13)"
+                    message = $"🤖 Auto BUY: {quantity} shares of {symbol} @ ₹{entryPrice:N2} (Met {metConditionsCount}/11)"
                 });
             }
 

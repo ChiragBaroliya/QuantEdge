@@ -47,6 +47,10 @@ public class AutoTradeDashboardDto
     public string SystemStatus { get; set; } = "IDLE"; // ACTIVE, PAUSED, TOKEN_EXPIRED, STOPPED
     public IEnumerable<PaperPosition> OpenPositions { get; set; } = new List<PaperPosition>();
     public IEnumerable<AutoTradeExecutionLog> TodayLogs { get; set; } = new List<AutoTradeExecutionLog>();
+    public DateTime? NextRunTime { get; set; }
+    public int NextRunSeconds { get; set; }
+    public string NextRunFormatted { get; set; } = string.Empty;
+    public bool IsMarketOpen { get; set; }
 }
 
 public class ToggleAutoTradeRequestDto

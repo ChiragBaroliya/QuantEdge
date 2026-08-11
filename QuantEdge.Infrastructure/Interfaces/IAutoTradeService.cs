@@ -18,7 +18,7 @@ public interface IAutoTradeService
     /// <summary>
     /// Evaluates candidate signal from scan job and places auto paper buy order if all 8 validation checks pass.
     /// </summary>
-    Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user");
+    Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false);
 
     /// <summary>
     /// Evaluates real-time price against position Target %, Stop Loss %, or Max Duration and executes auto sell order if hit.

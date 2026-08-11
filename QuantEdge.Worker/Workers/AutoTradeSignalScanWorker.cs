@@ -89,8 +89,17 @@ public class AutoTradeSignalScanWorker : BackgroundService
             return;
         }
 
-        // Fetch Nifty 50 candles for Market Filter
-        var niftyCandles = (await candleRepo.GetHistoryAsync("NIFTYBEES", "1d", 60)).ToList();
+        // Fetch Nifty 50 candles for Market Filter (matching SwingTradingService)
+        var niftyCandles = (await candleRepo.GetHistoryAsync("NIFTY 50", "1d", 100))
+            .OrderBy(c => c.CandleTime)
+            .ToList();
+
+        if (!niftyCandles.Any())
+        {
+            niftyCandles = (await candleRepo.GetHistoryAsync("NIFTYBEES", "1d", 100))
+                .OrderBy(c => c.CandleTime)
+                .ToList();
+        }
 
         int buySignalsFound = 0;
         int executedOrdersCount = 0;
@@ -98,17 +107,25 @@ public class AutoTradeSignalScanWorker : BackgroundService
         foreach (var stock in activeStocks)
         {
             if (stoppingToken.IsCancellationRequested) break;
+            if (stock.Symbol == "NIFTY 50" || stock.Symbol == "NIFTYBEES") continue;
 
             try
             {
-                // Fetch 1d and 60m candle history for indicator calculations
-                var stockCandles1d = (await candleRepo.GetHistoryAsync(stock.Symbol, "1d", 100)).ToList();
-                var stockCandles60m = (await candleRepo.GetHistoryAsync(stock.Symbol, "60m", 50)).ToList();
+                // Fetch 1d, 15m, and 60m candle history for accurate multi-timeframe indicator calculations
+                var stockCandles1d = (await candleRepo.GetHistoryAsync(stock.Symbol, "1d", 100))
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
+                var stockCandles15m = (await candleRepo.GetHistoryAsync(stock.Symbol, "15m", 100))
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
+                var stockCandles60m = (await candleRepo.GetHistoryAsync(stock.Symbol, "60m", 100))
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
 
                 if (stockCandles1d.Count < 50) continue;
 
-                // Evaluate stock using existing 13-condition SwingDecisionEngine
-                var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles60m, niftyCandles);
+                // Evaluate stock using SwingDecisionEngine with all 3 timeframe candles
+                var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles);
                 if (evalResult == null || evalResult.Checklist == null) continue;
 
                 int metCount = evalResult.Checklist.MetCount;
@@ -116,11 +133,11 @@ public class AutoTradeSignalScanWorker : BackgroundService
                 if (evalResult.IsBuySignal || metCount >= settings.MinConditionsMatch)
                 {
                     buySignalsFound++;
-                    _logger.LogInformation("BUY Signal detected for {Symbol} for User '{UserId}' (Score: {MetCount}/13, Entry: ₹{Price:F2})",
-                        stock.Symbol, settings.UserId, metCount, evalResult.EntryPrice);
+                    _logger.LogInformation("BUY Signal detected for {Symbol} for User '{UserId}' (Score: {Score}/100, Met: {MetCount}/{TotalCount}, Entry: ₹{Price:F2})",
+                        stock.Symbol, settings.UserId, evalResult.Score, metCount, evalResult.Checklist.TotalCount, evalResult.EntryPrice);
 
                     bool executed = await autoTradeService.EvaluateAndExecuteAutoBuyAsync(
-                        stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId);
+                        stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId, evalResult.IsBuySignal);
 
                     if (executed)
                     {
