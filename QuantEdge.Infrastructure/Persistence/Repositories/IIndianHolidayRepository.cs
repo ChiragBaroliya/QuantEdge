@@ -12,6 +12,7 @@ public interface IIndianHolidayRepository
 {
     Task<IEnumerable<IndianHoliday>> GetAllHolidaysAsync();
     Task InsertHolidayAsync(DateTime holidayDate, string description);
+    Task UpdateHolidayAsync(int id, DateTime holidayDate, string description);
     Task DeleteHolidayAsync(int id);
     Task<bool> IsHolidayAsync(DateTime date);
 }

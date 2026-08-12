@@ -73,6 +73,34 @@ public class HolidayController : ControllerBase
     }
 
     /// <summary>
+    /// PUT /api/holidays/{id} - Updates an existing Indian Stock Market holiday.
+    /// </summary>
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> Update(int id, [FromBody] CreateHolidayRequest request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Description))
+        {
+            return BadRequest("Invalid holiday data. Description is required.");
+        }
+
+        _logger.LogInformation("HTTP PUT /api/holidays/{Id} - Updating holiday to: {Date:yyyy-MM-dd} ({Desc})", id, request.HolidayDate, request.Description);
+        try
+        {
+            await _holidayRepository.UpdateHolidayAsync(id, request.HolidayDate, request.Description);
+
+            // Force immediate reload of in-memory cache to sync worker and api
+            await _marketHoursService.RefreshHolidaysCacheAsync();
+
+            return Ok(new { message = "Holiday updated successfully." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update holiday.");
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// DELETE /api/holidays/{id} - Deletes an Indian Stock Market holiday.
     /// </summary>
     [HttpDelete("{id:int}")]
@@ -91,6 +119,25 @@ public class HolidayController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to delete holiday.");
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// POST /api/holidays/refresh-cache - Manually invalidates and refreshes in-memory holiday cache.
+    /// </summary>
+    [HttpPost("refresh-cache")]
+    public async Task<IActionResult> RefreshCache()
+    {
+        _logger.LogInformation("HTTP POST /api/holidays/refresh-cache - Refreshing in-memory holiday cache.");
+        try
+        {
+            await _marketHoursService.RefreshHolidaysCacheAsync();
+            return Ok(new { message = "Holiday in-memory cache refreshed successfully." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to refresh holiday cache.");
             return StatusCode(500, $"Internal server error: {ex.Message}");
         }
     }

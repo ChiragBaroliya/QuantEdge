@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 
@@ -12,8 +13,8 @@ namespace QuantEdge.Infrastructure.Services;
 
 /// <summary>
 /// Thread-safe service validating Indian stock market hours.
-/// Caches daily trading day status (weekend + holiday check) once per day in memory,
-/// eliminating repeated database queries and complex timezone calculations on every tick.
+/// Caches daily trading day status (weekend + holiday check) once per day in memory.
+/// On day-change (midnight transition), flushes old cache and executes a single morning DB query to reload holidays.
 /// </summary>
 public class MarketHoursService : IMarketHoursService
 {
@@ -21,7 +22,7 @@ public class MarketHoursService : IMarketHoursService
     private readonly ILogger<MarketHoursService> _logger;
     private readonly TimeZoneInfo _indianTimeZone;
 
-    private static readonly TimeSpan MarketOpenTime = new(9, 0, 0);   // 09:00 AM IST
+    private static readonly TimeSpan MarketOpenTime = new(9, 15, 0);   // 09:15 AM IST
     private static readonly TimeSpan MarketCloseTime = new(15, 30, 0); // 03:30 PM IST
 
     private HashSet<DateOnly> _holidays = new();
@@ -36,16 +37,7 @@ public class MarketHoursService : IMarketHoursService
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        try
-        {
-            _indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            // Fallback for Linux/macOS environments using IANA timezone identifier
-            _indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-        }
+        _indianTimeZone = TimeZoneHelper.IndianTimeZone;
     }
 
     /// <inheritdoc />
@@ -55,7 +47,7 @@ public class MarketHoursService : IMarketHoursService
         var istTime = TimeZoneInfo.ConvertTimeFromUtc(utcTime, _indianTimeZone);
         var dateOnly = DateOnly.FromDateTime(istTime);
 
-        // Evaluate daily trading day status (weekend + holiday check) ONLY once per calendar day
+        // Evaluate daily trading day status (weekend + holiday check) ONLY once per calendar day at new day arrival (Single Morning DB call)
         if (_cachedDate != dateOnly)
         {
             await EnsureDailyCacheInitializedAsync(dateOnly);
@@ -67,7 +59,7 @@ public class MarketHoursService : IMarketHoursService
             return false;
         }
 
-        // Check if current IST time of day falls within 09:00 AM to 03:30 PM IST
+        // Check if current IST time of day falls within 09:15 AM to 03:30 PM IST
         var timeOfDay = istTime.TimeOfDay;
         return timeOfDay >= MarketOpenTime && timeOfDay < MarketCloseTime;
     }
@@ -95,11 +87,9 @@ public class MarketHoursService : IMarketHoursService
         {
             if (_cachedDate == targetDate) return;
 
-            // Fetch DB holidays if cache is older than 24 hours or empty
-            if (DateTime.UtcNow - _lastHolidaysDbFetch > TimeSpan.FromHours(24) || _holidays.Count == 0)
-            {
-                await FetchHolidaysFromDbAsync();
-            }
+            // Day change detected (Midnight transition): Flush old cache and fetch fresh holidays from DB (Single Morning DB Call)
+            _logger.LogInformation("MarketHoursService: New day detected ({TargetDate}). Flushing old cache and reloading holidays from DB...", targetDate);
+            await FetchHolidaysFromDbAsync();
 
             DayOfWeek dayOfWeek = targetDate.DayOfWeek;
             bool isWeekend = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;

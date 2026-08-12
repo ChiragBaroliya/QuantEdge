@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Hubs;
+using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 
@@ -18,6 +19,7 @@ public class AutoTradeService : IAutoTradeService
     private readonly IPaperTradingRepository _paperRepository;
     private readonly IPaperTradingService _paperService;
     private readonly IIndianHolidayRepository _holidayRepository;
+    private readonly IMarketHoursService _marketHoursService;
     private readonly ICacheService _cacheService;
     private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly ILogger<AutoTradeService> _logger;
@@ -27,6 +29,7 @@ public class AutoTradeService : IAutoTradeService
         IPaperTradingRepository paperRepository,
         IPaperTradingService paperService,
         IIndianHolidayRepository holidayRepository,
+        IMarketHoursService marketHoursService,
         ICacheService cacheService,
         ILogger<AutoTradeService> logger,
         IHubContext<MarketDataHub>? hubContext = null)
@@ -35,6 +38,7 @@ public class AutoTradeService : IAutoTradeService
         _paperRepository = paperRepository ?? throw new ArgumentNullException(nameof(paperRepository));
         _paperService = paperService ?? throw new ArgumentNullException(nameof(paperService));
         _holidayRepository = holidayRepository ?? throw new ArgumentNullException(nameof(holidayRepository));
+        _marketHoursService = marketHoursService ?? throw new ArgumentNullException(nameof(marketHoursService));
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _hubContext = hubContext;
@@ -142,16 +146,7 @@ public class AutoTradeService : IAutoTradeService
 
     public static (DateTime NextRunTime, int NextRunSeconds, string FormattedText, bool IsMarketOpen) Calculate15MinNextRunInfo()
     {
-        DateTime nowIst;
-        try
-        {
-            var istZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
-            nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, istZone);
-        }
-        catch
-        {
-            nowIst = DateTime.UtcNow.AddHours(5).AddMinutes(30);
-        }
+        DateTime nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneHelper.IndianTimeZone);
 
         bool isWeekend = nowIst.DayOfWeek == DayOfWeek.Saturday || nowIst.DayOfWeek == DayOfWeek.Sunday;
         TimeSpan marketStart = new TimeSpan(9, 15, 0);
@@ -244,17 +239,17 @@ public class AutoTradeService : IAutoTradeService
             return false;
         }
 
-        // 2. Trading Window & Market Holiday Check
+        // 2. Trading Window & Market Holiday Check (Using Memory-Cached MarketHoursService)
+        if (!await _marketHoursService.IsWithinMarketHoursAsync())
+        {
+            await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0, "Outside Market Hours or Holiday", userId);
+            return false;
+        }
+
         if (!IsWithinTradingWindow(settings.TradingWindowStart, settings.TradingWindowEnd))
         {
             await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
                 $"Outside trading window ({settings.TradingWindowStart} - {settings.TradingWindowEnd})", userId);
-            return false;
-        }
-
-        if (await _holidayRepository.IsHolidayAsync(DateTime.UtcNow.Date))
-        {
-            await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0, "Market Holiday today", userId);
             return false;
         }
 
@@ -407,7 +402,17 @@ public class AutoTradeService : IAutoTradeService
         if (position == null || position.Status != PositionStatus.OPEN || position.TradeType != TradeType.Auto)
             return false;
 
+        if (!await _marketHoursService.IsWithinMarketHoursAsync())
+        {
+            return false;
+        }
+
         var settings = await GetSettingsAsync(userId);
+        if (!IsWithinTradingWindow(settings.TradingWindowStart, settings.TradingWindowEnd))
+        {
+            return false;
+        }
+
         var paperAccount = await _paperRepository.GetAccountAsync(userId);
         if (paperAccount == null) return false;
 
@@ -504,26 +509,27 @@ public class AutoTradeService : IAutoTradeService
         }
     }
 
-    private static bool IsWithinTradingWindow(string startStr, string endStr)
+    private bool IsWithinTradingWindow(string startStr, string endStr)
     {
         try
         {
             // IST is UTC + 05:30
-            var istNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("India Standard Time"));
+            var istNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneHelper.IndianTimeZone);
             if (istNow.DayOfWeek == DayOfWeek.Saturday || istNow.DayOfWeek == DayOfWeek.Sunday)
             {
                 return false;
             }
 
             TimeSpan nowTime = istNow.TimeOfDay;
-            TimeSpan start = TimeSpan.Parse(startStr);
-            TimeSpan end = TimeSpan.Parse(endStr);
+            TimeSpan start = TimeSpan.TryParse(startStr, out var s) ? s : new TimeSpan(9, 15, 0);
+            TimeSpan end = TimeSpan.TryParse(endStr, out var e) ? e : new TimeSpan(15, 30, 0);
 
             return nowTime >= start && nowTime <= end;
         }
-        catch
+        catch (Exception ex)
         {
-            return true; // Fallback allow if time zone parse error
+            _logger.LogError(ex, "Error validating trading window in AutoTradeService.");
+            return false; // Fail safe CLOSED to prevent off-hours order placement
         }
     }
 

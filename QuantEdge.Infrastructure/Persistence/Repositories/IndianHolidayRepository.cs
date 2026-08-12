@@ -60,6 +60,20 @@ public class IndianHolidayRepository : IIndianHolidayRepository
         }
     }
 
+    public async Task UpdateHolidayAsync(int id, DateTime holidayDate, string description)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        await connection.ExecuteAsync(
+            "UPDATE indian_holidays SET holiday_date = @p_holiday_date::date, description = @p_description::varchar WHERE id = @p_id;",
+            new { p_id = id, p_holiday_date = holidayDate.Date, p_description = description }
+        );
+
+        if (_cacheService != null)
+        {
+            await _cacheService.RemoveAsync("indian_holidays_all");
+        }
+    }
+
     public async Task DeleteHolidayAsync(int id)
     {
         using var connection = _connectionFactory.CreateConnection();

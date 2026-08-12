@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 using QuantEdge.Infrastructure.Services;
@@ -39,25 +40,36 @@ public class AutoTradeSignalScanWorker : BackgroundService
             try
             {
                 using var scope = _serviceProvider.CreateScope();
-                var autoTradeService = scope.ServiceProvider.GetRequiredService<IAutoTradeService>();
-                var autoTradeRepo = scope.ServiceProvider.GetRequiredService<IAutoTradeRepository>();
-                
-                var activeUserSettings = (await autoTradeRepo.GetActiveSettingsAsync()).ToList();
+                var marketHoursService = scope.ServiceProvider.GetRequiredService<IMarketHoursService>();
+                bool isMarketOpen = await marketHoursService.IsWithinMarketHoursAsync();
 
-                if (activeUserSettings.Any())
+                if (!isMarketOpen)
                 {
-                    _logger.LogInformation("Executing 15-minute Auto Trade Signal Scan for {UserCount} active user(s) over ~190 stocks...", activeUserSettings.Count);
-                    
-                    foreach (var userSettings in activeUserSettings)
-                    {
-                        if (stoppingToken.IsCancellationRequested) break;
-                        await RunSignalScanForUserAsync(scope.ServiceProvider, autoTradeService, userSettings, stoppingToken);
-                    }
+                    DateTime nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneHelper.IndianTimeZone);
+                    _logger.LogDebug("Outside Market Trading Window or Market Holiday ({Time} IST). Auto Trade Signal Scan waiting...", nowIst.ToString("HH:mm:ss"));
                 }
                 else
                 {
-                    _logger.LogDebug("No users currently have Auto Trade Master Switch ON. Skipping 15-minute scan cycle.");
-                }
+                    var autoTradeService = scope.ServiceProvider.GetRequiredService<IAutoTradeService>();
+                    var autoTradeRepo = scope.ServiceProvider.GetRequiredService<IAutoTradeRepository>();
+
+                    var activeUserSettings = (await autoTradeRepo.GetActiveSettingsAsync()).ToList();
+
+                    if (activeUserSettings.Any())
+                    {
+                            _logger.LogInformation("Executing 15-minute Auto Trade Signal Scan for {UserCount} active user(s) over ~190 stocks...", activeUserSettings.Count);
+                            
+                            foreach (var userSettings in activeUserSettings)
+                            {
+                                if (stoppingToken.IsCancellationRequested) break;
+                                await RunSignalScanForUserAsync(scope.ServiceProvider, autoTradeService, userSettings, stoppingToken);
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogDebug("No users currently have Auto Trade Master Switch ON. Skipping 15-minute scan cycle.");
+                        }
+                    }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -70,6 +82,20 @@ public class AutoTradeSignalScanWorker : BackgroundService
 
             await Task.Delay(_scanInterval, stoppingToken);
         }
+    }
+
+    private static bool IsWithinTradingWindow(DateTime istTime)
+    {
+        if (istTime.DayOfWeek == DayOfWeek.Saturday || istTime.DayOfWeek == DayOfWeek.Sunday)
+        {
+            return false;
+        }
+
+        TimeSpan start = new TimeSpan(9, 15, 0); // 09:15 AM IST
+        TimeSpan end = new TimeSpan(15, 30, 0);  // 03:30 PM IST
+
+        TimeSpan nowTime = istTime.TimeOfDay;
+        return nowTime >= start && nowTime <= end;
     }
 
     private async Task RunSignalScanForUserAsync(
