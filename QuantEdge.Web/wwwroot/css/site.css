@@ -90,10 +90,11 @@
     padding: 0;
 }
 
-html, body {
-    height: 100%;
+html {
+    min-height: 100%;
     max-width: 100%;
     overflow-x: hidden;
+    overflow-y: auto;
     background: var(--bg-base);
     color: var(--text-primary);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -103,19 +104,25 @@ html, body {
     -webkit-tap-highlight-color: transparent;
 }
 
+body {
+    min-height: 100vh;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-y: visible;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    display: flex;
+    width: 100%;
+}
+
 a { text-decoration: none; color: inherit; }
 button { font-family: inherit; touch-action: manipulation; }
 input, select, textarea { font-family: inherit; }
-
-/* ============================================================
-   LAYOUT SHELL
-   ============================================================ */
-body {
-    display: flex;
-    min-height: 100vh;
-    width: 100%;
-    max-width: 100%;
-}
 
 /* ============================================================
    SIDEBAR

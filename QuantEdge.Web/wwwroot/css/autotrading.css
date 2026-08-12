@@ -287,11 +287,12 @@ input:checked + .slider:before {
     position: relative;
     width: 100%;
     min-width: 0;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .table-responsive {
     overflow-x: auto;
+    overflow-y: hidden !important;
     width: 100%;
     max-width: 100%;
     -webkit-overflow-scrolling: touch;
@@ -438,6 +439,9 @@ input:checked + .slider:before {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
+    position: sticky;
+    top: 80px;
+    align-self: start;
 }
 
 .panel-title {
