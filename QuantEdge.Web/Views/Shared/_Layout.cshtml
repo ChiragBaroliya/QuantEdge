@@ -318,7 +318,7 @@
                 </svg>
                 <span class="nav-label">Swing Trading</span>
             </a>
-            @if (isAdmin)
+            @if (false /* Paper Trading hidden - merged into Auto Trading */)
             {
                 <a asp-controller="PaperTrading" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "PaperTrading" ? "active" : "")"

@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Interfaces;
 
@@ -55,6 +56,32 @@ public class PaperTradingController : ControllerBase
     {
         var history = await _paperTradingService.GetTradeHistoryAsync("default_user", limit);
         return Ok(history);
+    }
+
+    /// <summary>
+    /// Retrieves paged historical executed trade logs with database-side filtering.
+    /// </summary>
+    [HttpGet("history/paged")]
+    public async Task<IActionResult> GetPagedHistory(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? symbol = null,
+        [FromQuery] TradeSide? side = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
+    {
+        var filter = new PaperTradeHistoryFilterDto
+        {
+            Page = page < 1 ? 1 : page,
+            PageSize = 10, // Fixed at 10 items per page
+            Symbol = string.IsNullOrWhiteSpace(symbol) ? null : symbol.Trim().ToUpper(),
+            Side = side,
+            FromDate = fromDate,
+            ToDate = toDate.HasValue ? toDate.Value.Date.AddDays(1).AddTicks(-1) : null
+        };
+
+        var result = await _paperTradingService.GetTradeHistoryPagedAsync(filter, "default_user");
+        return Ok(result);
     }
 
     /// <summary>

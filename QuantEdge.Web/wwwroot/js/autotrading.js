@@ -12,11 +12,17 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     loadDashboardData();
+    loadActiveStocks();
+    loadOrders();
+    loadHistory(1);
     setupEventListeners();
     setupSignalRHub();
 
     // Periodic refresh fallback every 15 seconds
-    setInterval(loadDashboardData, 15000);
+    setInterval(() => {
+        loadDashboardData();
+        loadOrders();
+    }, 15000);
 });
 
 async function loadDashboardData() {
@@ -120,7 +126,16 @@ function updateDashboardUI(data) {
         tradeCounterElem.innerText = `${todayCount} / ${maxTrades} trades used today`;
     }
 
+    const availableMargin = data.availableMargin ?? data.AvailableMargin ?? 0;
+    const usedMargin = data.usedMargin ?? data.UsedMargin ?? 0;
+
     // 2. Metrics & Stats
+    const availMarginElem = document.getElementById("stat-available-margin");
+    if (availMarginElem) availMarginElem.innerText = `₹${formatNumber(availableMargin)}`;
+
+    const usedMarginElem = document.getElementById("stat-used-margin");
+    if (usedMarginElem) usedMarginElem.innerText = `₹${formatNumber(usedMargin)}`;
+
     const capElem = document.getElementById("stat-capital");
     if (capElem) capElem.innerText = `₹${formatNumber(availableCap)}`;
     
@@ -187,6 +202,8 @@ function renderOpenPositionsTable(positions) {
         const unPnl = p.unrealizedPnl ?? p.UnrealizedPnl ?? 0;
         const pnlClass = unPnl >= 0 ? "text-success" : "text-danger";
         const entryVal = qty * avgPrice;
+        const tpPctText = tp && avgPrice > 0 ? ((tp - avgPrice) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '5';
+        const slPctText = sl && avgPrice > 0 ? ((avgPrice - sl) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '3';
 
         html += `
             <tr>
@@ -194,8 +211,8 @@ function renderOpenPositionsTable(positions) {
                 <td>₹${formatNumber(avgPrice)}</td>
                 <td>₹${formatNumber(curPrice)}</td>
                 <td>${qty} (₹${formatNumber(entryVal)})</td>
-                <td>₹${formatNumber(tp || 0)} (+${tp && avgPrice > 0 ? Math.round((tp - avgPrice)/avgPrice * 100) : 5}%)</td>
-                <td>₹${formatNumber(sl || 0)} (-${sl && avgPrice > 0 ? Math.round((avgPrice - sl)/avgPrice * 100) : 3}%)</td>
+                <td>₹${formatNumber(tp || 0)} (+${tpPctText}%)</td>
+                <td>₹${formatNumber(sl || 0)} (-${slPctText}%)</td>
                 <td class="${pnlClass} font-weight-bold">₹${formatNumber(unPnl)}</td>
             </tr>
         `;
@@ -204,6 +221,21 @@ function renderOpenPositionsTable(positions) {
     tbody.innerHTML = html;
 }
 
+
+function formatISTTime(dateInput) {
+    if (!dateInput) return '-';
+    let rawStr = String(dateInput);
+    if (!rawStr.endsWith('Z') && !rawStr.includes('+')) rawStr += 'Z';
+    let d = new Date(rawStr);
+    if (isNaN(d.getTime())) d = new Date(dateInput);
+    return d.toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
+}
 
 function renderLogsConsole(logs) {
     const consoleBox = document.getElementById("log-console-box");
@@ -226,15 +258,300 @@ function renderLogsConsole(logs) {
         else if (actionType.includes("SKIPPED")) typeClass = "skip";
         else if (actionType.includes("ALERT") || actionType.includes("EXPIRED")) typeClass = "alert";
 
-        const timeStr = new Date(execTime).toLocaleTimeString();
-        html += `<div class="log-entry ${typeClass}"><span class="time">[${timeStr}]</span> <strong>[${actionType}]</strong> ${symbol ? symbol + ': ' : ''}${reason}</div>`;
+        const timeStr = formatISTTime(execTime);
+        html += `<div class="log-entry ${typeClass}"><span class="time">[${timeStr} IST]</span> <strong>[${actionType}]</strong> ${symbol ? symbol + ': ' : ''}${reason}</div>`;
     });
 
     consoleBox.innerHTML = html;
 }
 
+let historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: '', toDate: '' };
+
+function formatIST(dateInput) {
+    if (!dateInput) return '-';
+    let rawStr = String(dateInput);
+    if (!rawStr.endsWith('Z') && !rawStr.includes('+')) rawStr += 'Z';
+    let d = new Date(rawStr);
+    if (isNaN(d.getTime())) d = new Date(dateInput);
+    return d.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    }) + ' IST';
+}
+
+async function loadActiveStocks() {
+    try {
+        const res = await fetch(`${apiBaseUrl}/api/marketdata/stocks`);
+        if (!res.ok) return;
+        const stocks = await res.json();
+        const historyFilterSymbol = document.getElementById('historyFilterSymbol');
+        if (historyFilterSymbol && Array.isArray(stocks) && stocks.length > 0) {
+            historyFilterSymbol.innerHTML = '<option value="">All Symbols</option>';
+            stocks.forEach(stock => {
+                const sym = stock.symbol || stock.Symbol;
+                if (sym) {
+                    const opt = document.createElement('option');
+                    opt.value = sym;
+                    opt.innerText = sym;
+                    historyFilterSymbol.appendChild(opt);
+                }
+            });
+        }
+        initSelect2Filters();
+    } catch (err) {
+        console.error('Failed to load active stocks for filter:', err);
+    }
+}
+
+function initSelect2Filters() {
+    if (window.jQuery && $.fn.select2) {
+        const $sym = $('#historyFilterSymbol');
+        const $side = $('#historyFilterSide');
+
+        if ($sym.length) {
+            if ($sym.data('select2')) {
+                $sym.trigger('change.select2');
+            } else {
+                $sym.select2({
+                    placeholder: 'All Symbols',
+                    allowClear: true,
+                    width: '100%',
+                    dropdownParent: $sym.parent()
+                });
+            }
+        }
+
+        if ($side.length) {
+            if (!$side.data('select2')) {
+                $side.select2({
+                    placeholder: 'All Sides',
+                    minimumResultsForSearch: Infinity,
+                    width: '100%',
+                    dropdownParent: $side.parent()
+                });
+            }
+        }
+    }
+}
+
+async function loadOrders() {
+    try {
+        const ordersTableBody = document.getElementById('ordersTableBody');
+        if (!ordersTableBody) return;
+        const res = await fetch(`${apiBaseUrl}/api/papertrading/orders`);
+        if (!res.ok) return;
+        const orders = await res.json();
+        renderOrders(orders);
+    } catch (err) {
+        console.error('Error loading orders:', err);
+    }
+}
+
+function renderOrders(orders) {
+    const ordersTableBody = document.getElementById('ordersTableBody');
+    if (!ordersTableBody) return;
+    ordersTableBody.innerHTML = '';
+
+    if (!orders || orders.length === 0) {
+        ordersTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-white py-3">No active or pending orders.</td></tr>';
+        return;
+    }
+
+    orders.forEach(o => {
+        const sideBadge = o.side === 0 || o.side === 'BUY' ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>' : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
+        const statusBadge = getStatusBadge(o.status);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><small class="text-white fw-medium">${formatISTTime(o.createdAt)} IST</small></td>
+            <td class="fw-bold">${o.symbol}</td>
+            <td>${sideBadge}</td>
+            <td>${o.orderType === 0 || o.orderType === 'Market' ? 'Market' : 'Limit'}</td>
+            <td>${o.quantity}</td>
+            <td>${o.price > 0 ? '₹' + o.price.toFixed(2) : 'MKT'}</td>
+            <td>${statusBadge}</td>
+            <td class="text-end">
+                ${(o.status === 0 || o.status === 'Pending') ? `<button class="btn btn-outline-secondary btn-sm cancel-order-btn" data-id="${o.id}">Cancel</button>` : '-'}
+            </td>
+        `;
+        ordersTableBody.appendChild(tr);
+    });
+
+    document.querySelectorAll('.cancel-order-btn').forEach(btn => {
+        btn.addEventListener('click', () => handleCancelOrder(btn.dataset.id));
+    });
+}
+
+function getStatusBadge(status) {
+    if (status === 0 || status === 'Pending') return '<span class="badge bg-warning text-dark">Pending</span>';
+    if (status === 1 || status === 'Filled') return '<span class="badge bg-success">Filled</span>';
+    if (status === 2 || status === 'Cancelled') return '<span class="badge bg-secondary">Cancelled</span>';
+    return '<span class="badge bg-danger">Rejected</span>';
+}
+
+async function handleCancelOrder(orderId) {
+    try {
+        const res = await fetch(`${apiBaseUrl}/api/papertrading/order/${orderId}`, { method: 'DELETE' });
+        if (res.ok) {
+            showToast('Order cancelled successfully', 'info');
+            loadOrders();
+        }
+    } catch (err) {
+        console.error('Failed to cancel order:', err);
+    }
+}
+
+async function loadHistory(page = 1) {
+    try {
+        const historyTableBody = document.getElementById('historyTableBody');
+        if (!historyTableBody) return;
+        historyPageState.page = page;
+        const query = new URLSearchParams({
+            page: historyPageState.page,
+            pageSize: 10,
+            symbol: historyPageState.symbol || '',
+            side: historyPageState.side || '',
+            fromDate: historyPageState.fromDate || '',
+            toDate: historyPageState.toDate || ''
+        });
+
+        const res = await fetch(`${apiBaseUrl}/api/papertrading/history/paged?${query.toString()}`);
+        if (!res.ok) return;
+        const pagedData = await res.json();
+        renderHistory(pagedData);
+    } catch (err) {
+        console.error('Error loading paged history:', err);
+    }
+}
+
+function renderHistory(pagedData) {
+    const historyTableBody = document.getElementById('historyTableBody');
+    if (!historyTableBody) return;
+    historyTableBody.innerHTML = '';
+
+    const items = pagedData.items || pagedData.Items || [];
+    const totalCount = pagedData.totalCount ?? pagedData.TotalCount ?? 0;
+    const page = pagedData.page ?? pagedData.Page ?? 1;
+    const pageSize = pagedData.pageSize ?? pagedData.PageSize ?? 10;
+    const totalPages = pagedData.totalPages ?? pagedData.TotalPages ?? 0;
+
+    if (!items || items.length === 0) {
+        historyTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-white py-3">No execution history logged for selected criteria.</td></tr>';
+        renderPaginationControls(0, 0, 0, 1, 0);
+        return;
+    }
+
+    items.forEach(h => {
+        const sideBadge = h.side === 0 || h.side === 'BUY' ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>' : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
+        const pnl = h.realizedPnl || 0;
+        const pnlClass = pnl > 0 ? 'text-success' : (pnl < 0 ? 'text-danger' : 'text-white');
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="color:#ffffff !important;"><small class="text-white fw-medium">${formatIST(h.executedAt)}</small></td>
+            <td class="fw-bold">${h.symbol}</td>
+            <td>${sideBadge}</td>
+            <td>${h.quantity}</td>
+            <td>₹${h.executedPrice.toFixed(2)}</td>
+            <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}</td>
+            <td style="color:#ffffff !important;"><small class="text-white fw-medium">${h.remarks || '-'}</small></td>
+        `;
+        historyTableBody.appendChild(tr);
+    });
+
+    const startItem = (page - 1) * pageSize + 1;
+    const endItem = Math.min(page * pageSize, totalCount);
+    renderPaginationControls(startItem, endItem, totalCount, page, totalPages);
+}
+
+function renderPaginationControls(startItem, endItem, totalCount, currentPage, totalPages) {
+    const infoSpan = document.getElementById('historyPaginationInfo');
+    const ul = document.getElementById('historyPaginationUl');
+
+    if (infoSpan) {
+        if (totalCount === 0) {
+            infoSpan.innerText = 'Showing 0 of 0 trades';
+        } else {
+            infoSpan.innerText = `Showing ${startItem}-${endItem} of ${totalCount} trades`;
+        }
+    }
+
+    if (!ul) return;
+    ul.innerHTML = '';
+
+    if (totalPages <= 1) return;
+
+    // Previous Button
+    const prevLi = document.createElement('li');
+    prevLi.className = `page-item ${currentPage <= 1 ? 'disabled' : ''}`;
+    prevLi.innerHTML = `<a class="page-link bg-dark text-light border-secondary" href="javascript:void(0)" aria-label="Previous">« Prev</a>`;
+    if (currentPage > 1) {
+        prevLi.addEventListener('click', () => loadHistory(currentPage - 1));
+    }
+    ul.appendChild(prevLi);
+
+    // Page Numbers
+    for (let i = 1; i <= totalPages; i++) {
+        const li = document.createElement('li');
+        const isActive = i === currentPage;
+        li.className = `page-item ${isActive ? 'active' : ''}`;
+        li.innerHTML = `<a class="page-link ${isActive ? 'bg-primary text-white border-primary fw-bold' : 'bg-dark text-light border-secondary'}" href="javascript:void(0)">${i}</a>`;
+        if (!isActive) {
+            const pNum = i;
+            li.addEventListener('click', () => loadHistory(pNum));
+        }
+        ul.appendChild(li);
+    }
+
+    // Next Button
+    const nextLi = document.createElement('li');
+    nextLi.className = `page-item ${currentPage >= totalPages ? 'disabled' : ''}`;
+    nextLi.innerHTML = `<a class="page-link bg-dark text-light border-secondary" href="javascript:void(0)" aria-label="Next">Next »</a>`;
+    if (currentPage < totalPages) {
+        nextLi.addEventListener('click', () => loadHistory(currentPage + 1));
+    }
+    ul.appendChild(nextLi);
+}
+
 
 function setupEventListeners() {
+    const btnFilterHistory = document.getElementById('btnFilterHistory');
+    const btnResetHistoryFilter = document.getElementById('btnResetHistoryFilter');
+
+    if (btnFilterHistory) {
+        btnFilterHistory.addEventListener('click', () => {
+            historyPageState.symbol = document.getElementById('historyFilterSymbol')?.value || '';
+            historyPageState.side = document.getElementById('historyFilterSide')?.value || '';
+            historyPageState.fromDate = document.getElementById('historyFilterFromDate')?.value || '';
+            historyPageState.toDate = document.getElementById('historyFilterToDate')?.value || '';
+            loadHistory(1);
+        });
+    }
+
+    if (btnResetHistoryFilter) {
+        btnResetHistoryFilter.addEventListener('click', () => {
+            const symEl = document.getElementById('historyFilterSymbol');
+            const sideEl = document.getElementById('historyFilterSide');
+            if (symEl) {
+                symEl.value = '';
+                if (window.jQuery && $.fn.select2 && $(symEl).data('select2')) $(symEl).trigger('change.select2');
+            }
+            if (sideEl) {
+                sideEl.value = '';
+                if (window.jQuery && $.fn.select2 && $(sideEl).data('select2')) $(sideEl).trigger('change.select2');
+            }
+            if (document.getElementById('historyFilterFromDate')) document.getElementById('historyFilterFromDate').value = '';
+            if (document.getElementById('historyFilterToDate')) document.getElementById('historyFilterToDate').value = '';
+            historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: '', toDate: '' };
+            loadHistory(1);
+        });
+    }
     // Master Toggle Handler
     const chkToggle = document.getElementById("chkAutoTradeToggle");
     if (chkToggle) {
@@ -287,7 +604,17 @@ function setupEventListeners() {
                     showToast("✅ Auto Trade Settings updated successfully!", "success");
                     loadDashboardData();
                 } else {
-                    showToast("⚠️ Settings update failed. Please check validation limits.", "error");
+                    let errMsg = "Settings update failed. Please check validation limits.";
+                    try {
+                        const errObj = await res.json();
+                        if (errObj && errObj.errors) {
+                            const firstErr = Object.values(errObj.errors).flat()[0];
+                            if (firstErr) errMsg = firstErr;
+                        } else if (errObj && (errObj.message || errObj.title)) {
+                            errMsg = errObj.message || errObj.title;
+                        }
+                    } catch (_) {}
+                    showToast(`⚠️ ${errMsg}`, "error");
                 }
             } catch (err) {
                 console.error("Settings update failed:", err);

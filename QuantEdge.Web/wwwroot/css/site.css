@@ -2960,4 +2960,41 @@ textarea.form-control {
     }
 }
 
+/* Global Glassmorphic Tooltip Styling */
+.qe-global-tooltip {
+    position: fixed;
+    z-index: 999999;
+    pointer-events: none;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 8px;
+    padding: 8px 14px;
+    color: #f8fafc;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 10px rgba(56, 189, 248, 0.2);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+    max-width: 280px;
+    word-wrap: break-word;
+}
+
+.qe-global-tooltip.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.qe-tt-plain-text {
+    color: #f8fafc;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
 

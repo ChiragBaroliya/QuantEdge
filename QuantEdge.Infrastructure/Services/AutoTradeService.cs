@@ -126,6 +126,8 @@ public class AutoTradeService : IAutoTradeService
             ActivePositionsCount = positions.Count,
             TotalUnrealizedPnl = unrealizedPnl,
             TotalRealizedPnlToday = todayRealizedPnl,
+            AvailableMargin = paperAccount?.AvailableMargin ?? 0m,
+            UsedMargin = paperAccount?.UsedMargin ?? 0m,
             IsWebSocketConnected = true,
             IsRestPollingFallback = false,
             SystemStatus = settings.IsAutoTradeEnabled ? "ACTIVE" : "PAUSED",

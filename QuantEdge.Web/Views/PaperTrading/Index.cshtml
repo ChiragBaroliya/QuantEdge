@@ -46,7 +46,7 @@
     <!-- Account Summary Stat Cards -->
     <div class="row g-3 mb-4">
         <div class="col-xl-3 col-lg-6 col-md-6 col-6">
-            <div class="card paper-card p-3">
+            <div class="card paper-card p-3" title="Overall account portfolio value: Current Cash Balance + Live Unrealized P&L.">
                 <span class="stat-card-title">Total Account Equity</span>
                 <h4 id="statTotalEquity" class="fw-bold text-light mb-0 mt-1">₹1,00,000.00</h4>
                 <div class="progress mt-2" style="height: 4px; background: rgba(255,255,255,0.1);">
@@ -55,21 +55,21 @@
             </div>
         </div>
         <div class="col-xl-3 col-lg-6 col-md-6 col-6">
-            <div class="card paper-card p-3">
+            <div class="card paper-card p-3" title="Cash balance remaining to place new manual or auto paper orders.">
                 <span class="stat-card-title">Available Margin</span>
                 <h4 id="statAvailableMargin" class="fw-bold text-info mb-0 mt-1">₹1,00,000.00</h4>
-                <small id="statUsedMargin" class="stat-card-subtext">Used Margin: ₹0.00</small>
+                <small id="statUsedMargin" class="stat-card-subtext text-warning fw-semibold mt-1 d-block" title="Total money committed to active open paper positions.">Used Margin: ₹0.00</small>
             </div>
         </div>
         <div class="col-xl-3 col-lg-6 col-md-6 col-6">
-            <div class="card paper-card p-3">
+            <div class="card paper-card p-3" title="Combined live profit or loss across all active open paper positions.">
                 <span class="stat-card-title">Unrealized P&L</span>
                 <h4 id="statUnrealizedPnl" class="fw-bold text-light mb-0 mt-1">₹0.00</h4>
                 <small class="stat-card-subtext">Live Open Positions</small>
             </div>
         </div>
         <div class="col-xl-3 col-lg-6 col-md-6 col-6">
-            <div class="card paper-card p-3">
+            <div class="card paper-card p-3" title="Net booked profit or loss from all closed trades in history.">
                 <span class="stat-card-title">Realized P&L</span>
                 <h4 id="statRealizedPnl" class="fw-bold text-light mb-0 mt-1">₹0.00</h4>
                 <small class="stat-card-subtext">Closed Trades Ledger</small>
@@ -84,14 +84,14 @@
             <div class="card paper-card p-4">
                 <h5 class="fw-bold text-light mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom border-secondary border-opacity-25 pb-2">
                     <span>🎯 Order Ticket</span>
-                    <span id="liveLtpBadge" class="badge bg-secondary bg-opacity-25 text-info font-monospace">LTP: --</span>
+                    <span id="liveLtpBadge" class="badge bg-secondary bg-opacity-25 text-info font-monospace" title="Current Live Last Traded Price from market feeds">LTP: --</span>
                 </h5>
 
                 <form id="paperOrderForm" novalidate>
                     <!-- Symbol Selection -->
                     <div class="mb-3">
-                        <label class="paper-label" for="orderSymbol">Stock / Index Symbol</label>
-                        <select id="orderSymbol" class="form-select paper-input">
+                        <label class="paper-label" for="orderSymbol" title="Select the stock or index symbol you want to trade.">Stock / Index Symbol</label>
+                        <select id="orderSymbol" class="form-select paper-input" title="Select stock symbol">
                             <option value="" disabled selected>Loading Active Stocks...</option>
                         </select>
                     </div>
@@ -99,16 +99,16 @@
                     <!-- Side Tabs (BUY / SELL) -->
                     <div class="btn-group w-100 mb-3" role="group">
                         <input type="radio" class="btn-check" name="orderSide" id="sideBuy" value="BUY" checked>
-                        <label class="btn btn-outline-success fw-bold py-2" for="sideBuy">BUY (LONG)</label>
+                        <label class="btn btn-outline-success fw-bold py-2" for="sideBuy" title="BUY (LONG): Take position expecting stock price to go up.">BUY (LONG)</label>
 
                         <input type="radio" class="btn-check" name="orderSide" id="sideSell" value="SELL">
-                        <label class="btn btn-outline-danger fw-bold py-2" for="sideSell">SELL (SHORT)</label>
+                        <label class="btn btn-outline-danger fw-bold py-2" for="sideSell" title="SELL (SHORT): Take position expecting stock price to go down.">SELL (SHORT)</label>
                     </div>
 
                     <!-- Order Type (Market / Limit) -->
                     <div class="mb-3">
-                        <label class="paper-label" for="orderType">Order Type</label>
-                        <select id="orderType" class="form-select paper-input">
+                        <label class="paper-label" for="orderType" title="Market fills instantly at live price; Limit triggers only at your target price.">Order Type</label>
+                        <select id="orderType" class="form-select paper-input" title="Order execution type">
                             <option value="Market">Market (Instant Fill)</option>
                             <option value="Limit">Limit Order</option>
                         </select>
@@ -116,28 +116,28 @@
 
                     <!-- Limit Price (Hidden by default for Market) -->
                     <div class="mb-3 d-none" id="limitPriceGroup">
-                        <label class="paper-label" for="orderLimitPrice">Limit Price (₹)</label>
-                        <input type="number" step="0.05" id="orderLimitPrice" class="form-control paper-input" placeholder="Target entry price">
+                        <label class="paper-label" for="orderLimitPrice" title="Target entry price for Limit order execution.">Limit Price (₹)</label>
+                        <input type="number" step="0.05" id="orderLimitPrice" class="form-control paper-input" placeholder="Target entry price" title="Target entry price for Limit order execution.">
                         <div id="limitPriceError" class="invalid-feedback text-danger small mt-1"></div>
                     </div>
 
                     <!-- Quantity -->
                     <div class="mb-3">
-                        <label class="paper-label" for="orderQuantity">Quantity (Lots / Shares)</label>
-                        <input type="number" id="orderQuantity" class="form-control paper-input" value="25" min="1">
+                        <label class="paper-label" for="orderQuantity" title="Number of shares or lot quantity to order.">Quantity (Lots / Shares)</label>
+                        <input type="number" id="orderQuantity" class="form-control paper-input" value="25" min="1" title="Number of shares or lot quantity to order.">
                         <div id="quantityError" class="invalid-feedback text-danger small mt-1"></div>
                     </div>
 
                     <!-- Stop Loss & Take Profit (Optional Brackets) -->
                     <div class="row g-2 mb-3">
                         <div class="col-6">
-                            <label class="paper-label" for="orderStopLoss">Stop-Loss (₹)</label>
-                            <input type="number" step="0.05" id="orderStopLoss" class="form-control paper-input" placeholder="SL Price">
+                            <label class="paper-label" for="orderStopLoss" title="Optional price level to automatically exit and limit losses.">Stop-Loss (₹)</label>
+                            <input type="number" step="0.05" id="orderStopLoss" class="form-control paper-input" placeholder="SL Price" title="Optional price level to automatically exit and limit losses.">
                             <div id="stopLossError" class="invalid-feedback text-danger small mt-1"></div>
                         </div>
                         <div class="col-6">
-                            <label class="paper-label" for="orderTakeProfit">Target TP (₹)</label>
-                            <input type="number" step="0.05" id="orderTakeProfit" class="form-control paper-input" placeholder="Target Price">
+                            <label class="paper-label" for="orderTakeProfit" title="Optional target price level to automatically exit with profit.">Target TP (₹)</label>
+                            <input type="number" step="0.05" id="orderTakeProfit" class="form-control paper-input" placeholder="Target Price" title="Optional target price level to automatically exit with profit.">
                             <div id="takeProfitError" class="invalid-feedback text-danger small mt-1"></div>
                         </div>
                     </div>
@@ -231,6 +231,39 @@
 
                     <!-- History Tab -->
                     <div class="tab-pane fade" id="historyTabPane" role="tabpanel">
+                        <!-- History Filter Toolbar -->
+                        <div class="p-3 bg-dark bg-opacity-50 border-bottom border-secondary border-opacity-25">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-xl-3 col-lg-3 col-md-6 col-12">
+                                    <label class="paper-label text-light mb-1" for="historyFilterSymbol" title="Filter history by stock symbol">Stock Symbol ℹ️</label>
+                                    <select id="historyFilterSymbol" class="form-select paper-input form-select-sm" title="Select stock symbol">
+                                        <option value="">All Symbols</option>
+                                    </select>
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-6 col-12">
+                                    <label class="paper-label text-light mb-1" for="historyFilterSide" title="Filter by BUY or SELL side">Trade Side ℹ️</label>
+                                    <select id="historyFilterSide" class="form-select paper-input form-select-sm" title="Select order side">
+                                        <option value="">All Sides</option>
+                                        <option value="BUY">BUY</option>
+                                        <option value="SELL">SELL</option>
+                                    </select>
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-6 col-6">
+                                    <label class="paper-label text-light mb-1" for="historyFilterFromDate" title="Start date filter">From Date ℹ️</label>
+                                    <input type="date" id="historyFilterFromDate" class="form-control paper-input form-control-sm" title="From date">
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-6 col-6">
+                                    <label class="paper-label text-light mb-1" for="historyFilterToDate" title="End date filter">To Date ℹ️</label>
+                                    <input type="date" id="historyFilterToDate" class="form-control paper-input form-control-sm" title="To date">
+                                </div>
+                                <div class="col-xl-3 col-lg-3 col-md-12 col-12 d-flex gap-2 justify-content-end">
+                                    <button type="button" id="btnFilterHistory" class="btn btn-primary btn-sm px-3 fw-bold flex-grow-1" title="Apply selected filters">🔍 Filter</button>
+                                    <button type="button" id="btnResetHistoryFilter" class="btn btn-outline-secondary btn-sm px-3 fw-bold" title="Reset all filters">↺ Reset</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Table -->
                         <div class="paper-table-responsive">
                             <table class="table table-dark table-hover align-middle text-nowrap mb-0 paper-table">
                                 <thead>
@@ -246,10 +279,20 @@
                                 </thead>
                                 <tbody id="historyTableBody">
                                     <tr>
-                                        <td colspan="7" class="text-center text-muted py-3">No execution history logged.</td>
+                                        <td colspan="7" class="text-center text-white py-3">No execution history logged.</td>
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Pagination Controls Footer -->
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 p-3 bg-dark bg-opacity-75 border-top border-secondary border-opacity-25">
+                            <span id="historyPaginationInfo" class="text-white small fw-medium">Showing 0 of 0 trades</span>
+                            <nav aria-label="Trade history pagination">
+                                <ul id="historyPaginationUl" class="pagination pagination-sm mb-0">
+                                    <!-- Dynamic page links rendered by JS -->
+                                </ul>
+                            </nav>
                         </div>
                     </div>
                 </div>

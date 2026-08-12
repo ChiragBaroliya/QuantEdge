@@ -240,7 +240,7 @@ window.showToast = function (message, type, duration) {
 
     // Intercept mouseover globally
     document.addEventListener('mouseover', function (e) {
-        const target = e.target.closest('[data-tooltip], [data-bs-toggle="tooltip"], .rec-badge, [title]');
+        const target = e.target.closest('[title], [data-qe-title], [data-tooltip], [data-bs-toggle="tooltip"], .rec-badge');
         if (!target) return;
 
         let text = target.getAttribute('data-tooltip') || target.getAttribute('data-qe-title');
@@ -265,7 +265,7 @@ window.showToast = function (message, type, duration) {
     });
 
     document.addEventListener('mouseout', function (e) {
-        const target = e.target.closest('[data-tooltip], [data-bs-toggle="tooltip"], .rec-badge, [data-qe-title]');
+        const target = e.target.closest('[title], [data-qe-title], [data-tooltip], [data-bs-toggle="tooltip"], .rec-badge');
         if (target && tooltipEl) {
             tooltipEl.classList.remove('visible');
         }

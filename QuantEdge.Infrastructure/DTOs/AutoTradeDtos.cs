@@ -9,13 +9,13 @@ public class AutoTradeSettingsUpdateDto
 {
     public bool IsAutoTradeEnabled { get; set; } = false;
 
-    [Range(1000, 10000000, ErrorMessage = "Available Capital must be between ₹1,000 and ₹1,00,00,000.")]
+    [Range(typeof(decimal), "1000", "10000000", ErrorMessage = "Available Capital must be between ₹1,000 and ₹1,00,00,000.")]
     public decimal AvailableCapital { get; set; } = 100000.00m;
 
-    [Range(0.1, 100.0, ErrorMessage = "Profit Target % must be between 0.1% and 100%.")]
+    [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Profit Target % must be between 0.1% and 100%.")]
     public decimal ProfitTargetPct { get; set; } = 5.00m;
 
-    [Range(0.1, 100.0, ErrorMessage = "Stop Loss % must be between 0.1% and 100%.")]
+    [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Stop Loss % must be between 0.1% and 100%.")]
     public decimal StopLossPct { get; set; } = 3.00m;
 
     [Range(1, 365, ErrorMessage = "Max Duration must be between 1 and 365 days.")]
@@ -24,7 +24,7 @@ public class AutoTradeSettingsUpdateDto
     [Range(1, 50, ErrorMessage = "Max Trades Per Day must be between 1 and 50.")]
     public int MaxTradesPerDay { get; set; } = 5;
 
-    [Range(100, 1000000, ErrorMessage = "Fixed Amount Per Trade must be between ₹100 and ₹10,00,000.")]
+    [Range(typeof(decimal), "100", "1000000", ErrorMessage = "Trade Amount must be between ₹100 and ₹10,00,000.")]
     public decimal FixedAmountPerTrade { get; set; } = 20000.00m;
 
     [Range(1, 13, ErrorMessage = "Min Conditions Match must be between 1 and 13.")]
@@ -42,6 +42,8 @@ public class AutoTradeDashboardDto
     public int ActivePositionsCount { get; set; }
     public decimal TotalUnrealizedPnl { get; set; }
     public decimal TotalRealizedPnlToday { get; set; }
+    public decimal AvailableMargin { get; set; }
+    public decimal UsedMargin { get; set; }
     public bool IsWebSocketConnected { get; set; }
     public bool IsRestPollingFallback { get; set; }
     public string SystemStatus { get; set; } = "IDLE"; // ACTIVE, PAUSED, TOKEN_EXPIRED, STOPPED

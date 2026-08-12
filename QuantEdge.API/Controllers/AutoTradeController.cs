@@ -42,7 +42,6 @@ public class AutoTradeController : ControllerBase
     /// Updates user configurable auto trading parameters (Capital, Target%, SL%, Max Trades/day, Fixed Amount/trade, Min Condition Match).
     /// </summary>
     [HttpPut("settings")]
-    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateSettings([FromBody] AutoTradeSettingsUpdateDto dto)
     {
         if (!ModelState.IsValid)
@@ -58,7 +57,6 @@ public class AutoTradeController : ControllerBase
     /// Master toggle ON / OFF switch for Auto Paper Trading.
     /// </summary>
     [HttpPost("toggle")]
-    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
     public async Task<IActionResult> ToggleAutoTrade([FromBody] ToggleAutoTradeRequestDto dto)
     {
         await _autoTradeService.ToggleAutoTradeAsync(dto.Enabled, GetCurrentUserId());

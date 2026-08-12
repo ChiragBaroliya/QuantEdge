@@ -175,26 +175,23 @@ public class PaperTradingRepository : IPaperTradingRepository
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
             SELECT 
-                id AS Id,
-                account_id AS AccountId,
-                symbol AS Symbol,
-                order_type AS OrderType,
-                side AS Side,
-                quantity AS Quantity,
-                price AS Price,
-                trigger_price AS TriggerPrice,
-                stop_loss AS StopLoss,
-                take_profit AS TakeProfit,
-                status AS Status,
-                filled_price AS FilledPrice,
-                filled_at AS FilledAt,
-                trade_type AS TradeType,
-                created_at AS CreatedAt,
-                remarks AS Remarks
-            FROM paper_orders
-            WHERE account_id = @accountId
-              AND (@activeOnly = FALSE OR status = 0)
-            ORDER BY created_at DESC;";
+                Id,
+                AccountId,
+                Symbol,
+                OrderType,
+                Side,
+                Quantity,
+                Price,
+                TriggerPrice,
+                StopLoss,
+                TakeProfit,
+                Status,
+                FilledPrice,
+                FilledAt,
+                TradeType,
+                CreatedAt,
+                Remarks
+            FROM fn_get_paper_orders(@accountId, @activeOnly);";
 
         return await connection.QueryAsync<PaperOrder>(sql, new { accountId, activeOnly });
     }
@@ -390,6 +387,82 @@ public class PaperTradingRepository : IPaperTradingRepository
             LIMIT @limit;";
 
         return await connection.QueryAsync<PaperTradeHistory>(sql, new { accountId, limit });
+    }
+
+    public async Task<(IEnumerable<PaperTradeHistory> Items, int TotalCount)> GetTradeHistoryPagedAsync(int accountId, QuantEdge.Infrastructure.DTOs.PaperTradeHistoryFilterDto filter)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        
+        int page = filter.Page < 1 ? 1 : filter.Page;
+        int pageSize = filter.PageSize <= 0 ? 10 : filter.PageSize;
+        int offset = (page - 1) * pageSize;
+
+        string sql = @"
+            SELECT 
+                Id,
+                AccountId,
+                OrderId,
+                Symbol,
+                Side,
+                Quantity,
+                ExecutedPrice,
+                RealizedPnl,
+                TradeType,
+                ExitReason,
+                ExecutedAt,
+                Remarks,
+                TotalCount
+            FROM fn_get_paper_trade_history_paged(
+                @AccountId,
+                @Symbol,
+                @Side,
+                @FromDate,
+                @ToDate,
+                @PageSize,
+                @Offset
+            );";
+
+        var param = new
+        {
+            AccountId = accountId,
+            Symbol = string.IsNullOrWhiteSpace(filter.Symbol) ? null : filter.Symbol.Trim(),
+            Side = filter.Side.HasValue ? (int?)filter.Side.Value : null,
+            FromDate = filter.FromDate,
+            ToDate = filter.ToDate,
+            PageSize = pageSize,
+            Offset = offset
+        };
+
+        var rawResult = (await connection.QueryAsync<PaperTradeHistoryPagedRaw>(sql, param)).ToList();
+
+        if (!rawResult.Any())
+        {
+            return (Enumerable.Empty<PaperTradeHistory>(), 0);
+        }
+
+        int totalCount = rawResult.First().TotalCount;
+        var items = rawResult.Select(r => new PaperTradeHistory
+        {
+            Id = r.Id,
+            AccountId = r.AccountId,
+            OrderId = r.OrderId,
+            Symbol = r.Symbol,
+            Side = r.Side,
+            Quantity = r.Quantity,
+            ExecutedPrice = r.ExecutedPrice,
+            RealizedPnl = r.RealizedPnl,
+            TradeType = r.TradeType,
+            ExitReason = r.ExitReason,
+            ExecutedAt = r.ExecutedAt,
+            Remarks = r.Remarks
+        });
+
+        return (items, totalCount);
+    }
+
+    private class PaperTradeHistoryPagedRaw : PaperTradeHistory
+    {
+        public int TotalCount { get; set; }
     }
 
     public async Task ResetAccountAsync(int accountId, decimal defaultBalance = 100000m)

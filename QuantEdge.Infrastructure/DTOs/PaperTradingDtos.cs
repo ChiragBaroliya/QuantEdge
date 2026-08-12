@@ -61,3 +61,22 @@ public class AutoTradeSettingsDto
     public int MaxOpenPositions { get; set; } = 5;
     public decimal DailyMaxLossLimit { get; set; } = 2000m;
 }
+
+public class PaperTradeHistoryFilterDto
+{
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 10;
+    public string? Symbol { get; set; }
+    public TradeSide? Side { get; set; }
+    public DateTime? FromDate { get; set; }
+    public DateTime? ToDate { get; set; }
+}
+
+public class PagedResultDto<T>
+{
+    public IEnumerable<T> Items { get; set; } = new List<T>();
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages => PageSize > 0 ? (int)Math.Ceiling((double)TotalCount / PageSize) : 0;
+}

@@ -1070,4 +1070,121 @@ $BODY$
 LANGUAGE plpgsql;
 
 
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_paper_trade_history_paged
+-- Returns database-side paged paper trade execution history with multi-column filtering.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_paper_trade_history_paged CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_paper_trade_history_paged(
+    p_account_id INT,
+    p_symbol VARCHAR DEFAULT NULL,
+    p_side INT DEFAULT NULL,
+    p_from_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_to_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_page_size INT DEFAULT 10,
+    p_offset INT DEFAULT 0
+)
+RETURNS TABLE (
+    Id INT,
+    AccountId INT,
+    OrderId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    ExecutedPrice NUMERIC,
+    RealizedPnl NUMERIC,
+    TradeType INT,
+    ExitReason VARCHAR,
+    ExecutedAt TIMESTAMP WITH TIME ZONE,
+    Remarks VARCHAR,
+    TotalCount BIGINT
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        h.id AS Id,
+        h.account_id AS AccountId,
+        h.order_id AS OrderId,
+        h.symbol AS Symbol,
+        h.side AS Side,
+        h.quantity AS Quantity,
+        h.executed_price AS ExecutedPrice,
+        h.realized_pnl AS RealizedPnl,
+        h.trade_type AS TradeType,
+        h.exit_reason AS ExitReason,
+        h.executed_at AS ExecutedAt,
+        h.remarks AS Remarks,
+        COUNT(*) OVER() AS TotalCount
+    FROM paper_trade_history h
+    WHERE h.account_id = p_account_id
+      AND (p_symbol IS NULL OR p_symbol = '' OR UPPER(h.symbol) = UPPER(p_symbol))
+      AND (p_side IS NULL OR h.side = p_side)
+      AND (p_from_date IS NULL OR h.executed_at >= p_from_date)
+      AND (p_to_date IS NULL OR h.executed_at <= p_to_date)
+    ORDER BY h.executed_at DESC
+    LIMIT p_page_size OFFSET p_offset;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_paper_orders
+-- Returns active/pending paper orders with created_at and filled_at converted to IST.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_paper_orders CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_paper_orders(
+    p_account_id INT,
+    p_active_only BOOLEAN DEFAULT FALSE
+)
+RETURNS TABLE (
+    Id INT,
+    AccountId INT,
+    Symbol VARCHAR,
+    OrderType INT,
+    Side INT,
+    Quantity INT,
+    Price NUMERIC,
+    TriggerPrice NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    Status INT,
+    FilledPrice NUMERIC,
+    FilledAt TIMESTAMP,
+    TradeType INT,
+    CreatedAt TIMESTAMP,
+    Remarks VARCHAR
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        o.id AS Id,
+        o.account_id AS AccountId,
+        o.symbol AS Symbol,
+        o.order_type AS OrderType,
+        o.side AS Side,
+        o.quantity AS Quantity,
+        o.price AS Price,
+        o.trigger_price AS TriggerPrice,
+        o.stop_loss AS StopLoss,
+        o.take_profit AS TakeProfit,
+        o.status AS Status,
+        o.filled_price AS FilledPrice,
+        (o.filled_at AT TIME ZONE 'Asia/Kolkata')::TIMESTAMP AS FilledAt,
+        o.trade_type AS TradeType,
+        (o.created_at AT TIME ZONE 'Asia/Kolkata')::TIMESTAMP AS CreatedAt,
+        o.remarks AS Remarks
+    FROM paper_orders o
+    WHERE o.account_id = p_account_id
+      AND (p_active_only = FALSE OR o.status = 0)
+    ORDER BY o.created_at DESC;
+END;
+$$;
+
+
 

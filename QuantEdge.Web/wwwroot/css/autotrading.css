@@ -165,7 +165,7 @@ input:checked + .slider:before {
 /* Metrics & Stats Grid */
 .autotrade-stats-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 16px;
     margin-bottom: 20px;
     width: 100%;
@@ -394,11 +394,40 @@ input:checked + .slider:before {
     word-wrap: break-word;
 }
 
-.log-entry .time { color: #64748b; margin-right: 8px; }
+.log-entry .time { color: #ffffff !important; font-weight: 600; margin-right: 8px; }
 .log-entry.buy { color: #4ade80; }
 .log-entry.sell { color: #f87171; }
 .log-entry.skip { color: #fbbf24; }
 .log-entry.alert { color: #ec4899; }
+
+/* Custom Dark Theme Nav Tabs for Orders & History */
+#autoTradeOrdersTab {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+#autoTradeOrdersTab .nav-link {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    color: #94a3b8 !important;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+    transition: all 0.2s ease;
+    border-radius: 6px 6px 0 0 !important;
+}
+
+#autoTradeOrdersTab .nav-link:hover {
+    color: #f8fafc !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+}
+
+#autoTradeOrdersTab .nav-link.active {
+    background: rgba(56, 189, 248, 0.12) !important;
+    color: #ffffff !important;
+    border-bottom: 2px solid #38bdf8 !important;
+    box-shadow: none !important;
+}
 
 /* Settings Panel & Grid Form */
 .settings-panel {

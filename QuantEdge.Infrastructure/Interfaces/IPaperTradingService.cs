@@ -21,4 +21,5 @@ public interface IPaperTradingService
     Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync(string userId = "default_user");
     Task<IEnumerable<PaperOrder>> GetOrdersAsync(string userId = "default_user", bool activeOnly = false);
     Task<IEnumerable<PaperTradeHistory>> GetTradeHistoryAsync(string userId = "default_user", int limit = 50);
+    Task<PagedResultDto<PaperTradeHistory>> GetTradeHistoryPagedAsync(PaperTradeHistoryFilterDto filter, string userId = "default_user");
 }

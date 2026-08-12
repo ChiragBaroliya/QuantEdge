@@ -434,6 +434,20 @@ public class PaperTradingService : IPaperTradingService
         return await _repository.GetTradeHistoryAsync(account.Id, limit);
     }
 
+    public async Task<PagedResultDto<PaperTradeHistory>> GetTradeHistoryPagedAsync(PaperTradeHistoryFilterDto filter, string userId = "default_user")
+    {
+        var account = await GetOrCreateAccountAsync(userId);
+        var (items, totalCount) = await _repository.GetTradeHistoryPagedAsync(account.Id, filter);
+
+        return new PagedResultDto<PaperTradeHistory>
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = filter.Page < 1 ? 1 : filter.Page,
+            PageSize = filter.PageSize <= 0 ? 10 : filter.PageSize
+        };
+    }
+
     private async Task BroadcastPortfolioUpdateAsync(string userId)
     {
         try

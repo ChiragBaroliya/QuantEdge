@@ -44,23 +44,31 @@
 
     <!-- Metrics Stats Grid -->
     <div class="autotrade-stats-grid">
-        <div class="stat-card">
+        <div class="stat-card" title="Shows whether the automated trading bot is currently ACTIVE or PAUSED.">
             <div class="stat-label">System Status</div>
             <div class="stat-value" id="sys-status-text" style="color: #f87171;">PAUSED</div>
         </div>
-        <div class="stat-card">
-            <div class="stat-label">Available Capital</div>
+        <div class="stat-card" title="Unused cash balance in your account available for taking new trades.">
+            <div class="stat-label">Available Margin</div>
+            <div class="stat-value" id="stat-available-margin" style="color: #38bdf8;">₹0.00</div>
+        </div>
+        <div class="stat-card" title="Total money currently locked in your active open paper positions.">
+            <div class="stat-label">Used Margin</div>
+            <div class="stat-value" id="stat-used-margin" style="color: #f59e0b;">₹0.00</div>
+        </div>
+        <div class="stat-card" title="Maximum budget limit configured for the Auto Trading engine.">
+            <div class="stat-label">Auto Capital Limit</div>
             <div class="stat-value" id="stat-capital">₹1,00,000.00</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" title="Number of auto-traded stock positions currently open.">
             <div class="stat-label">Open Auto Positions</div>
             <div class="stat-value" id="stat-open-count">0</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" title="Live total profit or loss of all open auto positions based on real-time market prices.">
             <div class="stat-label">Unrealized P&L</div>
             <div class="stat-value" id="stat-unrealized-pnl">₹0.00</div>
         </div>
-        <div class="stat-card stat-card-full-mobile">
+        <div class="stat-card stat-card-full-mobile" title="Total profit or loss from auto trades closed today.">
             <div class="stat-label">Today's Realized P&L</div>
             <div class="stat-value" id="stat-realized-pnl">₹0.00</div>
         </div>
@@ -74,7 +82,7 @@
             <div class="card-box">
                 <div class="card-box-header">
                     <h3 class="card-title">⚡ Open Auto Positions <span class="card-subtitle-inline">(Real-time Ticks)</span></h3>
-                    <span class="card-badge-info d-none d-sm-inline-block">Monitored via KiteTicker WebSocket / REST Fallback</span>
+                    <span class="card-badge-info d-none d-sm-inline-block" title="Monitored live via KiteTicker WebSocket tick data with automatic REST polling fallback">Monitored via KiteTicker WebSocket / REST Fallback</span>
                 </div>
                 <div class="table-responsive-wrapper">
                     <div class="table-scroll-hint d-md-none">
@@ -87,13 +95,13 @@
                         <table class="qe-table">
                             <thead>
                                 <tr>
-                                    <th>Symbol</th>
-                                    <th>Entry Price</th>
-                                    <th>Live LTP</th>
-                                    <th>Quantity (Value)</th>
-                                    <th>Target (+5%)</th>
-                                    <th>Stop Loss (-3%)</th>
-                                    <th>Unrealized P&L</th>
+                                    <th title="Stock symbol name">Symbol</th>
+                                    <th title="Average price where position was bought">Entry Price</th>
+                                    <th title="Current live market price from Zerodha">Live LTP</th>
+                                    <th title="Number of shares bought and total value">Quantity (Value)</th>
+                                    <th title="Target price to auto sell with profit">Target (+5%)</th>
+                                    <th title="Stop loss price to auto sell and limit loss">Stop Loss (-3%)</th>
+                                    <th title="Live profit or loss for this position">Unrealized P&L</th>
                                 </tr>
                             </thead>
                             <tbody id="tbl-open-positions-body">
@@ -102,6 +110,112 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active / Pending Orders & Execution History Card -->
+            <div class="card-box mt-3 mb-3">
+                <ul class="nav nav-tabs" id="autoTradeOrdersTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="autoOrdersTab" data-bs-toggle="tab" data-bs-target="#autoOrdersTabPane" type="button" role="tab">Active / Pending Orders</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="autoHistoryTab" data-bs-toggle="tab" data-bs-target="#autoHistoryTabPane" type="button" role="tab">Execution History</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content pt-3" id="autoTradeOrdersTabContent">
+                    <!-- Orders Tab -->
+                    <div class="tab-pane fade show active" id="autoOrdersTabPane" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="qe-table">
+                                <thead>
+                                    <tr>
+                                        <th>TIME</th>
+                                        <th>SYMBOL</th>
+                                        <th>TYPE</th>
+                                        <th>SIDE</th>
+                                        <th>QTY</th>
+                                        <th>PRICE</th>
+                                        <th>STATUS</th>
+                                        <th class="text-end">ACTION</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ordersTableBody">
+                                    <tr>
+                                        <td colspan="8" class="text-center text-white py-3">No active or pending orders.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- History Tab -->
+                    <div class="tab-pane fade" id="autoHistoryTabPane" role="tabpanel">
+                        <!-- History Filter Toolbar -->
+                        <div class="p-3 bg-dark bg-opacity-50 border-bottom border-secondary border-opacity-25 rounded-3 mb-2">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-xl-3 col-lg-3 col-md-6 col-12">
+                                    <label class="paper-label text-light mb-1" for="historyFilterSymbol" title="Filter history by stock symbol">Stock Symbol</label>
+                                    <select id="historyFilterSymbol" class="form-select paper-input form-select-sm" title="Select stock symbol">
+                                        <option value="">All Symbols</option>
+                                    </select>
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-6 col-12">
+                                    <label class="paper-label text-light mb-1" for="historyFilterSide" title="Filter by BUY or SELL side">Trade Side</label>
+                                    <select id="historyFilterSide" class="form-select paper-input form-select-sm" title="Select order side">
+                                        <option value="">All Sides</option>
+                                        <option value="BUY">BUY</option>
+                                        <option value="SELL">SELL</option>
+                                    </select>
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-6 col-6">
+                                    <label class="paper-label text-light mb-1" for="historyFilterFromDate" title="Start date filter">From Date</label>
+                                    <input type="date" id="historyFilterFromDate" class="form-control paper-input form-control-sm" title="From date">
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-6 col-6">
+                                    <label class="paper-label text-light mb-1" for="historyFilterToDate" title="End date filter">To Date</label>
+                                    <input type="date" id="historyFilterToDate" class="form-control paper-input form-control-sm" title="To date">
+                                </div>
+                                <div class="col-xl-3 col-lg-3 col-md-12 col-12 d-flex gap-2 justify-content-end">
+                                    <button type="button" id="btnFilterHistory" class="btn btn-primary btn-sm px-3 fw-bold flex-grow-1" title="Apply selected filters">🔍 Filter</button>
+                                    <button type="button" id="btnResetHistoryFilter" class="btn btn-outline-secondary btn-sm px-3 fw-bold" title="Reset all filters">↺ Reset</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Table -->
+                        <div class="table-responsive">
+                            <table class="qe-table">
+                                <thead>
+                                    <tr>
+                                        <th>TIME</th>
+                                        <th>SYMBOL</th>
+                                        <th>SIDE</th>
+                                        <th>QTY</th>
+                                        <th>EXECUTED PRICE</th>
+                                        <th>REALIZED P&L</th>
+                                        <th>REMARKS</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="historyTableBody">
+                                    <tr>
+                                        <td colspan="7" class="text-center text-white py-3">No execution history logged.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination Controls Footer -->
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 p-3 bg-dark bg-opacity-75 border-top border-secondary border-opacity-25 rounded-bottom-3">
+                            <span id="historyPaginationInfo" class="text-white small fw-medium">Showing 0 of 0 trades</span>
+                            <nav aria-label="Trade history pagination">
+                                <ul id="historyPaginationUl" class="pagination pagination-sm mb-0">
+                                    <!-- Dynamic page links rendered by JS -->
+                                </ul>
+                            </nav>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -122,46 +236,46 @@
                     <h3 class="panel-title mb-0">⚙️ Auto Trade Settings</h3>
                     @if (!User.IsInRole("Admin"))
                     {
-                        <span class="badge bg-secondary text-white" style="font-size:11px; padding:4px 8px;">🔒 Read-Only (Admin Only)</span>
+                        <span class="badge bg-secondary text-white" style="font-size:11px; padding:4px 8px;" title="Only System Admin can edit settings">🔒 Read-Only (Admin Only)</span>
                     }
                 </div>
                 <form id="frmAutoSettings" class="settings-form-grid">
                     @if (User.IsInRole("Admin"))
                     {
                         <div class="form-group col-half">
-                            <label class="form-label">Available Capital (₹)</label>
-                            <input type="number" id="txtCapital" class="form-input" value="100000" min="1000" step="5000" />
+                            <label class="form-label" title="Budget limit allocated for auto trading.">Available Capital (₹)</label>
+                            <input type="number" id="txtCapital" class="form-input" value="100000" min="1000" step="5000" title="Budget limit allocated for auto trading." />
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Fixed Amount / Trade (₹)</label>
-                            <input type="number" id="txtFixedAmount" class="form-input" value="20000" min="500" step="1000" />
+                            <label class="form-label" title="Maximum money spent per auto trade.">Trade Amount (₹)</label>
+                            <input type="number" id="txtFixedAmount" class="form-input" value="20000" min="500" step="1000" title="Maximum money spent per auto trade." />
                             <small class="form-help-text">Trade qty up to this amount.</small>
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Profit Target %</label>
-                            <input type="number" id="txtTargetPct" class="form-input" value="5.0" min="0.5" max="50" step="0.5" />
+                            <label class="form-label" title="Target percentage gain to auto sell and book profit.">Profit Target %</label>
+                            <input type="number" id="txtTargetPct" class="form-input" value="5.0" min="0.1" max="100" step="0.01" title="Target percentage gain to auto sell and book profit." />
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Stop Loss %</label>
-                            <input type="number" id="txtStopLossPct" class="form-input" value="3.0" min="0.5" max="50" step="0.5" />
+                            <label class="form-label" title="Maximum loss percentage before auto selling to protect capital.">Stop Loss %</label>
+                            <input type="number" id="txtStopLossPct" class="form-input" value="3.0" min="0.1" max="100" step="0.01" title="Maximum loss percentage before auto selling to protect capital." />
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Max Duration (Days)</label>
-                            <input type="number" id="txtMaxDuration" class="form-input" value="20" min="1" max="100" />
+                            <label class="form-label" title="Maximum holding days before automatically closing a position.">Max Duration (Days)</label>
+                            <input type="number" id="txtMaxDuration" class="form-input" value="20" min="1" max="100" title="Maximum holding days before automatically closing a position." />
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Max Trades / Day</label>
-                            <input type="number" id="txtMaxTrades" class="form-input" value="5" min="1" max="20" />
+                            <label class="form-label" title="Maximum number of auto trades allowed per day.">Max Trades / Day</label>
+                            <input type="number" id="txtMaxTrades" class="form-input" value="5" min="1" max="20" title="Maximum number of auto trades allowed per day." />
                         </div>
 
                         <div class="form-group col-full">
-                            <label class="form-label">Min Condition Match (Out of 11)</label>
-                            <input type="number" id="txtMinConditions" class="form-input" value="10" min="1" max="11" />
+                            <label class="form-label" title="Minimum strategy criteria out of 11 required to trigger an auto buy signal.">Min Condition Match (Out of 11)</label>
+                            <input type="number" id="txtMinConditions" class="form-input" value="10" min="1" max="11" title="Minimum strategy criteria out of 11 required to trigger an auto buy signal." />
                             <small class="form-help-text">Minimum criteria required to trigger auto BUY.</small>
                         </div>
 
@@ -170,44 +284,44 @@
                     else
                     {
                         <div class="form-group col-half">
-                            <label class="form-label">Available Capital (₹)</label>
-                            <input type="number" id="txtCapital" class="form-input" value="100000" disabled />
+                            <label class="form-label" title="Budget limit allocated for auto trading.">Available Capital (₹)</label>
+                            <input type="number" id="txtCapital" class="form-input" value="100000" disabled title="Budget limit allocated for auto trading." />
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Fixed Amount / Trade (₹)</label>
-                            <input type="number" id="txtFixedAmount" class="form-input" value="20000" disabled />
+                            <label class="form-label" title="Maximum money spent per auto trade.">Trade Amount (₹)</label>
+                            <input type="number" id="txtFixedAmount" class="form-input" value="20000" disabled title="Maximum money spent per auto trade." />
                             <small class="form-help-text">Trade qty up to this amount.</small>
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Profit Target %</label>
-                            <input type="number" id="txtTargetPct" class="form-input" value="5.0" disabled />
+                            <label class="form-label" title="Target percentage gain to auto sell and book profit.">Profit Target %</label>
+                            <input type="number" id="txtTargetPct" class="form-input" value="5.0" disabled step="0.01" title="Target percentage gain to auto sell and book profit." />
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Stop Loss %</label>
-                            <input type="number" id="txtStopLossPct" class="form-input" value="3.0" disabled />
+                            <label class="form-label" title="Maximum loss percentage before auto selling to protect capital.">Stop Loss %</label>
+                            <input type="number" id="txtStopLossPct" class="form-input" value="3.0" disabled step="0.01" title="Maximum loss percentage before auto selling to protect capital." />
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Max Duration (Days)</label>
-                            <input type="number" id="txtMaxDuration" class="form-input" value="20" disabled />
+                            <label class="form-label" title="Maximum holding days before automatically closing a position.">Max Duration (Days)</label>
+                            <input type="number" id="txtMaxDuration" class="form-input" value="20" disabled title="Maximum holding days before automatically closing a position." />
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label">Max Trades / Day</label>
-                            <input type="number" id="txtMaxTrades" class="form-input" value="5" disabled />
+                            <label class="form-label" title="Maximum number of auto trades allowed per day.">Max Trades / Day</label>
+                            <input type="number" id="txtMaxTrades" class="form-input" value="5" disabled title="Maximum number of auto trades allowed per day." />
                         </div>
 
                         <div class="form-group col-full">
-                            <label class="form-label">Min Condition Match (Out of 11)</label>
-                            <input type="number" id="txtMinConditions" class="form-input" value="10" disabled />
+                            <label class="form-label" title="Minimum strategy criteria out of 11 required to trigger an auto buy signal.">Min Condition Match (Out of 11)</label>
+                            <input type="number" id="txtMinConditions" class="form-input" value="10" disabled title="Minimum strategy criteria out of 11 required to trigger an auto buy signal." />
                             <small class="form-help-text">Minimum criteria required to trigger auto BUY.</small>
                         </div>
 
                         <div class="alert alert-dark text-center col-full mt-2 style-readonly-msg" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; font-size: 12px; padding: 10px; border-radius: 6px;">
-                            ℹ️ Auto Trade parameters are configured by System Administrator.
+                            Auto Trade parameters are configured by System Administrator.
                         </div>
                     }
                 </form>

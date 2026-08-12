@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentLtpMap = {};
     let activeSymbol = orderSymbol ? orderSymbol.value : 'NIFTY';
     let signalRConnection = null;
+    let historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: '', toDate: '' };
 
     // --- 1. Initial Load & Setup ---
     init();
@@ -148,6 +149,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnSaveAutoTradeSettings = document.getElementById('btnSaveAutoTradeSettings');
         if (btnSaveAutoTradeSettings) {
             btnSaveAutoTradeSettings.addEventListener('click', handleSaveAutoTradeSettings);
+        }
+
+        const btnFilterHistory = document.getElementById('btnFilterHistory');
+        const btnResetHistoryFilter = document.getElementById('btnResetHistoryFilter');
+
+        if (btnFilterHistory) {
+            btnFilterHistory.addEventListener('click', () => {
+                historyPageState.symbol = document.getElementById('historyFilterSymbol')?.value || '';
+                historyPageState.side = document.getElementById('historyFilterSide')?.value || '';
+                historyPageState.fromDate = document.getElementById('historyFilterFromDate')?.value || '';
+                historyPageState.toDate = document.getElementById('historyFilterToDate')?.value || '';
+                loadHistory(1);
+            });
+        }
+
+        if (btnResetHistoryFilter) {
+            btnResetHistoryFilter.addEventListener('click', () => {
+                if (document.getElementById('historyFilterSymbol')) document.getElementById('historyFilterSymbol').value = '';
+                if (document.getElementById('historyFilterSide')) document.getElementById('historyFilterSide').value = '';
+                if (document.getElementById('historyFilterFromDate')) document.getElementById('historyFilterFromDate').value = '';
+                if (document.getElementById('historyFilterToDate')) document.getElementById('historyFilterToDate').value = '';
+                historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: '', toDate: '' };
+                loadHistory(1);
+            });
         }
     }
 
@@ -332,6 +357,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (orderSymbol && Array.isArray(stocks) && stocks.length > 0) {
                 orderSymbol.innerHTML = '';
+                const historyFilterSymbol = document.getElementById('historyFilterSymbol');
+                if (historyFilterSymbol) historyFilterSymbol.innerHTML = '<option value="">All Symbols</option>';
+
                 stocks.forEach(stock => {
                     const sym = stock.symbol || stock.Symbol;
                     if (sym) {
@@ -339,6 +367,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         opt.value = sym;
                         opt.innerText = sym;
                         orderSymbol.appendChild(opt);
+
+                        if (historyFilterSymbol) {
+                            const opt2 = document.createElement('option');
+                            opt2.value = sym;
+                            opt2.innerText = sym;
+                            historyFilterSymbol.appendChild(opt2);
+                        }
                     }
                 });
                 activeSymbol = orderSymbol.value;
@@ -429,6 +464,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>'
                 : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
 
+            const sl = pos.stopLoss ?? pos.StopLoss;
+            const tp = pos.takeProfit ?? pos.TakeProfit;
+            const slText = sl && sl > 0 ? `₹${parseFloat(sl).toFixed(2)}` : '-';
+            const tpText = tp && tp > 0 ? `₹${parseFloat(tp).toFixed(2)}` : '-';
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="fw-bold">${pos.symbol}</td>
@@ -436,7 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${pos.quantity}</td>
                 <td>₹${pos.averageEntryPrice.toFixed(2)}</td>
                 <td>₹${(pos.currentPrice || pos.averageEntryPrice).toFixed(2)}</td>
-                <td><small class="text-muted">SL: ${pos.stopLoss ? '₹' + pos.stopLoss.toFixed(2) : '-'} | TP: ${pos.takeProfit ? '₹' + pos.takeProfit.toFixed(2) : '-'}</small></td>
+                <td style="color:#ffffff !important;"><small class="text-white fw-bold">SL: ${slText} | TP: ${tpText}</small></td>
                 <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}</td>
                 <td class="text-end">
                     <button class="btn btn-outline-danger btn-sm rounded-2 close-pos-btn" data-id="${pos.id}">Close</button>
@@ -461,30 +501,63 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function formatIST(dateInput) {
+        if (!dateInput) return '-';
+        let rawStr = String(dateInput);
+        if (!rawStr.endsWith('Z') && !rawStr.includes('+')) rawStr += 'Z';
+        let d = new Date(rawStr);
+        if (isNaN(d.getTime())) d = new Date(dateInput);
+        return d.toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
+        }) + ' IST';
+    }
+
+    function formatISTTime(dateInput) {
+        if (!dateInput) return '-';
+        let rawStr = String(dateInput);
+        if (!rawStr.endsWith('Z') && !rawStr.includes('+')) rawStr += 'Z';
+        let d = new Date(rawStr);
+        if (isNaN(d.getTime())) d = new Date(dateInput);
+        return d.toLocaleTimeString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
+        });
+    }
+
     function renderOrders(orders) {
         if (!ordersTableBody) return;
         ordersTableBody.innerHTML = '';
 
         if (!orders || orders.length === 0) {
-            ordersTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No active or pending orders.</td></tr>';
+            ordersTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No active pending orders.</td></tr>';
             return;
         }
 
         orders.forEach(o => {
-            const sideBadge = o.side === 0 || o.side === 'BUY' ? '<span class="badge bg-success">BUY</span>' : '<span class="badge bg-danger">SELL</span>';
+            const sideBadge = o.side === 0 || o.side === 'BUY' ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>' : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
             const statusBadge = getStatusBadge(o.status);
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td><small class="text-muted">${new Date(o.createdAt).toLocaleTimeString()}</small></td>
+                <td><small class="text-white fw-medium">${formatISTTime(o.createdAt)} IST</small></td>
                 <td class="fw-bold">${o.symbol}</td>
-                <td>${o.orderType === 0 || o.orderType === 'Market' ? 'Market' : 'Limit'}</td>
                 <td>${sideBadge}</td>
+                <td>${o.orderType === 0 || o.orderType === 'Market' ? 'Market' : 'Limit'}</td>
                 <td>${o.quantity}</td>
-                <td>₹${o.price.toFixed(2)}</td>
+                <td>${o.price > 0 ? '₹' + o.price.toFixed(2) : 'MKT'}</td>
                 <td>${statusBadge}</td>
                 <td class="text-end">
-                    ${(o.status === 0 || o.status === 'Pending') ? `<button class="btn btn-outline-warning btn-sm cancel-order-btn" data-id="${o.id}">Cancel</button>` : '-'}
+                    ${(o.status === 0 || o.status === 'Pending') ? `<button class="btn btn-outline-secondary btn-sm cancel-order-btn" data-id="${o.id}">Cancel</button>` : '-'}
                 </td>
             `;
             ordersTableBody.appendChild(tr);
@@ -502,43 +575,113 @@ document.addEventListener('DOMContentLoaded', () => {
         return '<span class="badge bg-danger">Rejected</span>';
     }
 
-    async function loadHistory() {
+    async function loadHistory(page = 1) {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/papertrading/history`);
+            historyPageState.page = page;
+            const query = new URLSearchParams({
+                page: historyPageState.page,
+                pageSize: 10,
+                symbol: historyPageState.symbol || '',
+                side: historyPageState.side || '',
+                fromDate: historyPageState.fromDate || '',
+                toDate: historyPageState.toDate || ''
+            });
+
+            const res = await fetch(`${apiBaseUrl}/api/papertrading/history/paged?${query.toString()}`);
             if (!res.ok) return;
-            const history = await res.json();
-            renderHistory(history);
+            const pagedData = await res.json();
+            renderHistory(pagedData);
         } catch (err) {
-            console.error('Error loading history:', err);
+            console.error('Error loading paged history:', err);
         }
     }
 
-    function renderHistory(history) {
+    function renderHistory(pagedData) {
         if (!historyTableBody) return;
         historyTableBody.innerHTML = '';
 
-        if (!history || history.length === 0) {
-            historyTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">No execution history logged.</td></tr>';
+        const items = pagedData.items || pagedData.Items || [];
+        const totalCount = pagedData.totalCount ?? pagedData.TotalCount ?? 0;
+        const page = pagedData.page ?? pagedData.Page ?? 1;
+        const pageSize = pagedData.pageSize ?? pagedData.PageSize ?? 10;
+        const totalPages = pagedData.totalPages ?? pagedData.TotalPages ?? 0;
+
+        if (!items || items.length === 0) {
+            historyTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-white py-3">No execution history logged for selected criteria.</td></tr>';
+            renderPaginationControls(0, 0, 0, 1, 0);
             return;
         }
 
-        history.forEach(h => {
+        items.forEach(h => {
             const sideBadge = h.side === 0 || h.side === 'BUY' ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>' : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
             const pnl = h.realizedPnl || 0;
-            const pnlClass = pnl > 0 ? 'text-success' : (pnl < 0 ? 'text-danger' : 'text-muted');
+            const pnlClass = pnl > 0 ? 'text-success' : (pnl < 0 ? 'text-danger' : 'text-white');
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td><small class="text-muted">${new Date(h.executedAt).toLocaleString()}</small></td>
+                <td style="color:#ffffff !important;"><small class="text-white fw-medium">${formatIST(h.executedAt)}</small></td>
                 <td class="fw-bold">${h.symbol}</td>
                 <td>${sideBadge}</td>
                 <td>${h.quantity}</td>
                 <td>₹${h.executedPrice.toFixed(2)}</td>
                 <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}</td>
-                <td><small class="text-muted">${h.remarks || '-'}</small></td>
+                <td style="color:#ffffff !important;"><small class="text-white fw-medium">${h.remarks || '-'}</small></td>
             `;
             historyTableBody.appendChild(tr);
         });
+
+        const startItem = (page - 1) * pageSize + 1;
+        const endItem = Math.min(page * pageSize, totalCount);
+        renderPaginationControls(startItem, endItem, totalCount, page, totalPages);
+    }
+
+    function renderPaginationControls(startItem, endItem, totalCount, currentPage, totalPages) {
+        const infoSpan = document.getElementById('historyPaginationInfo');
+        const ul = document.getElementById('historyPaginationUl');
+
+        if (infoSpan) {
+            if (totalCount === 0) {
+                infoSpan.innerText = 'Showing 0 of 0 trades';
+            } else {
+                infoSpan.innerText = `Showing ${startItem}-${endItem} of ${totalCount} trades`;
+            }
+        }
+
+        if (!ul) return;
+        ul.innerHTML = '';
+
+        if (totalPages <= 1) return;
+
+        // Previous Button
+        const prevLi = document.createElement('li');
+        prevLi.className = `page-item ${currentPage <= 1 ? 'disabled' : ''}`;
+        prevLi.innerHTML = `<a class="page-link bg-dark text-light border-secondary" href="javascript:void(0)" aria-label="Previous">« Prev</a>`;
+        if (currentPage > 1) {
+            prevLi.addEventListener('click', () => loadHistory(currentPage - 1));
+        }
+        ul.appendChild(prevLi);
+
+        // Page Numbers
+        for (let i = 1; i <= totalPages; i++) {
+            const li = document.createElement('li');
+            const isActive = i === currentPage;
+            li.className = `page-item ${isActive ? 'active' : ''}`;
+            li.innerHTML = `<a class="page-link ${isActive ? 'bg-primary text-white border-primary fw-bold' : 'bg-dark text-light border-secondary'}" href="javascript:void(0)">${i}</a>`;
+            if (!isActive) {
+                const pNum = i;
+                li.addEventListener('click', () => loadHistory(pNum));
+            }
+            ul.appendChild(li);
+        }
+
+        // Next Button
+        const nextLi = document.createElement('li');
+        nextLi.className = `page-item ${currentPage >= totalPages ? 'disabled' : ''}`;
+        nextLi.innerHTML = `<a class="page-link bg-dark text-light border-secondary" href="javascript:void(0)" aria-label="Next">Next »</a>`;
+        if (currentPage < totalPages) {
+            nextLi.addEventListener('click', () => loadHistory(currentPage + 1));
+        }
+        ul.appendChild(nextLi);
     }
 
     // --- 4. User Actions & Handlers ---

@@ -23,6 +23,7 @@ public interface IPaperTradingRepository
     
     Task RecordTradeHistoryAsync(PaperTradeHistory history);
     Task<IEnumerable<PaperTradeHistory>> GetTradeHistoryAsync(int accountId, int limit = 50);
+    Task<(IEnumerable<PaperTradeHistory> Items, int TotalCount)> GetTradeHistoryPagedAsync(int accountId, QuantEdge.Infrastructure.DTOs.PaperTradeHistoryFilterDto filter);
     
     Task UpdateAutoTradeSettingsAsync(int accountId, QuantEdge.Infrastructure.DTOs.AutoTradeSettingsDto settings);
     Task ResetAccountAsync(int accountId, decimal defaultBalance = 100000m);
