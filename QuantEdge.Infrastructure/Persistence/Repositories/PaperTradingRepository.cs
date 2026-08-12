@@ -297,7 +297,7 @@ public class PaperTradingRepository : IPaperTradingRepository
         }
     }
 
-    public async Task ClosePositionAsync(int positionId, decimal exitPrice, decimal realizedPnl, string? exitReason = null)
+    public async Task<bool> ClosePositionAsync(int positionId, decimal exitPrice, decimal realizedPnl, string? exitReason = null)
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
@@ -308,9 +308,10 @@ public class PaperTradingRepository : IPaperTradingRepository
                 realized_pnl = @realizedPnl,
                 exit_reason = COALESCE(@exitReason, exit_reason),
                 closed_at = NOW()
-            WHERE id = @positionId;";
+            WHERE id = @positionId AND status = 0;";
 
-        await connection.ExecuteAsync(sql, new { positionId, exitPrice, realizedPnl, exitReason });
+        int rows = await connection.ExecuteAsync(sql, new { positionId, exitPrice, realizedPnl, exitReason });
+        return rows > 0;
     }
 
     public async Task<IEnumerable<PaperPosition>> GetPositionsAsync(int accountId, bool openOnly = true)
@@ -346,8 +347,8 @@ public class PaperTradingRepository : IPaperTradingRepository
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
-            INSERT INTO paper_trade_history (account_id, order_id, symbol, side, quantity, executed_price, realized_pnl, trade_type, exit_reason, executed_at, remarks)
-            VALUES (@AccountId, @OrderId, @Symbol, @Side, @Quantity, @ExecutedPrice, @RealizedPnl, @TradeType, @ExitReason, NOW(), @Remarks);";
+            INSERT INTO paper_trade_history (account_id, order_id, symbol, side, quantity, entry_price, executed_price, realized_pnl, trade_type, exit_reason, executed_at, remarks)
+            VALUES (@AccountId, @OrderId, @Symbol, @Side, @Quantity, @EntryPrice, @ExecutedPrice, @RealizedPnl, @TradeType, @ExitReason, NOW(), @Remarks);";
 
         await connection.ExecuteAsync(sql, new
         {
@@ -356,6 +357,7 @@ public class PaperTradingRepository : IPaperTradingRepository
             history.Symbol,
             Side = (int)history.Side,
             history.Quantity,
+            history.EntryPrice,
             history.ExecutedPrice,
             history.RealizedPnl,
             TradeType = (int)history.TradeType,
@@ -375,6 +377,7 @@ public class PaperTradingRepository : IPaperTradingRepository
                 symbol AS Symbol,
                 side AS Side,
                 quantity AS Quantity,
+                entry_price AS EntryPrice,
                 executed_price AS ExecutedPrice,
                 realized_pnl AS RealizedPnl,
                 trade_type AS TradeType,

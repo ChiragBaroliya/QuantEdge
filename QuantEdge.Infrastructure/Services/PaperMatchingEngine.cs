@@ -109,6 +109,8 @@ public class PaperMatchingEngine
 
             if (slTriggered || tpTriggered)
             {
+                pos.Status = PositionStatus.CLOSED;
+
                 string reason = slTriggered ? "Stop-Loss Triggered" : "Take-Profit Triggered";
                 _logger.LogInformation("Auto-closing position {PositionId} for {Symbol} at {Ltp}. Reason: {Reason}", pos.Id, symbol, ltp, reason);
 
@@ -116,7 +118,12 @@ public class PaperMatchingEngine
                     ? (ltp - pos.AverageEntryPrice) * pos.Quantity
                     : (pos.AverageEntryPrice - ltp) * pos.Quantity;
 
-                await _repository.ClosePositionAsync(pos.Id, ltp, realizedPnl);
+                bool closedSuccessfully = await _repository.ClosePositionAsync(pos.Id, ltp, realizedPnl, reason);
+                if (!closedSuccessfully)
+                {
+                    _logger.LogWarning("Position {PositionId} was already closed. Skipping duplicate history logging.", pos.Id);
+                    continue;
+                }
 
                 // Release used margin & update account balance
                 decimal releasedMargin = pos.Quantity * pos.AverageEntryPrice;
@@ -134,8 +141,11 @@ public class PaperMatchingEngine
                     Symbol = symbol,
                     Side = pos.Side == TradeSide.BUY ? TradeSide.SELL : TradeSide.BUY,
                     Quantity = pos.Quantity,
+                    EntryPrice = pos.AverageEntryPrice,
                     ExecutedPrice = ltp,
                     RealizedPnl = realizedPnl,
+                    TradeType = pos.TradeType,
+                    ExitReason = reason,
                     Remarks = $"Auto-Exit: {reason}"
                 });
 
@@ -198,6 +208,7 @@ public class PaperMatchingEngine
                     Symbol = symbol,
                     Side = order.Side,
                     Quantity = order.Quantity,
+                    EntryPrice = ltp,
                     ExecutedPrice = ltp,
                     RealizedPnl = 0m,
                     Remarks = "Limit Order Executed"

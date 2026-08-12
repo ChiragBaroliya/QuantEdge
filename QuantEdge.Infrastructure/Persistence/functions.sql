@@ -1092,6 +1092,7 @@ RETURNS TABLE (
     Symbol VARCHAR,
     Side INT,
     Quantity INT,
+    EntryPrice NUMERIC,
     ExecutedPrice NUMERIC,
     RealizedPnl NUMERIC,
     TradeType INT,
@@ -1104,27 +1105,50 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
-        h.id AS Id,
-        h.account_id AS AccountId,
-        h.order_id AS OrderId,
-        h.symbol AS Symbol,
-        h.side AS Side,
-        h.quantity AS Quantity,
-        h.executed_price AS ExecutedPrice,
-        h.realized_pnl AS RealizedPnl,
-        h.trade_type AS TradeType,
-        h.exit_reason AS ExitReason,
-        h.executed_at AS ExecutedAt,
-        h.remarks AS Remarks,
-        COUNT(*) OVER() AS TotalCount
-    FROM paper_trade_history h
-    WHERE h.account_id = p_account_id
-      AND (p_symbol IS NULL OR p_symbol = '' OR UPPER(h.symbol) = UPPER(p_symbol))
-      AND (p_side IS NULL OR h.side = p_side)
-      AND (p_from_date IS NULL OR h.executed_at >= p_from_date)
-      AND (p_to_date IS NULL OR h.executed_at <= p_to_date)
-    ORDER BY h.executed_at DESC
+    WITH deduplicated_history AS (
+        SELECT DISTINCT ON (h.account_id, h.symbol, h.side, h.quantity, h.executed_price, date_trunc('second', h.executed_at))
+            h.id AS Id,
+            h.account_id AS AccountId,
+            h.order_id AS OrderId,
+            h.symbol AS Symbol,
+            h.side AS Side,
+            h.quantity AS Quantity,
+            COALESCE(h.entry_price, 0.00) AS EntryPrice,
+            h.executed_price AS ExecutedPrice,
+            h.realized_pnl AS RealizedPnl,
+            h.trade_type AS TradeType,
+            h.exit_reason AS ExitReason,
+            h.executed_at AS ExecutedAt,
+            h.remarks AS Remarks
+        FROM paper_trade_history h
+        WHERE h.account_id = p_account_id
+          AND (p_symbol IS NULL OR p_symbol = '' OR UPPER(h.symbol) = UPPER(p_symbol))
+          AND (p_side IS NULL OR h.side = p_side)
+          AND (p_from_date IS NULL OR h.executed_at >= p_from_date)
+          AND (p_to_date IS NULL OR h.executed_at <= p_to_date)
+        ORDER BY h.account_id, h.symbol, h.side, h.quantity, h.executed_price, date_trunc('second', h.executed_at), h.id ASC
+    ),
+    paged_result AS (
+        SELECT 
+            dh.Id,
+            dh.AccountId,
+            dh.OrderId,
+            dh.Symbol,
+            dh.Side,
+            dh.Quantity,
+            dh.EntryPrice,
+            dh.ExecutedPrice,
+            dh.RealizedPnl,
+            dh.TradeType,
+            dh.ExitReason,
+            dh.ExecutedAt,
+            dh.Remarks,
+            COUNT(*) OVER() AS TotalCount
+        FROM deduplicated_history dh
+    )
+    SELECT *
+    FROM paged_result p
+    ORDER BY p.ExecutedAt DESC, p.Id DESC
     LIMIT p_page_size OFFSET p_offset;
 END;
 $$;

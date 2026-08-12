@@ -526,6 +526,7 @@ CREATE TABLE IF NOT EXISTS paper_trade_history (
     symbol VARCHAR(50) NOT NULL,
     side INT NOT NULL,
     quantity INT NOT NULL,
+    entry_price NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
     executed_price NUMERIC(18, 4) NOT NULL,
     realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
     trade_type INT NOT NULL DEFAULT 0,
@@ -577,6 +578,10 @@ BEGIN
 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='paper_positions' AND column_name='exit_reason') THEN
         ALTER TABLE paper_positions ADD COLUMN exit_reason VARCHAR(100);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='paper_trade_history' AND column_name='entry_price') THEN
+        ALTER TABLE paper_trade_history ADD COLUMN entry_price NUMERIC(18, 4) NOT NULL DEFAULT 0.00;
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='paper_trade_history' AND column_name='trade_type') THEN

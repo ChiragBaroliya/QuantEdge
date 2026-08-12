@@ -168,6 +168,7 @@ public class PaperTradingService : IPaperTradingService
                 Symbol = dto.Symbol.ToUpper().Trim(),
                 Side = dto.Side,
                 Quantity = dto.Quantity,
+                EntryPrice = executionPrice,
                 ExecutedPrice = executionPrice,
                 RealizedPnl = 0m,
                 Remarks = "Market Order Executed"
@@ -229,7 +230,11 @@ public class PaperTradingService : IPaperTradingService
             ? (currentLtp - position.AverageEntryPrice) * position.Quantity
             : (position.AverageEntryPrice - currentLtp) * position.Quantity;
 
-        await _repository.ClosePositionAsync(positionId, currentLtp, realizedPnl);
+        bool closedSuccessfully = await _repository.ClosePositionAsync(positionId, currentLtp, realizedPnl);
+        if (!closedSuccessfully)
+        {
+            return;
+        }
 
         decimal releasedMargin = position.Quantity * position.AverageEntryPrice;
         decimal updatedBalance = account.CurrentBalance + realizedPnl;
@@ -245,11 +250,12 @@ public class PaperTradingService : IPaperTradingService
             Symbol = position.Symbol,
             Side = position.Side == TradeSide.BUY ? TradeSide.SELL : TradeSide.BUY,
             Quantity = position.Quantity,
+            EntryPrice = position.AverageEntryPrice,
             ExecutedPrice = currentLtp,
             RealizedPnl = realizedPnl,
             TradeType = position.TradeType,
             ExitReason = "Manual Close",
-            Remarks = "Manual Position Closure"
+            Remarks = "Manual Position Exit"
         });
 
         _matchingEngine.InvalidateCache();

@@ -607,7 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalPages = pagedData.totalPages ?? pagedData.TotalPages ?? 0;
 
         if (!items || items.length === 0) {
-            historyTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-white py-3">No execution history logged for selected criteria.</td></tr>';
+            historyTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-white py-3">No execution history logged for selected criteria.</td></tr>';
             renderPaginationControls(0, 0, 0, 1, 0);
             return;
         }
@@ -616,6 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const sideBadge = h.side === 0 || h.side === 'BUY' ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>' : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
             const pnl = h.realizedPnl || 0;
             const pnlClass = pnl > 0 ? 'text-success' : (pnl < 0 ? 'text-danger' : 'text-white');
+            const entryPriceVal = h.entryPrice ?? h.EntryPrice ?? 0;
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -623,7 +624,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="fw-bold">${h.symbol}</td>
                 <td>${sideBadge}</td>
                 <td>${h.quantity}</td>
-                <td>₹${h.executedPrice.toFixed(2)}</td>
+                <td>₹${entryPriceVal > 0 ? entryPriceVal.toFixed(2) : '-'}</td>
+                <td>₹${h.executedPrice ? h.executedPrice.toFixed(2) : '0.00'}</td>
                 <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}</td>
                 <td style="color:#ffffff !important;"><small class="text-white fw-medium">${h.remarks || '-'}</small></td>
             `;

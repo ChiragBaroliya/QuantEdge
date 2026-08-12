@@ -10,6 +10,7 @@ public class PaperTradeHistory
     public string Symbol { get; set; } = string.Empty;
     public TradeSide Side { get; set; }
     public int Quantity { get; set; }
+    public decimal EntryPrice { get; set; }
     public decimal ExecutedPrice { get; set; }
     public decimal RealizedPnl { get; set; }
     public TradeType TradeType { get; set; } = TradeType.Manual;

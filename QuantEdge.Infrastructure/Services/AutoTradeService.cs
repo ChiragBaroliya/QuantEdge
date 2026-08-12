@@ -356,6 +356,7 @@ public class AutoTradeService : IAutoTradeService
                 Symbol = symbol,
                 Side = TradeSide.BUY,
                 Quantity = quantity,
+                EntryPrice = entryPrice,
                 ExecutedPrice = entryPrice,
                 RealizedPnl = 0m,
                 TradeType = TradeType.Auto,
@@ -443,7 +444,12 @@ public class AutoTradeService : IAutoTradeService
             decimal realizedPnl = (currentLtp - position.AverageEntryPrice) * position.Quantity;
 
             // Close Position
-            await _paperRepository.ClosePositionAsync(position.Id, currentLtp, realizedPnl, exitReason);
+            bool closedSuccessfully = await _paperRepository.ClosePositionAsync(position.Id, currentLtp, realizedPnl, exitReason);
+            if (!closedSuccessfully)
+            {
+                _logger.LogWarning("AutoTradeService: Position {PositionId} was already closed. Skipping duplicate history entry.", position.Id);
+                return false;
+            }
 
             // Record Trade History
             await _paperRepository.RecordTradeHistoryAsync(new PaperTradeHistory
@@ -453,6 +459,7 @@ public class AutoTradeService : IAutoTradeService
                 Symbol = position.Symbol,
                 Side = TradeSide.SELL,
                 Quantity = position.Quantity,
+                EntryPrice = position.AverageEntryPrice,
                 ExecutedPrice = currentLtp,
                 RealizedPnl = realizedPnl,
                 TradeType = TradeType.Auto,
