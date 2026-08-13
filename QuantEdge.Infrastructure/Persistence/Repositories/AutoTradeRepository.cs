@@ -18,23 +18,7 @@ public class AutoTradeRepository : IAutoTradeRepository
     public async Task<AutoTradeSettings> GetSettingsAsync(string userId = "default_user")
     {
         using var connection = _connectionFactory.CreateConnection();
-        string sql = @"
-            SELECT 
-                id AS Id,
-                user_id AS UserId,
-                is_auto_trade_enabled AS IsAutoTradeEnabled,
-                available_capital AS AvailableCapital,
-                profit_target_pct AS ProfitTargetPct,
-                stop_loss_pct AS StopLossPct,
-                max_duration_days AS MaxDurationDays,
-                max_trades_per_day AS MaxTradesPerDay,
-                fixed_amount_per_trade AS FixedAmountPerTrade,
-                min_conditions_match AS MinConditionsMatch,
-                trading_window_start AS TradingWindowStart,
-                trading_window_end AS TradingWindowEnd,
-                updated_at AS UpdatedAt
-            FROM auto_trade_settings
-            WHERE user_id = @userId;";
+        string sql = "SELECT * FROM fn_get_auto_trade_settings(@userId);";
 
         var settings = await connection.QueryFirstOrDefaultAsync<AutoTradeSettings>(sql, new { userId });
         if (settings == null)
@@ -48,23 +32,7 @@ public class AutoTradeRepository : IAutoTradeRepository
     public async Task<IEnumerable<AutoTradeSettings>> GetActiveSettingsAsync()
     {
         using var connection = _connectionFactory.CreateConnection();
-        string sql = @"
-            SELECT 
-                id AS Id,
-                user_id AS UserId,
-                is_auto_trade_enabled AS IsAutoTradeEnabled,
-                available_capital AS AvailableCapital,
-                profit_target_pct AS ProfitTargetPct,
-                stop_loss_pct AS StopLossPct,
-                max_duration_days AS MaxDurationDays,
-                max_trades_per_day AS MaxTradesPerDay,
-                fixed_amount_per_trade AS FixedAmountPerTrade,
-                min_conditions_match AS MinConditionsMatch,
-                trading_window_start AS TradingWindowStart,
-                trading_window_end AS TradingWindowEnd,
-                updated_at AS UpdatedAt
-            FROM auto_trade_settings
-            WHERE is_auto_trade_enabled = TRUE;";
+        string sql = "SELECT * FROM fn_get_active_auto_trade_settings();";
 
         return await connection.QueryAsync<AutoTradeSettings>(sql);
     }
@@ -93,11 +61,7 @@ public class AutoTradeRepository : IAutoTradeRepository
     public async Task ToggleAutoTradeAsync(string userId, bool enabled)
     {
         using var connection = _connectionFactory.CreateConnection();
-        string sql = @"
-            UPDATE auto_trade_settings
-            SET is_auto_trade_enabled = @enabled,
-                updated_at = NOW()
-            WHERE user_id = @userId;";
+        string sql = "SELECT fn_toggle_auto_trade(@userId, @enabled);";
 
         await connection.ExecuteAsync(sql, new { userId, enabled });
     }
@@ -105,15 +69,9 @@ public class AutoTradeRepository : IAutoTradeRepository
     public async Task<int> GetTodayAutoTradeCountAsync(string userId = "default_user")
     {
         using var connection = _connectionFactory.CreateConnection();
-        // Today's trading window start is 09:15 AM today IST (or UTC equivalent)
         DateTime todayStartUtc = DateTime.UtcNow.Date; 
 
-        string sql = @"
-            SELECT COUNT(*) 
-            FROM auto_trade_execution_logs 
-            WHERE user_id = @userId 
-              AND action_type = 'AUTO_BUY' 
-              AND executed_at >= @todayStartUtc;";
+        string sql = "SELECT fn_get_today_auto_trade_count(@userId, @todayStartUtc);";
 
         return await connection.ExecuteScalarAsync<int>(sql, new { userId, todayStartUtc });
     }
@@ -121,9 +79,7 @@ public class AutoTradeRepository : IAutoTradeRepository
     public async Task LogExecutionAsync(AutoTradeExecutionLog log)
     {
         using var connection = _connectionFactory.CreateConnection();
-        string sql = @"
-            INSERT INTO auto_trade_execution_logs (user_id, symbol, action_type, price, quantity, reason, executed_at)
-            VALUES (@UserId, @Symbol, @ActionType, @Price, @Quantity, @Reason, NOW());";
+        string sql = "SELECT fn_log_auto_trade_execution(@UserId, @Symbol, @ActionType, @Price, @Quantity, @Reason);";
 
         await connection.ExecuteAsync(sql, log);
     }
@@ -133,20 +89,7 @@ public class AutoTradeRepository : IAutoTradeRepository
         using var connection = _connectionFactory.CreateConnection();
         DateTime todayStartUtc = DateTime.UtcNow.Date;
 
-        string sql = @"
-            SELECT 
-                id AS Id,
-                user_id AS UserId,
-                symbol AS Symbol,
-                action_type AS ActionType,
-                price AS Price,
-                quantity AS Quantity,
-                reason AS Reason,
-                executed_at AS ExecutedAt
-            FROM auto_trade_execution_logs
-            WHERE user_id = @userId AND executed_at >= @todayStartUtc
-            ORDER BY executed_at DESC
-            LIMIT @limit;";
+        string sql = "SELECT * FROM fn_get_today_auto_trade_logs(@userId, @todayStartUtc, @limit);";
 
         return await connection.QueryAsync<AutoTradeExecutionLog>(sql, new { userId, todayStartUtc, limit });
     }

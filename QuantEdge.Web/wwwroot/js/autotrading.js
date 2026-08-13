@@ -226,8 +226,10 @@ function renderOpenPositionsTable(positions) {
         const unPnl = p.unrealizedPnl ?? p.UnrealizedPnl ?? 0;
         const pnlClass = unPnl >= 0 ? "text-success" : "text-danger";
         const entryVal = qty * avgPrice;
-        const tpPctText = tp && avgPrice > 0 ? ((tp - avgPrice) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '5';
-        const slPctText = sl && avgPrice > 0 ? ((avgPrice - sl) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '3';
+        const tpPctText = tp && avgPrice > 0 ? ((tp - avgPrice) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '';
+        const slPctText = sl && avgPrice > 0 ? ((avgPrice - sl) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '';
+        const tpText = tp && tp > 0 ? `₹${formatNumber(tp)}${tpPctText ? ' (+' + tpPctText + '%)' : ''}` : '-';
+        const slText = sl && sl > 0 ? `₹${formatNumber(sl)}${slPctText ? ' (-' + slPctText + '%)' : ''}` : '<span style="color: #64748b;">None</span>';
 
         html += `
             <tr>
@@ -235,8 +237,8 @@ function renderOpenPositionsTable(positions) {
                 <td>₹${formatNumber(avgPrice)}</td>
                 <td>₹${formatNumber(curPrice)}</td>
                 <td>${qty} (₹${formatNumber(entryVal)})</td>
-                <td>₹${formatNumber(tp || 0)} (+${tpPctText}%)</td>
-                <td>₹${formatNumber(sl || 0)} (-${slPctText}%)</td>
+                <td>${tpText}</td>
+                <td>${slText}</td>
                 <td class="${pnlClass} font-weight-bold">₹${formatNumber(unPnl)}</td>
             </tr>
         `;

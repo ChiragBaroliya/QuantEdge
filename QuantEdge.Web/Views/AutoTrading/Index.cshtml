@@ -124,8 +124,8 @@
                                     <th title="Average price where position was bought">Entry Price</th>
                                     <th title="Current live market price from Zerodha">Live LTP</th>
                                     <th title="Number of shares bought and total value">Quantity (Value)</th>
-                                    <th title="Target price to auto sell with profit">Target (+5%)</th>
-                                    <th title="Stop loss price to auto sell and limit loss">Stop Loss (-3%)</th>
+                                    <th title="Target price to auto sell with profit">Target</th>
+                                    <th title="Optional stop loss price to auto sell and limit loss">Stop Loss</th>
                                     <th title="Live profit or loss for this position">Unrealized P&L</th>
                                 </tr>
                             </thead>
@@ -139,110 +139,75 @@
                 </div>
             </div>
 
-            <!-- Active / Pending Orders & Execution History Card -->
+            <!-- Execution History Card -->
             <div class="card-box mt-3 mb-3">
-                <ul class="nav nav-tabs" id="autoTradeOrdersTab" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="autoOrdersTab" data-bs-toggle="tab" data-bs-target="#autoOrdersTabPane" type="button" role="tab">Active / Pending Orders</button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="autoHistoryTab" data-bs-toggle="tab" data-bs-target="#autoHistoryTabPane" type="button" role="tab">Execution History</button>
-                    </li>
-                </ul>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3 class="card-title m-0">📜 Execution History</h3>
+                </div>
 
-                <div class="tab-content pt-3" id="autoTradeOrdersTabContent">
-                    <!-- Orders Tab -->
-                    <div class="tab-pane fade show active" id="autoOrdersTabPane" role="tabpanel">
-                        <div class="table-responsive">
-                            <table class="qe-table">
-                                <thead>
-                                    <tr>
-                                        <th>TIME</th>
-                                        <th>SYMBOL</th>
-                                        <th>TYPE</th>
-                                        <th>SIDE</th>
-                                        <th>QTY</th>
-                                        <th>PRICE</th>
-                                        <th>STATUS</th>
-                                        <th class="text-end">ACTION</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="ordersTableBody">
-                                    <tr>
-                                        <td colspan="8" class="text-center text-white py-3">No active or pending orders.</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                <!-- History Filter Toolbar -->
+                <div class="p-3 bg-dark bg-opacity-50 border-bottom border-secondary border-opacity-25 rounded-3 mb-2">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-xl-3 col-lg-3 col-md-6 col-12">
+                            <label class="paper-label text-light mb-1" for="historyFilterSymbol" title="Filter history by stock symbol">Stock Symbol</label>
+                            <select id="historyFilterSymbol" class="form-select paper-input form-select-sm" title="Select stock symbol">
+                                <option value="">All Symbols</option>
+                            </select>
+                        </div>
+                        <div class="col-xl-2 col-lg-2 col-md-6 col-12">
+                            <label class="paper-label text-light mb-1" for="historyFilterSide" title="Filter by BUY or SELL side">Trade Side</label>
+                            <select id="historyFilterSide" class="form-select paper-input form-select-sm" title="Select order side">
+                                <option value="">All Sides</option>
+                                <option value="BUY">BUY</option>
+                                <option value="SELL">SELL</option>
+                            </select>
+                        </div>
+                        <div class="col-xl-2 col-lg-2 col-md-6 col-6">
+                            <label class="paper-label text-light mb-1" for="historyFilterFromDate" title="Start date filter">From Date</label>
+                            <input type="date" id="historyFilterFromDate" class="form-control paper-input form-control-sm" value="@DateTime.Now.ToString("yyyy-MM-dd")" title="From date">
+                        </div>
+                        <div class="col-xl-2 col-lg-2 col-md-6 col-6">
+                            <label class="paper-label text-light mb-1" for="historyFilterToDate" title="End date filter">To Date</label>
+                            <input type="date" id="historyFilterToDate" class="form-control paper-input form-control-sm" value="@DateTime.Now.ToString("yyyy-MM-dd")" title="End date filter">
+                        </div>
+                        <div class="col-xl-3 col-lg-3 col-md-12 col-12 d-flex gap-2 justify-content-end">
+                            <button type="button" id="btnFilterHistory" class="btn btn-primary btn-sm px-3 fw-bold flex-grow-1" title="Apply selected filters">🔍 Filter</button>
+                            <button type="button" id="btnResetHistoryFilter" class="btn btn-outline-secondary btn-sm px-3 fw-bold" title="Reset all filters">↺ Reset</button>
                         </div>
                     </div>
+                </div>
 
-                    <!-- History Tab -->
-                    <div class="tab-pane fade" id="autoHistoryTabPane" role="tabpanel">
-                        <!-- History Filter Toolbar -->
-                        <div class="p-3 bg-dark bg-opacity-50 border-bottom border-secondary border-opacity-25 rounded-3 mb-2">
-                            <div class="row g-2 align-items-end">
-                                <div class="col-xl-3 col-lg-3 col-md-6 col-12">
-                                    <label class="paper-label text-light mb-1" for="historyFilterSymbol" title="Filter history by stock symbol">Stock Symbol</label>
-                                    <select id="historyFilterSymbol" class="form-select paper-input form-select-sm" title="Select stock symbol">
-                                        <option value="">All Symbols</option>
-                                    </select>
-                                </div>
-                                <div class="col-xl-2 col-lg-2 col-md-6 col-12">
-                                    <label class="paper-label text-light mb-1" for="historyFilterSide" title="Filter by BUY or SELL side">Trade Side</label>
-                                    <select id="historyFilterSide" class="form-select paper-input form-select-sm" title="Select order side">
-                                        <option value="">All Sides</option>
-                                        <option value="BUY">BUY</option>
-                                        <option value="SELL">SELL</option>
-                                    </select>
-                                </div>
-                                <div class="col-xl-2 col-lg-2 col-md-6 col-6">
-                                    <label class="paper-label text-light mb-1" for="historyFilterFromDate" title="Start date filter">From Date</label>
-                                    <input type="date" id="historyFilterFromDate" class="form-control paper-input form-control-sm" value="@DateTime.Now.ToString("yyyy-MM-dd")" title="From date">
-                                </div>
-                                <div class="col-xl-2 col-lg-2 col-md-6 col-6">
-                                    <label class="paper-label text-light mb-1" for="historyFilterToDate" title="End date filter">To Date</label>
-                                    <input type="date" id="historyFilterToDate" class="form-control paper-input form-control-sm" value="@DateTime.Now.ToString("yyyy-MM-dd")" title="End date filter">
-                                </div>
-                                <div class="col-xl-3 col-lg-3 col-md-12 col-12 d-flex gap-2 justify-content-end">
-                                    <button type="button" id="btnFilterHistory" class="btn btn-primary btn-sm px-3 fw-bold flex-grow-1" title="Apply selected filters">🔍 Filter</button>
-                                    <button type="button" id="btnResetHistoryFilter" class="btn btn-outline-secondary btn-sm px-3 fw-bold" title="Reset all filters">↺ Reset</button>
-                                </div>
-                            </div>
-                        </div>
+                <!-- Table -->
+                <div class="table-responsive">
+                    <table class="qe-table">
+                        <thead>
+                            <tr>
+                                <th>TIME</th>
+                                <th>SYMBOL</th>
+                                <th>SIDE</th>
+                                <th>QTY</th>
+                                <th>ENTRY PRICE</th>
+                                <th>EXECUTED PRICE</th>
+                                <th>REALIZED P&L</th>
+                                <th>REMARKS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <tr>
+                                <td colspan="8" class="text-center text-white py-3">No execution history logged.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
 
-                        <!-- Table -->
-                        <div class="table-responsive">
-                            <table class="qe-table">
-                                <thead>
-                                    <tr>
-                                        <th>TIME</th>
-                                        <th>SYMBOL</th>
-                                        <th>SIDE</th>
-                                        <th>QTY</th>
-                                        <th>ENTRY PRICE</th>
-                                        <th>EXECUTED PRICE</th>
-                                        <th>REALIZED P&L</th>
-                                        <th>REMARKS</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="historyTableBody">
-                                    <tr>
-                                        <td colspan="8" class="text-center text-white py-3">No execution history logged.</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <!-- Pagination Controls Footer -->
-                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 p-3 bg-dark bg-opacity-75 border-top border-secondary border-opacity-25 rounded-bottom-3">
-                            <span id="historyPaginationInfo" class="text-white small fw-medium">Showing 0 of 0 trades</span>
-                            <nav aria-label="Trade history pagination">
-                                <ul id="historyPaginationUl" class="pagination pagination-sm mb-0">
-                                    <!-- Dynamic page links rendered by JS -->
-                                </ul>
-                            </nav>
-                        </div>
-                    </div>
+                <!-- Pagination Controls Footer -->
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 p-3 bg-dark bg-opacity-75 border-top border-secondary border-opacity-25 rounded-bottom-3">
+                    <span id="historyPaginationInfo" class="text-white small fw-medium">Showing 0 of 0 trades</span>
+                    <nav aria-label="Trade history pagination">
+                        <ul id="historyPaginationUl" class="pagination pagination-sm mb-0">
+                            <!-- Dynamic page links rendered by JS -->
+                        </ul>
+                    </nav>
                 </div>
             </div>
 

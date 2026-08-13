@@ -1289,4 +1289,199 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_auto_trade_settings
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_auto_trade_settings(VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_get_auto_trade_settings(p_user_id VARCHAR)
+RETURNS TABLE (
+    Id INT,
+    UserId VARCHAR,
+    IsAutoTradeEnabled BOOLEAN,
+    AvailableCapital NUMERIC,
+    ProfitTargetPct NUMERIC,
+    StopLossPct NUMERIC,
+    MaxDurationDays INT,
+    MaxTradesPerDay INT,
+    FixedAmountPerTrade NUMERIC,
+    MinConditionsMatch INT,
+    TradingWindowStart VARCHAR,
+    TradingWindowEnd VARCHAR,
+    UpdatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        s.id AS Id,
+        s.user_id AS UserId,
+        s.is_auto_trade_enabled AS IsAutoTradeEnabled,
+        s.available_capital AS AvailableCapital,
+        s.profit_target_pct AS ProfitTargetPct,
+        s.stop_loss_pct AS StopLossPct,
+        s.max_duration_days AS MaxDurationDays,
+        s.max_trades_per_day AS MaxTradesPerDay,
+        s.fixed_amount_per_trade AS FixedAmountPerTrade,
+        s.min_conditions_match AS MinConditionsMatch,
+        s.trading_window_start AS TradingWindowStart,
+        s.trading_window_end AS TradingWindowEnd,
+        s.updated_at AS UpdatedAt
+    FROM auto_trade_settings s
+    WHERE s.user_id = p_user_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_active_auto_trade_settings
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_active_auto_trade_settings();
+
+CREATE OR REPLACE FUNCTION fn_get_active_auto_trade_settings()
+RETURNS TABLE (
+    Id INT,
+    UserId VARCHAR,
+    IsAutoTradeEnabled BOOLEAN,
+    AvailableCapital NUMERIC,
+    ProfitTargetPct NUMERIC,
+    StopLossPct NUMERIC,
+    MaxDurationDays INT,
+    MaxTradesPerDay INT,
+    FixedAmountPerTrade NUMERIC,
+    MinConditionsMatch INT,
+    TradingWindowStart VARCHAR,
+    TradingWindowEnd VARCHAR,
+    UpdatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        s.id AS Id,
+        s.user_id AS UserId,
+        s.is_auto_trade_enabled AS IsAutoTradeEnabled,
+        s.available_capital AS AvailableCapital,
+        s.profit_target_pct AS ProfitTargetPct,
+        s.stop_loss_pct AS StopLossPct,
+        s.max_duration_days AS MaxDurationDays,
+        s.max_trades_per_day AS MaxTradesPerDay,
+        s.fixed_amount_per_trade AS FixedAmountPerTrade,
+        s.min_conditions_match AS MinConditionsMatch,
+        s.trading_window_start AS TradingWindowStart,
+        s.trading_window_end AS TradingWindowEnd,
+        s.updated_at AS UpdatedAt
+    FROM auto_trade_settings s
+    WHERE s.is_auto_trade_enabled = TRUE;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_toggle_auto_trade
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_toggle_auto_trade(VARCHAR, BOOLEAN);
+
+CREATE OR REPLACE FUNCTION fn_toggle_auto_trade(p_user_id VARCHAR, p_enabled BOOLEAN)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE auto_trade_settings
+    SET is_auto_trade_enabled = p_enabled,
+        updated_at = NOW()
+    WHERE user_id = p_user_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_today_auto_trade_count
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_today_auto_trade_count(VARCHAR, TIMESTAMP WITH TIME ZONE);
+
+CREATE OR REPLACE FUNCTION fn_get_today_auto_trade_count(p_user_id VARCHAR, p_today_start TIMESTAMP WITH TIME ZONE)
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_count INT;
+BEGIN
+    SELECT COUNT(*) INTO v_count
+    FROM auto_trade_execution_logs
+    WHERE user_id = p_user_id
+      AND action_type = 'AUTO_BUY'
+      AND executed_at >= p_today_start;
+
+    RETURN v_count;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_log_auto_trade_execution
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_log_auto_trade_execution(VARCHAR, VARCHAR, VARCHAR, NUMERIC, INT, VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_log_auto_trade_execution(
+    p_user_id VARCHAR,
+    p_symbol VARCHAR,
+    p_action_type VARCHAR,
+    p_price NUMERIC,
+    p_quantity INT,
+    p_reason VARCHAR
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO auto_trade_execution_logs (user_id, symbol, action_type, price, quantity, reason, executed_at)
+    VALUES (p_user_id, p_symbol, p_action_type, p_price, p_quantity, p_reason, NOW());
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_today_auto_trade_logs
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_today_auto_trade_logs(VARCHAR, TIMESTAMP WITH TIME ZONE, INT);
+
+CREATE OR REPLACE FUNCTION fn_get_today_auto_trade_logs(
+    p_user_id VARCHAR,
+    p_today_start TIMESTAMP WITH TIME ZONE,
+    p_limit INT
+)
+RETURNS TABLE (
+    Id INT,
+    UserId VARCHAR,
+    Symbol VARCHAR,
+    ActionType VARCHAR,
+    Price NUMERIC,
+    Quantity INT,
+    Reason VARCHAR,
+    ExecutedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        l.id AS Id,
+        l.user_id AS UserId,
+        l.symbol AS Symbol,
+        l.action_type AS ActionType,
+        l.price AS Price,
+        l.quantity AS Quantity,
+        l.reason AS Reason,
+        l.executed_at AS ExecutedAt
+    FROM auto_trade_execution_logs l
+    WHERE l.user_id = p_user_id AND l.executed_at >= p_today_start
+    ORDER BY l.executed_at DESC
+    LIMIT p_limit;
+END;
+$$;
+
+
 
