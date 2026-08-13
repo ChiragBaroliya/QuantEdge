@@ -117,9 +117,16 @@ public class AutoTradeService : IAutoTradeService
         int todayCount = await GetTodayAutoTradeCountAsync(userId);
 
         decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
-        decimal todayRealizedPnl = (await _paperRepository.GetTradeHistoryAsync(paperAccount?.Id ?? 0, 100))
+        var todayHistory = (await _paperRepository.GetTradeHistoryAsync(paperAccount?.Id ?? 0, 100))
             .Where(t => t.TradeType == TradeType.Auto && t.ExecutedAt >= DateTime.UtcNow.Date)
-            .Sum(t => t.RealizedPnl);
+            .ToList();
+
+        decimal todayRealizedPnl = todayHistory.Sum(t => t.RealizedPnl);
+        decimal todayTradeAmount = todayHistory.Where(t => t.Side == TradeSide.BUY).Sum(t => t.Quantity * t.ExecutedPrice);
+        if (todayTradeAmount == 0 && todayCount > 0)
+        {
+            todayTradeAmount = todayCount * settings.FixedAmountPerTrade;
+        }
 
         var nextRunInfo = Calculate15MinNextRunInfo();
 
@@ -127,6 +134,7 @@ public class AutoTradeService : IAutoTradeService
         {
             Settings = settings,
             TodayTradeCount = todayCount,
+            TodayTradeAmount = todayTradeAmount,
             ActivePositionsCount = positions.Count,
             TotalUnrealizedPnl = unrealizedPnl,
             TotalRealizedPnlToday = todayRealizedPnl,
@@ -300,10 +308,10 @@ public class AutoTradeService : IAutoTradeService
         }
 
         // 7. Calculate Target & Stop Loss
-        decimal slPct = Math.Abs(settings.StopLossPct) / 100m;
+        decimal? stopLoss = (settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0)
+            ? Math.Round(entryPrice * (1m - Math.Abs(settings.StopLossPct.Value) / 100m), 2)
+            : null;
         decimal tpPct = Math.Abs(settings.ProfitTargetPct) / 100m;
-
-        decimal stopLoss = Math.Round(entryPrice * (1m - slPct), 2);
         decimal takeProfit = Math.Round(entryPrice * (1m + tpPct), 2);
 
         try
@@ -368,8 +376,9 @@ public class AutoTradeService : IAutoTradeService
             await _cacheService.RemoveAsync(todayKey);
 
             // Log Audit Event
+            string slLog = stopLoss.HasValue ? $"₹{stopLoss.Value:F2}" : "None";
             await LogAuditAsync(symbol, "AUTO_BUY", entryPrice, quantity,
-                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity}, Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2})", userId);
+                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity}, Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: {slLog})", userId);
 
             // Broadcast SignalR Toast Alert
             if (_hubContext != null)

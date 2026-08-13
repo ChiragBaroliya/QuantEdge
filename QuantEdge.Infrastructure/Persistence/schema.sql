@@ -544,7 +544,7 @@ CREATE TABLE IF NOT EXISTS auto_trade_settings (
     is_auto_trade_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     available_capital NUMERIC(18, 4) NOT NULL DEFAULT 100000.00,
     profit_target_pct NUMERIC(5, 2) NOT NULL DEFAULT 5.00,
-    stop_loss_pct NUMERIC(5, 2) NOT NULL DEFAULT 3.00,
+    stop_loss_pct NUMERIC(5, 2) NULL DEFAULT 3.00,
     max_duration_days INT NOT NULL DEFAULT 20,
     max_trades_per_day INT NOT NULL DEFAULT 5,
     fixed_amount_per_trade NUMERIC(18, 4) NOT NULL DEFAULT 20000.00,

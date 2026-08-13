@@ -16,7 +16,7 @@ public class AutoTradeSettingsUpdateDto
     public decimal ProfitTargetPct { get; set; } = 5.00m;
 
     [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Stop Loss % must be between 0.1% and 100%.")]
-    public decimal StopLossPct { get; set; } = 3.00m;
+    public decimal? StopLossPct { get; set; }
 
     [Range(1, 365, ErrorMessage = "Max Duration must be between 1 and 365 days.")]
     public int MaxDurationDays { get; set; } = 20;
@@ -38,6 +38,7 @@ public class AutoTradeDashboardDto
 {
     public AutoTradeSettings Settings { get; set; } = new();
     public int TodayTradeCount { get; set; }
+    public decimal TodayTradeAmount { get; set; }
     public int MaxTradesPerDay => Settings.MaxTradesPerDay;
     public int ActivePositionsCount { get; set; }
     public decimal TotalUnrealizedPnl { get; set; }

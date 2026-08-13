@@ -5,11 +5,27 @@
 let apiBaseUrl = "";
 let countdownInterval = null;
 
+function getTodayDateString() {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 document.addEventListener("DOMContentLoaded", function () {
     const configElem = document.getElementById("autotrade-config");
     if (configElem) {
         apiBaseUrl = configElem.dataset.apiBaseUrl || "";
     }
+
+    const todayStr = getTodayDateString();
+    const elFrom = document.getElementById('historyFilterFromDate');
+    const elTo = document.getElementById('historyFilterToDate');
+    if (elFrom && !elFrom.value) elFrom.value = todayStr;
+    if (elTo && !elTo.value) elTo.value = todayStr;
+    historyPageState.fromDate = elFrom?.value || todayStr;
+    historyPageState.toDate = elTo?.value || todayStr;
 
     loadDashboardData();
     loadActiveStocks();
@@ -142,6 +158,14 @@ function updateDashboardUI(data) {
     const countElem = document.getElementById("stat-open-count");
     if (countElem) countElem.innerText = openCount;
     
+    const todayTradeAmount = data.todayTradeAmount ?? data.TodayTradeAmount ?? (todayCount * (s.fixedAmountPerTrade || s.FixedAmountPerTrade || 20000));
+
+    const todayCountElem = document.getElementById("stat-today-trade-count");
+    if (todayCountElem) todayCountElem.innerText = `${todayCount} / ${maxTrades} Trades`;
+
+    const todayAmountElem = document.getElementById("stat-today-used-amount");
+    if (todayAmountElem) todayAmountElem.innerText = `₹${formatNumber(todayTradeAmount)}`;
+
     const unPnlElem = document.getElementById("stat-unrealized-pnl");
     if (unPnlElem) {
         unPnlElem.innerText = `₹${formatNumber(unPnl)}`;
@@ -166,7 +190,7 @@ function populateSettingsForm(s) {
     if (!s) return;
     const cap = s.availableCapital ?? s.AvailableCapital ?? 100000;
     const target = s.profitTargetPct ?? s.ProfitTargetPct ?? 5.0;
-    const sl = s.stopLossPct ?? s.StopLossPct ?? 3.0;
+    const sl = s.stopLossPct ?? s.StopLossPct;
     const maxDur = s.maxDurationDays ?? s.MaxDurationDays ?? 20;
     const maxTrd = s.maxTradesPerDay ?? s.MaxTradesPerDay ?? 5;
     const fixedAmt = s.fixedAmountPerTrade ?? s.FixedAmountPerTrade ?? 20000;
@@ -174,7 +198,7 @@ function populateSettingsForm(s) {
 
     const elCap = document.getElementById("txtCapital"); if (elCap) elCap.value = cap;
     const elTarget = document.getElementById("txtTargetPct"); if (elTarget) elTarget.value = target;
-    const elSl = document.getElementById("txtStopLossPct"); if (elSl) elSl.value = sl;
+    const elSl = document.getElementById("txtStopLossPct"); if (elSl) elSl.value = (sl !== null && sl !== undefined) ? sl : '';
     const elDur = document.getElementById("txtMaxDuration"); if (elDur) elDur.value = maxDur;
     const elTrd = document.getElementById("txtMaxTrades"); if (elTrd) elTrd.value = maxTrd;
     const elFixed = document.getElementById("txtFixedAmount"); if (elFixed) elFixed.value = fixedAmt;
@@ -265,7 +289,7 @@ function renderLogsConsole(logs) {
     consoleBox.innerHTML = html;
 }
 
-let historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: '', toDate: '' };
+let historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: getTodayDateString(), toDate: getTodayDateString() };
 
 function formatIST(dateInput) {
     if (!dateInput) return '-';
@@ -548,9 +572,10 @@ function setupEventListeners() {
                 sideEl.value = '';
                 if (window.jQuery && $.fn.select2 && $(sideEl).data('select2')) $(sideEl).trigger('change.select2');
             }
-            if (document.getElementById('historyFilterFromDate')) document.getElementById('historyFilterFromDate').value = '';
-            if (document.getElementById('historyFilterToDate')) document.getElementById('historyFilterToDate').value = '';
-            historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: '', toDate: '' };
+            const todayStr = getTodayDateString();
+            if (document.getElementById('historyFilterFromDate')) document.getElementById('historyFilterFromDate').value = todayStr;
+            if (document.getElementById('historyFilterToDate')) document.getElementById('historyFilterToDate').value = todayStr;
+            historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: todayStr, toDate: todayStr };
             loadHistory(1);
         });
     }
@@ -582,11 +607,14 @@ function setupEventListeners() {
         btnSave.addEventListener("click", async function (e) {
             e.preventDefault();
 
+            const rawSl = document.getElementById("txtStopLossPct")?.value;
+            const parsedSl = (rawSl !== "" && rawSl !== null && rawSl !== undefined && !isNaN(rawSl)) ? parseFloat(rawSl) : null;
+
             const dto = {
                 isAutoTradeEnabled: document.getElementById("chkAutoTradeToggle").checked,
                 availableCapital: parseFloat(document.getElementById("txtCapital").value) || 100000,
                 profitTargetPct: parseFloat(document.getElementById("txtTargetPct").value) || 5.0,
-                stopLossPct: parseFloat(document.getElementById("txtStopLossPct").value) || 3.0,
+                stopLossPct: parsedSl,
                 maxDurationDays: parseInt(document.getElementById("txtMaxDuration").value) || 20,
                 maxTradesPerDay: parseInt(document.getElementById("txtMaxTrades").value) || 5,
                 fixedAmountPerTrade: parseFloat(document.getElementById("txtFixedAmount").value) || 20000,

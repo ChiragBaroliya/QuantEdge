@@ -70,46 +70,22 @@ public class AutoTradeRepository : IAutoTradeRepository
     }
 
     public async Task<AutoTradeSettings> UpsertSettingsAsync(AutoTradeSettings settings)
-
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
-            INSERT INTO auto_trade_settings (
-                user_id, is_auto_trade_enabled, available_capital, profit_target_pct, stop_loss_pct,
-                max_duration_days, max_trades_per_day, fixed_amount_per_trade, min_conditions_match,
-                trading_window_start, trading_window_end, updated_at
-            )
-            VALUES (
-                @UserId, @IsAutoTradeEnabled, @AvailableCapital, @ProfitTargetPct, @StopLossPct,
-                @MaxDurationDays, @MaxTradesPerDay, @FixedAmountPerTrade, @MinConditionsMatch,
-                @TradingWindowStart, @TradingWindowEnd, NOW()
-            )
-            ON CONFLICT (user_id) DO UPDATE
-            SET is_auto_trade_enabled = EXCLUDED.is_auto_trade_enabled,
-                available_capital = EXCLUDED.available_capital,
-                profit_target_pct = EXCLUDED.profit_target_pct,
-                stop_loss_pct = EXCLUDED.stop_loss_pct,
-                max_duration_days = EXCLUDED.max_duration_days,
-                max_trades_per_day = EXCLUDED.max_trades_per_day,
-                fixed_amount_per_trade = EXCLUDED.fixed_amount_per_trade,
-                min_conditions_match = EXCLUDED.min_conditions_match,
-                trading_window_start = EXCLUDED.trading_window_start,
-                trading_window_end = EXCLUDED.trading_window_end,
-                updated_at = NOW()
-            RETURNING 
-                id AS Id,
-                user_id AS UserId,
-                is_auto_trade_enabled AS IsAutoTradeEnabled,
-                available_capital AS AvailableCapital,
-                profit_target_pct AS ProfitTargetPct,
-                stop_loss_pct AS StopLossPct,
-                max_duration_days AS MaxDurationDays,
-                max_trades_per_day AS MaxTradesPerDay,
-                fixed_amount_per_trade AS FixedAmountPerTrade,
-                min_conditions_match AS MinConditionsMatch,
-                trading_window_start AS TradingWindowStart,
-                trading_window_end AS TradingWindowEnd,
-                updated_at AS UpdatedAt;";
+            SELECT * FROM fn_upsert_auto_trade_settings(
+                @UserId,
+                @IsAutoTradeEnabled,
+                @AvailableCapital,
+                @ProfitTargetPct,
+                @StopLossPct,
+                @MaxDurationDays,
+                @MaxTradesPerDay,
+                @FixedAmountPerTrade,
+                @MinConditionsMatch,
+                @TradingWindowStart,
+                @TradingWindowEnd
+            );";
 
         return await connection.QuerySingleAsync<AutoTradeSettings>(sql, settings);
     }

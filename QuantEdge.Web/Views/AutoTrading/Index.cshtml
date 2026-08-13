@@ -42,35 +42,60 @@
         </div>
     </div>
 
-    <!-- Metrics Stats Grid -->
-    <div class="autotrade-stats-grid">
-        <div class="stat-card" title="Shows whether the automated trading bot is currently ACTIVE or PAUSED.">
-            <div class="stat-label">System Status</div>
-            <div class="stat-value" id="sys-status-text" style="color: #f87171;">PAUSED</div>
+    <!-- Metrics Stats Sections -->
+    <div class="metrics-sections-wrapper">
+        <!-- Section 1: Overall Calculations -->
+        <div class="metrics-section">
+            <div class="metrics-section-title">
+                <span class="section-icon">🌐</span> Overall Calculations
+            </div>
+            <div class="autotrade-stats-grid">
+                <div class="stat-card" title="Shows whether the automated trading bot is currently ACTIVE or PAUSED.">
+                    <div class="stat-label">System Status</div>
+                    <div class="stat-value" id="sys-status-text" style="color: #f87171;">PAUSED</div>
+                </div>
+                <div class="stat-card" title="Maximum budget limit configured for the Auto Trading engine.">
+                    <div class="stat-label">Auto Capital Limit</div>
+                    <div class="stat-value" id="stat-capital">₹1,00,000.00</div>
+                </div>
+                <div class="stat-card" title="Unused cash balance in your account available for taking new trades.">
+                    <div class="stat-label">Available Margin</div>
+                    <div class="stat-value" id="stat-available-margin" style="color: #38bdf8;">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Total money currently locked in your active open paper positions.">
+                    <div class="stat-label">Used Margin</div>
+                    <div class="stat-value" id="stat-used-margin" style="color: #f59e0b;">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Number of auto-traded stock positions currently open.">
+                    <div class="stat-label">Open Auto Positions</div>
+                    <div class="stat-value" id="stat-open-count">0</div>
+                </div>
+                <div class="stat-card" title="Live total profit or loss of all open auto positions based on real-time market prices.">
+                    <div class="stat-label">Unrealized P&L</div>
+                    <div class="stat-value" id="stat-unrealized-pnl">₹0.00</div>
+                </div>
+            </div>
         </div>
-        <div class="stat-card" title="Unused cash balance in your account available for taking new trades.">
-            <div class="stat-label">Available Margin</div>
-            <div class="stat-value" id="stat-available-margin" style="color: #38bdf8;">₹0.00</div>
-        </div>
-        <div class="stat-card" title="Total money currently locked in your active open paper positions.">
-            <div class="stat-label">Used Margin</div>
-            <div class="stat-value" id="stat-used-margin" style="color: #f59e0b;">₹0.00</div>
-        </div>
-        <div class="stat-card" title="Maximum budget limit configured for the Auto Trading engine.">
-            <div class="stat-label">Auto Capital Limit</div>
-            <div class="stat-value" id="stat-capital">₹1,00,000.00</div>
-        </div>
-        <div class="stat-card" title="Number of auto-traded stock positions currently open.">
-            <div class="stat-label">Open Auto Positions</div>
-            <div class="stat-value" id="stat-open-count">0</div>
-        </div>
-        <div class="stat-card" title="Live total profit or loss of all open auto positions based on real-time market prices.">
-            <div class="stat-label">Unrealized P&L</div>
-            <div class="stat-value" id="stat-unrealized-pnl">₹0.00</div>
-        </div>
-        <div class="stat-card stat-card-full-mobile" title="Total profit or loss from auto trades closed today.">
-            <div class="stat-label">Today's Realized P&L</div>
-            <div class="stat-value" id="stat-realized-pnl">₹0.00</div>
+
+        <!-- Section 2: Today's Calculations -->
+        <div class="metrics-section">
+            <div class="metrics-section-title">
+                <span class="section-icon">📅</span> Today's Calculations
+            </div>
+            <div class="autotrade-stats-grid today-stats-grid">
+                <div class="stat-card" title="Total auto trades executed today vs maximum allowed daily limit.">
+                    <div class="stat-label">Today's Trades Used</div>
+                    <div class="stat-value" id="stat-today-trade-count" style="color: #38bdf8;">0 / 5 Trades</div>
+                </div>
+                <div class="stat-card highlight-card" title="Total trade capital deployed/used for today's auto trades (e.g. ₹20,000 per trade × trades executed).">
+                    <div class="stat-label">Today Used Trade Amount</div>
+                    <div class="stat-value" id="stat-today-used-amount" style="color: #38bdf8;">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Total profit or loss from auto trades closed today.">
+                    <div class="stat-label">Today's Realized P&L</div>
+                    <div class="stat-value" id="stat-realized-pnl">₹0.00</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -172,11 +197,11 @@
                                 </div>
                                 <div class="col-xl-2 col-lg-2 col-md-6 col-6">
                                     <label class="paper-label text-light mb-1" for="historyFilterFromDate" title="Start date filter">From Date</label>
-                                    <input type="date" id="historyFilterFromDate" class="form-control paper-input form-control-sm" title="From date">
+                                    <input type="date" id="historyFilterFromDate" class="form-control paper-input form-control-sm" value="@DateTime.Now.ToString("yyyy-MM-dd")" title="From date">
                                 </div>
                                 <div class="col-xl-2 col-lg-2 col-md-6 col-6">
                                     <label class="paper-label text-light mb-1" for="historyFilterToDate" title="End date filter">To Date</label>
-                                    <input type="date" id="historyFilterToDate" class="form-control paper-input form-control-sm" title="To date">
+                                    <input type="date" id="historyFilterToDate" class="form-control paper-input form-control-sm" value="@DateTime.Now.ToString("yyyy-MM-dd")" title="End date filter">
                                 </div>
                                 <div class="col-xl-3 col-lg-3 col-md-12 col-12 d-flex gap-2 justify-content-end">
                                     <button type="button" id="btnFilterHistory" class="btn btn-primary btn-sm px-3 fw-bold flex-grow-1" title="Apply selected filters">🔍 Filter</button>
@@ -260,8 +285,8 @@
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label" title="Maximum loss percentage before auto selling to protect capital.">Stop Loss %</label>
-                            <input type="number" id="txtStopLossPct" class="form-input" value="3.0" min="0.1" max="100" step="0.01" title="Maximum loss percentage before auto selling to protect capital." />
+                            <label class="form-label" title="Optional maximum loss percentage before auto selling to protect capital.">SL % (Optional)</label>
+                            <input type="number" id="txtStopLossPct" class="form-input" placeholder="Optional (e.g. 3.0)" step="0.01" title="Optional maximum loss percentage before auto selling to protect capital." />
                         </div>
 
                         <div class="form-group col-half">
@@ -301,8 +326,8 @@
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label" title="Maximum loss percentage before auto selling to protect capital.">Stop Loss %</label>
-                            <input type="number" id="txtStopLossPct" class="form-input" value="3.0" disabled step="0.01" title="Maximum loss percentage before auto selling to protect capital." />
+                            <label class="form-label" title="Optional maximum loss percentage before auto selling to protect capital.">SL % (Optional)</label>
+                            <input type="number" id="txtStopLossPct" class="form-input" placeholder="Optional" disabled step="0.01" title="Optional maximum loss percentage before auto selling to protect capital." />
                         </div>
 
                         <div class="form-group col-half">

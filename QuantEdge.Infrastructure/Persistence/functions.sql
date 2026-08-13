@@ -1211,4 +1211,82 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- Function: fn_upsert_auto_trade_settings
+-- Upserts auto trade settings for a user and returns the updated record.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_upsert_auto_trade_settings CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_upsert_auto_trade_settings(
+    p_user_id VARCHAR,
+    p_is_auto_trade_enabled BOOLEAN,
+    p_available_capital NUMERIC,
+    p_profit_target_pct NUMERIC,
+    p_stop_loss_pct NUMERIC,
+    p_max_duration_days INT,
+    p_max_trades_per_day INT,
+    p_fixed_amount_per_trade NUMERIC,
+    p_min_conditions_match INT,
+    p_trading_window_start VARCHAR,
+    p_trading_window_end VARCHAR
+)
+RETURNS TABLE (
+    Id INT,
+    UserId VARCHAR,
+    IsAutoTradeEnabled BOOLEAN,
+    AvailableCapital NUMERIC,
+    ProfitTargetPct NUMERIC,
+    StopLossPct NUMERIC,
+    MaxDurationDays INT,
+    MaxTradesPerDay INT,
+    FixedAmountPerTrade NUMERIC,
+    MinConditionsMatch INT,
+    TradingWindowStart VARCHAR,
+    TradingWindowEnd VARCHAR,
+    UpdatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO auto_trade_settings (
+        user_id, is_auto_trade_enabled, available_capital, profit_target_pct, stop_loss_pct,
+        max_duration_days, max_trades_per_day, fixed_amount_per_trade, min_conditions_match,
+        trading_window_start, trading_window_end, updated_at
+    )
+    VALUES (
+        p_user_id, p_is_auto_trade_enabled, p_available_capital, p_profit_target_pct, p_stop_loss_pct,
+        p_max_duration_days, p_max_trades_per_day, p_fixed_amount_per_trade, p_min_conditions_match,
+        p_trading_window_start, p_trading_window_end, NOW()
+    )
+    ON CONFLICT (user_id) DO UPDATE
+    SET is_auto_trade_enabled = EXCLUDED.is_auto_trade_enabled,
+        available_capital = EXCLUDED.available_capital,
+        profit_target_pct = EXCLUDED.profit_target_pct,
+        stop_loss_pct = EXCLUDED.stop_loss_pct,
+        max_duration_days = EXCLUDED.max_duration_days,
+        max_trades_per_day = EXCLUDED.max_trades_per_day,
+        fixed_amount_per_trade = EXCLUDED.fixed_amount_per_trade,
+        min_conditions_match = EXCLUDED.min_conditions_match,
+        trading_window_start = EXCLUDED.trading_window_start,
+        trading_window_end = EXCLUDED.trading_window_end,
+        updated_at = NOW()
+    RETURNING 
+        auto_trade_settings.id AS Id,
+        auto_trade_settings.user_id AS UserId,
+        auto_trade_settings.is_auto_trade_enabled AS IsAutoTradeEnabled,
+        auto_trade_settings.available_capital AS AvailableCapital,
+        auto_trade_settings.profit_target_pct AS ProfitTargetPct,
+        auto_trade_settings.stop_loss_pct AS StopLossPct,
+        auto_trade_settings.max_duration_days AS MaxDurationDays,
+        auto_trade_settings.max_trades_per_day AS MaxTradesPerDay,
+        auto_trade_settings.fixed_amount_per_trade AS FixedAmountPerTrade,
+        auto_trade_settings.min_conditions_match AS MinConditionsMatch,
+        auto_trade_settings.trading_window_start AS TradingWindowStart,
+        auto_trade_settings.trading_window_end AS TradingWindowEnd,
+        auto_trade_settings.updated_at AS UpdatedAt;
+END;
+$$;
+
+
 
