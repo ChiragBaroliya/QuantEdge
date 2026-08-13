@@ -33,13 +33,39 @@ document.addEventListener("DOMContentLoaded", function () {
     loadHistory(1);
     setupEventListeners();
     setupSignalRHub();
+    startHistoryAutoRefreshCountdown();
 
-    // Periodic refresh fallback every 15 seconds
+    // Periodic dashboard refresh fallback every 15 seconds
     setInterval(() => {
         loadDashboardData();
-        loadOrders();
     }, 15000);
 });
+
+let historyRefreshSecs = 300;
+let historyRefreshInterval = null;
+
+function startHistoryAutoRefreshCountdown() {
+    if (historyRefreshInterval) clearInterval(historyRefreshInterval);
+    historyRefreshSecs = 300;
+
+    const updateBadge = () => {
+        const el = document.getElementById("historyCountdownText");
+        if (!el) return;
+        const mins = Math.floor(historyRefreshSecs / 60);
+        const secs = historyRefreshSecs % 60;
+        el.innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+        if (historyRefreshSecs <= 0) {
+            historyRefreshSecs = 300;
+            loadHistory(historyPageState.page);
+        } else {
+            historyRefreshSecs--;
+        }
+    };
+
+    updateBadge();
+    historyRefreshInterval = setInterval(updateBadge, 1000);
+}
 
 async function loadDashboardData() {
     try {
@@ -154,10 +180,10 @@ function updateDashboardUI(data) {
 
     const capElem = document.getElementById("stat-capital");
     if (capElem) capElem.innerText = `₹${formatNumber(availableCap)}`;
-    
+
     const countElem = document.getElementById("stat-open-count");
     if (countElem) countElem.innerText = openCount;
-    
+
     const todayTradeAmount = data.todayTradeAmount ?? data.TodayTradeAmount ?? (todayCount * (s.fixedAmountPerTrade || s.FixedAmountPerTrade || 20000));
 
     const todayCountElem = document.getElementById("stat-today-trade-count");
@@ -254,8 +280,11 @@ function formatISTTime(dateInput) {
     if (!rawStr.endsWith('Z') && !rawStr.includes('+')) rawStr += 'Z';
     let d = new Date(rawStr);
     if (isNaN(d.getTime())) d = new Date(dateInput);
-    return d.toLocaleTimeString('en-IN', {
+    return d.toLocaleString('en-IN', {
         timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
@@ -645,7 +674,7 @@ function setupEventListeners() {
                         } else if (errObj && (errObj.message || errObj.title)) {
                             errMsg = errObj.message || errObj.title;
                         }
-                    } catch (_) {}
+                    } catch (_) { }
                     showToast(`⚠️ ${errMsg}`, "error");
                 }
             } catch (err) {
