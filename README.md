@@ -1,134 +1,329 @@
 # QuantEdge Trading Platform
 
-QuantEdge is a real-time, AI-assisted trading platform designed to analyze market conditions and deliver high-probability buy, sell, and hold recommendations. 
+QuantEdge is a .NET 10 trading platform for market data ingestion, technical analysis, signal generation, paper trading, swing strategy scans, and operational dashboards.
 
-The platform is designed using modern software engineering patterns, embracing **Clean Architecture**, **SOLID Principles**, and robust **Thread-Safe concurrency** in .NET 10.
+The solution contains:
+- A Web API for data, trading, admin, and auth endpoints
+- An MVC Web app for dashboards and operations
+- A Worker host that runs multiple background jobs by job type
+- A shared Infrastructure layer (services, repositories, SQL integration)
+- A Domain layer (entities and domain exceptions)
 
----
+## 1. Solution Structure
 
-## Solutions & Modules
+Projects in the solution file:
+- QuantEdge.API
+- QuantEdge.Web
+- QuantEdge.Worker
+- QuantEdge.Infrastructure
+- QuantEdge.Domain
 
-### 1. `QuantEdge.Worker` (Worker Service)
-A dedicated microservice project responsible for establishing real-time connections to market feed streams (Mock, Live, or Zerodha Kite Connect WebSocket), aggregating raw transactions into multi-timeframe OHLCV candlesticks, and persisting them in PostgreSQL.
+High-level repository layout:
 
-#### Folder Structure & Organization:
-*   **`Configurations/`**: Options parameters mapping broker connection details and credentials.
-*   **`Constants/`**: Platform-wide definitions such as supported asset symbols (`NIFTY`, `BANKNIFTY`) and chart timeframes (e.g. 5-second, 1-minute, 5-minute).
-*   **`DTOs/`**: Immutable record models defining the core messaging contract for `TickDataDto`, `CandleDto`, and `MarketDepthDto`.
-*   **`Models/`**: Domain models like order book `DepthLevel`.
-*   **`Interfaces/`**: Strongly typed, decoupled service contracts:
-    *   `IWebSocketMarketDataService`: Connects and streams feed ticks and book depth.
-    *   `ICandleBuilderService`: Takes raw ticks and aggregates them into multi-interval candlesticks.
-    *   `IMarketDataProcessor`: Core orchestrator receiving and routing raw events to aggregators.
-    *   `IReconnectPolicyService`: Computes exponential backoff connection restore delays.
-*   **`Services/`**: Realizations of the service contracts:
-    *   `WebSocketMarketDataService`: Production live WebSocket integration service. Implements automatic session reconnects, heartbeat ping triggers every 25 seconds, local symbol caches, and flexible parsing.
-    *   `ZerodhaWebSocketMarketDataService`: Production live Zerodha Kite Connect WebSocket service using the official `Tech.Zerodha.KiteConnect` library, mapping instrument tokens to symbols, and managing auto-reconnections.
-    *   `WebSocketConnectionManager`: Thread-safely wraps `ClientWebSocket` with `SemaphoreSlim` send locks and yields an async stream (`IAsyncEnumerable<string>`) of text chunks.
-    *   `ReconnectPolicyService`: Computes exponential delays with 30% random jitter to avoid thundering herd conditions.
-    *   `CandleBuilderService`: Performs fine-grained local locking per asset & timeframe key, ensuring zero race conditions under high concurrent tick frequencies while preserving in-memory circular logs of completed candles.
-    *   `MockWebSocketMarketDataService`: Emulates real-world broker stream sessions, generating Geometric random walks for `NIFTY` and `BANKNIFTY`.
-    *   `MarketDataProcessor`: Decoupled pipeline routing raw ticks to indicators and aggregate builders, and persisting closed candles into PostgreSQL via high-performance Dapper repositories.
-*   **`Workers/`**: Features `MarketDataFeedWorker` inheriting from standard `BackgroundService` to manage long-running data feeds.
-*   **`Extensions/`**: Houses `ServiceCollectionExtensions` to register all Worker components into Dependency Injection containers with a single extension call.
-
-
----
-
-## Design and Concurrency Strategy
-
-1.  **Thread Safety**: 
-    The `CandleBuilderService` uses a fine-grained concurrency model. Instead of global locks that block all incoming ticks, it locks on a per-symbol, per-interval state basis using a `ConcurrentDictionary`. This allows ticks for `NIFTY` and `BANKNIFTY` to be processed in parallel across multiple CPU cores without race conditions or memory corruption.
-2.  **Dependency Inversion**:
-    High-level orchestration components (`MarketDataProcessor`, `MarketDataFeedWorker`) interact solely through abstraction interfaces (`IWebSocketMarketDataService`, `ICandleBuilderService`), isolating the core logic from specific broker connection details or data providers.
-3.  **Broker Agnosticism**:
-    The system is configured via `BrokerConfig`, paving a clear path for future production integrations (such as the **Zerodha Kite Connect WebSocket**, AngelOne, or the **Grow API**) by simply swapping out `IWebSocketMarketDataService` implementations.
-4.  **Live WebSocket Concurrency & Resilience**:
-    *   `ClientWebSocket` Concurrency: Since `ClientWebSocket` does not support concurrent send/receive execution, `WebSocketConnectionManager` thread-safely throttles transmissions using a `SemaphoreSlim`.
-    *   Asynchronous Stream Processing: Incoming payloads are streamed as they arrive using C# 10 `IAsyncEnumerable<string>` streams, minimizing memory allocations.
-    *   Resilience & Reconnection: Reconnection calculates exponential backoffs with a 30% randomized jitter. Symbol subscription lists are locally stored in a thread-safe `ConcurrentDictionary` and dynamically restored on connection recovery.
-    *   Heartbeats: A secondary background heartbeat worker pings the WebSocket host every 25 seconds to preserve active channel connections.
-    *   Zerodha Ticker: Integrates the official `Tech.Zerodha.KiteConnect` library to stream binary ticks. Standard indices (NIFTY/BANKNIFTY) are mapped dynamically from/to instrument tokens.
-5.  **Automated PostgreSQL Data Storage**:
-    The background `MarketDataFeedWorker` feeds tick updates to `MarketDataProcessor`, which in turn leverages `CandleBuilderService` to aggregate high-frequency ticks into multi-timeframe candles. Whenever a candlestick closes, the pipeline automatically intercepts the event and persists it to the PostgreSQL `market_candles` table thread-safely via the decoupled `IMarketCandleRepository`.
-
-
-
----
-
-## Database Schema & Persistence (`QuantEdge.MarketData/Persistence/`)
-
-We utilize a high-performance **Dapper & ADO.NET** persistence layer with a **PostgreSQL** database provider, incorporating a **TimescaleDB-ready** timeseries structure and dynamic **snake_case** database mappings.
-
-### 1. Database Connections
-Database connections are managed via decoupled factories:
-*   `IDbConnectionFactory`: Defines the interface for creating ADO.NET database connections.
-*   `NpgsqlConnectionFactory`: Implementation utilizing `NpgsqlConnection` referencing a standard PostgreSQL connection string injected through `IOptions<BrokerConfig>`.
-
-### 2. Auto-Mapping (`snake_case` to `PascalCase`)
-We register the Dapper option globally in the Dependency Injection container:
-```csharp
-Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
-```
-This enables seamless auto-mapping of standard PostgreSQL `snake_case` table columns (`candle_time`, `signal_strength`, etc.) to C# strongly typed `PascalCase` properties (`CandleTime`, `SignalStrength`, etc.) without any manual conversion logic or overhead.
-
-### 3. Stored Procedures (`Persistence/schema.sql`)
-All ingestion and extraction tasks are executed strictly via PostgreSQL Stored Procedures and Table-Valued Functions, ensuring optimal performance and decoupling C# code from specific database schema details:
-*   `sp_insert_market_candle`: Inserts or updates (UPSERT) aggregated OHLCV candle bars.
-*   `sp_get_market_candles`: Fetches candle bars for a symbol and timeframe, ordered by time descending.
-*   `sp_insert_market_indicator`: Inserts or updates calculated indicator sets.
-*   `sp_get_market_indicators`: Queries indicator logs for technical analysis.
-*   `sp_insert_trading_signal`: Persists AI-generated BUY/SELL signals.
-*   `sp_get_recent_trading_signals`: Retrieves latest signals.
-
-### 4. TimescaleDB Ready Structure & Indexes
-To support TimescaleDB's timeseries chunk partitioning (hypertables) and maximize search queries:
-*   **Primary Keys**: Composite keys `(id, candle_time)` are enforced on all tables, making them fully compliant with TimescaleDB hypertable constraints.
-*   **Timezones**: Timestamps are mapped to `timestamp with time zone` (UTC standard) to prevent time-shifting.
-*   **Composite Index** on `(symbol, timeframe, candle_time DESC)` for `market_candles` and `market_indicators` to maximize timeseries lookup speed.
-*   **Composite Index** on `(symbol, candle_time DESC)` for `trading_signals` to optimize signal history queries.
-
-### 5. Running Database Setup
-The complete database script containing table creation, composite optimization indexes, and all Stored Procedures is defined in:
-*   [schema.sql](file:///d:/LearningProject/QuantEdge/QuantEdge.MarketData/Persistence/schema.sql)
-
-You can apply the schema to your PostgreSQL database using the standard `psql` command or any migration runner:
-```bash
-psql -U <username> -d <database_name> -f d:/LearningProject/QuantEdge/QuantEdge.MarketData/Persistence/schema.sql
+```text
+QuantEdge/
+  QuantEdge.API/              # ASP.NET Core Web API host
+  QuantEdge.Web/              # ASP.NET Core MVC dashboard host
+  QuantEdge.Worker/           # Background jobs host (Windows Service capable)
+  QuantEdge.Infrastructure/   # Services, repositories, persistence SQL, SignalR hub
+  QuantEdge.Domain/           # Domain entities and exceptions
+  publish/                    # Published binaries per host
+  linuxservicesetup.md        # Linux systemd setup guide
+  windowserivcesetup.md       # Windows service setup guide
+  signal_dashboard_flow_rules.md
+  swing_trading_logic.md
 ```
 
----
+## 2. Architecture Overview
 
-## Getting Started
+```mermaid
+graph TD
+    A[Market Feed / Zerodha] --> B[QuantEdge.Worker]
+    B --> C[QuantEdge.Infrastructure Services]
+    C --> D[(PostgreSQL)]
 
-### Prerequisites
-*   [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+    D --> E[QuantEdge.API]
+    E --> F[QuantEdge.Web]
+    E --> G[External API Clients]
 
-### Building the Project
-From the solution root directory, execute the standard build command:
-```bash
-dotnet build
+    B --> H[SignalR Hub]
+    E --> H
+    H --> F
 ```
 
-### Dependency Injection Registration
-To integrate this module into a Web API or Worker host, register the services in your application's entrypoint (`Program.cs`):
-```csharp
-using QuantEdge.MarketData.Extensions;
+Core design characteristics:
+- Clean layered structure (Domain + Infrastructure + Hosts)
+- Dependency Injection through ServiceCollection extension
+- Dapper + Npgsql persistence with SQL procedures/functions
+- SignalR for live push updates
+- Background jobs selectable by command-line job type
+- Serilog-based centralized logging setup per host
 
-// Register all MarketData configurations, simulator streams, candle builders, and background workers
-builder.Services.AddMarketDataServices(builder.Configuration);
-```
+## 3. What Each Project Does
 
-Configure your broker parameters within your `appsettings.json`:
+## QuantEdge.API
+Primary REST API and SignalR host.
+
+Key startup behavior:
+- Registers controllers, Swagger, health checks, SignalR, CORS, memory cache
+- Uses AddMarketDataServices for shared service/repository registration
+- Applies path base /api
+- Exposes /health endpoint with structured JSON
+- Maps SignalR hub at /hubs/marketdata
+
+Main controller modules:
+- AuthController: login, register, password change
+- ZerodhaAuthController: login-url, callback, headless login, session status
+- MarketDataController: stocks, instruments, chart data, history reset/purge, memory stats
+- TradingSignalController: on-demand signal evaluation
+- PaperTradingController: account, positions, orders, settings, reset
+- AutoTradeController: settings, toggle, dashboard, logs
+- SwingTradingController: dashboard, job status, run job, backfill
+- DataCoverageController: summary/list/export/update/delete/bulk delete
+- HolidayController: holiday CRUD and cache refresh
+- UserController: user summary/list/CRUD/reset-password
+- CandleSummaryController: summary and symbol endpoints
+- LogController: log file listing and content APIs
+
+## QuantEdge.Web
+MVC dashboard and operations UI layer.
+
+Key startup behavior:
+- Cookie auth
+- Named HttpClient to API base URL (ApiBaseUrl)
+- Uses AddMarketDataServices for shared domain services where needed
+
+Main web controller modules:
+- HomeController
+- AccountController
+- TokenController
+- DataCoverageController
+- HolidayController
+- LogController
+- ManageHistoryController
+- CandleSummaryController
+- PaperTradingController
+- AutoTradingController
+- SwingTradingController
+- UserController
+
+## QuantEdge.Worker
+Background host that selects job(s) from JobType argument/config and can run as Windows service.
+
+Job selection examples:
+- marketdatafeed
+- marketdatafeed:1m
+- history
+- history:5m
+- instrumentsync
+- activezerodhatoken
+- swingintraday
+- autotrade or autotradescan
+- clearcache
+- todayreset / historyreset / reset (aliases)
+
+Important workers:
+- MarketDataFeedWorker: market-hours-aware live stream loop and reconnect handling
+- HistoricalDataSyncWorker: gap sync for missing historical candles
+- InstrumentSyncWorker: startup/weekly instrument master sync
+- ActiveZerodhaTokenWorker: token activation window checks (6:00-8:30 AM IST)
+- AutoTradeSignalScanWorker: 15-minute scan loop over active stocks
+- AutoTradePositionMonitorWorker: monitors open auto positions and exits
+- SwingTradingIntradayJobWorker: 30-minute intraday swing scan
+- SwingTradingDailyJobWorker: end-of-day swing job scheduler
+- HistoryResetWorker: targeted date-range reset/rebuild
+- TodayHistoryResetWorker: today reset/rebuild
+- ClearCacheWorker: clears memory cache and exits
+
+## QuantEdge.Infrastructure
+Shared implementation layer:
+- Extensions: DI registration
+- Services: signal engine, swing engine, broker integrations, candle builder, cache, paper trading
+- Interfaces: contracts for all services
+- Persistence:
+  - Connection factory
+  - Repositories
+  - SQL assets:
+    - schema.sql
+    - stored_procedures.sql
+    - functions.sql
+- Hubs: SignalR market data hub
+
+## QuantEdge.Domain
+Domain entities and exceptions.
+
+Major entities include:
+- MarketCandle, MarketIndicator, TradingSignal
+- StockMaster
+- IndianHoliday
+- AppUser
+- PaperAccount, PaperOrder, PaperPosition, PaperTradeHistory
+- AutoTradeSettings, AutoTradeExecutionLog
+
+## 4. Database and SQL Layer
+
+Database engine:
+- PostgreSQL (TimescaleDB-ready schema style)
+
+SQL files and purpose:
+- QuantEdge.Infrastructure/Persistence/schema.sql
+  - Core table definitions
+  - Migration blocks from old single-table model
+  - Index creation
+- QuantEdge.Infrastructure/Persistence/stored_procedures.sql
+  - Insert/upsert procedures for candles/indicators/signals/sessions/holidays/users
+- QuantEdge.Infrastructure/Persistence/functions.sql
+  - Read/query functions for candles/indicators/signals/sessions/stock coverage and instruments
+
+Data model highlights:
+- Timeframe-specific candle tables: market_candles_1m/5m/15m/60m/1d
+- Timeframe-specific indicator tables: market_indicators_1m/5m/15m/60m/1d
+- Trading signal table
+- Instrument master table (stock_master)
+- Zerodha session table
+- Holiday table
+- Swing and analysis tables
+
+## 5. Runtime Flows
+
+Typical production flow:
+1. Worker ingests live ticks and builds candles.
+2. Infrastructure services compute indicators and evaluate signals.
+3. Data is persisted to PostgreSQL via repositories and SQL procedures/functions.
+4. API serves historical/operational endpoints.
+5. API and Worker push live updates through SignalR.
+6. Web dashboard consumes REST + SignalR for visualization and control.
+
+Reference docs with detailed formulas and UI flow:
+- signal_dashboard_flow_rules.md
+- swing_trading_logic.md
+
+## 6. Configuration
+
+Each host has appsettings.json + appsettings.Development.json.
+
+Primary configuration areas used across hosts:
+- Logging
+- MarketDataSettings:BrokerConfig
+- AutoTrade
+- ApiBaseUrl (Web)
+- Enable_Swagger (API)
+
+Example safe configuration template (do not commit real secrets):
+
 ```json
 {
   "MarketDataSettings": {
     "BrokerConfig": {
-      "ActiveBroker": "SIMULATOR",
-      "WebSocketUrl": "wss://feed.quantedge.internal/v1/marketdata",
-      "ApiKey": "YOUR-API-KEY",
-      "ApiSecret": "YOUR-API-SECRET"
+      "ActiveBroker": "ZERODHA",
+      "WebSocketUrl": "wss://ws.kite.trade",
+      "ApiKey": "<set-in-secret-store>",
+      "ApiSecret": "<set-in-secret-store>",
+      "AccessToken": "<runtime-token>",
+      "UserId": "<user-id>",
+      "Password": "<set-in-secret-store>",
+      "TotpSecret": "<set-in-secret-store>",
+      "ConnectionString": "Host=<host>;Database=<db>;Username=<user>;Password=<password>;..."
     }
+  },
+  "AutoTrade": {
+    "SignalScanIntervalMinutes": 15,
+    "MaxTradesPerDay": 5,
+    "TradingWindowStart": "09:15",
+    "TradingWindowEnd": "15:30"
   }
 }
 ```
+
+Security note:
+- Repository appsettings currently contains real-looking credentials/tokens.
+- Move all secrets to user-secrets, environment variables, or secret manager immediately.
+- Rotate any exposed credentials.
+
+## 7. Local Development
+
+Prerequisites:
+- .NET SDK 10.0
+- PostgreSQL 14+ (or compatible)
+
+Build solution:
+
+```bash
+dotnet build QuantEdge.slnx
+```
+
+Run API:
+
+```bash
+dotnet run --project QuantEdge.API/QuantEdge.API.csproj
+```
+
+Run Web:
+
+```bash
+dotnet run --project QuantEdge.Web/QuantEdge.Web.csproj
+```
+
+Run Worker (examples):
+
+```bash
+dotnet run --project QuantEdge.Worker/QuantEdge.Worker.csproj -- marketdatafeed
+dotnet run --project QuantEdge.Worker/QuantEdge.Worker.csproj -- history:1m
+dotnet run --project QuantEdge.Worker/QuantEdge.Worker.csproj -- autotrade
+```
+
+Initialize database schema:
+
+```bash
+psql -U <username> -d <database> -f QuantEdge.Infrastructure/Persistence/schema.sql
+psql -U <username> -d <database> -f QuantEdge.Infrastructure/Persistence/stored_procedures.sql
+psql -U <username> -d <database> -f QuantEdge.Infrastructure/Persistence/functions.sql
+```
+
+## 8. Deployment
+
+Publishing examples:
+
+```bash
+dotnet publish QuantEdge.API/QuantEdge.API.csproj -c Release -o publish/API
+dotnet publish QuantEdge.Web/QuantEdge.Web.csproj -c Release -o publish/Web
+dotnet publish QuantEdge.Worker/QuantEdge.Worker.csproj -c Release -o publish/Worker
+```
+
+Service setup references:
+- Windows services: windowserivcesetup.md
+- Linux systemd services: linuxservicesetup.md
+
+## 9. Monitoring and Operations
+
+API observability endpoints:
+- /api/health
+- /api/marketdata/memory-stats
+
+Log handling:
+- Serilog is configured in all three hosts
+- Log browsing endpoints/controllers exist in both API and Web modules
+
+Operational tools exposed in platform:
+- Data coverage summary and export
+- Instrument sync trigger
+- History reset by symbol/timeframe/date range
+- Holiday calendar management
+- User management and password reset
+- Token session activation and status checks
+
+## 10. Current Notes
+
+- QuantEdge.Worker includes Windows service integration via AddWindowsService.
+- API uses path base /api, so all controller routes are served under /api/*.
+- Swagger can be toggled by Enable_Swagger.
+- Some documentation and comments still reference older naming such as QuantEdge.MarketData; current shared project is QuantEdge.Infrastructure.
+
+## 11. Quick Start Checklist
+
+1. Configure PostgreSQL and create database.
+2. Apply schema.sql, stored_procedures.sql, and functions.sql.
+3. Set BrokerConfig and connection string with secure secret storage.
+4. Run API and Web.
+5. Run Worker with required JobType (marketdatafeed, instrumentsync, autotrade, etc.).
+6. Validate /api/health and open Web dashboard.
