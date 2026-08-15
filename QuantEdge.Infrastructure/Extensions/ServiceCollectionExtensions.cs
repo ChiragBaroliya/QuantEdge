@@ -101,9 +101,16 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IAutoTradeRepository, AutoTradeRepository>();
         services.AddTransient<PaperOrderValidator>();
         services.AddSingleton<PaperMatchingEngine>();
-        services.AddTransient<ZerodhaKiteBrokerService>();
+        services.AddHttpClient();
+        services.AddSingleton<IZerodhaKiteBrokerService, ZerodhaKiteBrokerService>();
+        services.AddSingleton<ITradingBrokerService, ZerodhaKiteBrokerService>();
         services.AddSingleton<IPaperTradingService, PaperTradingService>();
         services.AddSingleton<IAutoTradeService, AutoTradeService>();
+
+        // Register Real Trading Infrastructure Services
+        services.AddTransient<IRealTradingRepository, RealTradingRepository>();
+        services.AddSingleton<IAutoRealTradeService, AutoRealTradeService>();
+
         services.AddTransient<ICandleSummaryService, CandleSummaryService>();
 
         return services;

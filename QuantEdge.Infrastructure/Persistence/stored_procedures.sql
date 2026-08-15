@@ -252,3 +252,101 @@ BEGIN
 END;
 $$;
 
+
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_update_real_order_status
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_update_real_order_status(INT, INT, NUMERIC, VARCHAR, VARCHAR) CASCADE;
+
+CREATE OR REPLACE PROCEDURE sp_update_real_order_status(
+    p_order_id INT,
+    p_status INT,
+    p_filled_price NUMERIC,
+    p_broker_order_id VARCHAR,
+    p_rejection_reason VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE real_orders
+    SET status = p_status,
+        filled_price = p_filled_price,
+        broker_order_id = COALESCE(p_broker_order_id, broker_order_id),
+        rejection_reason = p_rejection_reason,
+        filled_at = CASE WHEN p_status = 1 THEN NOW() ELSE filled_at END
+    WHERE id = p_order_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_close_real_position
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_close_real_position(INT, NUMERIC, NUMERIC, VARCHAR) CASCADE;
+
+CREATE OR REPLACE PROCEDURE sp_close_real_position(
+    p_position_id INT,
+    p_exit_price NUMERIC,
+    p_realized_pnl NUMERIC,
+    p_exit_reason VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE real_positions
+    SET status = 1,
+        current_price = p_exit_price,
+        realized_pnl = p_realized_pnl,
+        unrealized_pnl = 0.00,
+        exit_reason = p_exit_reason,
+        closed_at = NOW()
+    WHERE id = p_position_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_update_real_trailing_sl
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_update_real_trailing_sl(INT, NUMERIC) CASCADE;
+
+CREATE OR REPLACE PROCEDURE sp_update_real_trailing_sl(
+    p_position_id INT,
+    p_new_trailing_sl NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE real_positions
+    SET trailing_stop_loss = p_new_trailing_sl
+    WHERE id = p_position_id AND status = 0;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_log_real_trade_execution
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_log_real_trade_execution(INT, VARCHAR, VARCHAR, NUMERIC, INT, VARCHAR) CASCADE;
+DROP PROCEDURE IF EXISTS sp_log_real_trade_execution(VARCHAR, VARCHAR, VARCHAR, NUMERIC, INT, VARCHAR) CASCADE;
+
+CREATE OR REPLACE PROCEDURE sp_log_real_trade_execution(
+    p_user_id INT,
+    p_symbol VARCHAR,
+    p_action_type VARCHAR,
+    p_price NUMERIC,
+    p_quantity INT,
+    p_reason VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO real_trade_execution_logs (
+        user_id, symbol, action_type, price, quantity, reason, executed_at
+    ) VALUES (
+        p_user_id, p_symbol, p_action_type, p_price, p_quantity, p_reason, NOW()
+    );
+END;
+$$;
+
+

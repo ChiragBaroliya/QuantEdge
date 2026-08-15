@@ -1484,4 +1484,886 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- 7. Auto Real Trading Functions (Live Broker Money)
+-- ----------------------------------------------------------------------------
+
+-- Function: fn_get_real_trade_settings
+DROP FUNCTION IF EXISTS fn_get_real_trade_settings(INT);
+DROP FUNCTION IF EXISTS fn_get_real_trade_settings(VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_get_real_trade_settings(p_user_id INT)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    IsRealTradeEnabled BOOLEAN,
+    AvailableCapital NUMERIC,
+    ProfitTargetPct NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlEnabled BOOLEAN,
+    TrailingSlPct NUMERIC,
+    MaxDurationDays INT,
+    MaxTradesPerDay INT,
+    FixedAmountPerTrade NUMERIC,
+    MaxDailyLossLimit NUMERIC,
+    ProductType VARCHAR,
+    MinConditionsMatch INT,
+    TradingWindowStart VARCHAR,
+    TradingWindowEnd VARCHAR,
+    UpdatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        s.id AS Id,
+        s.user_id AS UserId,
+        s.is_real_trade_enabled AS IsRealTradeEnabled,
+        s.available_capital AS AvailableCapital,
+        s.profit_target_pct AS ProfitTargetPct,
+        s.stop_loss_pct AS StopLossPct,
+        s.trailing_sl_enabled AS TrailingSlEnabled,
+        s.trailing_sl_pct AS TrailingSlPct,
+        s.max_duration_days AS MaxDurationDays,
+        s.max_trades_per_day AS MaxTradesPerDay,
+        s.fixed_amount_per_trade AS FixedAmountPerTrade,
+        s.max_daily_loss_limit AS MaxDailyLossLimit,
+        s.product_type AS ProductType,
+        s.min_conditions_match AS MinConditionsMatch,
+        s.trading_window_start AS TradingWindowStart,
+        s.trading_window_end AS TradingWindowEnd,
+        s.updated_at AS UpdatedAt
+    FROM real_trade_settings s
+    WHERE s.user_id = p_user_id;
+END;
+$$;
+
+
+-- Function: fn_get_active_real_trade_settings
+DROP FUNCTION IF EXISTS fn_get_active_real_trade_settings();
+
+CREATE OR REPLACE FUNCTION fn_get_active_real_trade_settings()
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    IsRealTradeEnabled BOOLEAN,
+    AvailableCapital NUMERIC,
+    ProfitTargetPct NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlEnabled BOOLEAN,
+    TrailingSlPct NUMERIC,
+    MaxDurationDays INT,
+    MaxTradesPerDay INT,
+    FixedAmountPerTrade NUMERIC,
+    MaxDailyLossLimit NUMERIC,
+    ProductType VARCHAR,
+    MinConditionsMatch INT,
+    TradingWindowStart VARCHAR,
+    TradingWindowEnd VARCHAR,
+    UpdatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        s.id AS Id,
+        s.user_id AS UserId,
+        s.is_real_trade_enabled AS IsRealTradeEnabled,
+        s.available_capital AS AvailableCapital,
+        s.profit_target_pct AS ProfitTargetPct,
+        s.stop_loss_pct AS StopLossPct,
+        s.trailing_sl_enabled AS TrailingSlEnabled,
+        s.trailing_sl_pct AS TrailingSlPct,
+        s.max_duration_days AS MaxDurationDays,
+        s.max_trades_per_day AS MaxTradesPerDay,
+        s.fixed_amount_per_trade AS FixedAmountPerTrade,
+        s.max_daily_loss_limit AS MaxDailyLossLimit,
+        s.product_type AS ProductType,
+        s.min_conditions_match AS MinConditionsMatch,
+        s.trading_window_start AS TradingWindowStart,
+        s.trading_window_end AS TradingWindowEnd,
+        s.updated_at AS UpdatedAt
+    FROM real_trade_settings s
+    WHERE s.is_real_trade_enabled = TRUE;
+END;
+$$;
+
+
+-- Function: fn_upsert_real_trade_settings
+DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(INT, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR);
+DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(VARCHAR, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_upsert_real_trade_settings(
+    p_user_id INT,
+    p_is_real_trade_enabled BOOLEAN,
+    p_available_capital NUMERIC,
+    p_profit_target_pct NUMERIC,
+    p_stop_loss_pct NUMERIC,
+    p_trailing_sl_enabled BOOLEAN,
+    p_trailing_sl_pct NUMERIC,
+    p_max_duration_days INT,
+    p_max_trades_per_day INT,
+    p_fixed_amount_per_trade NUMERIC,
+    p_max_daily_loss_limit NUMERIC,
+    p_product_type VARCHAR,
+    p_min_conditions_match INT,
+    p_trading_window_start VARCHAR,
+    p_trading_window_end VARCHAR
+)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    IsRealTradeEnabled BOOLEAN,
+    AvailableCapital NUMERIC,
+    ProfitTargetPct NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlEnabled BOOLEAN,
+    TrailingSlPct NUMERIC,
+    MaxDurationDays INT,
+    MaxTradesPerDay INT,
+    FixedAmountPerTrade NUMERIC,
+    MaxDailyLossLimit NUMERIC,
+    ProductType VARCHAR,
+    MinConditionsMatch INT,
+    TradingWindowStart VARCHAR,
+    TradingWindowEnd VARCHAR,
+    UpdatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO real_trade_settings (
+        user_id, is_real_trade_enabled, available_capital, profit_target_pct,
+        stop_loss_pct, trailing_sl_enabled, trailing_sl_pct, max_duration_days,
+        max_trades_per_day, fixed_amount_per_trade, max_daily_loss_limit, product_type,
+        min_conditions_match, trading_window_start, trading_window_end, updated_at
+    )
+    VALUES (
+        p_user_id, p_is_real_trade_enabled, p_available_capital, p_profit_target_pct,
+        p_stop_loss_pct, p_trailing_sl_enabled, p_trailing_sl_pct, p_max_duration_days,
+        p_max_trades_per_day, p_fixed_amount_per_trade, p_max_daily_loss_limit, p_product_type,
+        p_min_conditions_match, p_trading_window_start, p_trading_window_end, NOW()
+    )
+    ON CONFLICT (user_id) DO UPDATE SET
+        is_real_trade_enabled = EXCLUDED.is_real_trade_enabled,
+        available_capital = EXCLUDED.available_capital,
+        profit_target_pct = EXCLUDED.profit_target_pct,
+        stop_loss_pct = EXCLUDED.stop_loss_pct,
+        trailing_sl_enabled = EXCLUDED.trailing_sl_enabled,
+        trailing_sl_pct = EXCLUDED.trailing_sl_pct,
+        max_duration_days = EXCLUDED.max_duration_days,
+        max_trades_per_day = EXCLUDED.max_trades_per_day,
+        fixed_amount_per_trade = EXCLUDED.fixed_amount_per_trade,
+        max_daily_loss_limit = EXCLUDED.max_daily_loss_limit,
+        product_type = EXCLUDED.product_type,
+        min_conditions_match = EXCLUDED.min_conditions_match,
+        trading_window_start = EXCLUDED.trading_window_start,
+        trading_window_end = EXCLUDED.trading_window_end,
+        updated_at = NOW()
+    RETURNING 
+        real_trade_settings.id AS Id,
+        real_trade_settings.user_id AS UserId,
+        real_trade_settings.is_real_trade_enabled AS IsRealTradeEnabled,
+        real_trade_settings.available_capital AS AvailableCapital,
+        real_trade_settings.profit_target_pct AS ProfitTargetPct,
+        real_trade_settings.stop_loss_pct AS StopLossPct,
+        real_trade_settings.trailing_sl_enabled AS TrailingSlEnabled,
+        real_trade_settings.trailing_sl_pct AS TrailingSlPct,
+        real_trade_settings.max_duration_days AS MaxDurationDays,
+        real_trade_settings.max_trades_per_day AS MaxTradesPerDay,
+        real_trade_settings.fixed_amount_per_trade AS FixedAmountPerTrade,
+        real_trade_settings.max_daily_loss_limit AS MaxDailyLossLimit,
+        real_trade_settings.product_type AS ProductType,
+        real_trade_settings.min_conditions_match AS MinConditionsMatch,
+        real_trade_settings.trading_window_start AS TradingWindowStart,
+        real_trade_settings.trading_window_end AS TradingWindowEnd,
+        real_trade_settings.updated_at AS UpdatedAt;
+END;
+$$;
+
+
+-- Function: fn_toggle_real_trade
+DROP FUNCTION IF EXISTS fn_toggle_real_trade(INT, BOOLEAN);
+DROP FUNCTION IF EXISTS fn_toggle_real_trade(VARCHAR, BOOLEAN);
+
+CREATE OR REPLACE FUNCTION fn_toggle_real_trade(p_user_id INT, p_enabled BOOLEAN)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO real_trade_settings (user_id, is_real_trade_enabled, updated_at)
+    VALUES (p_user_id, p_enabled, NOW())
+    ON CONFLICT (user_id) DO UPDATE SET
+        is_real_trade_enabled = p_enabled,
+        updated_at = NOW();
+END;
+$$;
+
+
+-- Function: fn_create_real_order
+DROP FUNCTION IF EXISTS fn_create_real_order(INT, VARCHAR, VARCHAR, INT, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, NUMERIC, TIMESTAMP WITH TIME ZONE, VARCHAR, INT, VARCHAR);
+DROP FUNCTION IF EXISTS fn_create_real_order(VARCHAR, VARCHAR, VARCHAR, INT, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, NUMERIC, TIMESTAMP WITH TIME ZONE, VARCHAR, INT, VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_create_real_order(
+    p_user_id INT,
+    p_broker_order_id VARCHAR,
+    p_symbol VARCHAR,
+    p_side INT,
+    p_quantity INT,
+    p_order_type INT,
+    p_price NUMERIC,
+    p_stop_loss NUMERIC,
+    p_take_profit NUMERIC,
+    p_status INT,
+    p_filled_price NUMERIC,
+    p_filled_at TIMESTAMP WITH TIME ZONE,
+    p_rejection_reason VARCHAR,
+    p_trade_type INT,
+    p_remarks VARCHAR
+)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    BrokerOrderId VARCHAR,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    OrderType INT,
+    Price NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    Status INT,
+    FilledPrice NUMERIC,
+    FilledAt TIMESTAMP WITH TIME ZONE,
+    RejectionReason VARCHAR,
+    TradeType INT,
+    Remarks VARCHAR,
+    CreatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO real_orders (
+        user_id, broker_order_id, symbol, side, quantity, order_type,
+        price, stop_loss, take_profit, status, filled_price, filled_at,
+        rejection_reason, trade_type, remarks, created_at
+    ) VALUES (
+        p_user_id, p_broker_order_id, p_symbol, p_side, p_quantity, p_order_type,
+        p_price, p_stop_loss, p_take_profit, p_status, p_filled_price, p_filled_at,
+        p_rejection_reason, p_trade_type, p_remarks, NOW()
+    )
+    RETURNING 
+        real_orders.id AS Id,
+        real_orders.user_id AS UserId,
+        real_orders.broker_order_id AS BrokerOrderId,
+        real_orders.symbol AS Symbol,
+        real_orders.side AS Side,
+        real_orders.quantity AS Quantity,
+        real_orders.order_type AS OrderType,
+        real_orders.price AS Price,
+        real_orders.stop_loss AS StopLoss,
+        real_orders.take_profit AS TakeProfit,
+        real_orders.status AS Status,
+        real_orders.filled_price AS FilledPrice,
+        real_orders.filled_at AS FilledAt,
+        real_orders.rejection_reason AS RejectionReason,
+        real_orders.trade_type AS TradeType,
+        real_orders.remarks AS Remarks,
+        real_orders.created_at AS CreatedAt;
+END;
+$$;
+
+
+-- Function: fn_get_real_order_by_id
+DROP FUNCTION IF EXISTS fn_get_real_order_by_id(INT);
+
+CREATE OR REPLACE FUNCTION fn_get_real_order_by_id(p_order_id INT)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    BrokerOrderId VARCHAR,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    OrderType INT,
+    Price NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    Status INT,
+    FilledPrice NUMERIC,
+    FilledAt TIMESTAMP WITH TIME ZONE,
+    RejectionReason VARCHAR,
+    TradeType INT,
+    Remarks VARCHAR,
+    CreatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        o.id AS Id,
+        o.user_id AS UserId,
+        o.broker_order_id AS BrokerOrderId,
+        o.symbol AS Symbol,
+        o.side AS Side,
+        o.quantity AS Quantity,
+        o.order_type AS OrderType,
+        o.price AS Price,
+        o.stop_loss AS StopLoss,
+        o.take_profit AS TakeProfit,
+        o.status AS Status,
+        o.filled_price AS FilledPrice,
+        o.filled_at AS FilledAt,
+        o.rejection_reason AS RejectionReason,
+        o.trade_type AS TradeType,
+        o.remarks AS Remarks,
+        o.created_at AS CreatedAt
+    FROM real_orders o
+    WHERE o.id = p_order_id;
+END;
+$$;
+
+
+-- Function: fn_get_real_order_by_broker_id
+DROP FUNCTION IF EXISTS fn_get_real_order_by_broker_id(VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_get_real_order_by_broker_id(p_broker_order_id VARCHAR)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    BrokerOrderId VARCHAR,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    OrderType INT,
+    Price NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    Status INT,
+    FilledPrice NUMERIC,
+    FilledAt TIMESTAMP WITH TIME ZONE,
+    RejectionReason VARCHAR,
+    TradeType INT,
+    Remarks VARCHAR,
+    CreatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        o.id AS Id,
+        o.user_id AS UserId,
+        o.broker_order_id AS BrokerOrderId,
+        o.symbol AS Symbol,
+        o.side AS Side,
+        o.quantity AS Quantity,
+        o.order_type AS OrderType,
+        o.price AS Price,
+        o.stop_loss AS StopLoss,
+        o.take_profit AS TakeProfit,
+        o.status AS Status,
+        o.filled_price AS FilledPrice,
+        o.filled_at AS FilledAt,
+        o.rejection_reason AS RejectionReason,
+        o.trade_type AS TradeType,
+        o.remarks AS Remarks,
+        o.created_at AS CreatedAt
+    FROM real_orders o
+    WHERE o.broker_order_id = p_broker_order_id;
+END;
+$$;
+
+
+-- Function: fn_get_recent_real_orders
+DROP FUNCTION IF EXISTS fn_get_recent_real_orders(INT, INT);
+DROP FUNCTION IF EXISTS fn_get_recent_real_orders(VARCHAR, INT);
+
+CREATE OR REPLACE FUNCTION fn_get_recent_real_orders(p_user_id INT, p_limit INT)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    BrokerOrderId VARCHAR,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    OrderType INT,
+    Price NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    Status INT,
+    FilledPrice NUMERIC,
+    FilledAt TIMESTAMP WITH TIME ZONE,
+    RejectionReason VARCHAR,
+    TradeType INT,
+    Remarks VARCHAR,
+    CreatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        o.id AS Id,
+        o.user_id AS UserId,
+        o.broker_order_id AS BrokerOrderId,
+        o.symbol AS Symbol,
+        o.side AS Side,
+        o.quantity AS Quantity,
+        o.order_type AS OrderType,
+        o.price AS Price,
+        o.stop_loss AS StopLoss,
+        o.take_profit AS TakeProfit,
+        o.status AS Status,
+        o.filled_price AS FilledPrice,
+        o.filled_at AS FilledAt,
+        o.rejection_reason AS RejectionReason,
+        o.trade_type AS TradeType,
+        o.remarks AS Remarks,
+        o.created_at AS CreatedAt
+    FROM real_orders o
+    WHERE o.user_id = p_user_id
+    ORDER BY o.created_at DESC
+    LIMIT p_limit;
+END;
+$$;
+
+
+-- Function: fn_upsert_real_position
+DROP FUNCTION IF EXISTS fn_upsert_real_position(INT, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, INT, INT, VARCHAR, NUMERIC);
+DROP FUNCTION IF EXISTS fn_upsert_real_position(VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, INT, INT, VARCHAR, NUMERIC);
+
+CREATE OR REPLACE FUNCTION fn_upsert_real_position(
+    p_user_id INT,
+    p_symbol VARCHAR,
+    p_side INT,
+    p_quantity INT,
+    p_average_entry_price NUMERIC,
+    p_current_price NUMERIC,
+    p_unrealized_pnl NUMERIC,
+    p_stop_loss NUMERIC,
+    p_take_profit NUMERIC,
+    p_trailing_stop_loss NUMERIC,
+    p_status INT,
+    p_trade_type INT,
+    p_exit_reason VARCHAR,
+    p_realized_pnl NUMERIC
+)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    AverageEntryPrice NUMERIC,
+    CurrentPrice NUMERIC,
+    UnrealizedPnl NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    TrailingStopLoss NUMERIC,
+    Status INT,
+    TradeType INT,
+    ExitReason VARCHAR,
+    OpenedAt TIMESTAMP WITH TIME ZONE,
+    ClosedAt TIMESTAMP WITH TIME ZONE,
+    RealizedPnl NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO real_positions (
+        user_id, symbol, side, quantity, average_entry_price,
+        current_price, unrealized_pnl, stop_loss, take_profit,
+        trailing_stop_loss, status, trade_type, exit_reason, opened_at, realized_pnl
+    ) VALUES (
+        p_user_id, p_symbol, p_side, p_quantity, p_average_entry_price,
+        p_current_price, p_unrealized_pnl, p_stop_loss, p_take_profit,
+        p_trailing_stop_loss, p_status, p_trade_type, p_exit_reason, NOW(), p_realized_pnl
+    )
+    RETURNING 
+        real_positions.id AS Id,
+        real_positions.user_id AS UserId,
+        real_positions.symbol AS Symbol,
+        real_positions.side AS Side,
+        real_positions.quantity AS Quantity,
+        real_positions.average_entry_price AS AverageEntryPrice,
+        real_positions.current_price AS CurrentPrice,
+        real_positions.unrealized_pnl AS UnrealizedPnl,
+        real_positions.stop_loss AS StopLoss,
+        real_positions.take_profit AS TakeProfit,
+        real_positions.trailing_stop_loss AS TrailingStopLoss,
+        real_positions.status AS Status,
+        real_positions.trade_type AS TradeType,
+        real_positions.exit_reason AS ExitReason,
+        real_positions.opened_at AS OpenedAt,
+        real_positions.closed_at AS ClosedAt,
+        real_positions.realized_pnl AS RealizedPnl;
+END;
+$$;
+
+
+-- Function: fn_get_open_real_position_by_id
+DROP FUNCTION IF EXISTS fn_get_open_real_position_by_id(INT);
+
+CREATE OR REPLACE FUNCTION fn_get_open_real_position_by_id(p_position_id INT)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    AverageEntryPrice NUMERIC,
+    CurrentPrice NUMERIC,
+    UnrealizedPnl NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    TrailingStopLoss NUMERIC,
+    Status INT,
+    TradeType INT,
+    ExitReason VARCHAR,
+    OpenedAt TIMESTAMP WITH TIME ZONE,
+    ClosedAt TIMESTAMP WITH TIME ZONE,
+    RealizedPnl NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p.id AS Id,
+        p.user_id AS UserId,
+        p.symbol AS Symbol,
+        p.side AS Side,
+        p.quantity AS Quantity,
+        p.average_entry_price AS AverageEntryPrice,
+        p.current_price AS CurrentPrice,
+        p.unrealized_pnl AS UnrealizedPnl,
+        p.stop_loss AS StopLoss,
+        p.take_profit AS TakeProfit,
+        p.trailing_stop_loss AS TrailingStopLoss,
+        p.status AS Status,
+        p.trade_type AS TradeType,
+        p.exit_reason AS ExitReason,
+        p.opened_at AS OpenedAt,
+        p.closed_at AS ClosedAt,
+        p.realized_pnl AS RealizedPnl
+    FROM real_positions p
+    WHERE p.id = p_position_id AND p.status = 0;
+END;
+$$;
+
+
+-- Function: fn_get_open_real_position_by_symbol
+DROP FUNCTION IF EXISTS fn_get_open_real_position_by_symbol(INT, VARCHAR);
+DROP FUNCTION IF EXISTS fn_get_open_real_position_by_symbol(VARCHAR, VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_get_open_real_position_by_symbol(p_user_id INT, p_symbol VARCHAR)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    AverageEntryPrice NUMERIC,
+    CurrentPrice NUMERIC,
+    UnrealizedPnl NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    TrailingStopLoss NUMERIC,
+    Status INT,
+    TradeType INT,
+    ExitReason VARCHAR,
+    OpenedAt TIMESTAMP WITH TIME ZONE,
+    ClosedAt TIMESTAMP WITH TIME ZONE,
+    RealizedPnl NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p.id AS Id,
+        p.user_id AS UserId,
+        p.symbol AS Symbol,
+        p.side AS Side,
+        p.quantity AS Quantity,
+        p.average_entry_price AS AverageEntryPrice,
+        p.current_price AS CurrentPrice,
+        p.unrealized_pnl AS UnrealizedPnl,
+        p.stop_loss AS StopLoss,
+        p.take_profit AS TakeProfit,
+        p.trailing_stop_loss AS TrailingStopLoss,
+        p.status AS Status,
+        p.trade_type AS TradeType,
+        p.exit_reason AS ExitReason,
+        p.opened_at AS OpenedAt,
+        p.closed_at AS ClosedAt,
+        p.realized_pnl AS RealizedPnl
+    FROM real_positions p
+    WHERE p.user_id = p_user_id AND p.symbol = p_symbol AND p.status = 0
+    LIMIT 1;
+END;
+$$;
+
+
+-- Function: fn_get_open_real_positions
+DROP FUNCTION IF EXISTS fn_get_open_real_positions(INT);
+DROP FUNCTION IF EXISTS fn_get_open_real_positions(VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_get_open_real_positions(p_user_id INT)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    AverageEntryPrice NUMERIC,
+    CurrentPrice NUMERIC,
+    UnrealizedPnl NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    TrailingStopLoss NUMERIC,
+    Status INT,
+    TradeType INT,
+    ExitReason VARCHAR,
+    OpenedAt TIMESTAMP WITH TIME ZONE,
+    ClosedAt TIMESTAMP WITH TIME ZONE,
+    RealizedPnl NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p.id AS Id,
+        p.user_id AS UserId,
+        p.symbol AS Symbol,
+        p.side AS Side,
+        p.quantity AS Quantity,
+        p.average_entry_price AS AverageEntryPrice,
+        p.current_price AS CurrentPrice,
+        p.unrealized_pnl AS UnrealizedPnl,
+        p.stop_loss AS StopLoss,
+        p.take_profit AS TakeProfit,
+        p.trailing_stop_loss AS TrailingStopLoss,
+        p.status AS Status,
+        p.trade_type AS TradeType,
+        p.exit_reason AS ExitReason,
+        p.opened_at AS OpenedAt,
+        p.closed_at AS ClosedAt,
+        p.realized_pnl AS RealizedPnl
+    FROM real_positions p
+    WHERE p.user_id = p_user_id AND p.status = 0
+    ORDER BY p.opened_at DESC;
+END;
+$$;
+
+
+-- Function: fn_record_real_trade_history
+DROP FUNCTION IF EXISTS fn_record_real_trade_history(INT, INT, VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, VARCHAR, VARCHAR);
+DROP FUNCTION IF EXISTS fn_record_real_trade_history(VARCHAR, INT, VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, VARCHAR, VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_record_real_trade_history(
+    p_user_id INT,
+    p_order_id INT,
+    p_broker_order_id VARCHAR,
+    p_symbol VARCHAR,
+    p_side INT,
+    p_quantity INT,
+    p_entry_price NUMERIC,
+    p_executed_price NUMERIC,
+    p_realized_pnl NUMERIC,
+    p_trade_type INT,
+    p_exit_reason VARCHAR,
+    p_remarks VARCHAR
+)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    OrderId INT,
+    BrokerOrderId VARCHAR,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    EntryPrice NUMERIC,
+    ExecutedPrice NUMERIC,
+    RealizedPnl NUMERIC,
+    TradeType INT,
+    ExitReason VARCHAR,
+    ExecutedAt TIMESTAMP WITH TIME ZONE,
+    Remarks VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO real_trade_history (
+        user_id, order_id, broker_order_id, symbol, side,
+        quantity, entry_price, executed_price, realized_pnl,
+        trade_type, exit_reason, executed_at, remarks
+    ) VALUES (
+        p_user_id, p_order_id, p_broker_order_id, p_symbol, p_side,
+        p_quantity, p_entry_price, p_executed_price, p_realized_pnl,
+        p_trade_type, p_exit_reason, NOW(), p_remarks
+    )
+    RETURNING 
+        real_trade_history.id AS Id,
+        real_trade_history.user_id AS UserId,
+        real_trade_history.order_id AS OrderId,
+        real_trade_history.broker_order_id AS BrokerOrderId,
+        real_trade_history.symbol AS Symbol,
+        real_trade_history.side AS Side,
+        real_trade_history.quantity AS Quantity,
+        real_trade_history.entry_price AS EntryPrice,
+        real_trade_history.executed_price AS ExecutedPrice,
+        real_trade_history.realized_pnl AS RealizedPnl,
+        real_trade_history.trade_type AS TradeType,
+        real_trade_history.exit_reason AS ExitReason,
+        real_trade_history.executed_at AS ExecutedAt,
+        real_trade_history.remarks AS Remarks;
+END;
+$$;
+
+
+-- Function: fn_get_real_trade_history
+DROP FUNCTION IF EXISTS fn_get_real_trade_history(INT, INT);
+DROP FUNCTION IF EXISTS fn_get_real_trade_history(VARCHAR, INT);
+
+CREATE OR REPLACE FUNCTION fn_get_real_trade_history(p_user_id INT, p_limit INT)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    OrderId INT,
+    BrokerOrderId VARCHAR,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    EntryPrice NUMERIC,
+    ExecutedPrice NUMERIC,
+    RealizedPnl NUMERIC,
+    TradeType INT,
+    ExitReason VARCHAR,
+    ExecutedAt TIMESTAMP WITH TIME ZONE,
+    Remarks VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        h.id AS Id,
+        h.user_id AS UserId,
+        h.order_id AS OrderId,
+        h.broker_order_id AS BrokerOrderId,
+        h.symbol AS Symbol,
+        h.side AS Side,
+        h.quantity AS Quantity,
+        h.entry_price AS EntryPrice,
+        h.executed_price AS ExecutedPrice,
+        h.realized_pnl AS RealizedPnl,
+        h.trade_type AS TradeType,
+        h.exit_reason AS ExitReason,
+        h.executed_at AS ExecutedAt,
+        h.remarks AS Remarks
+    FROM real_trade_history h
+    WHERE h.user_id = p_user_id
+    ORDER BY h.executed_at DESC
+    LIMIT p_limit;
+END;
+$$;
+
+
+-- Function: fn_get_today_real_trade_count
+DROP FUNCTION IF EXISTS fn_get_today_real_trade_count(INT, TIMESTAMP WITH TIME ZONE);
+DROP FUNCTION IF EXISTS fn_get_today_real_trade_count(VARCHAR, TIMESTAMP WITH TIME ZONE);
+
+CREATE OR REPLACE FUNCTION fn_get_today_real_trade_count(p_user_id INT, p_today_start TIMESTAMP WITH TIME ZONE)
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_count INT;
+BEGIN
+    SELECT COUNT(*) INTO v_count
+    FROM real_orders
+    WHERE user_id = p_user_id 
+      AND status = 1 
+      AND side = 0 
+      AND created_at >= p_today_start;
+
+    RETURN v_count;
+END;
+$$;
+
+
+-- Function: fn_get_today_realized_pnl
+DROP FUNCTION IF EXISTS fn_get_today_realized_pnl(INT, TIMESTAMP WITH TIME ZONE);
+DROP FUNCTION IF EXISTS fn_get_today_realized_pnl(VARCHAR, TIMESTAMP WITH TIME ZONE);
+
+CREATE OR REPLACE FUNCTION fn_get_today_realized_pnl(p_user_id INT, p_today_start TIMESTAMP WITH TIME ZONE)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_pnl NUMERIC;
+BEGIN
+    SELECT COALESCE(SUM(realized_pnl), 0.00) INTO v_pnl
+    FROM real_trade_history
+    WHERE user_id = p_user_id 
+      AND side = 1 
+      AND executed_at >= p_today_start;
+
+    RETURN v_pnl;
+END;
+$$;
+
+
+-- Function: fn_get_today_real_trade_logs
+DROP FUNCTION IF EXISTS fn_get_today_real_trade_logs(INT, TIMESTAMP WITH TIME ZONE, INT);
+DROP FUNCTION IF EXISTS fn_get_today_real_trade_logs(VARCHAR, TIMESTAMP WITH TIME ZONE, INT);
+
+CREATE OR REPLACE FUNCTION fn_get_today_real_trade_logs(
+    p_user_id INT,
+    p_today_start TIMESTAMP WITH TIME ZONE,
+    p_limit INT
+)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    Symbol VARCHAR,
+    ActionType VARCHAR,
+    Price NUMERIC,
+    Quantity INT,
+    Reason VARCHAR,
+    ExecutedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        l.id AS Id,
+        l.user_id AS UserId,
+        l.symbol AS Symbol,
+        l.action_type AS ActionType,
+        l.price AS Price,
+        l.quantity AS Quantity,
+        l.reason AS Reason,
+        l.executed_at AS ExecutedAt
+    FROM real_trade_execution_logs l
+    WHERE l.user_id = p_user_id AND l.executed_at >= p_today_start
+    ORDER BY l.executed_at DESC
+    LIMIT p_limit;
+END;
+$$;
+
+
+
+
 

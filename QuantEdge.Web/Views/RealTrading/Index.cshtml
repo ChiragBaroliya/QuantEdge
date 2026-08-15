@@ -1,0 +1,392 @@
+@{
+    ViewData["Title"] = "Auto Real Trading (Live Broker)";
+    ViewData["PageTitle"] = "Auto Real Trading Dashboard";
+    var apiBaseUrl = ViewBag.ApiBaseUrl as string ?? "";
+}
+
+<link rel="stylesheet" href="~/css/autotrading.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/realtrading.css" asp-append-version="true" />
+<div id="realtrade-config" data-api-base-url="@apiBaseUrl" style="display:none;"></div>
+
+<div class="autotrade-container realtrade-container">
+    <!-- Master Header Card -->
+    <div class="autotrade-header-card realtrade-header-card">
+        <div class="autotrade-title-group">
+            <div class="d-flex align-items-center gap-2">
+                <h1>⚡ Auto Real Trading Engine</h1>
+                <span class="live-real-badge">REAL MONEY (ZERODHA)</span>
+            </div>
+            <p class="autotrade-subtitle">Live automated order execution via Zerodha KiteConnect REST API with real-time risk guards, optional SL, trailing SL, and Kill-Switch protection.</p>
+        </div>
+
+        <div class="autotrade-status-badges">
+            <div class="badge-token" id="broker-token-badge" title="Zerodha Session Token Status">
+                <span class="token-dot"></span> Checking Token...
+            </div>
+            <div class="badge-counter" id="nextScanCountdownBadge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
+                ⏳ Next Scan: Initializing...
+            </div>
+            <div class="badge-counter" id="trade-counter-badge">
+                0 / 5 trades used today
+            </div>
+            <div class="badge-ws connected" id="ws-status-badge">
+                <span class="ws-dot"></span> WebSocket Connected
+            </div>
+            <div class="toggle-switch-container">
+                <span class="switch-label">Live Trading:</span>
+                <label class="switch">
+                    @if (User.IsInRole("Admin"))
+                    {
+                        <input type="checkbox" id="chkRealTradeToggle" />
+                    }
+                    else
+                    {
+                        <input type="checkbox" id="chkRealTradeToggle" disabled title="Live Real Trading Master Switch can only be toggled by System Admin" />
+                    }
+                    <span class="slider real-slider"></span>
+                </label>
+            </div>
+            <!-- Emergency Kill Switch Button -->
+            <button type="button" class="btn-panic-kill-switch" id="btnEmergencyKillSwitch" title="Emergency Kill Switch: Square-off all live positions & pause bot">
+                🚨 PANIC KILL SWITCH
+            </button>
+        </div>
+    </div>
+
+    <!-- Metrics Stats Sections -->
+    <div class="metrics-sections-wrapper">
+        <!-- Section 1: Broker & Overall Metrics -->
+        <div class="metrics-section">
+            <div class="metrics-section-title">
+                <span class="section-icon">🏦</span> Zerodha Broker & Account Metrics
+            </div>
+            <div class="autotrade-stats-grid">
+                <div class="stat-card" title="Shows whether live real trading is ACTIVE or PAUSED.">
+                    <div class="stat-label">Bot Status</div>
+                    <div class="stat-value" id="sys-status-text" style="color: #f87171;">PAUSED</div>
+                </div>
+                <div class="stat-card" title="Maximum capital permitted for live auto trade bot.">
+                    <div class="stat-label">Allocated Capital</div>
+                    <div class="stat-value" id="stat-capital">₹2,000.00</div>
+                </div>
+                <div class="stat-card" title="Live Available Cash margin in your Zerodha account.">
+                    <div class="stat-label">Zerodha Live Cash</div>
+                    <div class="stat-value" id="stat-available-margin" style="color: #38bdf8;">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Margin utilised in open live trades.">
+                    <div class="stat-label">Used Margin</div>
+                    <div class="stat-value" id="stat-used-margin" style="color: #f59e0b;">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Open Real stock positions.">
+                    <div class="stat-label">Open Real Positions</div>
+                    <div class="stat-value" id="stat-open-count">0</div>
+                </div>
+                <div class="stat-card" title="Live unrealized profit or loss across open real positions.">
+                    <div class="stat-label">Unrealized P&L</div>
+                    <div class="stat-value" id="stat-unrealized-pnl">₹0.00</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Today's Calculations -->
+        <div class="metrics-section">
+            <div class="metrics-section-title">
+                <span class="section-icon">📅</span> Today's Execution Summary
+            </div>
+            <div class="autotrade-stats-grid today-stats-grid">
+                <div class="stat-card" title="Total real trades executed today vs daily maximum limit.">
+                    <div class="stat-label">Today's Real Trades</div>
+                    <div class="stat-value" id="stat-today-trade-count" style="color: #38bdf8;">0 / 5 Trades</div>
+                </div>
+                <div class="stat-card highlight-card" title="Total capital deployed for today's live trades.">
+                    <div class="stat-label">Today Deployed Capital</div>
+                    <div class="stat-value" id="stat-today-used-amount" style="color: #38bdf8;">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Realized profit or loss from live trades closed today.">
+                    <div class="stat-label">Today's Realized P&L</div>
+                    <div class="stat-value" id="stat-realized-pnl">₹0.00</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <div class="autotrade-grid">
+        <!-- Left Column: Tables & Console -->
+        <div class="autotrade-main-col">
+            <!-- Open Real Positions Card -->
+            <div class="card-box">
+                <div class="card-box-header">
+                    <h3 class="card-title">⚡ Open Real Positions <span class="card-subtitle-inline">(Live Broker Ticks)</span></h3>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="card-badge-info d-none d-sm-inline-block">Real Money Execution</span>
+                        <button class="btn btn-sm btn-outline-secondary" id="btnRefreshPositions" title="Refresh Positions">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive-wrapper">
+                    <div class="table-responsive">
+                        <table class="qe-table">
+                            <thead>
+                                <tr>
+                                    <th>SYMBOL</th>
+                                    <th>SIDE</th>
+                                    <th>QTY</th>
+                                    <th>AVG ENTRY</th>
+                                    <th>CURRENT LTP</th>
+                                    <th>TARGET</th>
+                                    <th>STOP LOSS</th>
+                                    <th>TRAILING SL</th>
+                                    <th>P&L (₹)</th>
+                                    <th>ACTION</th>
+                                </tr>
+                            </thead>
+                            <tbody id="openPositionsTableBody">
+                                <tr>
+                                    <td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">Loading open real positions...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Orders Card -->
+            <div class="card-box mt-4">
+                <div class="card-box-header">
+                    <h3 class="card-title">📜 Real Orders Book <span class="card-subtitle-inline">(Zerodha Order History)</span></h3>
+                </div>
+                <div class="table-responsive-wrapper">
+                    <div class="table-responsive">
+                        <table class="qe-table">
+                            <thead>
+                                <tr>
+                                    <th>TIME (IST)</th>
+                                    <th>BROKER ORDER ID</th>
+                                    <th>SYMBOL</th>
+                                    <th>SIDE</th>
+                                    <th>QTY</th>
+                                    <th>PRICE</th>
+                                    <th>STATUS</th>
+                                    <th>REMARKS / REASON</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentOrdersTableBody">
+                                <tr>
+                                    <td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No orders placed today.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time Console Log Card -->
+            <div class="card-box audit-stream-card mt-4">
+                <div class="card-box-header">
+                    <div class="d-flex align-items-center gap-2">
+                        <h3 class="card-title">📡 Live Real Trade Audit Stream</h3>
+                        <span class="badge bg-dark border border-secondary text-info px-2 py-1" style="font-size: 10.5px;">Live Stream</span>
+                    </div>
+                    <button class="btn-clear-logs" id="btnClearLogs" title="Clear console logs">
+                        🗑️ Clear
+                    </button>
+                </div>
+                <div class="console-log-box" id="consoleLogContainer">
+                    <div class="log-entry system">
+                        <span class="log-time">[System]</span>
+                        <span class="badge bg-secondary me-1" style="font-size: 0.68rem;">READY</span>
+                        <span class="log-msg">Connecting to Real Trade SignalR event stream...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Settings & Risk Controls -->
+        <div class="autotrade-side-col">
+            <div class="card-box settings-card">
+                <div class="card-box-header">
+                    <h3 class="card-title">⚙️ Real Trade Risk & Strategy Parameters</h3>
+                </div>
+                <div class="settings-form-body">
+                    <form id="frmRealTradeSettings">
+                        <div class="form-group mb-3">
+                            <label class="form-label" for="inpAvailableCapital">Allocated Capital (₹)</label>
+                            <input type="number" step="any" min="100" max="50000000" class="form-control qe-input" id="inpAvailableCapital" name="AvailableCapital" placeholder="2000" required />
+                            <small class="form-hint">Maximum trade budget allowed for the live bot.</small>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label class="form-label" for="inpFixedAmount">Trade Amount per Stock (₹)</label>
+                            <input type="number" step="any" min="10" max="5000000" class="form-control qe-input" id="inpFixedAmount" name="FixedAmountPerTrade" placeholder="400" required />
+                            <small class="form-hint">Capital deployed per buy order (e.g. ₹400).</small>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label class="form-label" for="inpProfitTarget">Profit Target (%)</label>
+                            <input type="number" step="any" min="0.1" max="100" class="form-control qe-input" id="inpProfitTarget" name="ProfitTargetPct" required />
+                            <small class="form-hint">Mandatory exit target percentage (e.g. 5.0%).</small>
+                        </div>
+
+                        <!-- Optional Stop Loss Toggle -->
+                        <div class="optional-box mb-3">
+                            <div class="optional-toggle-header">
+                                <label class="optional-label" for="chkEnableStopLoss">
+                                    <span class="optional-title">Enable Stop Loss? (Optional)</span>
+                                    <small class="optional-desc">Fixed percentage below entry price</small>
+                                </label>
+                                <label class="qe-switch">
+                                    <input type="checkbox" id="chkEnableStopLoss" />
+                                    <span class="qe-slider"></span>
+                                </label>
+                            </div>
+                            <div id="slInputWrapper" class="optional-input-wrapper" style="display: none;">
+                                <label class="form-label mt-2" for="inpStopLoss">Stop Loss (%)</label>
+                                <input type="number" step="any" min="0.1" max="100" class="form-control qe-input" id="inpStopLoss" name="StopLossPct" placeholder="e.g. 3.0" />
+                            </div>
+                        </div>
+
+                        <!-- Optional Trailing Stop Loss Toggle -->
+                        <div class="optional-box mb-3">
+                            <div class="optional-toggle-header">
+                                <label class="optional-label" for="chkEnableTrailingSl">
+                                    <span class="optional-title">Enable Trailing SL? (Optional)</span>
+                                    <small class="optional-desc">Dynamic trail that locks in profits</small>
+                                </label>
+                                <label class="qe-switch">
+                                    <input type="checkbox" id="chkEnableTrailingSl" />
+                                    <span class="qe-slider"></span>
+                                </label>
+                            </div>
+                            <div id="tslInputWrapper" class="optional-input-wrapper" style="display: none;">
+                                <label class="form-label mt-2" for="inpTrailingSl">Trailing Stop Loss (%)</label>
+                                <input type="number" step="any" min="0.1" max="50" class="form-control qe-input" id="inpTrailingSl" name="TrailingSlPct" placeholder="e.g. 2.0" />
+                            </div>
+                        </div>
+
+                        <!-- Optional Daily Loss Circuit Breaker -->
+                        <div class="optional-box mb-3">
+                            <div class="optional-toggle-header">
+                                <label class="optional-label" for="chkEnableDailyLossLimit">
+                                    <span class="optional-title">Daily Loss Circuit Limit? (Optional)</span>
+                                    <small class="optional-desc">Emergency pause if daily loss breaches limit</small>
+                                </label>
+                                <label class="qe-switch">
+                                    <input type="checkbox" id="chkEnableDailyLossLimit" />
+                                    <span class="qe-slider"></span>
+                                </label>
+                            </div>
+                            <div id="dailyLossInputWrapper" class="optional-input-wrapper" style="display: none;">
+                                <label class="form-label mt-2" for="inpMaxDailyLoss">Max Daily Loss Limit (₹)</label>
+                                <input type="number" step="any" min="10" max="10000000" class="form-control qe-input" id="inpMaxDailyLoss" name="MaxDailyLossLimit" placeholder="e.g. 5000" />
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label class="form-label" for="inpMaxTrades">Max Trades/Day</label>
+                                <input type="number" min="1" max="50" class="form-control qe-input" id="inpMaxTrades" name="MaxTradesPerDay" required />
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label" for="inpMaxDuration">Max Days Hold</label>
+                                <input type="number" min="1" max="365" class="form-control qe-input" id="inpMaxDuration" name="MaxDurationDays" required />
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label class="form-label" for="selProductType">Product Type</label>
+                                <select class="form-select qe-input" id="selProductType" name="ProductType">
+                                    <option value="CNC">CNC (Delivery)</option>
+                                    <option value="MIS">MIS (Intraday)</option>
+                                </select>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label" for="inpMinConditions">Min Criteria (Score)</label>
+                                <input type="number" min="1" max="13" class="form-control qe-input" id="inpMinConditions" name="MinConditionsMatch" required />
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label class="form-label" for="inpWindowStart">Window Start</label>
+                                <input type="time" class="form-control qe-input" id="inpWindowStart" name="TradingWindowStart" required />
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label" for="inpWindowEnd">Window End</label>
+                                <input type="time" class="form-control qe-input" id="inpWindowEnd" name="TradingWindowEnd" required />
+                            </div>
+                        </div>
+
+                        <div class="settings-actions mt-3">
+                            @if (User.IsInRole("Admin"))
+                            {
+                                <button type="submit" class="btn-save-settings" id="btnSaveSettings">
+                                    💾 Save Risk & Strategy Settings
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn-save-settings disabled" disabled title="Settings modification is restricted to System Admin">
+                                    🔒 Admin Only
+                                </button>
+                            }
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Confirm Square Off Single Position -->
+<div class="modal fade" id="modalSquareOffPosition" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content qe-modal">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger">⚠️ Confirm Real Position Square-off</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to exit and sell the open position for <strong id="sqSymbol" class="text-warning"></strong>?</p>
+                <p class="text-muted small">This will immediately send a <strong>Real-Money Market SELL Order</strong> to Zerodha Kite OMS.</p>
+                <input type="hidden" id="sqPositionId" />
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="btnConfirmSquareOff">Yes, Execute Market Sell</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Confirm Emergency Kill Switch -->
+<div class="modal fade" id="modalEmergencyKillSwitch" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content qe-modal border-danger">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">🚨 EMERGENCY PANIC KILL SWITCH</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="fw-bold text-danger">This is an emergency panic action.</p>
+                <ul class="text-light small">
+                    <li>Instantly turns <strong>OFF</strong> the Real Auto Trading Bot.</li>
+                    <li>Places real market exit orders with Zerodha for <strong>ALL active open positions</strong>.</li>
+                    <li>Logs an emergency security audit incident.</li>
+                </ul>
+                <p>Do you wish to proceed immediately?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger fw-bold" id="btnConfirmKillSwitch">🚨 YES, KILL SWITCH NOW</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+    <script src="~/js/realtrading.js" asp-append-version="true"></script>
+}

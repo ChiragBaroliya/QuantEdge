@@ -1,0 +1,829 @@
+/* ============================================================================
+   QuantEdge Auto Real Trading (Live Broker) Stylesheet
+   ============================================================================ */
+
+.realtrade-container {
+    padding: 20px;
+    max-width: 1700px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: #ffffff;
+}
+
+/* Master Header Card */
+.realtrade-header-card {
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-left: 5px solid #ef4444 !important;
+    border-radius: 16px;
+    padding: 18px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.realtrade-header-card h1 {
+    font-size: clamp(18px, 2.2vw, 24px);
+    font-weight: 800;
+    margin: 0;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.live-real-badge {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: #ffffff;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+    animation: pulseBadge 2s infinite ease-in-out;
+}
+
+@keyframes pulseBadge {
+    0%, 100% {
+        box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 18px rgba(239, 68, 68, 0.8);
+    }
+}
+
+.autotrade-subtitle {
+    color: #cbd5e1;
+    font-size: clamp(12px, 1.5vw, 13px);
+    margin: 4px 0 0 0;
+    line-height: 1.4;
+}
+
+.autotrade-status-badges {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.badge-token {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: rgba(30, 41, 59, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    color: #cbd5e1;
+    white-space: nowrap;
+}
+
+.badge-token.active {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #34d399;
+}
+
+.badge-token.expired {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #f87171;
+}
+
+.token-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: currentColor;
+    flex-shrink: 0;
+}
+
+.real-slider {
+    background-color: #334155;
+}
+
+input:checked + .real-slider {
+    background-color: #ef4444 !important;
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.6) !important;
+}
+
+.btn-panic-kill-switch {
+    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+    color: #ffffff;
+    border: 1px solid #ef4444;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(220, 38, 38, 0.45);
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-panic-kill-switch:hover {
+    background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.7);
+    transform: translateY(-1px);
+}
+
+/* ============================================================================
+   Metrics Stats Section
+   ============================================================================ */
+.metrics-sections-wrapper {
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.metrics-section {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.metrics-section-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.autotrade-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+    width: 100%;
+}
+
+.today-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.stat-card {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(56, 189, 248, 0.3);
+}
+
+.stat-label {
+    font-size: 11.5px;
+    color: #94a3b8;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+}
+
+.stat-value {
+    font-size: clamp(16px, 1.8vw, 20px);
+    font-weight: 800;
+    color: #ffffff;
+}
+
+/* ============================================================================
+   Main Split Layout Grid
+   ============================================================================ */
+.autotrade-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    align-items: start;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.autotrade-main-col {
+    min-width: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.autotrade-side-col {
+    min-width: 0;
+    width: 100%;
+}
+
+/* Card Boxes */
+.card-box {
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 20px;
+    width: 100%;
+    box-sizing: border-box;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.card-box-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* Card Titles - Crisp White */
+.card-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+    color: #ffffff !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.card-subtitle-inline {
+    font-size: 12px;
+    font-weight: 500;
+    color: #94a3b8 !important;
+}
+
+/* ============================================================================
+   Tables (Open Positions & Order Book) - Crisp White Text
+   ============================================================================ */
+.table-responsive-wrapper {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+}
+
+.table-responsive {
+    overflow-x: auto;
+    overflow-y: hidden;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56, 189, 248, 0.4) rgba(15, 23, 42, 0.8);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.qe-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    color: #ffffff !important;
+    min-width: 720px;
+}
+
+.qe-table th {
+    background: rgba(30, 41, 59, 0.95);
+    color: #ffffff !important;
+    text-align: left;
+    padding: 12px 14px;
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    white-space: nowrap;
+}
+
+.qe-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    color: #ffffff !important;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.qe-table td strong {
+    color: #ffffff !important;
+    font-weight: 700;
+}
+
+.qe-table td code {
+    color: #38bdf8 !important;
+    background: rgba(56, 189, 248, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.qe-table tr:hover td {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+/* Square Off Button */
+.btn-square-off {
+    background: rgba(239, 68, 68, 0.18);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-square-off:hover {
+    background: #ef4444;
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+    transform: translateY(-1px);
+}
+
+/* Status Badges */
+.status-badge-filled {
+    background: rgba(52, 211, 153, 0.2);
+    color: #4ade80;
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.status-badge-rejected {
+    background: rgba(248, 113, 113, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.status-badge-pending {
+    background: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+/* ============================================================================
+   Console Log & Clear Button Styling (Compact & Clean)
+   ============================================================================ */
+.audit-stream-card {
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 16px 20px;
+}
+
+.btn-clear-logs {
+    background: rgba(30, 41, 59, 0.9) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(148, 163, 184, 0.35) !important;
+    border-radius: 6px !important;
+    padding: 4px 12px !important;
+    font-size: 0.75rem !important;
+    font-weight: 700 !important;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.btn-clear-logs:hover {
+    background: rgba(239, 68, 68, 0.25) !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+    transform: translateY(-1px);
+}
+
+.console-log-box {
+    background: #050811;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12px;
+    height: 140px;
+    max-height: 140px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    color: #ffffff;
+    box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56, 189, 248, 0.4) #050811;
+}
+
+.console-log-box::-webkit-scrollbar {
+    width: 5px;
+}
+.console-log-box::-webkit-scrollbar-track {
+    background: #050811;
+}
+.console-log-box::-webkit-scrollbar-thumb {
+    background: rgba(56, 189, 248, 0.4);
+    border-radius: 4px;
+}
+
+.console-log-box .log-entry {
+    padding: 3px 0;
+    margin-bottom: 2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.console-log-box .log-time {
+    color: #38bdf8 !important;
+    font-weight: 700;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.console-log-box .log-msg {
+    color: #f1f5f9;
+    flex: 1;
+}
+
+/* ============================================================================
+   Settings Form & High-Contrast Input Controls (Contained in Card)
+   ============================================================================ */
+.settings-card {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 16px;
+    padding: 20px;
+    box-sizing: border-box;
+    width: 100%;
+    overflow: hidden;
+}
+
+.settings-form-body {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.settings-form-body .form-group {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 14px;
+}
+
+.settings-form-body .row {
+    margin-left: -5px !important;
+    margin-right: -5px !important;
+}
+
+.settings-form-body .row > [class*='col-'] {
+    padding-left: 5px !important;
+    padding-right: 5px !important;
+}
+
+.form-label {
+    display: block;
+    font-size: 11.5px;
+    color: #cbd5e1;
+    font-weight: 700;
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* High Contrast Input Fields */
+.qe-input,
+.form-control.qe-input,
+.form-select.qe-input,
+#frmRealTradeSettings input,
+#frmRealTradeSettings select {
+    width: 100% !important;
+    background-color: #1e293b !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(148, 163, 184, 0.35) !important;
+    border-radius: 8px !important;
+    padding: 8px 12px !important;
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    height: 40px !important;
+    box-sizing: border-box !important;
+    transition: all 0.2s ease-in-out !important;
+}
+
+.qe-input::placeholder,
+#frmRealTradeSettings input::placeholder {
+    color: #94a3b8 !important;
+    font-weight: 400;
+}
+
+.qe-input:focus,
+.form-control.qe-input:focus,
+.form-select.qe-input:focus,
+#frmRealTradeSettings input:focus,
+#frmRealTradeSettings select:focus {
+    background-color: #0f172a !important;
+    color: #ffffff !important;
+    border-color: #38bdf8 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25) !important;
+}
+
+.form-hint {
+    color: #94a3b8;
+    font-size: 11px;
+    margin-top: 3px;
+    display: block;
+    line-height: 1.3;
+}
+
+/* Optional Box & Custom Switch */
+.optional-box {
+    background: rgba(30, 41, 59, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+    width: 100%;
+    transition: border-color 0.2s ease;
+}
+
+.optional-box:hover {
+    border-color: rgba(56, 189, 248, 0.35);
+}
+
+.optional-toggle-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+}
+
+.optional-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    cursor: pointer;
+    flex: 1;
+}
+
+.optional-title {
+    color: #ffffff;
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+.optional-desc {
+    color: #94a3b8;
+    font-size: 10.5px;
+    font-weight: 400;
+    line-height: 1.2;
+}
+
+.optional-input-wrapper {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+/* Custom Mini Toggle Switch */
+.qe-switch {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 22px;
+    flex-shrink: 0;
+    margin: 0;
+}
+
+.qe-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+}
+
+.qe-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #334155;
+    transition: .25s ease-in-out;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.qe-slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: #ffffff;
+    transition: .25s ease-in-out;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.qe-switch input:checked + .qe-slider {
+    background-color: #38bdf8;
+    border-color: #38bdf8;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.qe-switch input:checked + .qe-slider:before {
+    transform: translateX(20px);
+}
+
+/* Settings Save Button */
+.btn-save-settings {
+    width: 100%;
+    background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-weight: 800;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+}
+
+.btn-save-settings:hover {
+    background: linear-gradient(135deg, #0369a1 0%, #1d4ed8 100%);
+    box-shadow: 0 6px 18px rgba(2, 132, 199, 0.5);
+    transform: translateY(-1px);
+}
+
+.btn-save-settings.disabled,
+.btn-save-settings:disabled {
+    background: #475569 !important;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+    opacity: 0.6;
+}
+
+/* ============================================================================
+   RESPONSIVE BREAKPOINTS (Desktop, Laptop, Tablet, Mobile)
+   ============================================================================ */
+
+/* Large Desktop (>= 1400px) */
+@media (min-width: 1400px) {
+    .autotrade-stats-grid {
+        grid-template-columns: repeat(6, 1fr);
+    }
+}
+
+/* Medium Desktop / Laptops (1024px to 1399px) */
+@media (min-width: 1024px) and (max-width: 1399.98px) {
+    .autotrade-stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .autotrade-grid {
+        grid-template-columns: 1fr 340px;
+    }
+}
+
+/* Tablets & Small Laptops (768px to 1023.98px) */
+@media (min-width: 768px) and (max-width: 1023.98px) {
+    .realtrade-container {
+        padding: 16px;
+    }
+    .autotrade-stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .today-stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .autotrade-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Mobile Devices (< 768px) */
+@media (max-width: 767.98px) {
+    .realtrade-container {
+        padding: 12px;
+    }
+    .realtrade-header-card {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 14px 16px;
+        gap: 14px;
+        border-radius: 14px;
+    }
+    .autotrade-status-badges {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    .badge-token,
+    .badge-counter,
+    .badge-ws {
+        width: 100%;
+        justify-content: center;
+        box-sizing: border-box;
+    }
+    .toggle-switch-container {
+        width: 100%;
+        justify-content: space-between;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .btn-panic-kill-switch {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+    .autotrade-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+    .today-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .stat-card {
+        padding: 10px 12px;
+    }
+    .stat-value {
+        font-size: 16px;
+    }
+    .autotrade-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    .card-box {
+        padding: 14px;
+        border-radius: 14px;
+    }
+    .card-box-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    .card-title {
+        font-size: 15px;
+    }
+    .qe-table th,
+    .qe-table td {
+        padding: 9px 10px;
+        font-size: 12px;
+    }
+}
+
+/* Small Phones (< 480px) */
+@media (max-width: 480px) {
+    .realtrade-container {
+        padding: 8px;
+    }
+    .autotrade-stats-grid {
+        grid-template-columns: 1fr;
+    }
+    .today-stats-grid {
+        grid-template-columns: 1fr;
+    }
+    .form-group .row > div {
+        width: 100%;
+    }
+}

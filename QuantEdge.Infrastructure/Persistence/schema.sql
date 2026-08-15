@@ -599,4 +599,101 @@ CREATE INDEX IF NOT EXISTS ix_paper_positions_account ON paper_positions(account
 CREATE INDEX IF NOT EXISTS ix_paper_trade_history_account ON paper_trade_history(account_id);
 CREATE INDEX IF NOT EXISTS ix_auto_trade_logs_user ON auto_trade_execution_logs(user_id, executed_at);
 
+-- ----------------------------------------------------------------------------
+-- 7. Auto Real Trading Tables (Live Broker Money)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS real_trade_settings (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1 UNIQUE,
+    is_real_trade_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    available_capital NUMERIC(18, 4) NOT NULL DEFAULT 2000.00,
+    profit_target_pct NUMERIC(5, 2) NOT NULL DEFAULT 5.00,
+    stop_loss_pct NUMERIC(5, 2) NULL,
+    trailing_sl_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    trailing_sl_pct NUMERIC(5, 2) NULL,
+    max_duration_days INT NOT NULL DEFAULT 20,
+    max_trades_per_day INT NOT NULL DEFAULT 5,
+    fixed_amount_per_trade NUMERIC(18, 4) NOT NULL DEFAULT 400.00,
+    max_daily_loss_limit NUMERIC(18, 4) NULL,
+    product_type VARCHAR(10) NOT NULL DEFAULT 'CNC',
+    min_conditions_match INT NOT NULL DEFAULT 10,
+    trading_window_start VARCHAR(10) NOT NULL DEFAULT '09:15',
+    trading_window_end VARCHAR(10) NOT NULL DEFAULT '15:30',
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS real_orders (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    broker_order_id VARCHAR(100),
+    symbol VARCHAR(50) NOT NULL,
+    side INT NOT NULL,
+    quantity INT NOT NULL,
+    order_type INT NOT NULL DEFAULT 0,
+    price NUMERIC(18, 4) NOT NULL,
+    stop_loss NUMERIC(18, 4),
+    take_profit NUMERIC(18, 4),
+    status INT NOT NULL DEFAULT 0,
+    filled_price NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+    filled_at TIMESTAMP WITH TIME ZONE,
+    rejection_reason VARCHAR(255),
+    trade_type INT NOT NULL DEFAULT 1,
+    remarks VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS real_positions (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    symbol VARCHAR(50) NOT NULL,
+    side INT NOT NULL,
+    quantity INT NOT NULL,
+    average_entry_price NUMERIC(18, 4) NOT NULL,
+    current_price NUMERIC(18, 4) NOT NULL,
+    unrealized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+    stop_loss NUMERIC(18, 4),
+    take_profit NUMERIC(18, 4),
+    trailing_stop_loss NUMERIC(18, 4),
+    status INT NOT NULL DEFAULT 0,
+    trade_type INT NOT NULL DEFAULT 1,
+    exit_reason VARCHAR(100),
+    opened_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    closed_at TIMESTAMP WITH TIME ZONE,
+    realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00
+);
+
+CREATE TABLE IF NOT EXISTS real_trade_history (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    order_id INT,
+    broker_order_id VARCHAR(100),
+    symbol VARCHAR(50) NOT NULL,
+    side INT NOT NULL,
+    quantity INT NOT NULL,
+    entry_price NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+    executed_price NUMERIC(18, 4) NOT NULL,
+    realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+    trade_type INT NOT NULL DEFAULT 1,
+    exit_reason VARCHAR(100),
+    executed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    remarks VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS real_trade_execution_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    symbol VARCHAR(50) NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    price NUMERIC(18, 4),
+    quantity INT,
+    reason VARCHAR(255),
+    executed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_real_orders_user ON real_orders(user_id, status);
+CREATE INDEX IF NOT EXISTS ix_real_positions_user ON real_positions(user_id, status);
+CREATE INDEX IF NOT EXISTS ix_real_trade_history_user ON real_trade_history(user_id);
+CREATE INDEX IF NOT EXISTS ix_real_trade_logs_user ON real_trade_execution_logs(user_id, executed_at);
+
+
 

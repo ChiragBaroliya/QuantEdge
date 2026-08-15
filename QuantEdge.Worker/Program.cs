@@ -75,6 +75,13 @@ try
         {
             builder.Services.AddHostedService<AutoTradeSignalScanWorker>();
             builder.Services.AddHostedService<AutoTradePositionMonitorWorker>();
+            builder.Services.AddHostedService<AutoRealTradeSignalScanWorker>();
+            builder.Services.AddHostedService<AutoRealPositionMonitorWorker>();
+        }
+        else if (actualJobType.Equals("realtrade", StringComparison.OrdinalIgnoreCase) || actualJobType.Equals("autorealtrade", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddHostedService<AutoRealTradeSignalScanWorker>();
+            builder.Services.AddHostedService<AutoRealPositionMonitorWorker>();
         }
         else if (actualJobType.Equals("clearcache", StringComparison.OrdinalIgnoreCase))
         {
@@ -93,6 +100,8 @@ try
         // Default worker registration if no jobType specified
         builder.Services.AddHostedService<AutoTradeSignalScanWorker>();
         builder.Services.AddHostedService<AutoTradePositionMonitorWorker>();
+        builder.Services.AddHostedService<AutoRealTradeSignalScanWorker>();
+        builder.Services.AddHostedService<AutoRealPositionMonitorWorker>();
     }
 
 
