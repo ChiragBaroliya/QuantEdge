@@ -19,6 +19,8 @@ The QuantEdge ecosystem consists of the following continuous services:
 | **Market Data Feed (1d)** | `Worker_marketdatafeed_1d` | `quantedge-worker-marketdatafeed-1d` | Yes |
 | **Zerodha Session Refresher** | `Worker_activezerodhatoken` | `quantedge-worker-activezerodhatoken` | Yes |
 | **Zerodha Instrument Sync** | `Worker_instrumentsync` | `quantedge-worker-instrumentsync` | Yes |
+| **Auto Paper Trading Engine** | `Worker_autotrade` | `quantedge-worker-autotrade` | Yes |
+| **Auto Real Trading Engine** | `Worker_realtrade` | `quantedge-worker-realtrade` | Yes |
 
 ---
 
@@ -45,6 +47,8 @@ Run this sequence to ensure processes are cleanly terminated before starting:
    Stop-Service -Name "Worker_marketdatafeed_1d"
    Stop-Service -Name "Worker_activezerodhatoken"
    Stop-Service -Name "Worker_instrumentsync"
+   Stop-Service -Name "Worker_autotrade"
+   Stop-Service -Name "Worker_realtrade"
    ```
 
 2. **Start the workers**:
@@ -56,6 +60,8 @@ Run this sequence to ensure processes are cleanly terminated before starting:
    Start-Service -Name "Worker_marketdatafeed_1d"
    Start-Service -Name "Worker_activezerodhatoken"
    Start-Service -Name "Worker_instrumentsync"
+   Start-Service -Name "Worker_autotrade"
+   Start-Service -Name "Worker_realtrade"
    ```
 
 3. **Verify running status**:

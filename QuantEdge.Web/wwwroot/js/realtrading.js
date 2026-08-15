@@ -197,12 +197,63 @@ function populateSettingsForm(s) {
     }
 }
 
+let cachedOpenPositions = [];
+let cachedRecentOrders = [];
+let cachedTodayLogs = [];
+
+function applyPositionsFilter() {
+    const searchSymbol = (document.getElementById("inpSearchPositions")?.value || "").trim().toUpperCase();
+    const filterSide = document.getElementById("selFilterPosSide")?.value || "";
+    const filterPnl = document.getElementById("selFilterPosPnl")?.value || "";
+
+    const filtered = cachedOpenPositions.filter(p => {
+        if (searchSymbol && !p.symbol.toUpperCase().includes(searchSymbol)) return false;
+        if (filterSide === "BUY" && p.side !== 0) return false;
+        if (filterSide === "SELL" && p.side !== 1) return false;
+        if (filterPnl === "PROFIT" && (p.unrealizedPnl || 0) < 0) return false;
+        if (filterPnl === "LOSS" && (p.unrealizedPnl || 0) >= 0) return false;
+        return true;
+    });
+
+    renderFilteredOpenPositions(filtered);
+}
+
+function applyOrdersFilter() {
+    const searchTerm = (document.getElementById("inpSearchOrders")?.value || "").trim().toUpperCase();
+    const filterStatus = document.getElementById("selFilterOrderStatus")?.value || "";
+    const filterSide = document.getElementById("selFilterOrderSide")?.value || "";
+
+    const filtered = cachedRecentOrders.filter(o => {
+        if (searchTerm) {
+            const symMatch = o.symbol && o.symbol.toUpperCase().includes(searchTerm);
+            const orderIdMatch = o.brokerOrderId && o.brokerOrderId.toUpperCase().includes(searchTerm);
+            if (!symMatch && !orderIdMatch) return false;
+        }
+        if (filterSide === "BUY" && o.side !== 0) return false;
+        if (filterSide === "SELL" && o.side !== 1) return false;
+
+        if (filterStatus === "FILLED" && o.status !== 1) return false;
+        if (filterStatus === "CANCELLED" && o.status !== 2) return false;
+        if (filterStatus === "REJECTED" && o.status !== 3) return false;
+        if (filterStatus === "PENDING" && o.status !== 0) return false;
+
+        return true;
+    });
+
+    renderFilteredRecentOrders(filtered);
+}
+
 function renderOpenPositions(positions) {
+    cachedOpenPositions = positions || [];
+    applyPositionsFilter();
+}
+
+function renderFilteredOpenPositions(positions) {
     const tbody = document.getElementById("openPositionsTableBody");
     if (!tbody) return;
 
     if (!positions || positions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No open real positions currently held.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No open real positions matching filters.</td></tr>`;
         return;
     }
 
@@ -239,11 +290,16 @@ function renderOpenPositions(positions) {
 }
 
 function renderRecentOrders(orders) {
+    cachedRecentOrders = orders || [];
+    applyOrdersFilter();
+}
+
+function renderFilteredRecentOrders(orders) {
     const tbody = document.getElementById("recentOrdersTableBody");
     if (!tbody) return;
 
     if (!orders || orders.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No real orders recorded yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No real orders matching filters.</td></tr>`;
         return;
     }
 
@@ -275,11 +331,20 @@ function renderRecentOrders(orders) {
 }
 
 function renderLogs(logs) {
+    cachedTodayLogs = logs || [];
     const container = document.getElementById("consoleLogContainer");
     if (!container) return;
 
+    const filterText = (document.getElementById("inpSearchLogs")?.value || "").trim().toUpperCase();
+
     container.innerHTML = "";
     logs.slice(0, 50).forEach(log => {
+        if (filterText) {
+            const symMatch = log.symbol && log.symbol.toUpperCase().includes(filterText);
+            const actMatch = log.actionType && log.actionType.toUpperCase().includes(filterText);
+            const reasonMatch = log.reason && log.reason.toUpperCase().includes(filterText);
+            if (!symMatch && !actMatch && !reasonMatch) return;
+        }
         appendLogEntry(log);
     });
 }
@@ -308,6 +373,19 @@ function appendLogEntry(log) {
 }
 
 function setupEventListeners() {
+    // Advance Search: Positions Filter
+    document.getElementById("inpSearchPositions")?.addEventListener("input", applyPositionsFilter);
+    document.getElementById("selFilterPosSide")?.addEventListener("change", applyPositionsFilter);
+    document.getElementById("selFilterPosPnl")?.addEventListener("change", applyPositionsFilter);
+
+    // Advance Search: Orders Filter
+    document.getElementById("inpSearchOrders")?.addEventListener("input", applyOrdersFilter);
+    document.getElementById("selFilterOrderStatus")?.addEventListener("change", applyOrdersFilter);
+    document.getElementById("selFilterOrderSide")?.addEventListener("change", applyOrdersFilter);
+
+    // Advance Search: Logs Filter
+    document.getElementById("inpSearchLogs")?.addEventListener("input", () => renderLogs(cachedTodayLogs));
+
     // Optional SL toggle
     const chkSL = document.getElementById("chkEnableStopLoss");
     const slWrapper = document.getElementById("slInputWrapper");

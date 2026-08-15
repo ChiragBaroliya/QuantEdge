@@ -125,6 +125,33 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- Advance Search & Filter Bar for Positions -->
+                <div class="advance-search-bar mb-3">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-12 col-md-5">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-dark border-secondary text-light">🔍</span>
+                                <input type="text" class="form-control form-control-sm qe-search-input" id="inpSearchPositions" placeholder="Search by Stock Symbol (e.g. RELIANCE, TCS)..." />
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <select class="form-select form-select-sm qe-search-select" id="selFilterPosSide">
+                                <option value="">All Sides (BUY / SELL)</option>
+                                <option value="BUY">BUY Only</option>
+                                <option value="SELL">SELL Only</option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <select class="form-select form-select-sm qe-search-select" id="selFilterPosPnl">
+                                <option value="">All P&L (Profit / Loss)</option>
+                                <option value="PROFIT">📈 In Profit Only</option>
+                                <option value="LOSS">📉 In Loss Only</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="table-responsive-wrapper">
                     <div class="table-responsive">
                         <table class="qe-table">
@@ -157,6 +184,35 @@
                 <div class="card-box-header">
                     <h3 class="card-title">📜 Real Orders Book <span class="card-subtitle-inline">(Zerodha Order History)</span></h3>
                 </div>
+
+                <!-- Advance Search & Filter Bar for Orders -->
+                <div class="advance-search-bar mb-3">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-12 col-md-5">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-dark border-secondary text-light">🔍</span>
+                                <input type="text" class="form-control form-control-sm qe-search-input" id="inpSearchOrders" placeholder="Search by Symbol or Broker Order ID..." />
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <select class="form-select form-select-sm qe-search-select" id="selFilterOrderStatus">
+                                <option value="">All Statuses</option>
+                                <option value="FILLED">FILLED</option>
+                                <option value="REJECTED">REJECTED</option>
+                                <option value="CANCELLED">CANCELLED</option>
+                                <option value="PENDING">PENDING</option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <select class="form-select form-select-sm qe-search-select" id="selFilterOrderSide">
+                                <option value="">All Sides (BUY / SELL)</option>
+                                <option value="BUY">BUY</option>
+                                <option value="SELL">SELL</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="table-responsive-wrapper">
                     <div class="table-responsive">
                         <table class="qe-table">
@@ -189,9 +245,12 @@
                         <h3 class="card-title">📡 Live Real Trade Audit Stream</h3>
                         <span class="badge bg-dark border border-secondary text-info px-2 py-1" style="font-size: 10.5px;">Live Stream</span>
                     </div>
-                    <button class="btn-clear-logs" id="btnClearLogs" title="Clear console logs">
-                        🗑️ Clear
-                    </button>
+                    <div class="d-flex align-items-center gap-2">
+                        <input type="text" class="form-control form-control-sm qe-search-input d-none d-sm-inline-block" id="inpSearchLogs" placeholder="Filter logs..." style="max-width: 160px; font-size: 11.5px; height: 30px;" />
+                        <button class="btn-clear-logs" id="btnClearLogs" title="Clear console logs">
+                            🗑️ Clear
+                        </button>
+                    </div>
                 </div>
                 <div class="console-log-box" id="consoleLogContainer">
                     <div class="log-entry system">
