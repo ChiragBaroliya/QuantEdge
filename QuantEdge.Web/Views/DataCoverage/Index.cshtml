@@ -51,13 +51,26 @@
                 <option value="inactive">Inactive</option>
             </select>
 
-            <select id="historyFilter" class="filter-select" data-tooltip="🔍 **History Filter**: Filter stocks by data availability or gaps.">
-                <option value="all">All history</option>
-                <option value="missing">History missing</option>
-                <option value="1d_missing">1D Missing</option>
-                <option value="60m_missing">60m Missing</option>
-                <option value="has_1d">Has 1D History</option>
-                <option value="has_60m">Has 60m History</option>
+            <select id="historyFilter" class="filter-select" data-tooltip="🔍 **History & Date Filter**: Filter stocks by creation date, data availability or missing gaps.">
+                <option value="all">All History & Dates</option>
+                <optgroup label="📅 Creation Date">
+                    <option value="today_created">Today Created</option>
+                </optgroup>
+                <optgroup label="⚠️ Missing History">
+                    <option value="missing">Any History Missing</option>
+                    <option value="1m_missing">1m Missing</option>
+                    <option value="5m_missing">5m Missing</option>
+                    <option value="15m_missing">15m Missing</option>
+                    <option value="60m_missing">60m Missing</option>
+                    <option value="1d_missing">1D Missing</option>
+                </optgroup>
+                <optgroup label="✅ Available History">
+                    <option value="has_1m">Has 1m History</option>
+                    <option value="has_5m">Has 5m History</option>
+                    <option value="has_15m">Has 15m History</option>
+                    <option value="has_60m">Has 60m History</option>
+                    <option value="has_1d">Has 1D History</option>
+                </optgroup>
             </select>
 
             <div class="search-input-wrapper" data-tooltip="🔎 **Search Stock**: Enter company name or trading symbol.">

@@ -385,7 +385,11 @@ BEGIN
         COUNT(*)::INT AS "TotalStocks",
         COUNT(*) FILTER (WHERE s.is_active = TRUE)::INT AS "ActiveCount",
         COUNT(*) FILTER (WHERE s.is_active = FALSE)::INT AS "InactiveCount",
-        COUNT(*) FILTER (WHERE COALESCE(s.is_histry_stored_1d, 0) = 0 OR COALESCE(s.is_histry_stored_60m, 0) = 0)::INT AS "HistoryMissingCount"
+        COUNT(*) FILTER (WHERE COALESCE(s.is_histry_stored_1m, 0) = 0 
+                            OR COALESCE(s.is_histry_stored_5m, 0) = 0 
+                            OR COALESCE(s.is_histry_stored_15m, 0) = 0 
+                            OR COALESCE(s.is_histry_stored_60m, 0) = 0 
+                            OR COALESCE(s.is_histry_stored_1d, 0) = 0)::INT AS "HistoryMissingCount"
     FROM stock_master s;
 END;
 $$;
@@ -442,11 +446,24 @@ BEGIN
             )
             AND (
                 p_history_filter IS NULL OR p_history_filter = '' OR LOWER(p_history_filter) = 'all'
-                OR (LOWER(p_history_filter) = 'missing' AND (COALESCE(s.is_histry_stored_1d, 0) = 0 OR COALESCE(s.is_histry_stored_60m, 0) = 0))
-                OR (LOWER(p_history_filter) = '1d_missing' AND COALESCE(s.is_histry_stored_1d, 0) = 0)
+                OR (LOWER(p_history_filter) IN ('today_created', 'created_today') AND DATE(s.created_at AT TIME ZONE 'Asia/Kolkata') = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::DATE)
+                OR (LOWER(p_history_filter) = 'missing' AND (
+                    COALESCE(s.is_histry_stored_1m, 0) = 0 
+                    OR COALESCE(s.is_histry_stored_5m, 0) = 0 
+                    OR COALESCE(s.is_histry_stored_15m, 0) = 0 
+                    OR COALESCE(s.is_histry_stored_60m, 0) = 0 
+                    OR COALESCE(s.is_histry_stored_1d, 0) = 0
+                ))
+                OR (LOWER(p_history_filter) = '1m_missing' AND COALESCE(s.is_histry_stored_1m, 0) = 0)
+                OR (LOWER(p_history_filter) = '5m_missing' AND COALESCE(s.is_histry_stored_5m, 0) = 0)
+                OR (LOWER(p_history_filter) = '15m_missing' AND COALESCE(s.is_histry_stored_15m, 0) = 0)
                 OR (LOWER(p_history_filter) = '60m_missing' AND COALESCE(s.is_histry_stored_60m, 0) = 0)
-                OR (LOWER(p_history_filter) = 'has_1d' AND COALESCE(s.is_histry_stored_1d, 0) = 1)
+                OR (LOWER(p_history_filter) = '1d_missing' AND COALESCE(s.is_histry_stored_1d, 0) = 0)
+                OR (LOWER(p_history_filter) = 'has_1m' AND COALESCE(s.is_histry_stored_1m, 0) = 1)
+                OR (LOWER(p_history_filter) = 'has_5m' AND COALESCE(s.is_histry_stored_5m, 0) = 1)
+                OR (LOWER(p_history_filter) = 'has_15m' AND COALESCE(s.is_histry_stored_15m, 0) = 1)
                 OR (LOWER(p_history_filter) = 'has_60m' AND COALESCE(s.is_histry_stored_60m, 0) = 1)
+                OR (LOWER(p_history_filter) = 'has_1d' AND COALESCE(s.is_histry_stored_1d, 0) = 1)
             )
     ),
     counted AS (
