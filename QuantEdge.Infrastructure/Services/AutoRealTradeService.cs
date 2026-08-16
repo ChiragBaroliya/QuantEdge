@@ -11,6 +11,9 @@ using QuantEdge.Infrastructure.Hubs;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 
+using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace QuantEdge.Infrastructure.Services;
 
 public class AutoRealTradeService : IAutoRealTradeService
@@ -23,7 +26,9 @@ public class AutoRealTradeService : IAutoRealTradeService
     private readonly ICacheService _cacheService;
     private readonly IRealTradeCacheService? _realTradeCache;
     private readonly IHubContext<MarketDataHub>? _hubContext;
+    private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ILogger<AutoRealTradeService> _logger;
+    private readonly ConcurrentDictionary<int, string> _userNameCache = new();
 
     public AutoRealTradeService(
         IRealTradingRepository repository,
@@ -34,7 +39,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         ICacheService cacheService,
         ILogger<AutoRealTradeService> logger,
         IRealTradeCacheService? realTradeCache = null,
-        IHubContext<MarketDataHub>? hubContext = null)
+        IHubContext<MarketDataHub>? hubContext = null,
+        IServiceScopeFactory? scopeFactory = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _brokerService = brokerService ?? throw new ArgumentNullException(nameof(brokerService));
@@ -45,6 +51,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _realTradeCache = realTradeCache;
         _hubContext = hubContext;
+        _scopeFactory = scopeFactory;
     }
 
     public async Task<RealTradeSettings> GetSettingsAsync(int userId = 1)
@@ -104,6 +111,7 @@ public class AutoRealTradeService : IAutoRealTradeService
 
     public async Task ToggleRealTradeAsync(bool enabled, int userId = 1)
     {
+        string userTag = await GetUserTagAsync(userId);
         if (enabled)
         {
             // Verify Zerodha Token before enabling Live Auto Trading
@@ -111,7 +119,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             if (!tokenCheck.IsValid)
             {
                 _logger.LogWarning("Cannot turn ON Real Auto Trade for User {UserId}: {Reason}", userId, tokenCheck.Message);
-                await LogAuditAsync("ZERODHA", "LIVE_ENABLE_FAILED", null, null,
+                await LogAuditAsync(userTag, "LIVE_ENABLE_FAILED", null, null,
                     $"Failed to enable Real Auto Trade: {tokenCheck.Message}", userId);
                 throw new InvalidOperationException($"⚠️ Zerodha Account Not Connected: {tokenCheck.Message}");
             }
@@ -126,7 +134,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         string cacheKey = $"realtrade:settings:{userId}";
         await _cacheService.RemoveAsync(cacheKey);
 
-        await LogAuditAsync("SYSTEM", enabled ? "REAL_TRADE_ENABLED" : "REAL_TRADE_DISABLED", null, null,
+        await LogAuditAsync(userTag, enabled ? "REAL_TRADE_ENABLED" : "REAL_TRADE_DISABLED", null, null,
             enabled ? "⚡ REAL MONEY Auto Trading Master Switch turned ON" : "Real Auto Trading Master Switch turned OFF", userId);
 
         await BroadcastDashboardUpdateAsync(userId);
@@ -701,7 +709,8 @@ public class AutoRealTradeService : IAutoRealTradeService
             if (closed) closedCount++;
         }
 
-        await LogAuditAsync("ALL", "KILL_SWITCH_ACTIVE", null, closedCount,
+        string userTag = await GetUserTagAsync(userId);
+        await LogAuditAsync(userTag, "KILL_SWITCH_ACTIVE", null, closedCount,
             $"🚨 EMERGENCY KILL SWITCH EXECUTED: Bot Stopped, {closedCount} live positions squared off.", userId);
 
         await BroadcastDashboardUpdateAsync(userId);
@@ -715,6 +724,41 @@ public class AutoRealTradeService : IAutoRealTradeService
 
         decimal exitPrice = position.CurrentPrice > 0m ? position.CurrentPrice : position.AverageEntryPrice;
         return await ExecuteRealSellOrderAsync(position, exitPrice, reason, userId);
+    }
+
+    private async Task<string> GetUserTagAsync(int userId)
+    {
+        if (_userNameCache.TryGetValue(userId, out var cachedName) && !string.IsNullOrWhiteSpace(cachedName))
+        {
+            return cachedName;
+        }
+
+        if (_scopeFactory != null)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var userRepo = scope.ServiceProvider.GetService<IUserRepository>();
+                if (userRepo != null)
+                {
+                    var user = await userRepo.GetByIdAsync(userId);
+                    if (user != null)
+                    {
+                        string name = !string.IsNullOrWhiteSpace(user.Username) 
+                            ? user.Username.ToUpper().Trim() 
+                            : (!string.IsNullOrWhiteSpace(user.FullName) ? user.FullName.Split(' ')[0].ToUpper().Trim() : $"USER_{userId}");
+                        _userNameCache[userId] = name;
+                        return name;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not resolve username from DB for User {UserId}.", userId);
+            }
+        }
+
+        return userId == 1 ? "CHIRAG" : $"USER_{userId}";
     }
 
     private static bool IsWithinTradingWindow(string startTime, string endTime)

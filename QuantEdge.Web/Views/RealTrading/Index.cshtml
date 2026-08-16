@@ -2,11 +2,18 @@
     ViewData["Title"] = "Auto Real Trading (Live Broker)";
     ViewData["PageTitle"] = "Auto Real Trading Dashboard";
     var apiBaseUrl = ViewBag.ApiBaseUrl as string ?? "";
+    var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "1";
+    var currentUserName = User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value;
+    if (string.IsNullOrWhiteSpace(currentUserName)) { currentUserName = User.Identity?.Name ?? "Chirag"; }
 }
 
 <link rel="stylesheet" href="~/css/autotrading.css" asp-append-version="true" />
 <link rel="stylesheet" href="~/css/realtrading.css" asp-append-version="true" />
-<div id="realtrade-config" data-api-base-url="@apiBaseUrl" style="display:none;"></div>
+<div id="realtrade-config" 
+     data-api-base-url="@apiBaseUrl" 
+     data-user-id="@currentUserId"
+     data-user-name="@currentUserName"
+     style="display:none;"></div>
 
 <div class="autotrade-container realtrade-container">
     <!-- Persistent Prerequisite Banners -->

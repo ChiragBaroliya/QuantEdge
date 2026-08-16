@@ -3,6 +3,8 @@
  */
 
 let apiBaseUrl = "";
+let currentUserId = 1;
+let currentUserName = "Chirag";
 let countdownInterval = null;
 let modalSquareOff = null;
 let modalKillSwitch = null;
@@ -11,6 +13,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const configElem = document.getElementById("realtrade-config");
     if (configElem) {
         apiBaseUrl = configElem.dataset.apiBaseUrl || "";
+        currentUserId = parseInt(configElem.dataset.userId || "1", 10);
+        currentUserName = configElem.dataset.userName || "Chirag";
     }
 
     const sqModalEl = document.getElementById('modalSquareOffPosition');
@@ -392,8 +396,14 @@ function renderLogs(logs) {
 }
 
 function appendLogEntry(log) {
+    if (!log) return;
     const container = document.getElementById("consoleLogContainer");
     if (!container) return;
+
+    // Filter strictly by current active user (prevent displaying other users' logs)
+    if (log.userId && currentUserId && log.userId !== currentUserId) {
+        return;
+    }
 
     const timeStr = new Date(log.executedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const div = document.createElement("div");
@@ -404,10 +414,16 @@ function appendLogEntry(log) {
     else if (log.actionType.includes("SELL")) badgeClass = "badge bg-danger";
     else if (log.actionType.includes("KILL") || log.actionType.includes("CIRCUIT")) badgeClass = "badge bg-warning text-dark";
 
+    // Format display tag: replace SYSTEM / ALL / default with active user's name
+    let displayTag = (log.symbol || "").trim();
+    if (!displayTag || displayTag === "SYSTEM" || displayTag === "ALL" || displayTag === "DEFAULT" || displayTag === "ZERODHA") {
+        displayTag = (currentUserName || "CHIRAG").toUpperCase();
+    }
+
     div.innerHTML = `
         <span class="log-time">[${timeStr}]</span>
         <span class="${badgeClass} me-2" style="font-size: 0.7rem;">${log.actionType}</span>
-        <span class="fw-bold me-2">${log.symbol}:</span>
+        <span class="fw-bold me-2">${displayTag}:</span>
         <span class="log-msg">${log.reason || ''}</span>
     `;
 
@@ -667,6 +683,9 @@ function setupSignalRHub() {
     });
 
     connection.on("ReceiveRealTradeAlert", function (alertData) {
+        if (alertData && alertData.userId && currentUserId && alertData.userId !== currentUserId) {
+            return;
+        }
         showToastAlert(alertData.message || "Real Trade Event");
         loadDashboardData();
     });
