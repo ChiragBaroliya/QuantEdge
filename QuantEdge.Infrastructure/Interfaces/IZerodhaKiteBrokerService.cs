@@ -9,9 +9,9 @@ public interface IZerodhaKiteBrokerService
     string Mode { get; }
 
     /// <summary>
-    /// Validates if the active Zerodha session token in the database is valid for today (post 6 AM IST).
+    /// Validates if the active Zerodha session token for a specific user is valid for today (post 6 AM IST).
     /// </summary>
-    Task<(bool IsValid, string? AccessToken, string? ApiKey, string? Message)> ValidateSessionTokenAsync();
+    Task<(bool IsValid, string? AccessToken, string? ApiKey, string? Message)> ValidateSessionTokenAsync(int userId = 1);
 
     /// <summary>
     /// Places a real-money live order via Zerodha Kite Connect REST API (POST /orders/regular).

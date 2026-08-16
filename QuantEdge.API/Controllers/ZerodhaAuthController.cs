@@ -124,32 +124,31 @@ public class ZerodhaAuthController : ControllerBase
     }
 
     /// <summary>
-    /// Generates and returns the official Zerodha login URL.
-    /// Accepts an optional <paramref name="returnUrl"/> (the Web app's origin) so the Callback
-    /// knows which port to redirect back to — no hardcoding required.
+    /// Generates the Zerodha OAuth login URL.
+    /// Redirects the user to: https://kite.zerodha.com/connect/login?v=3&api_key=XYZ&state=USER_ID
     /// </summary>
     [HttpGet("login-url")]
-    public IActionResult GetLoginUrl([FromQuery] string? returnUrl)
+    public IActionResult GetLoginUrl([FromQuery] string? returnUrl = null, [FromQuery] int userId = 1)
     {
         try
         {
             if (string.IsNullOrWhiteSpace(_config.ApiKey))
             {
-                return BadRequest("Zerodha ApiKey is not configured.");
+                _logger.LogError("ApiKey is not configured in BrokerConfig.");
+                return BadRequest("ApiKey is missing in BrokerConfig.");
             }
 
-            // Cache the caller's return URL for up to 10 minutes so Callback can use it.
-            // Only the scheme+host+port is needed (e.g. "https://localhost:7031").
             if (!string.IsNullOrWhiteSpace(returnUrl))
             {
-                _cache.Set(ReturnUrlCacheKey, returnUrl.TrimEnd('/'), TimeSpan.FromMinutes(10));
-                _logger.LogInformation("Cached Web returnUrl: {ReturnUrl}", returnUrl);
+                _cache.Set(ReturnUrlCacheKey, returnUrl, TimeSpan.FromMinutes(10));
+                _logger.LogInformation("Saved Web returnUrl to MemoryCache: {ReturnUrl}", returnUrl);
             }
 
-            var kite = new Kite(_config.ApiKey);
-            string loginUrl = kite.GetLoginURL();
+            // Generate Zerodha OAuth login URL with state = userId
+            string statePayload = userId.ToString();
+            string loginUrl = $"https://kite.zerodha.com/connect/login?v=3&api_key={Uri.EscapeDataString(_config.ApiKey)}&state={Uri.EscapeDataString(statePayload)}";
 
-            _logger.LogInformation("Generated Zerodha login URL for API Key: {ApiKey}", _config.ApiKey);
+            _logger.LogInformation("Generated Zerodha login URL for User {UserId} with API Key: {ApiKey}", userId, _config.ApiKey);
             return Ok(new { loginUrl });
         }
         catch (Exception ex)
@@ -242,20 +241,27 @@ public class ZerodhaAuthController : ControllerBase
 
     /// <summary>
     /// Callback endpoint receiving the request_token from Zerodha, exchanging it for an access_token,
-    /// and persisting it securely.
+    /// and persisting it securely for the specific user.
     /// </summary>
     [HttpGet("callback")]
     public async Task<IActionResult> Callback([FromQuery(Name = "request_token")] string requestToken,
-        [FromQuery(Name = "action")] string action,
-        [FromQuery(Name = "type")] string type,
-        [FromQuery(Name = "status")] string status)
+        [FromQuery(Name = "action")] string? action = null,
+        [FromQuery(Name = "type")] string? type = null,
+        [FromQuery(Name = "status")] string? status = null,
+        [FromQuery(Name = "state")] string? state = null)
     {
         if (string.IsNullOrWhiteSpace(requestToken))
         {
             return BadRequest("Missing required query parameter 'request_token'.");
         }
 
-        _logger.LogInformation("Received request_token from Zerodha. Initiating token exchange...");
+        int userId = 1;
+        if (!string.IsNullOrWhiteSpace(state) && int.TryParse(state, out int parsedUid))
+        {
+            userId = parsedUid;
+        }
+
+        _logger.LogInformation("Received request_token from Zerodha for User {UserId}. Initiating token exchange...", userId);
 
         try
         {
@@ -274,47 +280,29 @@ public class ZerodhaAuthController : ControllerBase
                 throw new InvalidOperationException("Zerodha returned an empty access token.");
             }
 
-            _logger.LogInformation("Successfully exchanged request_token. Storing access token...");
+            _logger.LogInformation("Successfully exchanged request_token for User {UserId}. Storing access token...", userId);
 
-            // 1. Store in PostgreSQL database using Stored Procedure
-            var callbackParams = new DynamicParameters();
-            callbackParams.Add("p_api_key", _config.ApiKey);
-            callbackParams.Add("p_access_token", accessToken);
+            // 1. Store in PostgreSQL database for specific user
+            await _sessionRepository.UpsertSessionAsync(userId, _config.ApiKey, _config.ApiSecret, accessToken);
 
-            using (var conn = _connectionFactory.CreateConnection())
-            {
-                await conn.ExecuteAsync(
-                    "sp_upsert_zerodha_session",
-                    callbackParams,
-                    commandType: CommandType.StoredProcedure
-                );
-            }
+            // 2. Immediately activate token in DB if valid for today
+            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey, userId);
 
-            // Immediately activate token in DB if valid for today
-            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey);
-
-            // 2. Persist to appsettings.json dynamically in the API & Worker folders
+            // 3. Persist to appsettings.json dynamically
             UpdateAppsettingsInAllPaths(accessToken);
 
-            _logger.LogInformation("Zerodha Access Token successfully stored and configuration updated.");
+            _logger.LogInformation("Zerodha Access Token successfully stored for User {UserId}.", userId);
 
-            // 3. Resolve the Web UI base URL:
+            // 4. Resolve the Web UI base URL:
             //    - First priority: URL cached during login-url call (dynamic, works on any port)
             //    - Fallback: WebBaseUrl from appsettings.json
             string webBase = _cache.TryGetValue(ReturnUrlCacheKey, out string? cached) && !string.IsNullOrWhiteSpace(cached)
                 ? cached
                 : _fallbackWebBaseUrl;
 
-            _logger.LogInformation("Redirecting to Web UI at: {WebBase}/Token/Callback", webBase);
+            _logger.LogInformation("Redirecting to Web UI at: {WebBase}/RealTrading", webBase);
 
-            var redirectUrl = $"{webBase}/Token/Callback" +
-                $"?success=true" +
-                $"&message={Uri.EscapeDataString("Authentication successful! Zerodha Access Token has been created and saved to database.")}" +
-                $"&apiKey={Uri.EscapeDataString(_config.ApiKey)}" +
-                $"&accessToken={Uri.EscapeDataString(accessToken)}" +
-                $"&userName={Uri.EscapeDataString(userSession.UserName ?? string.Empty)}" +
-                $"&email={Uri.EscapeDataString(userSession.Email ?? string.Empty)}";
-
+            var redirectUrl = $"{webBase}/RealTrading?connected=true&message={Uri.EscapeDataString("⚡ Zerodha Account Connected Successfully! Daily Access Token is now ACTIVE.")}";
             return Redirect(redirectUrl);
         }
         catch (Exception ex)

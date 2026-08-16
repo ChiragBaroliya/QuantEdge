@@ -59,7 +59,10 @@ public class RealTradeDashboardDto
     public decimal AvailableBrokerMargin { get; set; }
     public decimal UsedBrokerMargin { get; set; }
     public bool IsBrokerTokenActive { get; set; }
+    public string ApiKey { get; set; } = string.Empty;
     public string BrokerTokenCreatedIst { get; set; } = string.Empty;
+    public string BrokerTokenExpiresIst { get; set; } = string.Empty;
+    public bool TpinGuidanceRequired { get; set; } = true;
     public bool IsWebSocketConnected { get; set; }
     public bool IsRestPollingFallback { get; set; }
     public string SystemStatus { get; set; } = "IDLE"; // LIVE_ACTIVE, PAUSED, TOKEN_EXPIRED, KILL_SWITCH_TRIGGERED

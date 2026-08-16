@@ -9,6 +9,45 @@
 <div id="realtrade-config" data-api-base-url="@apiBaseUrl" style="display:none;"></div>
 
 <div class="autotrade-container realtrade-container">
+    <!-- Persistent Prerequisite Banners -->
+    <div id="banner-token-missing" class="prerequisite-banner banner-token-alert" style="display: none;">
+        <div class="banner-content">
+            <span class="banner-icon">⚠️</span>
+            <div class="banner-text">
+                <strong>Action Required:</strong> Zerodha daily session token is missing or expired. Auto Real Trading is currently <strong>INACTIVE</strong>.
+            </div>
+        </div>
+        <button type="button" class="btn-connect-zerodha-action" id="btnBannerConnectZerodha">
+            ⚡ Connect Zerodha (1-Click Login)
+        </button>
+    </div>
+
+    <div id="banner-ddpi-activation" class="prerequisite-banner banner-tpin-notice">
+        <div class="banner-content">
+            <span class="banner-icon">🚀</span>
+            <div class="banner-text">
+                <strong>Automated Real Trading Prerequisite:</strong> To allow the engine to automatically execute CNC Sell & Target exit orders via Zerodha API, please activate <strong>1-time DDPI</strong> in your Zerodha account.
+            </div>
+        </div>
+        <div class="banner-actions-group">
+            <button type="button" class="btn-tpin-guide" data-bs-toggle="modal" data-bs-target="#modalDdpiGuideline" title="Step-by-step 1-time DDPI activation guide">
+                📖 DDPI Activation Guide
+            </button>
+            <a href="https://console.zerodha.com/account/demat" target="_blank" class="btn-ddpi-enable">
+                <span>Enable DDPI Online</span> <span class="ddpi-arrow">↗</span>
+            </a>
+        </div>
+    </div>
+
+    <div id="banner-market-locked" class="prerequisite-banner banner-market-lock" style="display: none;">
+        <div class="banner-content">
+            <span class="banner-icon">🔒</span>
+            <div class="banner-text">
+                <strong>Market Hours Lock Active:</strong> Risk & Strategy parameters are locked during active trading hours (09:15 AM - 03:30 PM IST). Parameter changes can be saved after 03:30 PM.
+            </div>
+        </div>
+    </div>
+
     <!-- Master Header Card -->
     <div class="autotrade-header-card realtrade-header-card">
         <div class="autotrade-title-group">
@@ -20,6 +59,9 @@
         </div>
 
         <div class="autotrade-status-badges">
+            <button type="button" class="btn-connect-broker" id="btnConnectZerodhaHeader" title="Click to authenticate Zerodha session for today">
+                ⚡ Connect Zerodha
+            </button>
             <div class="badge-token" id="broker-token-badge" title="Zerodha Session Token Status">
                 <span class="token-dot"></span> Checking Token...
             </div>
@@ -440,6 +482,96 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger fw-bold" id="btnConfirmKillSwitch">🚨 YES, KILL SWITCH NOW</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: 1-Time DDPI Activation Guideline -->
+<div class="modal fade" id="modalDdpiGuideline" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content qe-modal border-info">
+            <div class="modal-header bg-dark border-info">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="fs-4">🚀</span>
+                    <h5 class="modal-title text-info fw-bold mb-0">1-Time DDPI Activation for Automated Real Trading</h5>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 text-light">
+                <p class="mb-3 text-secondary-light">
+                    SEBI regulations require Demat debit authorization for selling delivery (CNC) stock holdings. In Zerodha, <strong>DDPI (Demat Debit and Pledge Instruction)</strong> allows automated algorithms to place live Sell and Target exit orders seamlessly via API.
+                </p>
+
+                <!-- Key Benefits Grid -->
+                <div class="row g-3 mb-4">
+                    <div class="col-12 col-md-4">
+                        <div class="p-3 rounded bg-dark border border-secondary h-100 text-center">
+                            <div class="fs-4 mb-1">⚡</div>
+                            <h6 class="text-info fw-bold mb-1">100% Automated</h6>
+                            <p class="small text-white mb-0">Orders execute instantaneously when target or stop loss triggers.</p>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <div class="p-3 rounded bg-dark border border-secondary h-100 text-center">
+                            <div class="fs-4 mb-1">🔒</div>
+                            <h6 class="text-success fw-bold mb-1">Zero Daily OTP</h6>
+                            <p class="small text-white mb-0">No daily morning logins or manual verification codes required.</p>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <div class="p-3 rounded bg-dark border border-secondary h-100 text-center">
+                            <div class="fs-4 mb-1">⏱️</div>
+                            <h6 class="text-warning fw-bold mb-1">1-Time Setup</h6>
+                            <p class="small text-white mb-0">Takes only 2 minutes online via Aadhaar DigiLocker eSign.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- How to Enable DDPI Step Card -->
+                <div class="ddpi-activation-box p-3 mb-3">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="fs-5">✨</span>
+                        <h6 class="text-info fw-bold mb-0">How to Enable DDPI in Zerodha (3 Simple Steps)</h6>
+                    </div>
+                    <div class="tpin-steps-container mt-2">
+                        <div class="tpin-step-card">
+                            <div class="tpin-step-num">1</div>
+                            <div class="tpin-step-body">
+                                <h6 class="tpin-step-title">Open Zerodha Demat Console</h6>
+                                <p class="tpin-step-desc">
+                                    Click the button below or go to <strong>Zerodha Console > Account > Demat</strong>.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="tpin-step-card">
+                            <div class="tpin-step-num">2</div>
+                            <div class="tpin-step-body">
+                                <h6 class="tpin-step-title">Click 'Enable Demat Debit and Pledge Instruction (DDPI)'</h6>
+                                <p class="tpin-step-desc">
+                                    Click the blue link located below your Demat ID.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="tpin-step-card">
+                            <div class="tpin-step-num">3</div>
+                            <div class="tpin-step-body">
+                                <h6 class="tpin-step-title">Complete Aadhaar eSign on DigiLocker</h6>
+                                <p class="tpin-step-desc">
+                                    Enter your Aadhaar number, submit the OTP, and eSign. DDPI will be activated within 24 to 48 hours.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-dark border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="https://console.zerodha.com/account/demat" target="_blank" class="btn-ddpi-enable">
+                    <span>Open Zerodha Demat Console</span> <span class="ddpi-arrow">↗</span>
+                </a>
             </div>
         </div>
     </div>

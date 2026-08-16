@@ -21,6 +21,7 @@ public class AutoRealTradeService : IAutoRealTradeService
     private readonly IIndianHolidayRepository _holidayRepository;
     private readonly IMarketHoursService _marketHoursService;
     private readonly ICacheService _cacheService;
+    private readonly IRealTradeCacheService? _realTradeCache;
     private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly ILogger<AutoRealTradeService> _logger;
 
@@ -32,6 +33,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         IMarketHoursService marketHoursService,
         ICacheService cacheService,
         ILogger<AutoRealTradeService> logger,
+        IRealTradeCacheService? realTradeCache = null,
         IHubContext<MarketDataHub>? hubContext = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
@@ -41,22 +43,33 @@ public class AutoRealTradeService : IAutoRealTradeService
         _marketHoursService = marketHoursService ?? throw new ArgumentNullException(nameof(marketHoursService));
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _realTradeCache = realTradeCache;
         _hubContext = hubContext;
     }
 
     public async Task<RealTradeSettings> GetSettingsAsync(int userId = 1)
     {
+        var ramSettings = _realTradeCache?.GetUserSettings(userId);
+        if (ramSettings != null) return ramSettings;
+
         string cacheKey = $"realtrade:settings:{userId}";
         var cached = await _cacheService.GetAsync<RealTradeSettings>(cacheKey);
         if (cached != null) return cached;
 
         var settings = await _repository.GetSettingsAsync(userId);
         await _cacheService.SetAsync(cacheKey, settings, TimeSpan.FromMinutes(15));
+        _realTradeCache?.SetUserSettings(settings);
         return settings;
     }
 
     public async Task<RealTradeSettings> UpdateSettingsAsync(RealTradeSettingsUpdateDto updateDto, int userId = 1)
     {
+        // 1. Check if Market is currently Open (09:15 AM - 03:30 PM IST)
+        if (await _marketHoursService.IsWithinMarketHoursAsync())
+        {
+            throw new InvalidOperationException("⚙️ Auto Real Trade settings are LOCKED during active market hours (09:15 AM - 03:30 PM IST). You can adjust and save settings after 03:30 PM.");
+        }
+
         var existing = await _repository.GetSettingsAsync(userId);
         if (existing == null)
         {
@@ -83,6 +96,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         string cacheKey = $"realtrade:settings:{userId}";
         await _cacheService.RemoveAsync(cacheKey);
         await _cacheService.SetAsync(cacheKey, updated, TimeSpan.FromMinutes(15));
+        _realTradeCache?.SetUserSettings(updated);
 
         await BroadcastDashboardUpdateAsync(userId);
         return updated;
@@ -93,17 +107,21 @@ public class AutoRealTradeService : IAutoRealTradeService
         if (enabled)
         {
             // Verify Zerodha Token before enabling Live Auto Trading
-            var tokenCheck = await _brokerService.ValidateSessionTokenAsync();
+            var tokenCheck = await _brokerService.ValidateSessionTokenAsync(userId);
             if (!tokenCheck.IsValid)
             {
-                _logger.LogWarning("Cannot turn ON Real Auto Trade: {Reason}", tokenCheck.Message);
+                _logger.LogWarning("Cannot turn ON Real Auto Trade for User {UserId}: {Reason}", userId, tokenCheck.Message);
                 await LogAuditAsync("ZERODHA", "LIVE_ENABLE_FAILED", null, null,
                     $"Failed to enable Real Auto Trade: {tokenCheck.Message}", userId);
-                throw new InvalidOperationException($"Cannot enable Real Trading: {tokenCheck.Message}");
+                throw new InvalidOperationException($"⚠️ Zerodha Account Not Connected: {tokenCheck.Message}");
             }
         }
 
         await _repository.ToggleRealTradeAsync(userId, enabled);
+
+        var settings = await GetSettingsAsync(userId);
+        settings.IsRealTradeEnabled = enabled;
+        _realTradeCache?.SetUserSettings(settings);
 
         string cacheKey = $"realtrade:settings:{userId}";
         await _cacheService.RemoveAsync(cacheKey);
@@ -148,8 +166,10 @@ public class AutoRealTradeService : IAutoRealTradeService
         // Live Margin from Broker
         decimal availableMargin = settings.AvailableCapital;
         decimal usedMargin = 0m;
-        var tokenValidation = await _brokerService.ValidateSessionTokenAsync();
+        var tokenValidation = await _brokerService.ValidateSessionTokenAsync(userId);
         string tokenCreatedIst = "N/A";
+        string tokenExpiresIst = "N/A";
+        string apiKey = string.Empty;
 
         if (tokenValidation.IsValid)
         {
@@ -160,11 +180,13 @@ public class AutoRealTradeService : IAutoRealTradeService
                 usedMargin = marginRes.UsedMargin;
             }
 
-            var activeSession = await _sessionRepository.GetActiveSessionAsync();
+            var activeSession = await _sessionRepository.GetActiveSessionAsync(userId);
             if (activeSession != null)
             {
                 var istTime = TimeZoneInfo.ConvertTime(activeSession.CreatedAt, TimeZoneHelper.IndianTimeZone);
                 tokenCreatedIst = istTime.ToString("hh:mm tt, dd MMM");
+                tokenExpiresIst = istTime.Date.AddDays(1).AddHours(6).ToString("hh:mm tt, dd MMM");
+                apiKey = activeSession.ApiKey;
             }
         }
 
@@ -195,7 +217,10 @@ public class AutoRealTradeService : IAutoRealTradeService
             AvailableBrokerMargin = availableMargin,
             UsedBrokerMargin = usedMargin,
             IsBrokerTokenActive = tokenValidation.IsValid,
+            ApiKey = apiKey,
             BrokerTokenCreatedIst = tokenCreatedIst,
+            BrokerTokenExpiresIst = tokenExpiresIst,
+            TpinGuidanceRequired = true,
             IsWebSocketConnected = true,
             IsRestPollingFallback = false,
             SystemStatus = systemStatus,
@@ -246,7 +271,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
 
         // 2. Token Active & Health Check
-        var tokenCheck = await _brokerService.ValidateSessionTokenAsync();
+        var tokenCheck = await _brokerService.ValidateSessionTokenAsync(userId);
         if (!tokenCheck.IsValid)
         {
             await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0, $"Zerodha Token Invalid: {tokenCheck.Message}", userId);
@@ -401,7 +426,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             });
 
             // Upsert Real Position
-            await _repository.UpsertPositionAsync(new RealPosition
+            var newPosition = await _repository.UpsertPositionAsync(new RealPosition
             {
                 UserId = userId,
                 Symbol = symbol,
@@ -417,6 +442,8 @@ public class AutoRealTradeService : IAutoRealTradeService
                 TradeType = TradeType.Auto,
                 RealizedPnl = 0m
             });
+
+            _realTradeCache?.AddOrUpdatePosition(newPosition);
 
             // Record Real Trade History
             await _repository.RecordTradeHistoryAsync(new RealTradeHistory
@@ -457,6 +484,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     stopLoss,
                     trailingSl,
                     brokerOrderId,
+                    userId,
                     message = $"⚡ LIVE REAL BUY: {quantity} shares of {symbol} @ ₹{executedPrice:N2} (Target ₹{takeProfit:N2})"
                 });
             }
@@ -466,7 +494,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute real buy order for {Symbol}", symbol);
+            _logger.LogError(ex, "Failed to execute real buy order for {Symbol} (User {UserId})", symbol, userId);
             await LogAuditAsync(symbol, "SYSTEM_ERROR", entryPrice, quantity, $"Real BUY execution failed: {ex.Message}", userId);
             return false;
         }
@@ -529,6 +557,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             {
                 await _repository.UpdateTrailingStopLossAsync(position.Id, candidateSl);
                 position.TrailingStopLoss = candidateSl;
+                _realTradeCache?.AddOrUpdatePosition(position);
             }
         }
 
@@ -540,8 +569,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         var settings = await GetSettingsAsync(userId);
         try
         {
-            _logger.LogInformation("[REAL MONEY SELL TRIGGERED] Position #{Id} {Symbol} Qty:{Qty} @ {Ltp}. Reason: {Reason}",
-                position.Id, position.Symbol, position.Quantity, currentLtp, exitReason);
+            _logger.LogInformation("[REAL MONEY SELL TRIGGERED - User {UserId}] Position #{Id} {Symbol} Qty:{Qty} @ {Ltp}. Reason: {Reason}",
+                userId, position.Id, position.Symbol, position.Quantity, currentLtp, exitReason);
 
             // Execute Real Market Sell via Zerodha Kite API
             var brokerResult = await _brokerService.SquareOffLivePositionAsync(
@@ -575,13 +604,33 @@ public class AutoRealTradeService : IAutoRealTradeService
 
             if (!brokerResult.Success)
             {
-                await LogAuditAsync(position.Symbol, "SELL_FAILED", executedPrice, position.Quantity,
+                bool isTpinError = brokerResult.Message != null && 
+                    (brokerResult.Message.Contains("e-DIS", StringComparison.OrdinalIgnoreCase) ||
+                     brokerResult.Message.Contains("TPIN", StringComparison.OrdinalIgnoreCase) ||
+                     brokerResult.Message.Contains("authorization", StringComparison.OrdinalIgnoreCase));
+
+                string actionType = isTpinError ? "SELL_REJECTED_EDIS_REQUIRED" : "SELL_FAILED";
+
+                await LogAuditAsync(position.Symbol, actionType, executedPrice, position.Quantity,
                     $"Zerodha Sell Order Failed: {brokerResult.Message}", userId);
+
+                if (_hubContext != null && isTpinError)
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    {
+                        symbol = position.Symbol,
+                        side = "SELL_REJECTED",
+                        isTpinError = true,
+                        userId,
+                        message = $"🚨 CDSL TPIN Required: Sell order for {position.Symbol} failed. Please authorize CDSL TPIN in Zerodha Kite holdings and retry."
+                    });
+                }
                 return false;
             }
 
-            // Close Real Position
+            // Close Real Position in DB & RAM
             await _repository.ClosePositionAsync(position.Id, executedPrice, realizedPnl, exitReason);
+            _realTradeCache?.RemovePosition(position.Id);
 
             // Record Trade History
             await _repository.RecordTradeHistoryAsync(new RealTradeHistory
@@ -617,6 +666,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     realizedPnl,
                     exitReason,
                     brokerOrderId,
+                    userId,
                     message = $"⚡ LIVE REAL SELL: {position.Symbol} ({exitReason}) @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}"
                 });
             }
@@ -626,7 +676,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute real sell order for {Symbol}", position.Symbol);
+            _logger.LogError(ex, "Failed to execute real sell order for {Symbol} (User {UserId})", position.Symbol, userId);
             await LogAuditAsync(position.Symbol, "SYSTEM_ERROR", currentLtp, position.Quantity, $"Real SELL execution error: {ex.Message}", userId);
             return false;
         }

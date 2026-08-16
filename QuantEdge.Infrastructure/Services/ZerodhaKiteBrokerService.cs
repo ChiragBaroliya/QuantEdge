@@ -22,6 +22,7 @@ namespace QuantEdge.Infrastructure.Services;
 public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBrokerService
 {
     private readonly IZerodhaSessionRepository _sessionRepository;
+    private readonly IRealTradeCacheService? _cacheService;
     private readonly BrokerConfig _config;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ZerodhaKiteBrokerService> _logger;
@@ -32,20 +33,32 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         IZerodhaSessionRepository sessionRepository,
         IOptions<BrokerConfig> config,
         IHttpClientFactory httpClientFactory,
-        ILogger<ZerodhaKiteBrokerService> logger)
+        ILogger<ZerodhaKiteBrokerService> logger,
+        IRealTradeCacheService? cacheService = null)
     {
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cacheService = cacheService;
     }
 
-    public async Task<(bool IsValid, string? AccessToken, string? ApiKey, string? Message)> ValidateSessionTokenAsync()
+    public async Task<(bool IsValid, string? AccessToken, string? ApiKey, string? Message)> ValidateSessionTokenAsync(int userId = 1)
     {
-        var session = await _sessionRepository.GetActiveSessionAsync();
+        // 1. Try RAM Cache first
+        var session = _cacheService?.GetUserSession(userId);
+        if (session == null)
+        {
+            session = await _sessionRepository.GetActiveSessionAsync(userId);
+            if (session != null && _cacheService != null)
+            {
+                _cacheService.SetUserSession(session);
+            }
+        }
+
         if (session == null || string.IsNullOrWhiteSpace(session.AccessToken))
         {
-            return (false, null, null, "No active Zerodha session token found in database. Please generate token in Token Manager.");
+            return (false, null, null, $"No active Zerodha session token found for user {userId}. Please click 'Connect Zerodha' on Auto Real Trade page.");
         }
 
         // Validate token was created after 6:00 AM IST on the current trading day
@@ -55,7 +68,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         if (indianTime.Date != nowIst.Date || indianTime < cutoff)
         {
-            return (false, null, null, $"Zerodha session token is stale (created {indianTime:yyyy-MM-dd hh:mm tt} IST). Fresh token post 6:00 AM IST required.");
+            return (false, null, null, $"Zerodha session token for user {userId} is stale (created {indianTime:yyyy-MM-dd hh:mm tt} IST). Fresh token post 6:00 AM IST required.");
         }
 
         string apiKey = !string.IsNullOrWhiteSpace(session.ApiKey) ? session.ApiKey : _config.ApiKey;
@@ -71,10 +84,10 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         string product = "CNC",
         int userId = 1)
     {
-        var tokenValidation = await ValidateSessionTokenAsync();
+        var tokenValidation = await ValidateSessionTokenAsync(userId);
         if (!tokenValidation.IsValid)
         {
-            _logger.LogWarning("PlaceLiveOrderAsync rejected: {Reason}", tokenValidation.Message);
+            _logger.LogWarning("PlaceLiveOrderAsync rejected for User {UserId}: {Reason}", userId, tokenValidation.Message);
             return (false, null, 0m, tokenValidation.Message);
         }
 
@@ -83,8 +96,8 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         string cleanSymbol = symbol.ToUpper().Trim();
         string kiteProduct = string.IsNullOrWhiteSpace(product) ? "CNC" : product.ToUpper().Trim();
 
-        _logger.LogInformation("[REAL MONEY LIVE ORDER] Placing KiteConnect order: {Symbol} {Side} Qty:{Qty} Product:{Product} @ ₹{Price:F2}",
-            cleanSymbol, transactionType, quantity, kiteProduct, price);
+        _logger.LogInformation("[REAL MONEY LIVE ORDER - User {UserId}] Placing KiteConnect order: {Symbol} {Side} Qty:{Qty} Product:{Product} @ ₹{Price:F2}",
+            userId, cleanSymbol, transactionType, quantity, kiteProduct, price);
 
         try
         {
@@ -113,7 +126,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
             var response = await client.PostAsync("https://api.kite.trade/orders/regular", requestContent);
             var responseJson = await response.Content.ReadAsStringAsync();
 
-            _logger.LogInformation("Zerodha Order Response: Code {Status}, Body: {Body}", response.StatusCode, responseJson);
+            _logger.LogInformation("Zerodha Order Response for User {UserId}: Code {Status}, Body: {Body}", userId, response.StatusCode, responseJson);
 
             if (response.IsSuccessStatusCode)
             {
@@ -140,20 +153,28 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
                 }
                 catch { }
 
-                _logger.LogError("Zerodha Order Placement Failed: {ErrorMsg}", errorMsg);
+                // Check for SEBI CDSL e-DIS / TPIN requirement
+                if (errorMsg.Contains("e-DIS", StringComparison.OrdinalIgnoreCase) ||
+                    errorMsg.Contains("TPIN", StringComparison.OrdinalIgnoreCase) ||
+                    errorMsg.Contains("authorization", StringComparison.OrdinalIgnoreCase))
+                {
+                    errorMsg = $"CDSL e-DIS / TPIN authorization required in Zerodha for selling {cleanSymbol}. Please authorize in Zerodha Kite holdings.";
+                }
+
+                _logger.LogError("Zerodha Order Placement Failed for User {UserId}: {ErrorMsg}", userId, errorMsg);
                 return (false, null, 0m, $"Zerodha Error: {errorMsg}");
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "HTTP Exception placing live order with Zerodha for {Symbol}", symbol);
+            _logger.LogError(ex, "HTTP Exception placing live order with Zerodha for User {UserId} on {Symbol}", userId, symbol);
             return (false, null, 0m, $"Network/API Exception: {ex.Message}");
         }
     }
 
     public async Task<(bool Success, string? Message)> CancelLiveOrderAsync(string brokerOrderId, int userId = 1)
     {
-        var tokenValidation = await ValidateSessionTokenAsync();
+        var tokenValidation = await ValidateSessionTokenAsync(userId);
         if (!tokenValidation.IsValid)
         {
             return (false, tokenValidation.Message);
@@ -169,12 +190,12 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
             var response = await client.DeleteAsync($"https://api.kite.trade/orders/regular/{brokerOrderId}");
             var responseJson = await response.Content.ReadAsStringAsync();
 
-            _logger.LogInformation("Zerodha Cancel Order Response #{OrderId}: Code {Status}, Body: {Body}", brokerOrderId, response.StatusCode, responseJson);
+            _logger.LogInformation("Zerodha Cancel Order Response #{OrderId} for User {UserId}: Code {Status}, Body: {Body}", brokerOrderId, userId, response.StatusCode, responseJson);
             return (response.IsSuccessStatusCode, response.IsSuccessStatusCode ? "Order cancelled" : responseJson);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error cancelling live order #{OrderId}", brokerOrderId);
+            _logger.LogError(ex, "Error cancelling live order #{OrderId} for User {UserId}", brokerOrderId, userId);
             return (false, ex.Message);
         }
     }
@@ -186,14 +207,13 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         string product = "CNC",
         int userId = 1)
     {
-        // Opposing side to exit: if holding BUY, sell to close; if holding SELL, buy to close
         TradeSide exitSide = positionSide == TradeSide.BUY ? TradeSide.SELL : TradeSide.BUY;
         return await PlaceLiveOrderAsync(symbol, exitSide, quantity, PaperOrderType.Market, 0m, product, userId);
     }
 
     public async Task<(bool Success, decimal AvailableCash, decimal UsedMargin, string? Message)> GetEquityMarginsAsync(int userId = 1)
     {
-        var tokenValidation = await ValidateSessionTokenAsync();
+        var tokenValidation = await ValidateSessionTokenAsync(userId);
         if (!tokenValidation.IsValid)
         {
             return (false, 0m, 0m, tokenValidation.Message);
@@ -241,7 +261,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error fetching live equity margins from Zerodha");
+            _logger.LogWarning(ex, "Error fetching live equity margins from Zerodha for User {UserId}", userId);
             return (false, 0m, 0m, ex.Message);
         }
     }

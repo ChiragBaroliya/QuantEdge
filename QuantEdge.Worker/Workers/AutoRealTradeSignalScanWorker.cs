@@ -41,7 +41,14 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
             {
                 using var scope = _serviceProvider.CreateScope();
                 var marketHoursService = scope.ServiceProvider.GetRequiredService<IMarketHoursService>();
+                var realTradeCache = scope.ServiceProvider.GetService<IRealTradeCacheService>();
                 bool isMarketOpen = await marketHoursService.IsWithinMarketHoursAsync();
+
+                // 1. Warmup Cache at 09:00 AM or if not warmed up during market hours
+                if (realTradeCache != null && (!realTradeCache.IsWarmedUp && isMarketOpen))
+                {
+                    await realTradeCache.WarmupMarketCacheAsync();
+                }
 
                 if (!isMarketOpen)
                 {
@@ -51,19 +58,14 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
                 else
                 {
                     var realTradeService = scope.ServiceProvider.GetRequiredService<IAutoRealTradeService>();
-                    var realTradeRepo = scope.ServiceProvider.GetRequiredService<IRealTradingRepository>();
-
-                    var activeUserSettings = (await realTradeRepo.GetActiveSettingsAsync()).ToList();
+                    var activeUserSettings = realTradeCache != null && realTradeCache.IsWarmedUp
+                        ? realTradeCache.GetActiveUsersSettings().ToList()
+                        : (await scope.ServiceProvider.GetRequiredService<IRealTradingRepository>().GetActiveSettingsAsync()).ToList();
 
                     if (activeUserSettings.Any())
                     {
-                        _logger.LogInformation("Executing 15-minute REAL MONEY Auto Trade Signal Scan for {UserCount} active user(s)...", activeUserSettings.Count);
-
-                        foreach (var userSettings in activeUserSettings)
-                        {
-                            if (stoppingToken.IsCancellationRequested) break;
-                            await RunRealSignalScanForUserAsync(scope.ServiceProvider, realTradeService, userSettings, stoppingToken);
-                        }
+                        _logger.LogInformation("Executing 15-minute Single-Pass REAL MONEY Scan over ~190 stocks for {UserCount} active user(s)...", activeUserSettings.Count);
+                        await RunSinglePassScanAndExecuteAsync(scope.ServiceProvider, realTradeService, activeUserSettings, stoppingToken);
                     }
                     else
                     {
@@ -84,10 +86,10 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
         }
     }
 
-    private async Task RunRealSignalScanForUserAsync(
+    private async Task RunSinglePassScanAndExecuteAsync(
         IServiceProvider provider,
         IAutoRealTradeService realTradeService,
-        RealTradeSettings settings,
+        List<RealTradeSettings> activeUserSettings,
         CancellationToken stoppingToken)
     {
         var stockRepo = provider.GetRequiredService<IStockMasterRepository>();
@@ -111,8 +113,8 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
                 .ToList();
         }
 
-        int buySignalsFound = 0;
-        int executedOrdersCount = 0;
+        // Single pass: collect candidate stocks
+        var candidateStocks = new List<(Domain.Entities.StockMaster Stock, decimal EntryPrice, int MetCount, int Score, bool IsBuySignal)>();
 
         foreach (var stock in activeStocks)
         {
@@ -138,28 +140,42 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
 
                 int metCount = evalResult.Checklist.MetCount;
 
-                if (evalResult.IsBuySignal || metCount >= settings.MinConditionsMatch)
+                // Threshold filter: Collect candidate if confirmed Buy or >= 6 criteria
+                if (evalResult.IsBuySignal || metCount >= 6)
                 {
-                    buySignalsFound++;
-                    _logger.LogInformation("REAL BUY Signal detected for {Symbol} for User '{UserId}' (Score: {Score}/100, Met: {MetCount}/{TotalCount}, Entry: ₹{Price:F2})",
-                        stock.Symbol, settings.UserId, evalResult.Score, metCount, evalResult.Checklist.TotalCount, evalResult.EntryPrice);
-
-                    bool executed = await realTradeService.EvaluateAndExecuteRealBuyAsync(
-                        stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId, evalResult.IsBuySignal);
-
-                    if (executed)
-                    {
-                        executedOrdersCount++;
-                    }
+                    candidateStocks.Add((stock, evalResult.EntryPrice, metCount, evalResult.Score, evalResult.IsBuySignal));
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error scanning symbol {Symbol} for user {UserId} during Real Auto Trade Scan.", stock.Symbol, settings.UserId);
+                _logger.LogWarning(ex, "Error scanning symbol {Symbol} during Single-Pass Real Auto Trade Scan.", stock.Symbol);
             }
         }
 
-        _logger.LogInformation("REAL Auto Trade Scan completed for User '{UserId}'. Analyzed {Total} stocks. Found {Signals} BUY signals, Executed {Executed} live orders.",
-            settings.UserId, activeStocks.Count, buySignalsFound, executedOrdersCount);
+        _logger.LogInformation("Single-Pass Scan identified {CandidateCount} candidate stocks. Distributing to {UserCount} active user(s)...",
+            candidateStocks.Count, activeUserSettings.Count);
+
+        // Distribute candidate signals to each active user based on their specific settings
+        foreach (var userSettings in activeUserSettings)
+        {
+            if (stoppingToken.IsCancellationRequested) break;
+
+            int executedOrdersCount = 0;
+            foreach (var candidate in candidateStocks)
+            {
+                if (candidate.IsBuySignal || candidate.MetCount >= userSettings.MinConditionsMatch)
+                {
+                    bool executed = await realTradeService.EvaluateAndExecuteRealBuyAsync(
+                        candidate.Stock.Symbol, candidate.EntryPrice, candidate.MetCount, userSettings.UserId, candidate.IsBuySignal);
+
+                    if (executed)
+                    {
+                        executedOrdersCount++;
+                        _logger.LogInformation("✅ Live BUY Executed for User {UserId}: {Symbol} @ ₹{Price:F2} (Score {Score}/100, Met {MetCount}/11)",
+                            userSettings.UserId, candidate.Stock.Symbol, candidate.EntryPrice, candidate.Score, candidate.MetCount);
+                    }
+                }
+            }
+        }
     }
 }

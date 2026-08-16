@@ -282,11 +282,17 @@ CREATE TABLE IF NOT EXISTS trading_signals (
 
 -- Table: zerodha_sessions
 CREATE TABLE IF NOT EXISTS zerodha_sessions (
+    user_id      INT          NOT NULL DEFAULT 1,
     api_key      VARCHAR(50)  PRIMARY KEY,
+    api_secret   VARCHAR(100),
     access_token VARCHAR(255) NOT NULL,
     is_active    BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+
+-- Migrations for existing databases
+ALTER TABLE zerodha_sessions ADD COLUMN IF NOT EXISTS user_id INT DEFAULT 1;
+ALTER TABLE zerodha_sessions ADD COLUMN IF NOT EXISTS api_secret VARCHAR(100);
 
 -- Table: stock_master
 CREATE TABLE IF NOT EXISTS stock_master (

@@ -109,6 +109,7 @@ public static class ServiceCollectionExtensions
 
         // Register Real Trading Infrastructure Services
         services.AddTransient<IRealTradingRepository, RealTradingRepository>();
+        services.AddSingleton<IRealTradeCacheService, RealTradeCacheService>();
         services.AddSingleton<IAutoRealTradeService, AutoRealTradeService>();
 
         services.AddTransient<ICandleSummaryService, CandleSummaryService>();

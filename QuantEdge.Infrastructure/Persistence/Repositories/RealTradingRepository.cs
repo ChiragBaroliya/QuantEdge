@@ -176,6 +176,14 @@ public class RealTradingRepository : IRealTradingRepository
         return await connection.QueryAsync<RealPosition>(sql, new { userId });
     }
 
+    public async Task<IEnumerable<RealPosition>> GetAllOpenPositionsAsync()
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = "SELECT * FROM fn_get_all_open_real_positions();";
+
+        return await connection.QueryAsync<RealPosition>(sql);
+    }
+
     public async Task ClosePositionAsync(int positionId, decimal exitPrice, decimal realizedPnl, string exitReason)
     {
         using var connection = _connectionFactory.CreateConnection();

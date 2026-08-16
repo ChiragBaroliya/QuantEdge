@@ -159,13 +159,16 @@ $$;
 
 
 -- ----------------------------------------------------------------------------
+-- ----------------------------------------------------------------------------
 -- Function: sp_activate_zerodha_token
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS sp_activate_zerodha_token CASCADE;
 DROP FUNCTION IF EXISTS sp_activate_zerodha_token(VARCHAR) CASCADE;
+DROP FUNCTION IF EXISTS sp_activate_zerodha_token(VARCHAR, INT) CASCADE;
 
 CREATE OR REPLACE FUNCTION sp_activate_zerodha_token(
-    p_api_key VARCHAR(50)
+    p_api_key VARCHAR(50),
+    p_user_id INT DEFAULT 1
 )
 RETURNS VARCHAR
 LANGUAGE plpgsql
@@ -175,7 +178,7 @@ DECLARE
     v_token_created   TIMESTAMP WITH TIME ZONE;
     v_access_token    VARCHAR(255);
 BEGIN
-    -- 6:00 AM IST = 00:30 UTC
+    -- 6:00 AM IST
     v_cutoff_time := (DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata')
                      + INTERVAL '6 hours')
                      AT TIME ZONE 'Asia/Kolkata';
@@ -183,23 +186,24 @@ BEGIN
     SELECT access_token, created_at
     INTO v_access_token, v_token_created
     FROM zerodha_sessions
-    WHERE api_key = p_api_key
+    WHERE api_key = p_api_key AND (user_id = p_user_id OR user_id = 1)
+    ORDER BY created_at DESC
     LIMIT 1;
 
     IF v_access_token IS NULL THEN
-        RAISE NOTICE 'sp_activate_zerodha_token: No session found for api_key %', p_api_key;
+        RAISE NOTICE 'sp_activate_zerodha_token: No session found for api_key % and user %', p_api_key, p_user_id;
         RETURN NULL;
     END IF;
 
     IF v_token_created >= v_cutoff_time THEN
         UPDATE zerodha_sessions
         SET is_active = TRUE
-        WHERE api_key = p_api_key;
+        WHERE api_key = p_api_key AND (user_id = p_user_id OR user_id = 1);
 
-        RAISE NOTICE 'sp_activate_zerodha_token: Token for api_key % activated (created_at: %)', p_api_key, v_token_created;
+        RAISE NOTICE 'sp_activate_zerodha_token: Token for user % activated (created_at: %)', p_user_id, v_token_created;
         RETURN v_access_token;
     ELSE
-        RAISE NOTICE 'sp_activate_zerodha_token: Token for api_key % is stale (created_at: %, cutoff: %). Not activating.', p_api_key, v_token_created, v_cutoff_time;
+        RAISE NOTICE 'sp_activate_zerodha_token: Token for user % is stale (created_at: %, cutoff: %). Not activating.', p_user_id, v_token_created, v_cutoff_time;
         RETURN NULL;
     END IF;
 END;
@@ -207,14 +211,21 @@ $$;
 
 
 -- ----------------------------------------------------------------------------
--- Function: sp_get_active_zerodha_session
+-- Function: fn_get_active_zerodha_session
 -- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_active_zerodha_session CASCADE;
+DROP FUNCTION IF EXISTS fn_get_active_zerodha_session() CASCADE;
+DROP FUNCTION IF EXISTS fn_get_active_zerodha_session(INT) CASCADE;
 DROP FUNCTION IF EXISTS sp_get_active_zerodha_session CASCADE;
 DROP FUNCTION IF EXISTS sp_get_active_zerodha_session() CASCADE;
 
-CREATE OR REPLACE FUNCTION sp_get_active_zerodha_session()
+CREATE OR REPLACE FUNCTION fn_get_active_zerodha_session(
+    p_user_id INT DEFAULT 1
+)
 RETURNS TABLE (
+    user_id      INT,
     api_key      VARCHAR(50),
+    api_secret   VARCHAR(100),
     access_token VARCHAR(255),
     is_active    BOOLEAN,
     created_at   TIMESTAMP WITH TIME ZONE
@@ -223,10 +234,123 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT s.api_key, s.access_token, s.is_active, s.created_at
+    SELECT COALESCE(s.user_id, 1), s.api_key, s.api_secret, s.access_token, s.is_active, s.created_at
+    FROM zerodha_sessions s
+    WHERE (s.user_id = p_user_id OR s.user_id = 1)
+    ORDER BY s.is_active DESC, s.created_at DESC
+    LIMIT 1;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_all_active_zerodha_sessions
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_all_active_zerodha_sessions CASCADE;
+DROP FUNCTION IF EXISTS fn_get_all_active_zerodha_sessions() CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_all_active_zerodha_sessions()
+RETURNS TABLE (
+    user_id      INT,
+    api_key      VARCHAR(50),
+    api_secret   VARCHAR(100),
+    access_token VARCHAR(255),
+    is_active    BOOLEAN,
+    created_at   TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT COALESCE(s.user_id, 1), s.api_key, s.api_secret, s.access_token, s.is_active, s.created_at
     FROM zerodha_sessions s
     WHERE s.is_active = TRUE
-    LIMIT 1;
+    ORDER BY s.created_at DESC;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_upsert_user_zerodha_session
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_upsert_user_zerodha_session CASCADE;
+DROP PROCEDURE IF EXISTS sp_upsert_user_zerodha_session(INT, VARCHAR, VARCHAR, VARCHAR) CASCADE;
+
+CREATE OR REPLACE PROCEDURE sp_upsert_user_zerodha_session(
+    p_user_id INT,
+    p_api_key VARCHAR(50),
+    p_api_secret VARCHAR(100),
+    p_access_token VARCHAR(255)
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO zerodha_sessions (user_id, api_key, api_secret, access_token, is_active, created_at)
+    VALUES (p_user_id, p_api_key, p_api_secret, p_access_token, TRUE, NOW())
+    ON CONFLICT (api_key) 
+    DO UPDATE SET 
+        user_id = EXCLUDED.user_id,
+        api_secret = COALESCE(EXCLUDED.api_secret, zerodha_sessions.api_secret),
+        access_token = EXCLUDED.access_token,
+        is_active = TRUE,
+        created_at = NOW();
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_all_open_real_positions
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_all_open_real_positions CASCADE;
+DROP FUNCTION IF EXISTS fn_get_all_open_real_positions() CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_all_open_real_positions()
+RETURNS TABLE (
+    id INT,
+    user_id INT,
+    symbol VARCHAR(50),
+    side INT,
+    quantity INT,
+    average_entry_price NUMERIC(18, 4),
+    current_price NUMERIC(18, 4),
+    unrealized_pnl NUMERIC(18, 4),
+    stop_loss NUMERIC(18, 4),
+    take_profit NUMERIC(18, 4),
+    trailing_stop_loss NUMERIC(18, 4),
+    status INT,
+    trade_type INT,
+    exit_reason VARCHAR(255),
+    realized_pnl NUMERIC(18, 4),
+    opened_at TIMESTAMP WITH TIME ZONE,
+    closed_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p.id,
+        p.user_id,
+        p.symbol,
+        p.side,
+        p.quantity,
+        p.average_entry_price,
+        p.current_price,
+        p.unrealized_pnl,
+        p.stop_loss,
+        p.take_profit,
+        p.trailing_stop_loss,
+        p.status,
+        p.trade_type,
+        p.exit_reason,
+        p.realized_pnl,
+        p.opened_at,
+        p.closed_at,
+        p.updated_at
+    FROM real_positions p
+    WHERE p.status = 0 -- OPEN
+    ORDER BY p.opened_at DESC;
 END;
 $$;
 

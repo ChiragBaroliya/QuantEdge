@@ -50,8 +50,15 @@ public class RealTradeController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        var updated = await _realTradeService.UpdateSettingsAsync(dto, GetCurrentUserId());
-        return Ok(updated);
+        try
+        {
+            var updated = await _realTradeService.UpdateSettingsAsync(dto, GetCurrentUserId());
+            return Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
     }
 
     /// <summary>

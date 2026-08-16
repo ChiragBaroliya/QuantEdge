@@ -38,49 +38,59 @@ public class AutoRealPositionMonitorWorker : BackgroundService
             {
                 using var scope = _serviceProvider.CreateScope();
                 var marketHoursService = scope.ServiceProvider.GetRequiredService<IMarketHoursService>();
-                if (await marketHoursService.IsWithinMarketHoursAsync())
+                var realTradeCache = scope.ServiceProvider.GetService<IRealTradeCacheService>();
+                bool isMarketOpen = await marketHoursService.IsWithinMarketHoursAsync();
+
+                if (isMarketOpen)
                 {
+                    // If not warmed up yet, warmup cache
+                    if (realTradeCache != null && !realTradeCache.IsWarmedUp)
+                    {
+                        await realTradeCache.WarmupMarketCacheAsync();
+                    }
+
                     var realTradeService = scope.ServiceProvider.GetRequiredService<IAutoRealTradeService>();
-                    var realTradeRepo = scope.ServiceProvider.GetRequiredService<IRealTradingRepository>();
-                    var wsService = scope.ServiceProvider.GetService<IWebSocketMarketDataService>();
                     var marketDataCache = scope.ServiceProvider.GetService<IMarketDataCacheService>();
 
-                    // Fetch OPEN Real Positions for active users
-                    var activeUsers = (await realTradeRepo.GetActiveSettingsAsync()).ToList();
-                    var userIds = activeUsers.Select(u => u.UserId).Distinct().ToList();
-                    if (!userIds.Contains(1)) userIds.Add(1);
+                    // Fetch all OPEN real positions from RAM (or DB fallback)
+                    var openRealPositions = realTradeCache != null && realTradeCache.IsWarmedUp
+                        ? realTradeCache.GetAllOpenPositions().ToList()
+                        : (await scope.ServiceProvider.GetRequiredService<IRealTradingRepository>().GetAllOpenPositionsAsync()).ToList();
 
-                    foreach (var uid in userIds)
+                    if (openRealPositions.Any())
                     {
-                        var openRealPositions = (await realTradeRepo.GetOpenPositionsAsync(uid)).ToList();
-
-                        if (openRealPositions.Any())
+                        foreach (var position in openRealPositions)
                         {
-                            foreach (var position in openRealPositions)
+                            if (stoppingToken.IsCancellationRequested) break;
+
+                            decimal ltp = 0m;
+                            if (marketDataCache != null)
                             {
-                                if (stoppingToken.IsCancellationRequested) break;
-
-                                decimal ltp = 0m;
-                                if (marketDataCache != null)
+                                var recentCandles = await marketDataCache.GetRecentCandlesAsync(position.Symbol, "1m", 1);
+                                if (recentCandles != null && recentCandles.Any())
                                 {
-                                    var recentCandles = await marketDataCache.GetRecentCandlesAsync(position.Symbol, "1m", 1);
-                                    if (recentCandles != null && recentCandles.Any())
-                                    {
-                                        ltp = recentCandles.First().Close;
-                                    }
-                                }
-
-                                if (ltp <= 0m)
-                                {
-                                    ltp = position.CurrentPrice > 0m ? position.CurrentPrice : position.AverageEntryPrice;
-                                }
-
-                                if (ltp > 0m)
-                                {
-                                    await realTradeService.EvaluateAndExecuteRealSellAsync(position, ltp, uid);
+                                    ltp = recentCandles.First().Close;
                                 }
                             }
+
+                            if (ltp <= 0m)
+                            {
+                                ltp = position.CurrentPrice > 0m ? position.CurrentPrice : position.AverageEntryPrice;
+                            }
+
+                            if (ltp > 0m)
+                            {
+                                await realTradeService.EvaluateAndExecuteRealSellAsync(position, ltp, position.UserId);
+                            }
                         }
+                    }
+                }
+                else
+                {
+                    // If market closed and cache is still warmed up, release it
+                    if (realTradeCache != null && realTradeCache.IsWarmedUp)
+                    {
+                        await realTradeCache.ReleaseMarketCacheAsync();
                     }
                 }
             }

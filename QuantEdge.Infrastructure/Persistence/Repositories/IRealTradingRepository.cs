@@ -25,6 +25,7 @@ public interface IRealTradingRepository
     Task<RealPosition?> GetOpenPositionByIdAsync(int positionId);
     Task<RealPosition?> GetOpenPositionBySymbolAsync(int userId, string symbol);
     Task<IEnumerable<RealPosition>> GetOpenPositionsAsync(int userId = 1);
+    Task<IEnumerable<RealPosition>> GetAllOpenPositionsAsync();
     Task ClosePositionAsync(int positionId, decimal exitPrice, decimal realizedPnl, string exitReason);
     Task UpdateTrailingStopLossAsync(int positionId, decimal newTrailingStopLoss);
 

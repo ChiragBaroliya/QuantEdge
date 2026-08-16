@@ -23,6 +23,14 @@ document.addEventListener("DOMContentLoaded", function () {
         modalKillSwitch = new bootstrap.Modal(killModalEl);
     }
 
+    // Check URL parameters for OAuth return
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("connected") === "true") {
+        const msg = urlParams.get("message") || "⚡ Zerodha Account Connected Successfully!";
+        showToastAlert(msg, "success");
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     loadDashboardData();
     setupEventListeners();
     setupSignalRHub();
@@ -48,6 +56,33 @@ async function loadDashboardData() {
 function updateDashboardUI(data) {
     if (!data) return;
 
+    // 0. Prerequisite Banners Control
+    const bannerTokenMissing = document.getElementById("banner-token-missing");
+    if (bannerTokenMissing) {
+        bannerTokenMissing.style.display = data.isBrokerTokenActive ? "none" : "flex";
+    }
+
+    const bannerMarketLock = document.getElementById("banner-market-locked");
+    if (bannerMarketLock) {
+        bannerMarketLock.style.display = data.isMarketOpen ? "flex" : "none";
+    }
+
+    // Lock/Unlock Settings Form based on Market Hours
+    const btnSave = document.getElementById("btnSaveSettings");
+    if (btnSave) {
+        if (data.isMarketOpen) {
+            btnSave.disabled = true;
+            btnSave.classList.add("disabled");
+            btnSave.title = "🔒 Settings are locked during market hours (09:15 AM - 03:30 PM IST)";
+            btnSave.innerHTML = "🔒 Settings Locked During Market Hours";
+        } else {
+            btnSave.disabled = false;
+            btnSave.classList.remove("disabled");
+            btnSave.title = "Save Risk & Strategy Settings";
+            btnSave.innerHTML = "💾 Save Risk & Strategy Settings";
+        }
+    }
+
     // 1. Status Badges & Counters
     const statusTextEl = document.getElementById("sys-status-text");
     if (statusTextEl) {
@@ -61,15 +96,22 @@ function updateDashboardUI(data) {
         }
     }
 
-    // Token Badge
+    // Token Badge & Connect Button
     const tokenBadge = document.getElementById("broker-token-badge");
+    const btnConnectHeader = document.getElementById("btnConnectZerodhaHeader");
     if (tokenBadge) {
         if (data.isBrokerTokenActive) {
             tokenBadge.className = "badge-token active";
-            tokenBadge.innerHTML = `<span class="token-dot"></span> Zerodha Token: Active (${data.brokerTokenCreatedIst || 'Today'})`;
+            tokenBadge.innerHTML = `<span class="token-dot"></span> Zerodha: Active (${data.brokerTokenCreatedIst || 'Today'})`;
+            if (btnConnectHeader) {
+                btnConnectHeader.style.display = "none";
+            }
         } else {
             tokenBadge.className = "badge-token expired";
-            tokenBadge.innerHTML = `<span class="token-dot"></span> Zerodha Token: Stale / Expired`;
+            tokenBadge.innerHTML = `<span class="token-dot"></span> Zerodha: Disconnected / Expired`;
+            if (btnConnectHeader) {
+                btnConnectHeader.style.display = "inline-flex";
+            }
         }
     }
 
@@ -413,6 +455,35 @@ function setupEventListeners() {
         });
     }
 
+    // Connect Zerodha Button Handlers
+    const handleConnectZerodha = async function () {
+        try {
+            const returnUrl = window.location.origin;
+            const res = await fetch(`${apiBaseUrl}/api/zerodha/login-url?returnUrl=${encodeURIComponent(returnUrl)}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.loginUrl) {
+                    window.location.href = data.loginUrl;
+                    return;
+                }
+            }
+            alert("Failed to retrieve Zerodha login URL from server.");
+        } catch (e) {
+            console.error("Connect Zerodha error:", e);
+            alert("Error initiating Zerodha connection.");
+        }
+    };
+
+    const btnHeaderConnect = document.getElementById("btnConnectZerodhaHeader");
+    if (btnHeaderConnect) {
+        btnHeaderConnect.addEventListener("click", handleConnectZerodha);
+    }
+
+    const btnBannerConnect = document.getElementById("btnBannerConnectZerodha");
+    if (btnBannerConnect) {
+        btnBannerConnect.addEventListener("click", handleConnectZerodha);
+    }
+
     // Master Real Trade Switch Toggle
     const chkToggle = document.getElementById("chkRealTradeToggle");
     if (chkToggle) {
@@ -427,7 +498,7 @@ function setupEventListeners() {
 
                 const resData = await response.json();
                 if (!response.ok) {
-                    alert(resData.message || "Failed to toggle live real trade switch");
+                    alert(resData.message || "⚠️ Zerodha Account Not Connected: Please click 'Connect Zerodha' before enabling Auto Real Trading.");
                     chkToggle.checked = !enabled;
                 } else {
                     loadDashboardData();
