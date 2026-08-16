@@ -9,7 +9,7 @@ public class AutoTradeSettings
     public bool IsAutoTradeEnabled { get; set; } = false;
     public decimal AvailableCapital { get; set; } = 100000.00m;
     public decimal ProfitTargetPct { get; set; } = 5.00m;
-    public decimal? StopLossPct { get; set; } = 3.00m;
+    public decimal? StopLossPct { get; set; }
     public int MaxDurationDays { get; set; } = 20;
     public int MaxTradesPerDay { get; set; } = 5;
     public decimal FixedAmountPerTrade { get; set; } = 20000.00m;

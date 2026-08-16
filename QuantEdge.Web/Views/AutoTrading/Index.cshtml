@@ -253,8 +253,13 @@
                         </div>
 
                         <div class="form-group col-half">
-                            <label class="form-label" title="Optional maximum loss percentage before auto selling to protect capital.">SL % (Optional)</label>
-                            <input type="number" id="txtStopLossPct" class="form-input" placeholder="Optional (e.g. 3.0)" step="0.01" title="Optional maximum loss percentage before auto selling to protect capital." />
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <label class="form-label mb-0" style="margin-bottom: 0;" title="Optional maximum loss percentage before auto selling to protect capital.">SL % (Optional)</label>
+                                <label class="optional-toggle-label" style="font-size: 11px; cursor: pointer; color: #94a3b8; margin-bottom: 0; display: flex; align-items: center; gap: 4px;">
+                                    <input type="checkbox" id="chkEnableStopLoss" style="cursor: pointer; width: 14px; height: 14px;" /> Enable SL
+                                </label>
+                            </div>
+                            <input type="number" id="txtStopLossPct" class="form-input" placeholder="Disabled (No Stop Loss)" step="0.01" min="0.1" max="100" title="Optional maximum loss percentage before auto selling to protect capital." disabled />
                         </div>
 
                         <div class="form-group col-half">

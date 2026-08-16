@@ -224,7 +224,17 @@ function populateSettingsForm(s) {
 
     const elCap = document.getElementById("txtCapital"); if (elCap) elCap.value = cap;
     const elTarget = document.getElementById("txtTargetPct"); if (elTarget) elTarget.value = target;
-    const elSl = document.getElementById("txtStopLossPct"); if (elSl) elSl.value = (sl !== null && sl !== undefined) ? sl : '';
+
+    const hasSL = sl !== null && sl !== undefined && Number(sl) > 0;
+    const chkSL = document.getElementById("chkEnableStopLoss");
+    const elSl = document.getElementById("txtStopLossPct");
+    if (chkSL) chkSL.checked = hasSL;
+    if (elSl) {
+        elSl.disabled = !hasSL;
+        elSl.value = hasSL ? sl : '';
+        elSl.placeholder = hasSL ? "e.g. 3.0" : "Disabled (No Stop Loss)";
+    }
+
     const elDur = document.getElementById("txtMaxDuration"); if (elDur) elDur.value = maxDur;
     const elTrd = document.getElementById("txtMaxTrades"); if (elTrd) elTrd.value = maxTrd;
     const elFixed = document.getElementById("txtFixedAmount"); if (elFixed) elFixed.value = fixedAmt;
@@ -632,14 +642,34 @@ function setupEventListeners() {
         });
     }
 
+    // Enable/Disable Stop Loss Toggle Handler
+    const chkSL = document.getElementById("chkEnableStopLoss");
+    const inpSL = document.getElementById("txtStopLossPct");
+    if (chkSL && inpSL) {
+        chkSL.addEventListener("change", function () {
+            inpSL.disabled = !this.checked;
+            if (this.checked) {
+                inpSL.placeholder = "e.g. 3.0";
+                if (!inpSL.value) inpSL.value = "3.0";
+                inpSL.focus();
+            } else {
+                inpSL.value = "";
+                inpSL.placeholder = "Disabled (No Stop Loss)";
+            }
+        });
+    }
+
     // Save Settings Form Handler
     const btnSave = document.getElementById("btnSaveSettings");
     if (btnSave) {
         btnSave.addEventListener("click", async function (e) {
             e.preventDefault();
 
+            const chkSLElem = document.getElementById("chkEnableStopLoss");
             const rawSl = document.getElementById("txtStopLossPct")?.value;
-            const parsedSl = (rawSl !== "" && rawSl !== null && rawSl !== undefined && !isNaN(rawSl)) ? parseFloat(rawSl) : null;
+            const parsedSl = (chkSLElem && chkSLElem.checked && rawSl !== "" && rawSl !== null && rawSl !== undefined && !isNaN(rawSl) && parseFloat(rawSl) > 0)
+                ? parseFloat(rawSl)
+                : null;
 
             const dto = {
                 isAutoTradeEnabled: document.getElementById("chkAutoTradeToggle").checked,

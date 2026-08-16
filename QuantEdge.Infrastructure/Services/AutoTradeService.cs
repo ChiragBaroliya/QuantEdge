@@ -62,7 +62,7 @@ public class AutoTradeService : IAutoTradeService
         existing.IsAutoTradeEnabled = updateDto.IsAutoTradeEnabled;
         existing.AvailableCapital = updateDto.AvailableCapital;
         existing.ProfitTargetPct = updateDto.ProfitTargetPct;
-        existing.StopLossPct = updateDto.StopLossPct;
+        existing.StopLossPct = (updateDto.StopLossPct.HasValue && updateDto.StopLossPct.Value > 0) ? updateDto.StopLossPct.Value : null;
         existing.MaxDurationDays = updateDto.MaxDurationDays;
         existing.MaxTradesPerDay = updateDto.MaxTradesPerDay;
         existing.FixedAmountPerTrade = updateDto.FixedAmountPerTrade;
