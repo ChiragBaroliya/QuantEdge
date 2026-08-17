@@ -89,6 +89,16 @@ public class RealTradeController : ControllerBase
     }
 
     /// <summary>
+    /// Lightweight fast endpoint for high-frequency (e.g. 5s) live positions, Zerodha MTM and P&L polling.
+    /// </summary>
+    [HttpGet("live-positions")]
+    public async Task<IActionResult> GetLivePositionsFast()
+    {
+        var liveData = await _realTradeService.GetLivePositionsFastAsync(GetCurrentUserId());
+        return Ok(liveData);
+    }
+
+    /// <summary>
     /// Fetches today's real trade execution logs.
     /// </summary>
     [HttpGet("logs")]

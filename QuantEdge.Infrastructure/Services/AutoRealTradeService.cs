@@ -171,13 +171,18 @@ public class AutoRealTradeService : IAutoRealTradeService
             todayTradeAmount = todayCount * settings.FixedAmountPerTrade;
         }
 
-        // Live Margin from Broker
+        // Live Margin, Positions & Portfolio P&L from Broker
         decimal availableMargin = settings.AvailableCapital;
         decimal usedMargin = 0m;
         var tokenValidation = await _brokerService.ValidateSessionTokenAsync(userId);
         string tokenCreatedIst = "N/A";
         string tokenExpiresIst = "N/A";
         string apiKey = string.Empty;
+        ZerodhaPositionsDto? brokerPositions = null;
+        List<ZerodhaHoldingDto>? brokerHoldings = null;
+        decimal zerodhaM2m = 0m;
+        decimal zerodhaRealizedPnl = 0m;
+        decimal zerodhaUnrealizedPnl = 0m;
 
         if (tokenValidation.IsValid)
         {
@@ -186,6 +191,21 @@ public class AutoRealTradeService : IAutoRealTradeService
             {
                 availableMargin = marginRes.AvailableCash;
                 usedMargin = marginRes.UsedMargin;
+            }
+
+            var posRes = await _brokerService.GetLivePositionsAsync(userId);
+            if (posRes.Success && posRes.Positions != null)
+            {
+                brokerPositions = posRes.Positions;
+                zerodhaM2m = posRes.Positions.TotalM2M;
+                zerodhaRealizedPnl = posRes.Positions.TotalRealizedPnl;
+                zerodhaUnrealizedPnl = posRes.Positions.TotalUnrealizedPnl;
+            }
+
+            var holdRes = await _brokerService.GetLiveHoldingsAsync(userId);
+            if (holdRes.Success && holdRes.Holdings != null)
+            {
+                brokerHoldings = holdRes.Holdings;
             }
 
             var activeSession = await _sessionRepository.GetActiveSessionAsync(userId);
@@ -238,7 +258,12 @@ public class AutoRealTradeService : IAutoRealTradeService
             NextRunTime = nextRunInfo.NextRunTime,
             NextRunSeconds = nextRunInfo.NextRunSeconds,
             NextRunFormatted = nextRunInfo.FormattedText,
-            IsMarketOpen = nextRunInfo.IsMarketOpen
+            IsMarketOpen = nextRunInfo.IsMarketOpen,
+            BrokerPositions = brokerPositions,
+            BrokerHoldings = brokerHoldings,
+            ZerodhaTotalM2M = zerodhaM2m,
+            ZerodhaRealizedPnl = zerodhaRealizedPnl,
+            ZerodhaUnrealizedPnl = zerodhaUnrealizedPnl
         };
     }
 
@@ -788,5 +813,68 @@ public class AutoRealTradeService : IAutoRealTradeService
                 _logger.LogWarning(ex, "Failed to broadcast real trade dashboard SignalR update.");
             }
         }
+    }
+
+    public async Task<RealTradeLivePositionsFastDto> GetLivePositionsFastAsync(int userId = 1)
+    {
+        var tokenValidation = await _brokerService.ValidateSessionTokenAsync(userId);
+        var positions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
+        decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
+        decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
+
+        decimal availableMargin = 0m;
+        decimal usedMargin = 0m;
+        ZerodhaPositionsDto? brokerPositions = null;
+        List<ZerodhaHoldingDto>? brokerHoldings = null;
+        decimal zerodhaM2m = 0m;
+        decimal zerodhaRealizedPnl = 0m;
+        decimal zerodhaUnrealizedPnl = 0m;
+
+        if (tokenValidation.IsValid)
+        {
+            var marginTask = _brokerService.GetEquityMarginsAsync(userId);
+            var posTask = _brokerService.GetLivePositionsAsync(userId);
+            var holdTask = _brokerService.GetLiveHoldingsAsync(userId);
+
+            await Task.WhenAll(marginTask, posTask, holdTask);
+
+            var marginRes = await marginTask;
+            if (marginRes.Success)
+            {
+                availableMargin = marginRes.AvailableCash;
+                usedMargin = marginRes.UsedMargin;
+            }
+
+            var posRes = await posTask;
+            if (posRes.Success && posRes.Positions != null)
+            {
+                brokerPositions = posRes.Positions;
+                zerodhaM2m = posRes.Positions.TotalM2M;
+                zerodhaRealizedPnl = posRes.Positions.TotalRealizedPnl;
+                zerodhaUnrealizedPnl = posRes.Positions.TotalUnrealizedPnl;
+            }
+
+            var holdRes = await holdTask;
+            if (holdRes.Success && holdRes.Holdings != null)
+            {
+                brokerHoldings = holdRes.Holdings;
+            }
+        }
+
+        return new RealTradeLivePositionsFastDto
+        {
+            Success = true,
+            IsBrokerTokenActive = tokenValidation.IsValid,
+            AvailableBrokerMargin = availableMargin,
+            UsedBrokerMargin = usedMargin,
+            ZerodhaTotalM2M = zerodhaM2m,
+            ZerodhaRealizedPnl = zerodhaRealizedPnl,
+            ZerodhaUnrealizedPnl = zerodhaUnrealizedPnl,
+            TotalUnrealizedPnl = unrealizedPnl,
+            TotalRealizedPnlToday = todayRealizedPnl,
+            BrokerPositions = brokerPositions,
+            BrokerHoldings = brokerHoldings,
+            OpenPositions = positions
+        };
     }
 }

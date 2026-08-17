@@ -266,6 +266,206 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         }
     }
 
+    public async Task<(bool Success, ZerodhaPositionsDto? Positions, string? Message)> GetLivePositionsAsync(int userId = 1)
+    {
+        var tokenValidation = await ValidateSessionTokenAsync(userId);
+        if (!tokenValidation.IsValid)
+        {
+            return (false, null, tokenValidation.Message);
+        }
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
+
+            var response = await client.GetAsync("https://api.kite.trade/portfolio/positions");
+            var responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to fetch positions from Zerodha for User {UserId}: Code {Status}", userId, response.StatusCode);
+                return (false, null, $"Zerodha Error: {response.StatusCode}");
+            }
+
+            using var doc = JsonDocument.Parse(responseJson);
+            if (doc.RootElement.TryGetProperty("data", out var dataElem))
+            {
+                var result = new ZerodhaPositionsDto();
+
+                if (dataElem.TryGetProperty("net", out var netElem) && netElem.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in netElem.EnumerateArray())
+                    {
+                        var pos = ParsePositionItem(item);
+                        if (pos != null)
+                        {
+                            result.Net.Add(pos);
+                        }
+                    }
+                }
+
+                if (dataElem.TryGetProperty("day", out var dayElem) && dayElem.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in dayElem.EnumerateArray())
+                    {
+                        var pos = ParsePositionItem(item);
+                        if (pos != null)
+                        {
+                            result.Day.Add(pos);
+                        }
+                    }
+                }
+
+                result.TotalM2M = result.Net.Sum(p => p.M2m);
+                result.TotalRealizedPnl = result.Net.Sum(p => p.Realised);
+                result.TotalUnrealizedPnl = result.Net.Sum(p => p.Unrealised);
+
+                return (true, result, "Positions fetched successfully.");
+            }
+
+            return (false, null, "Could not find 'data' in Zerodha positions response.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception fetching live positions from Zerodha for User {UserId}", userId);
+            return (false, null, ex.Message);
+        }
+    }
+
+    public async Task<(bool Success, List<ZerodhaHoldingDto>? Holdings, string? Message)> GetLiveHoldingsAsync(int userId = 1)
+    {
+        var tokenValidation = await ValidateSessionTokenAsync(userId);
+        if (!tokenValidation.IsValid)
+        {
+            return (false, null, tokenValidation.Message);
+        }
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
+
+            var response = await client.GetAsync("https://api.kite.trade/portfolio/holdings");
+            var responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to fetch holdings from Zerodha for User {UserId}: Code {Status}", userId, response.StatusCode);
+                return (false, null, $"Zerodha Error: {response.StatusCode}");
+            }
+
+            using var doc = JsonDocument.Parse(responseJson);
+            if (doc.RootElement.TryGetProperty("data", out var dataElem) && dataElem.ValueKind == JsonValueKind.Array)
+            {
+                var holdingsList = new List<ZerodhaHoldingDto>();
+                foreach (var item in dataElem.EnumerateArray())
+                {
+                    var h = new ZerodhaHoldingDto
+                    {
+                        TradingSymbol = GetJsonString(item, "tradingsymbol"),
+                        Exchange = GetJsonString(item, "exchange", "NSE"),
+                        Isin = GetJsonString(item, "isin"),
+                        Quantity = GetJsonInt(item, "quantity"),
+                        T1Quantity = GetJsonInt(item, "t1_quantity"),
+                        RealisedQuantity = GetJsonInt(item, "realised_quantity"),
+                        AveragePrice = GetJsonDecimal(item, "average_price"),
+                        LastPrice = GetJsonDecimal(item, "last_price"),
+                        ClosePrice = GetJsonDecimal(item, "close_price"),
+                        Pnl = GetJsonDecimal(item, "pnl"),
+                        DayChange = GetJsonDecimal(item, "day_change"),
+                        DayChangePercentage = GetJsonDecimal(item, "day_change_percentage"),
+                        Value = GetJsonDecimal(item, "value")
+                    };
+
+                    if (h.Value == 0m && h.Quantity > 0 && h.LastPrice > 0)
+                    {
+                        h.Value = h.Quantity * h.LastPrice;
+                    }
+
+                    holdingsList.Add(h);
+                }
+
+                return (true, holdingsList, "Holdings fetched successfully.");
+            }
+
+            return (false, null, "Could not find 'data' in Zerodha holdings response.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception fetching live holdings from Zerodha for User {UserId}", userId);
+            return (false, null, ex.Message);
+        }
+    }
+
+    private static ZerodhaPositionItemDto? ParsePositionItem(JsonElement item)
+    {
+        try
+        {
+            var symbol = GetJsonString(item, "tradingsymbol");
+            if (string.IsNullOrWhiteSpace(symbol)) return null;
+
+            return new ZerodhaPositionItemDto
+            {
+                TradingSymbol = symbol,
+                Exchange = GetJsonString(item, "exchange", "NSE"),
+                Product = GetJsonString(item, "product", "CNC"),
+                Quantity = GetJsonInt(item, "quantity"),
+                BuyQuantity = GetJsonInt(item, "buy_quantity"),
+                SellQuantity = GetJsonInt(item, "sell_quantity"),
+                BuyPrice = GetJsonDecimal(item, "buy_price"),
+                SellPrice = GetJsonDecimal(item, "sell_price"),
+                BuyValue = GetJsonDecimal(item, "buy_value"),
+                SellValue = GetJsonDecimal(item, "sell_value"),
+                LastPrice = GetJsonDecimal(item, "last_price"),
+                ClosePrice = GetJsonDecimal(item, "close_price"),
+                Pnl = GetJsonDecimal(item, "pnl"),
+                M2m = GetJsonDecimal(item, "m2m"),
+                Realised = GetJsonDecimal(item, "realised"),
+                Unrealised = GetJsonDecimal(item, "unrealised"),
+                Value = GetJsonDecimal(item, "value"),
+                Multiplier = GetJsonDecimal(item, "multiplier", 1m)
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string GetJsonString(JsonElement elem, string propName, string defaultValue = "")
+    {
+        if (elem.TryGetProperty(propName, out var prop) && prop.ValueKind == JsonValueKind.String)
+        {
+            return prop.GetString() ?? defaultValue;
+        }
+        return defaultValue;
+    }
+
+    private static int GetJsonInt(JsonElement elem, string propName, int defaultValue = 0)
+    {
+        if (elem.TryGetProperty(propName, out var prop))
+        {
+            if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var val)) return val;
+            if (prop.ValueKind == JsonValueKind.String && int.TryParse(prop.GetString(), out var parsed)) return parsed;
+        }
+        return defaultValue;
+    }
+
+    private static decimal GetJsonDecimal(JsonElement elem, string propName, decimal defaultValue = 0m)
+    {
+        if (elem.TryGetProperty(propName, out var prop))
+        {
+            if (prop.ValueKind == JsonValueKind.Number && prop.TryGetDecimal(out var val)) return val;
+            if (prop.ValueKind == JsonValueKind.String && decimal.TryParse(prop.GetString(), out var parsed)) return parsed;
+        }
+        return defaultValue;
+    }
+
     // ITradingBrokerService compatibility methods
     public async Task<PaperOrder> PlaceOrderAsync(PlacePaperOrderDto dto, string userId = "default_user", decimal currentLtp = 0m)
     {

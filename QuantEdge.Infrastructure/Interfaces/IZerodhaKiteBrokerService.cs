@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.DTOs;
 
 namespace QuantEdge.Infrastructure.Interfaces;
 
@@ -44,4 +45,14 @@ public interface IZerodhaKiteBrokerService
     /// Retrieves live available and used equity margins directly from Zerodha Kite Connect (GET /user/margins/equity).
     /// </summary>
     Task<(bool Success, decimal AvailableCash, decimal UsedMargin, string? Message)> GetEquityMarginsAsync(int userId = 1);
+
+    /// <summary>
+    /// Retrieves live day & net open positions and real-time P&L directly from Zerodha (GET /portfolio/positions).
+    /// </summary>
+    Task<(bool Success, ZerodhaPositionsDto? Positions, string? Message)> GetLivePositionsAsync(int userId = 1);
+
+    /// <summary>
+    /// Retrieves active demat equity holdings and long-term P&L directly from Zerodha (GET /portfolio/holdings).
+    /// </summary>
+    Task<(bool Success, List<ZerodhaHoldingDto>? Holdings, string? Message)> GetLiveHoldingsAsync(int userId = 1);
 }

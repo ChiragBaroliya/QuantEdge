@@ -36,4 +36,9 @@ public interface IAutoRealTradeService
     /// Squares off an individual real position on demand.
     /// </summary>
     Task<bool> SquareOffSinglePositionAsync(int positionId, string reason = "Manual Exit", int userId = 1);
+
+    /// <summary>
+    /// Lightweight fast endpoint handler for high-frequency (e.g. 5-second) polling of Zerodha live positions, MTM, and P&L.
+    /// </summary>
+    Task<RealTradeLivePositionsFastDto> GetLivePositionsFastAsync(int userId = 1);
 }

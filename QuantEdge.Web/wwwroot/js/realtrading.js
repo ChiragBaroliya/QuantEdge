@@ -9,6 +9,11 @@ let countdownInterval = null;
 let modalSquareOff = null;
 let modalKillSwitch = null;
 
+// Smart Polling Manager
+let pollingTimer = null;
+let pollingIntervalMs = 5000; // 5s ultra-fast live polling by default
+let isPollingInFlight = false;
+
 document.addEventListener("DOMContentLoaded", function () {
     const configElem = document.getElementById("realtrade-config");
     if (configElem) {
@@ -38,12 +43,113 @@ document.addEventListener("DOMContentLoaded", function () {
     loadDashboardData();
     setupEventListeners();
     setupSignalRHub();
+    startSmartPolling();
 
-    // Auto-refresh fallback every 15s
-    setInterval(() => {
-        loadDashboardData();
-    }, 15000);
+    // Page Visibility listener: Pause when tab is minimized, instant refresh when focused
+    document.addEventListener("visibilitychange", function () {
+        if (document.hidden) {
+            stopSmartPolling();
+            updateLiveSyncBadge(false, "Tab Inactive");
+        } else {
+            loadLivePositionsFast();
+            startSmartPolling();
+        }
+    });
 });
+
+function startSmartPolling() {
+    stopSmartPolling();
+    if (pollingIntervalMs <= 0) {
+        updateLiveSyncBadge(false, "Paused");
+        return;
+    }
+
+    updateLiveSyncBadge(true, `Live (${pollingIntervalMs / 1000}s)`);
+    pollingTimer = setInterval(() => {
+        if (!document.hidden && !isPollingInFlight) {
+            loadLivePositionsFast();
+        }
+    }, pollingIntervalMs);
+}
+
+function stopSmartPolling() {
+    if (pollingTimer) {
+        clearInterval(pollingTimer);
+        pollingTimer = null;
+    }
+}
+
+function updateLiveSyncBadge(isActive, text) {
+    const indicator = document.getElementById("liveSyncIndicator");
+    const label = document.getElementById("liveSyncText");
+    if (indicator && label) {
+        if (isActive) {
+            indicator.classList.remove("paused");
+        } else {
+            indicator.classList.add("paused");
+        }
+        label.innerText = text;
+    }
+}
+
+async function loadLivePositionsFast() {
+    if (isPollingInFlight) return;
+    isPollingInFlight = true;
+
+    try {
+        const response = await fetch(`${apiBaseUrl}/api/realtrade/live-positions`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (data && data.success) {
+            updateFastPositionsUI(data);
+        }
+    } catch (err) {
+        console.debug("Fast positions poll skip:", err);
+    } finally {
+        isPollingInFlight = false;
+    }
+}
+
+function updateFastPositionsUI(data) {
+    // 1. Margin & P&L Cards
+    const availMarginEl = document.getElementById("stat-available-margin");
+    if (availMarginEl) availMarginEl.innerText = formatCurrency(data.availableBrokerMargin);
+
+    const usedMarginEl = document.getElementById("stat-used-margin");
+    if (usedMarginEl) usedMarginEl.innerText = formatCurrency(data.usedBrokerMargin);
+
+    const unrealPnlEl = document.getElementById("stat-unrealized-pnl");
+    if (unrealPnlEl) {
+        unrealPnlEl.innerText = formatCurrencyWithSign(data.totalUnrealizedPnl);
+        unrealPnlEl.style.color = data.totalUnrealizedPnl >= 0 ? "#34d399" : "#f87171";
+    }
+
+    const zerodhaM2mEl = document.getElementById("stat-zerodha-m2m");
+    if (zerodhaM2mEl) {
+        zerodhaM2mEl.innerText = formatCurrencyWithSign(data.zerodhaTotalM2M);
+        zerodhaM2mEl.style.color = data.zerodhaTotalM2M >= 0 ? "#34d399" : "#f87171";
+    }
+
+    const zerodhaRealPnlEl = document.getElementById("stat-zerodha-realized-pnl");
+    if (zerodhaRealPnlEl) {
+        zerodhaRealPnlEl.innerText = formatCurrencyWithSign(data.zerodhaRealizedPnl);
+        zerodhaRealPnlEl.style.color = data.zerodhaRealizedPnl >= 0 ? "#34d399" : "#f87171";
+    }
+
+    const statOpenCount = document.getElementById("stat-open-count");
+    if (statOpenCount) statOpenCount.innerText = (data.openPositions || []).length;
+
+    const badgeBotCount = document.getElementById("badge-bot-count");
+    if (badgeBotCount) badgeBotCount.innerText = (data.openPositions || []).length;
+
+    // 2. Refresh Tables
+    renderOpenPositions(data.openPositions || []);
+    renderZerodhaPositions(data.brokerPositions);
+    if (data.brokerHoldings && data.brokerHoldings.length > 0) {
+        renderZerodhaHoldings(data.brokerHoldings);
+    }
+}
 
 async function loadDashboardData() {
     try {
@@ -152,10 +258,28 @@ function updateDashboardUI(data) {
         openCountEl.innerText = (data.openPositions || []).length;
     }
 
+    const badgeBotCount = document.getElementById("badge-bot-count");
+    if (badgeBotCount) {
+        badgeBotCount.innerText = (data.openPositions || []).length;
+    }
+
     const unrealPnlEl = document.getElementById("stat-unrealized-pnl");
     if (unrealPnlEl) {
         unrealPnlEl.innerText = formatCurrencyWithSign(data.totalUnrealizedPnl);
         unrealPnlEl.style.color = data.totalUnrealizedPnl >= 0 ? "#34d399" : "#f87171";
+    }
+
+    // Zerodha Live Broker Metrics
+    const zerodhaM2mEl = document.getElementById("stat-zerodha-m2m");
+    if (zerodhaM2mEl) {
+        zerodhaM2mEl.innerText = formatCurrencyWithSign(data.zerodhaTotalM2M);
+        zerodhaM2mEl.style.color = data.zerodhaTotalM2M >= 0 ? "#34d399" : "#f87171";
+    }
+
+    const zerodhaRealPnlEl = document.getElementById("stat-zerodha-realized-pnl");
+    if (zerodhaRealPnlEl) {
+        zerodhaRealPnlEl.innerText = formatCurrencyWithSign(data.zerodhaRealizedPnl);
+        zerodhaRealPnlEl.style.color = data.zerodhaRealizedPnl >= 0 ? "#34d399" : "#f87171";
     }
 
     const todayCountEl = document.getElementById("stat-today-trade-count");
@@ -179,8 +303,12 @@ function updateDashboardUI(data) {
         populateSettingsForm(data.settings);
     }
 
-    // 4. Populate Open Real Positions
+    // 4. Populate Open Real Positions (Bot DB)
     renderOpenPositions(data.openPositions || []);
+
+    // 4b. Populate Zerodha Live Broker Positions & Holdings
+    renderZerodhaPositions(data.brokerPositions);
+    renderZerodhaHoldings(data.brokerHoldings);
 
     // 5. Populate Recent Orders
     renderRecentOrders(data.recentOrders || []);
@@ -328,6 +456,93 @@ function renderFilteredOpenPositions(positions) {
                         Exit / Sell
                     </button>
                 </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+function renderZerodhaPositions(brokerPositions) {
+    const tbody = document.getElementById("zerodhaPositionsTableBody");
+    const badgeZerodhaCount = document.getElementById("badge-zerodha-count");
+    if (!tbody) return;
+
+    const netPositions = (brokerPositions && brokerPositions.net) ? brokerPositions.net : [];
+    if (badgeZerodhaCount) {
+        badgeZerodhaCount.innerText = netPositions.length;
+    }
+
+    if (!brokerPositions || netPositions.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No live open positions in Zerodha account.</td></tr>`;
+        return;
+    }
+
+    let html = "";
+    netPositions.forEach(p => {
+        const pnl = p.pnl || 0;
+        const m2m = p.m2m || 0;
+        const pnlClass = pnl >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
+        const m2mClass = m2m >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
+        const buyPrice = p.buyPrice > 0 ? `₹${p.buyPrice.toFixed(2)}` : "-";
+        const sellPrice = p.sellPrice > 0 ? `₹${p.sellPrice.toFixed(2)}` : "-";
+        const ltp = p.lastPrice > 0 ? `₹${p.lastPrice.toFixed(2)}` : "-";
+        const prodBadge = p.product === "MIS" 
+            ? '<span class="badge bg-warning text-dark">MIS (Intraday)</span>' 
+            : '<span class="badge bg-info text-dark">CNC (Delivery)</span>';
+
+        html += `
+            <tr>
+                <td><strong class="text-white">${p.tradingSymbol}</strong> <small style="color: #cbd5e1;">(${p.exchange})</small></td>
+                <td>${prodBadge}</td>
+                <td><strong class="text-white">${p.quantity}</strong></td>
+                <td class="text-white">${buyPrice}</td>
+                <td class="text-white">${sellPrice}</td>
+                <td><strong class="text-white">${ltp}</strong></td>
+                <td class="${m2mClass}">${formatCurrencyWithSign(m2m)}</td>
+                <td class="text-white">${formatCurrencyWithSign(p.unrealised)}</td>
+                <td class="text-white">${formatCurrencyWithSign(p.realised)}</td>
+                <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+function renderZerodhaHoldings(holdings) {
+    const tbody = document.getElementById("zerodhaHoldingsTableBody");
+    const badgeHoldingsCount = document.getElementById("badge-holdings-count");
+    if (!tbody) return;
+
+    const holdingsList = holdings || [];
+    if (badgeHoldingsCount) {
+        badgeHoldingsCount.innerText = holdingsList.length;
+    }
+
+    if (holdingsList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No demat equity holdings found in Zerodha.</td></tr>`;
+        return;
+    }
+
+    let html = "";
+    holdingsList.forEach(h => {
+        const pnl = h.pnl || 0;
+        const pnlClass = pnl >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
+        const dayChangeClass = (h.dayChange || 0) >= 0 ? "text-success" : "text-danger";
+        const invested = (h.averagePrice * h.quantity) || 0;
+        const currVal = h.value > 0 ? h.value : (h.lastPrice * h.quantity);
+
+        html += `
+            <tr>
+                <td><strong class="text-white">${h.tradingSymbol}</strong> <small style="color: #cbd5e1;">(${h.exchange})</small></td>
+                <td><strong class="text-white">${h.quantity}</strong></td>
+                <td class="text-white">₹${h.averagePrice.toFixed(2)}</td>
+                <td><strong class="text-white">₹${h.lastPrice.toFixed(2)}</strong></td>
+                <td class="text-white">₹${invested.toFixed(2)}</td>
+                <td class="text-white fw-bold">₹${currVal.toFixed(2)}</td>
+                <td class="${dayChangeClass}">${formatCurrencyWithSign(h.dayChange)} (${h.dayChangePercentage.toFixed(2)}%)</td>
+                <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
             </tr>
         `;
     });
@@ -654,11 +869,28 @@ function setupEventListeners() {
         });
     }
 
-    // Refresh Positions Button
+    // Auto-Refresh Interval Selector
+    const selInterval = document.getElementById("selAutoRefreshInterval");
+    if (selInterval) {
+        selInterval.addEventListener("change", function () {
+            pollingIntervalMs = parseInt(this.value, 10);
+            startSmartPolling();
+        });
+    }
+
+    // Refresh Positions / Sync Now Button
     const btnRefresh = document.getElementById("btnRefreshPositions");
     if (btnRefresh) {
-        btnRefresh.addEventListener("click", function () {
-            loadDashboardData();
+        btnRefresh.addEventListener("click", async function () {
+            const originalText = this.innerHTML;
+            this.disabled = true;
+            this.innerHTML = "⏳ Syncing...";
+            try {
+                await Promise.all([loadDashboardData(), loadLivePositionsFast()]);
+            } finally {
+                this.disabled = false;
+                this.innerHTML = originalText;
+            }
         });
     }
 }

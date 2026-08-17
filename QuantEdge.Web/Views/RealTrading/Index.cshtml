@@ -126,12 +126,20 @@
                     <div class="stat-label">Used Margin</div>
                     <div class="stat-value" id="stat-used-margin" style="color: #f59e0b;">₹0.00</div>
                 </div>
-                <div class="stat-card" title="Open Real stock positions.">
-                    <div class="stat-label">Open Real Positions</div>
+                <div class="stat-card highlight-card" title="Real-time MTM (Mark to Market) Profit/Loss directly from Zerodha Broker API.">
+                    <div class="stat-label">Zerodha Live MTM</div>
+                    <div class="stat-value" id="stat-zerodha-m2m" style="color: #38bdf8; font-weight: 700;">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Realized profit/loss closed today directly from Zerodha Broker API.">
+                    <div class="stat-label">Zerodha Realized P&L</div>
+                    <div class="stat-value" id="stat-zerodha-realized-pnl" style="color: #34d399;">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Open Real stock positions in Bot.">
+                    <div class="stat-label">Bot Open Positions</div>
                     <div class="stat-value" id="stat-open-count">0</div>
                 </div>
-                <div class="stat-card" title="Live unrealized profit or loss across open real positions.">
-                    <div class="stat-label">Unrealized P&L</div>
+                <div class="stat-card" title="Live unrealized profit or loss across open bot positions.">
+                    <div class="stat-label">Bot Unrealized P&L</div>
                     <div class="stat-value" id="stat-unrealized-pnl">₹0.00</div>
                 </div>
             </div>
@@ -151,8 +159,8 @@
                     <div class="stat-label">Today Deployed Capital</div>
                     <div class="stat-value" id="stat-today-used-amount" style="color: #38bdf8;">₹0.00</div>
                 </div>
-                <div class="stat-card" title="Realized profit or loss from live trades closed today.">
-                    <div class="stat-label">Today's Realized P&L</div>
+                <div class="stat-card" title="Realized profit or loss from live trades closed today in Bot DB.">
+                    <div class="stat-label">Bot Realized P&L Today</div>
                     <div class="stat-value" id="stat-realized-pnl">₹0.00</div>
                 </div>
             </div>
@@ -163,67 +171,163 @@
     <div class="autotrade-grid">
         <!-- Left Column: Tables & Console -->
         <div class="autotrade-main-col">
-            <!-- Open Real Positions Card -->
+            <!-- Open Real Positions & Zerodha Live Positions Card -->
             <div class="card-box">
-                <div class="card-box-header">
-                    <h3 class="card-title">⚡ Open Real Positions <span class="card-subtitle-inline">(Live Broker Ticks)</span></h3>
+                <div class="card-box-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                     <div class="d-flex align-items-center gap-2">
-                        <span class="card-badge-info d-none d-sm-inline-block">Real Money Execution</span>
-                        <button class="btn btn-sm btn-outline-secondary" id="btnRefreshPositions" title="Refresh Positions">
-                            🔄 Refresh
+                        <ul class="nav nav-pills qe-nav-pills" id="positionTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="tab-bot-positions" data-bs-toggle="pill" data-bs-target="#content-bot-positions" type="button" role="tab">
+                                    ⚡ Bot Positions (<span id="badge-bot-count">0</span>)
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="tab-zerodha-positions" data-bs-toggle="pill" data-bs-target="#content-zerodha-positions" type="button" role="tab">
+                                    🏦 Zerodha Live Positions (<span id="badge-zerodha-count">0</span>)
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="tab-zerodha-holdings" data-bs-toggle="pill" data-bs-target="#content-zerodha-holdings" type="button" role="tab">
+                                    📦 Zerodha Holdings (<span id="badge-holdings-count">0</span>)
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <div class="live-sync-indicator" id="liveSyncIndicator" title="Live Broker Polling Status">
+                            <span class="live-pulse-dot"></span>
+                            <span class="live-sync-text" id="liveSyncText">Live (5s)</span>
+                        </div>
+                        <select class="form-select form-select-sm qe-search-select" id="selAutoRefreshInterval" style="width: auto; font-size: 11.5px; height: 30px;" title="Set Auto-Refresh frequency for live positions & P&L">
+                            <option value="5000" selected>⚡ Auto 5s</option>
+                            <option value="10000">⏱️ Auto 10s</option>
+                            <option value="15000">⏱️ Auto 15s</option>
+                            <option value="0">⏸️ Paused</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline-secondary" id="btnRefreshPositions" title="Click for immediate instant sync">
+                            🔄 Sync Now
                         </button>
                     </div>
                 </div>
 
-                <!-- Advance Search & Filter Bar for Positions -->
-                <div class="advance-search-bar mb-3">
-                    <div class="row g-2 align-items-center">
-                        <div class="col-12 col-md-5">
-                            <div class="input-group input-group-sm">
-                                <span class="input-group-text bg-dark border-secondary text-light">🔍</span>
-                                <input type="text" class="form-control form-control-sm qe-search-input" id="inpSearchPositions" placeholder="Search by Stock Symbol (e.g. RELIANCE, TCS)..." />
+                <div class="tab-content mt-3" id="positionTabContent">
+                    <!-- Tab 1: Bot DB Positions -->
+                    <div class="tab-pane fade show active" id="content-bot-positions" role="tabpanel">
+                        <!-- Advance Search & Filter Bar for Bot Positions -->
+                        <div class="advance-search-bar mb-3">
+                            <div class="row g-2 align-items-center">
+                                <div class="col-12 col-md-5">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-dark border-secondary text-light">🔍</span>
+                                        <input type="text" class="form-control form-control-sm qe-search-input" id="inpSearchPositions" placeholder="Search Bot Positions (e.g. RELIANCE)..." />
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <select class="form-select form-select-sm qe-search-select" id="selFilterPosSide">
+                                        <option value="">All Sides (BUY / SELL)</option>
+                                        <option value="BUY">BUY Only</option>
+                                        <option value="SELL">SELL Only</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-4">
+                                    <select class="form-select form-select-sm qe-search-select" id="selFilterPosPnl">
+                                        <option value="">All P&L (Profit / Loss)</option>
+                                        <option value="PROFIT">📈 In Profit Only</option>
+                                        <option value="LOSS">📉 In Loss Only</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-3">
-                            <select class="form-select form-select-sm qe-search-select" id="selFilterPosSide">
-                                <option value="">All Sides (BUY / SELL)</option>
-                                <option value="BUY">BUY Only</option>
-                                <option value="SELL">SELL Only</option>
-                            </select>
-                        </div>
-                        <div class="col-6 col-md-4">
-                            <select class="form-select form-select-sm qe-search-select" id="selFilterPosPnl">
-                                <option value="">All P&L (Profit / Loss)</option>
-                                <option value="PROFIT">📈 In Profit Only</option>
-                                <option value="LOSS">📉 In Loss Only</option>
-                            </select>
+
+                        <div class="table-responsive-wrapper">
+                            <div class="table-responsive">
+                                <table class="qe-table">
+                                    <thead>
+                                        <tr>
+                                            <th>SYMBOL</th>
+                                            <th>SIDE</th>
+                                            <th>QTY</th>
+                                            <th>AVG ENTRY</th>
+                                            <th>CURRENT LTP</th>
+                                            <th>TARGET</th>
+                                            <th>STOP LOSS</th>
+                                            <th>TRAILING SL</th>
+                                            <th>P&L (₹)</th>
+                                            <th>ACTION</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="openPositionsTableBody">
+                                        <tr>
+                                            <td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">Loading open real positions...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div class="table-responsive-wrapper">
-                    <div class="table-responsive">
-                        <table class="qe-table">
-                            <thead>
-                                <tr>
-                                    <th>SYMBOL</th>
-                                    <th>SIDE</th>
-                                    <th>QTY</th>
-                                    <th>AVG ENTRY</th>
-                                    <th>CURRENT LTP</th>
-                                    <th>TARGET</th>
-                                    <th>STOP LOSS</th>
-                                    <th>TRAILING SL</th>
-                                    <th>P&L (₹)</th>
-                                    <th>ACTION</th>
-                                </tr>
-                            </thead>
-                            <tbody id="openPositionsTableBody">
-                                <tr>
-                                    <td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">Loading open real positions...</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <!-- Tab 2: Zerodha Direct Live Positions -->
+                    <div class="tab-pane fade" id="content-zerodha-positions" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Live day and net positions directly from Zerodha Kite REST API (/portfolio/positions)</small>
+                            <span class="badge bg-dark border border-secondary text-info">Live Broker Feed</span>
+                        </div>
+                        <div class="table-responsive-wrapper">
+                            <div class="table-responsive">
+                                <table class="qe-table">
+                                    <thead>
+                                        <tr>
+                                            <th>SYMBOL</th>
+                                            <th>PRODUCT</th>
+                                            <th>QTY</th>
+                                            <th>BUY PRICE</th>
+                                            <th>SELL PRICE</th>
+                                            <th>LTP</th>
+                                            <th>M2M (₹)</th>
+                                            <th>UNREALISED</th>
+                                            <th>REALISED</th>
+                                            <th>TOTAL P&L (₹)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="zerodhaPositionsTableBody">
+                                        <tr>
+                                            <td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">Connect Zerodha to view live broker positions.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab 3: Zerodha Direct Holdings -->
+                    <div class="tab-pane fade" id="content-zerodha-holdings" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Demat equity holdings directly from Zerodha Kite REST API (/portfolio/holdings)</small>
+                            <span class="badge bg-dark border border-secondary text-success">Demat Portfolio</span>
+                        </div>
+                        <div class="table-responsive-wrapper">
+                            <div class="table-responsive">
+                                <table class="qe-table">
+                                    <thead>
+                                        <tr>
+                                            <th>SYMBOL</th>
+                                            <th>QTY (DEMAT)</th>
+                                            <th>AVG PRICE</th>
+                                            <th>CURRENT LTP</th>
+                                            <th>INVESTED (₹)</th>
+                                            <th>CURRENT VALUE</th>
+                                            <th>DAY CHANGE</th>
+                                            <th>TOTAL P&L (₹)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="zerodhaHoldingsTableBody">
+                                        <tr>
+                                            <td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">Connect Zerodha to view live demat holdings.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

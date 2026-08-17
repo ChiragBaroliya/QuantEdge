@@ -73,6 +73,61 @@ public class RealTradeDashboardDto
     public int NextRunSeconds { get; set; }
     public string NextRunFormatted { get; set; } = string.Empty;
     public bool IsMarketOpen { get; set; }
+
+    // Live Zerodha Broker P&L & Positions
+    public ZerodhaPositionsDto? BrokerPositions { get; set; }
+    public List<ZerodhaHoldingDto>? BrokerHoldings { get; set; }
+    public decimal ZerodhaTotalM2M { get; set; }
+    public decimal ZerodhaRealizedPnl { get; set; }
+    public decimal ZerodhaUnrealizedPnl { get; set; }
+}
+
+public class ZerodhaPositionsDto
+{
+    public List<ZerodhaPositionItemDto> Net { get; set; } = new();
+    public List<ZerodhaPositionItemDto> Day { get; set; } = new();
+    public decimal TotalM2M { get; set; }
+    public decimal TotalRealizedPnl { get; set; }
+    public decimal TotalUnrealizedPnl { get; set; }
+}
+
+public class ZerodhaPositionItemDto
+{
+    public string TradingSymbol { get; set; } = string.Empty;
+    public string Exchange { get; set; } = "NSE";
+    public string Product { get; set; } = "CNC"; // CNC, MIS, NRML
+    public int Quantity { get; set; }
+    public int BuyQuantity { get; set; }
+    public int SellQuantity { get; set; }
+    public decimal BuyPrice { get; set; }
+    public decimal SellPrice { get; set; }
+    public decimal BuyValue { get; set; }
+    public decimal SellValue { get; set; }
+    public decimal LastPrice { get; set; }
+    public decimal ClosePrice { get; set; }
+    public decimal Pnl { get; set; }
+    public decimal M2m { get; set; }
+    public decimal Realised { get; set; }
+    public decimal Unrealised { get; set; }
+    public decimal Value { get; set; }
+    public decimal Multiplier { get; set; } = 1;
+}
+
+public class ZerodhaHoldingDto
+{
+    public string TradingSymbol { get; set; } = string.Empty;
+    public string Exchange { get; set; } = "NSE";
+    public string Isin { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    public int T1Quantity { get; set; }
+    public int RealisedQuantity { get; set; }
+    public decimal AveragePrice { get; set; }
+    public decimal LastPrice { get; set; }
+    public decimal ClosePrice { get; set; }
+    public decimal Pnl { get; set; }
+    public decimal DayChange { get; set; }
+    public decimal DayChangePercentage { get; set; }
+    public decimal Value { get; set; }
 }
 
 public class ToggleRealTradeRequestDto
@@ -89,4 +144,20 @@ public class CloseRealPositionRequestDto
 {
     public int PositionId { get; set; }
     public string? Reason { get; set; }
+}
+
+public class RealTradeLivePositionsFastDto
+{
+    public bool Success { get; set; }
+    public bool IsBrokerTokenActive { get; set; }
+    public decimal AvailableBrokerMargin { get; set; }
+    public decimal UsedBrokerMargin { get; set; }
+    public decimal ZerodhaTotalM2M { get; set; }
+    public decimal ZerodhaRealizedPnl { get; set; }
+    public decimal ZerodhaUnrealizedPnl { get; set; }
+    public decimal TotalUnrealizedPnl { get; set; }
+    public decimal TotalRealizedPnlToday { get; set; }
+    public ZerodhaPositionsDto? BrokerPositions { get; set; }
+    public List<ZerodhaHoldingDto>? BrokerHoldings { get; set; }
+    public IEnumerable<RealPosition> OpenPositions { get; set; } = new List<RealPosition>();
 }
