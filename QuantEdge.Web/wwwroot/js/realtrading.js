@@ -121,8 +121,13 @@ function updateFastPositionsUI(data) {
 
     const unrealPnlEl = document.getElementById("stat-unrealized-pnl");
     if (unrealPnlEl) {
-        unrealPnlEl.innerText = formatCurrencyWithSign(data.totalUnrealizedPnl);
-        unrealPnlEl.style.color = data.totalUnrealizedPnl >= 0 ? "#34d399" : "#f87171";
+        const unPnl = data.totalUnrealizedPnl || 0;
+        const usedMargin = data.usedBrokerMargin || 0;
+        const unPct = usedMargin > 0 ? (unPnl / usedMargin) * 100 : 0;
+        const unPctSign = unPct > 0 ? "+" : "";
+        const unPctStr = `${unPctSign}${unPct.toFixed(2)}%`;
+        unrealPnlEl.innerText = `${formatCurrencyWithSign(unPnl)} (${unPctStr})`;
+        unrealPnlEl.style.color = unPnl >= 0 ? "#34d399" : "#f87171";
     }
 
     const zerodhaM2mEl = document.getElementById("stat-zerodha-m2m");
@@ -265,7 +270,13 @@ function updateDashboardUI(data) {
 
     const unrealPnlEl = document.getElementById("stat-unrealized-pnl");
     if (unrealPnlEl) {
-        unrealPnlEl.innerText = formatCurrencyWithSign(data.totalUnrealizedPnl);
+        const unPnl = data.totalUnrealizedPnl || 0;
+        const usedMargin = data.usedBrokerMargin || 0;
+        const baseCap = usedMargin > 0 ? usedMargin : (data.settings?.availableCapital || 0);
+        const unPct = baseCap > 0 ? (unPnl / baseCap) * 100 : 0;
+        const unPctSign = unPct > 0 ? "+" : "";
+        const unPctStr = `${unPctSign}${unPct.toFixed(2)}%`;
+        unrealPnlEl.innerText = `${formatCurrencyWithSign(unPnl)} (${unPctStr})`;
         unrealPnlEl.style.color = data.totalUnrealizedPnl >= 0 ? "#34d399" : "#f87171";
     }
 
@@ -294,7 +305,13 @@ function updateDashboardUI(data) {
 
     const todayRealPnlEl = document.getElementById("stat-realized-pnl");
     if (todayRealPnlEl) {
-        todayRealPnlEl.innerText = formatCurrencyWithSign(data.totalRealizedPnlToday);
+        const todayAmt = data.todayTradeAmount || (data.settings?.fixedAmountPerTrade ? data.todayTradeCount * data.settings.fixedAmountPerTrade : 0);
+        const realPnl = data.totalRealizedPnlToday || 0;
+        const baseCap = todayAmt > 0 ? todayAmt : (data.settings?.availableCapital || 0);
+        const pnlPct = baseCap > 0 ? (realPnl / baseCap) * 100 : 0;
+        const pctSign = pnlPct > 0 ? "+" : "";
+        const pctStr = `${pctSign}${pnlPct.toFixed(2)}%`;
+        todayRealPnlEl.innerText = `${formatCurrencyWithSign(realPnl)} (${pctStr})`;
         todayRealPnlEl.style.color = data.totalRealizedPnlToday >= 0 ? "#34d399" : "#f87171";
     }
 
@@ -435,10 +452,13 @@ function renderFilteredOpenPositions(positions) {
     positions.forEach(p => {
         const pnl = p.unrealizedPnl || 0;
         const pnlClass = pnl >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
+        const entryVal = p.quantity * p.averageEntryPrice;
+        const pnlPct = entryVal > 0 ? (pnl / entryVal * 100).toFixed(2) : '0.00';
+        const pnlPctSign = pnl > 0 ? '+' : '';
         const sideText = p.side === 0 ? '<span class="text-success fw-bold">BUY</span>' : '<span class="text-danger fw-bold">SELL</span>';
-        const targetText = p.takeProfit ? `₹${p.takeProfit.toFixed(2)}` : '<span style="color: #94a3b8;">None</span>';
-        const slText = p.stopLoss ? `₹${p.stopLoss.toFixed(2)}` : '<span style="color: #94a3b8;">None</span>';
-        const tslText = p.trailingStopLoss ? `₹${p.trailingStopLoss.toFixed(2)}` : '<span style="color: #94a3b8;">None</span>';
+        const targetText = p.takeProfit ? `₹${p.takeProfit.toFixed(2)}` : '-';
+        const slText = p.stopLoss ? `₹${p.stopLoss.toFixed(2)}` : '-';
+        const tslText = p.trailingStopLoss ? `₹${p.trailingStopLoss.toFixed(2)}` : '-';
 
         html += `
             <tr>
@@ -450,7 +470,7 @@ function renderFilteredOpenPositions(positions) {
                 <td class="text-info fw-semibold">${targetText}</td>
                 <td class="text-white">${slText}</td>
                 <td class="text-white">${tslText}</td>
-                <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
+                <td class="${pnlClass}">${formatCurrencyWithSign(pnl)} (${pnlPctSign}${pnlPct}%)</td>
                 <td>
                     <button class="btn-square-off" onclick="openSquareOffModal(${p.id}, '${p.symbol}')" title="Square off this real position">
                         Exit / Sell

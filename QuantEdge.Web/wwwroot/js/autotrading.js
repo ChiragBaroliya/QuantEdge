@@ -194,13 +194,23 @@ function updateDashboardUI(data) {
 
     const unPnlElem = document.getElementById("stat-unrealized-pnl");
     if (unPnlElem) {
-        unPnlElem.innerText = `₹${formatNumber(unPnl)}`;
+        const baseMargin = usedMargin > 0 ? usedMargin : (availableCap > 0 ? availableCap : 0);
+        const unPnlPct = baseMargin > 0 ? (unPnl / baseMargin) * 100 : 0;
+        const unPctSign = unPnlPct > 0 ? "+" : "";
+        const unPctStr = `${unPctSign}${unPnlPct.toFixed(2)}%`;
+        const unSign = unPnl > 0 ? "+" : (unPnl < 0 ? "-" : "");
+        unPnlElem.innerText = `${unSign}₹${formatNumber(Math.abs(unPnl))} (${unPctStr})`;
         unPnlElem.className = `stat-value ${unPnl >= 0 ? "positive" : "negative"}`;
     }
 
     const realPnlElem = document.getElementById("stat-realized-pnl");
     if (realPnlElem) {
-        realPnlElem.innerText = `₹${formatNumber(realPnl)}`;
+        const baseCap = todayTradeAmount > 0 ? todayTradeAmount : (availableCap > 0 ? availableCap : 0);
+        const pnlPct = baseCap > 0 ? (realPnl / baseCap) * 100 : 0;
+        const pctSign = pnlPct > 0 ? "+" : "";
+        const pctStr = `${pctSign}${pnlPct.toFixed(2)}%`;
+        const pnlSign = realPnl > 0 ? "+" : (realPnl < 0 ? "-" : "");
+        realPnlElem.innerText = `${pnlSign}₹${formatNumber(Math.abs(realPnl))} (${pctStr})`;
         realPnlElem.className = `stat-value ${realPnl >= 0 ? "positive" : "negative"}`;
     }
 
@@ -262,10 +272,13 @@ function renderOpenPositionsTable(positions) {
         const unPnl = p.unrealizedPnl ?? p.UnrealizedPnl ?? 0;
         const pnlClass = unPnl >= 0 ? "text-success" : "text-danger";
         const entryVal = qty * avgPrice;
+        const unPnlPct = entryVal > 0 ? (unPnl / entryVal * 100).toFixed(2) : '0.00';
+        const unPnlPctSign = unPnl > 0 ? '+' : '';
+        const unPnlSign = unPnl > 0 ? '+' : (unPnl < 0 ? '-' : '');
         const tpPctText = tp && avgPrice > 0 ? ((tp - avgPrice) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '';
         const slPctText = sl && avgPrice > 0 ? ((avgPrice - sl) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '';
         const tpText = tp && tp > 0 ? `₹${formatNumber(tp)}${tpPctText ? ' (+' + tpPctText + '%)' : ''}` : '-';
-        const slText = sl && sl > 0 ? `₹${formatNumber(sl)}${slPctText ? ' (-' + slPctText + '%)' : ''}` : '<span style="color: #64748b;">None</span>';
+        const slText = sl && sl > 0 ? `₹${formatNumber(sl)}${slPctText ? ' (-' + slPctText + '%)' : ''}` : '-';
 
         html += `
             <tr>
@@ -275,7 +288,7 @@ function renderOpenPositionsTable(positions) {
                 <td>${qty} (₹${formatNumber(entryVal)})</td>
                 <td>${tpText}</td>
                 <td>${slText}</td>
-                <td class="${pnlClass} font-weight-bold">₹${formatNumber(unPnl)}</td>
+                <td class="${pnlClass} font-weight-bold">${unPnlSign}₹${formatNumber(Math.abs(unPnl))} (${unPnlPctSign}${unPnlPct}%)</td>
             </tr>
         `;
     });
