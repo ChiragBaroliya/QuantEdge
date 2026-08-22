@@ -38,6 +38,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const msg = urlParams.get("message") || "⚡ Zerodha Account Connected Successfully!";
         showToastAlert(msg, "success");
         window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (urlParams.get("connected") === "false") {
+        const msg = urlParams.get("message") || "Failed to connect Zerodha account.";
+        showToastAlert(msg, "danger");
+        window.history.replaceState({}, document.title, window.location.pathname);
     }
 
     renderDdpiStatus();
@@ -98,7 +102,7 @@ async function loadLivePositionsFast() {
     isPollingInFlight = true;
 
     try {
-        const response = await fetch(`${apiBaseUrl}/api/realtrade/live-positions`);
+        const response = await fetch(`${apiBaseUrl}/api/realtrade/live-positions?userId=${currentUserId}`);
         if (!response.ok) return;
 
         const data = await response.json();
@@ -143,6 +147,12 @@ function updateFastPositionsUI(data) {
         zerodhaRealPnlEl.style.color = data.zerodhaRealizedPnl >= 0 ? "#34d399" : "#f87171";
     }
 
+    const zerodhaUnrealPnlEl = document.getElementById("stat-zerodha-unrealized-pnl");
+    if (zerodhaUnrealPnlEl) {
+        zerodhaUnrealPnlEl.innerText = formatCurrencyWithSign(data.zerodhaUnrealizedPnl);
+        zerodhaUnrealPnlEl.style.color = data.zerodhaUnrealizedPnl >= 0 ? "#34d399" : "#f87171";
+    }
+
     const statOpenCount = document.getElementById("stat-open-count");
     if (statOpenCount) statOpenCount.innerText = (data.openPositions || []).length;
 
@@ -159,7 +169,7 @@ function updateFastPositionsUI(data) {
 
 async function loadDashboardData() {
     try {
-        const response = await fetch(`${apiBaseUrl}/api/realtrade/dashboard`);
+        const response = await fetch(`${apiBaseUrl}/api/realtrade/dashboard?userId=${currentUserId}`);
         if (!response.ok) return;
 
         const data = await response.json();
@@ -722,7 +732,7 @@ function setupEventListeners() {
     // Connect Zerodha Button Handlers
     const handleConnectZerodha = async function () {
         try {
-            const returnUrl = window.location.origin;
+            const returnUrl = `${window.location.origin}/RealTrading`;
             const res = await fetch(`${apiBaseUrl}/api/zerodha/login-url?returnUrl=${encodeURIComponent(returnUrl)}&userId=${currentUserId}`);
             if (res.ok) {
                 const data = await res.json();
@@ -757,7 +767,7 @@ function setupEventListeners() {
                 const response = await fetch(`${apiBaseUrl}/api/realtrade/toggle`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ enabled })
+                    body: JSON.stringify({ enabled, userId: currentUserId })
                 });
 
                 const resData = await response.json();
@@ -813,7 +823,7 @@ function setupEventListeners() {
             };
 
             try {
-                const response = await fetch(`${apiBaseUrl}/api/realtrade/settings`, {
+                const response = await fetch(`${apiBaseUrl}/api/realtrade/settings?userId=${currentUserId}`, {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
@@ -851,7 +861,7 @@ function setupEventListeners() {
                 const response = await fetch(`${apiBaseUrl}/api/realtrade/kill-switch`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ Reason: "Manual Panic Kill Switch Pressed in UI" })
+                    body: JSON.stringify({ Reason: "Manual Panic Kill Switch Pressed in UI", UserId: currentUserId })
                 });
 
                 const data = await response.json();
@@ -878,7 +888,7 @@ function setupEventListeners() {
                 const response = await fetch(`${apiBaseUrl}/api/realtrade/square-off`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ PositionId: posId, Reason: "Manual 1-Click Exit" })
+                    body: JSON.stringify({ PositionId: posId, Reason: "Manual 1-Click Exit", UserId: currentUserId })
                 });
 
                 const data = await response.json();

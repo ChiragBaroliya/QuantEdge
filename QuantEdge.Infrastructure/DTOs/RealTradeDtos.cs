@@ -142,17 +142,20 @@ public class ZerodhaHoldingDto
 public class ToggleRealTradeRequestDto
 {
     public bool Enabled { get; set; }
+    public int? UserId { get; set; }
 }
 
 public class EmergencyKillSwitchRequestDto
 {
     public string? Reason { get; set; }
+    public int? UserId { get; set; }
 }
 
 public class CloseRealPositionRequestDto
 {
     public int PositionId { get; set; }
     public string? Reason { get; set; }
+    public int? UserId { get; set; }
 }
 
 public class RealTradeLivePositionsFastDto

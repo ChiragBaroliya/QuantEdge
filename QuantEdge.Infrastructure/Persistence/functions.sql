@@ -186,7 +186,7 @@ BEGIN
     SELECT access_token, created_at
     INTO v_access_token, v_token_created
     FROM zerodha_sessions
-    WHERE api_key = p_api_key AND (user_id = p_user_id OR user_id = 1)
+    WHERE api_key = p_api_key AND user_id = p_user_id
     ORDER BY created_at DESC
     LIMIT 1;
 
@@ -198,7 +198,7 @@ BEGIN
     IF v_token_created >= v_cutoff_time THEN
         UPDATE zerodha_sessions
         SET is_active = TRUE
-        WHERE api_key = p_api_key AND (user_id = p_user_id OR user_id = 1);
+        WHERE api_key = p_api_key AND user_id = p_user_id;
 
         RAISE NOTICE 'sp_activate_zerodha_token: Token for user % activated (created_at: %)', p_user_id, v_token_created;
         RETURN v_access_token;
@@ -238,10 +238,10 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT COALESCE(s.user_id, 1), s.client_id, s.user_name, s.user_email, s.api_key, s.api_secret, s.access_token, s.is_active, COALESCE(s.is_ddpi_enabled, FALSE), s.created_at
+    SELECT COALESCE(s.user_id, p_user_id), s.client_id, s.user_name, s.user_email, s.api_key, s.api_secret, s.access_token, s.is_active, COALESCE(s.is_ddpi_enabled, FALSE), s.created_at
     FROM zerodha_sessions s
-    WHERE (s.user_id = p_user_id OR s.user_id = 1)
-    ORDER BY (s.user_id = p_user_id) DESC, s.is_active DESC, s.created_at DESC
+    WHERE s.user_id = p_user_id
+    ORDER BY s.is_active DESC, s.created_at DESC
     LIMIT 1;
 END;
 $$;

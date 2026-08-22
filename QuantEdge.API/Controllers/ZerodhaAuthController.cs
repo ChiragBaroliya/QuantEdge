@@ -337,9 +337,15 @@ public class ZerodhaAuthController : ControllerBase
                 ? cached
                 : _fallbackWebBaseUrl;
 
-            _logger.LogInformation("Redirecting to Web UI at: {WebBase}/RealTrading", webBase);
+            string targetUrl = webBase.TrimEnd('/');
+            if (!targetUrl.EndsWith("/RealTrading", StringComparison.OrdinalIgnoreCase))
+            {
+                targetUrl += "/RealTrading";
+            }
 
-            var redirectUrl = $"{webBase}/RealTrading?connected=true&message={Uri.EscapeDataString("⚡ Zerodha Account Connected Successfully! Daily Access Token is now ACTIVE.")}";
+            _logger.LogInformation("Redirecting to Web UI at: {TargetUrl}", targetUrl);
+
+            var redirectUrl = $"{targetUrl}?connected=true&message={Uri.EscapeDataString("⚡ Zerodha Account Connected Successfully! Daily Access Token is now ACTIVE.")}";
             return Redirect(redirectUrl);
         }
         catch (Exception ex)
@@ -350,10 +356,13 @@ public class ZerodhaAuthController : ControllerBase
                 ? cached
                 : _fallbackWebBaseUrl;
 
-            var errorUrl = $"{webBase}/Token/Callback" +
-                $"?success=false" +
-                $"&message={Uri.EscapeDataString($"Token exchange failed: {ex.Message}")}";
+            string targetUrl = webBase.TrimEnd('/');
+            if (!targetUrl.EndsWith("/RealTrading", StringComparison.OrdinalIgnoreCase))
+            {
+                targetUrl += "/RealTrading";
+            }
 
+            var errorUrl = $"{targetUrl}?connected=false&message={Uri.EscapeDataString($"Token exchange failed: {ex.Message}")}";
             return Redirect(errorUrl);
         }
     }
