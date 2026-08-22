@@ -63,6 +63,9 @@ public class TokenController : Controller
                     bool hasActiveToken = node?["hasActiveToken"]?.GetValue<bool>() ?? false;
 
                     vm.HasActiveToken = hasActiveToken;
+                    vm.ClientId = node?["clientId"]?.ToString();
+                    vm.UserName = node?["userName"]?.ToString();
+                    vm.Email = node?["userEmail"]?.ToString();
                     vm.ApiKey = node?["apiKey"]?.ToString();
                     vm.AccessTokenMasked = node?["accessTokenMasked"]?.ToString();
                     vm.CreatedAtIst = node?["createdAtIst"]?.ToString();
@@ -102,6 +105,7 @@ public class TokenController : Controller
             {
                 vm.HasActiveToken = true;
             }
+            if (TempData.ContainsKey("ClientId")) vm.ClientId = TempData["ClientId"]?.ToString();
             if (TempData.ContainsKey("UserName")) vm.UserName = TempData["UserName"]?.ToString();
             if (TempData.ContainsKey("Email")) vm.Email = TempData["Email"]?.ToString();
             if (TempData.ContainsKey("AccessTokenMasked")) vm.AccessTokenMasked = TempData["AccessTokenMasked"]?.ToString();
@@ -125,13 +129,13 @@ public class TokenController : Controller
         try
         {
             // Build this Web app's own base URL dynamically from the current request.
-            // e.g.  https://localhost:7031  or  https://localhost:44370  — whatever VS assigned.
             string webReturnUrl = $"{Request.Scheme}://{Request.Host}";
+            var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "1";
 
             var client = _httpClientFactory.CreateClient("QuantEdgeApi");
 
-            // Pass our returnUrl so the API caches it and uses it in the Zerodha callback redirect
-            var response = await client.GetAsync($"/api/zerodha/login-url?returnUrl={Uri.EscapeDataString(webReturnUrl)}");
+            // Pass our returnUrl and userId so the API caches it and uses it in the Zerodha callback redirect
+            var response = await client.GetAsync($"/api/zerodha/login-url?returnUrl={Uri.EscapeDataString(webReturnUrl)}&userId={currentUserId}");
 
             if (!response.IsSuccessStatusCode)
             {

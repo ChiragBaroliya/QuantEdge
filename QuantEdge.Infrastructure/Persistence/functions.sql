@@ -223,21 +223,25 @@ CREATE OR REPLACE FUNCTION fn_get_active_zerodha_session(
     p_user_id INT DEFAULT 1
 )
 RETURNS TABLE (
-    user_id      INT,
-    api_key      VARCHAR(50),
-    api_secret   VARCHAR(100),
-    access_token VARCHAR(255),
-    is_active    BOOLEAN,
-    created_at   TIMESTAMP WITH TIME ZONE
+    user_id         INT,
+    client_id       VARCHAR(50),
+    user_name       VARCHAR(100),
+    user_email      VARCHAR(100),
+    api_key         VARCHAR(50),
+    api_secret      VARCHAR(100),
+    access_token    VARCHAR(255),
+    is_active       BOOLEAN,
+    is_ddpi_enabled BOOLEAN,
+    created_at      TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT COALESCE(s.user_id, 1), s.api_key, s.api_secret, s.access_token, s.is_active, s.created_at
+    SELECT COALESCE(s.user_id, 1), s.client_id, s.user_name, s.user_email, s.api_key, s.api_secret, s.access_token, s.is_active, COALESCE(s.is_ddpi_enabled, FALSE), s.created_at
     FROM zerodha_sessions s
     WHERE (s.user_id = p_user_id OR s.user_id = 1)
-    ORDER BY s.is_active DESC, s.created_at DESC
+    ORDER BY (s.user_id = p_user_id) DESC, s.is_active DESC, s.created_at DESC
     LIMIT 1;
 END;
 $$;
@@ -251,18 +255,22 @@ DROP FUNCTION IF EXISTS fn_get_all_active_zerodha_sessions() CASCADE;
 
 CREATE OR REPLACE FUNCTION fn_get_all_active_zerodha_sessions()
 RETURNS TABLE (
-    user_id      INT,
-    api_key      VARCHAR(50),
-    api_secret   VARCHAR(100),
-    access_token VARCHAR(255),
-    is_active    BOOLEAN,
-    created_at   TIMESTAMP WITH TIME ZONE
+    user_id         INT,
+    client_id       VARCHAR(50),
+    user_name       VARCHAR(100),
+    user_email      VARCHAR(100),
+    api_key         VARCHAR(50),
+    api_secret      VARCHAR(100),
+    access_token    VARCHAR(255),
+    is_active       BOOLEAN,
+    is_ddpi_enabled BOOLEAN,
+    created_at      TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT COALESCE(s.user_id, 1), s.api_key, s.api_secret, s.access_token, s.is_active, s.created_at
+    SELECT COALESCE(s.user_id, 1), s.client_id, s.user_name, s.user_email, s.api_key, s.api_secret, s.access_token, s.is_active, COALESCE(s.is_ddpi_enabled, FALSE), s.created_at
     FROM zerodha_sessions s
     WHERE s.is_active = TRUE
     ORDER BY s.created_at DESC;
@@ -275,9 +283,13 @@ $$;
 -- ----------------------------------------------------------------------------
 DROP PROCEDURE IF EXISTS sp_upsert_user_zerodha_session CASCADE;
 DROP PROCEDURE IF EXISTS sp_upsert_user_zerodha_session(INT, VARCHAR, VARCHAR, VARCHAR) CASCADE;
+DROP PROCEDURE IF EXISTS sp_upsert_user_zerodha_session(INT, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) CASCADE;
 
 CREATE OR REPLACE PROCEDURE sp_upsert_user_zerodha_session(
     p_user_id INT,
+    p_client_id VARCHAR(50),
+    p_user_name VARCHAR(100),
+    p_user_email VARCHAR(100),
     p_api_key VARCHAR(50),
     p_api_secret VARCHAR(100),
     p_access_token VARCHAR(255)
@@ -285,15 +297,38 @@ CREATE OR REPLACE PROCEDURE sp_upsert_user_zerodha_session(
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    INSERT INTO zerodha_sessions (user_id, api_key, api_secret, access_token, is_active, created_at)
-    VALUES (p_user_id, p_api_key, p_api_secret, p_access_token, TRUE, NOW())
+    INSERT INTO zerodha_sessions (user_id, client_id, user_name, user_email, api_key, api_secret, access_token, is_active, is_ddpi_enabled, created_at)
+    VALUES (p_user_id, p_client_id, p_user_name, p_user_email, p_api_key, p_api_secret, p_access_token, TRUE, FALSE, NOW())
     ON CONFLICT (api_key) 
     DO UPDATE SET 
         user_id = EXCLUDED.user_id,
+        client_id = COALESCE(EXCLUDED.client_id, zerodha_sessions.client_id),
+        user_name = COALESCE(EXCLUDED.user_name, zerodha_sessions.user_name),
+        user_email = COALESCE(EXCLUDED.user_email, zerodha_sessions.user_email),
         api_secret = COALESCE(EXCLUDED.api_secret, zerodha_sessions.api_secret),
         access_token = EXCLUDED.access_token,
         is_active = TRUE,
         created_at = NOW();
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_update_user_ddpi_status
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_update_user_ddpi_status CASCADE;
+DROP PROCEDURE IF EXISTS sp_update_user_ddpi_status(INT, BOOLEAN) CASCADE;
+
+CREATE OR REPLACE PROCEDURE sp_update_user_ddpi_status(
+    p_user_id INT,
+    p_is_ddpi_enabled BOOLEAN
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE zerodha_sessions
+    SET is_ddpi_enabled = p_is_ddpi_enabled
+    WHERE user_id = p_user_id;
 END;
 $$;
 

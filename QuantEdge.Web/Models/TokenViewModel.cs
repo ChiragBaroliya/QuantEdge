@@ -36,6 +36,11 @@ public class TokenViewModel
     public string? UserName { get; set; }
 
     /// <summary>
+    /// Zerodha Client ID (e.g. CJC294).
+    /// </summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>
     /// Email returned from Zerodha session exchange.
     /// </summary>
     public string? Email { get; set; }

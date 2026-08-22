@@ -27,8 +27,13 @@ public interface IZerodhaSessionRepository
     Task<IEnumerable<ZerodhaSession>> GetAllActiveSessionsAsync();
 
     /// <summary>
-    /// Upserts a Zerodha session for a user.
+    /// Upserts a Zerodha session for a user with Client ID and account details.
     /// </summary>
-    Task UpsertSessionAsync(int userId, string apiKey, string? apiSecret, string accessToken);
+    Task UpsertSessionAsync(int userId, string apiKey, string? apiSecret, string accessToken, string? clientId = null, string? userName = null, string? userEmail = null);
+
+    /// <summary>
+    /// Updates DDPI status for a specific user.
+    /// </summary>
+    Task UpdateDdpiStatusAsync(int userId, bool isDdpiEnabled);
 }
 

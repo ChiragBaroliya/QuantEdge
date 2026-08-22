@@ -104,6 +104,13 @@
         </div>
         <div class="card-body">
             <div class="session-info-grid">
+                @if (!string.IsNullOrEmpty(Model.ClientId))
+                {
+                    <div class="info-row" data-tooltip="🆔 **Client ID**: Unique Zerodha trading account identifier.">
+                        <span class="info-label">Client ID</span>
+                        <span class="info-value monospace" style="color:var(--theme-accent);font-weight:700;">@Model.ClientId</span>
+                    </div>
+                }
                 @if (!string.IsNullOrEmpty(Model.UserName))
                 {
                     <div class="info-row" data-tooltip="👤 **User Name**: Authorized Zerodha account holder name.">

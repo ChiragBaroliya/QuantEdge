@@ -178,11 +178,26 @@ public class AutoRealTradeService : IAutoRealTradeService
         string tokenCreatedIst = "N/A";
         string tokenExpiresIst = "N/A";
         string apiKey = string.Empty;
+        string clientId = string.Empty;
+        string accountHolderName = string.Empty;
+        bool isDdpiEnabled = false;
         ZerodhaPositionsDto? brokerPositions = null;
         List<ZerodhaHoldingDto>? brokerHoldings = null;
         decimal zerodhaM2m = 0m;
         decimal zerodhaRealizedPnl = 0m;
         decimal zerodhaUnrealizedPnl = 0m;
+
+        var activeSession = await _sessionRepository.GetActiveSessionAsync(userId);
+        if (activeSession != null)
+        {
+            var istTime = TimeZoneInfo.ConvertTime(activeSession.CreatedAt, TimeZoneHelper.IndianTimeZone);
+            tokenCreatedIst = istTime.ToString("hh:mm tt, dd MMM");
+            tokenExpiresIst = istTime.Date.AddDays(1).AddHours(6).ToString("hh:mm tt, dd MMM");
+            apiKey = activeSession.ApiKey;
+            clientId = activeSession.ClientId ?? string.Empty;
+            accountHolderName = activeSession.UserName ?? string.Empty;
+            isDdpiEnabled = activeSession.IsDdpiEnabled;
+        }
 
         if (tokenValidation.IsValid)
         {
@@ -206,15 +221,6 @@ public class AutoRealTradeService : IAutoRealTradeService
             if (holdRes.Success && holdRes.Holdings != null)
             {
                 brokerHoldings = holdRes.Holdings;
-            }
-
-            var activeSession = await _sessionRepository.GetActiveSessionAsync(userId);
-            if (activeSession != null)
-            {
-                var istTime = TimeZoneInfo.ConvertTime(activeSession.CreatedAt, TimeZoneHelper.IndianTimeZone);
-                tokenCreatedIst = istTime.ToString("hh:mm tt, dd MMM");
-                tokenExpiresIst = istTime.Date.AddDays(1).AddHours(6).ToString("hh:mm tt, dd MMM");
-                apiKey = activeSession.ApiKey;
             }
         }
 
@@ -245,10 +251,13 @@ public class AutoRealTradeService : IAutoRealTradeService
             AvailableBrokerMargin = availableMargin,
             UsedBrokerMargin = usedMargin,
             IsBrokerTokenActive = tokenValidation.IsValid,
+            IsDdpiEnabled = isDdpiEnabled,
+            ClientId = clientId,
+            AccountHolderName = accountHolderName,
             ApiKey = apiKey,
             BrokerTokenCreatedIst = tokenCreatedIst,
             BrokerTokenExpiresIst = tokenExpiresIst,
-            TpinGuidanceRequired = true,
+            TpinGuidanceRequired = !isDdpiEnabled,
             IsWebSocketConnected = true,
             IsRestPollingFallback = false,
             SystemStatus = systemStatus,

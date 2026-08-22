@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using QuantEdge.API.Services;
 using QuantEdge.Infrastructure.Configurations;
+using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Persistence;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 using System;
@@ -53,7 +54,7 @@ public class ZerodhaAuthController : ControllerBase
     /// Checks if a valid Zerodha session token exists for today (created after 6:00 AM IST cutoff).
     /// </summary>
     [HttpGet("session-status")]
-    public async Task<IActionResult> GetSessionStatus()
+    public async Task<IActionResult> GetSessionStatus([FromQuery] int userId = 1)
     {
         try
         {
@@ -63,10 +64,10 @@ public class ZerodhaAuthController : ControllerBase
             }
 
             // 1. Attempt activation for today's token
-            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey);
+            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey, userId);
 
-            // 2. Fetch current active session
-            var activeSession = await _sessionRepository.GetActiveSessionAsync();
+            // 2. Fetch current active session for this user
+            var activeSession = await _sessionRepository.GetActiveSessionAsync(userId);
 
             TimeZoneInfo indianTimeZone;
             try
@@ -99,6 +100,11 @@ public class ZerodhaAuthController : ControllerBase
                     return Ok(new
                     {
                         hasActiveToken = true,
+                        userId = activeSession.UserId,
+                        clientId = activeSession.ClientId ?? "N/A",
+                        userName = activeSession.UserName,
+                        userEmail = activeSession.UserEmail,
+                        isDdpiEnabled = activeSession.IsDdpiEnabled,
                         apiKey = activeSession.ApiKey,
                         accessTokenMasked = maskedToken,
                         createdAtIst = createdAtIst.ToString("dd-MMM-yyyy hh:mm:ss tt"),
@@ -111,6 +117,8 @@ public class ZerodhaAuthController : ControllerBase
             return Ok(new
             {
                 hasActiveToken = false,
+                userId = userId,
+                isDdpiEnabled = activeSession?.IsDdpiEnabled ?? false,
                 apiKey = _config.ApiKey,
                 expiresAtIst = nextExpiryIst.ToString("dd-MMM-yyyy hh:mm:ss tt"),
                 message = "No active session for today. Token expired or not created."
@@ -120,6 +128,26 @@ public class ZerodhaAuthController : ControllerBase
         {
             _logger.LogError(ex, "Error checking Zerodha session status.");
             return StatusCode(500, new { hasActiveToken = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Updates DDPI status for a specific user.
+    /// </summary>
+    [HttpPost("ddpi-status")]
+    public async Task<IActionResult> UpdateDdpiStatus([FromBody] UpdateDdpiDto request)
+    {
+        try
+        {
+            int targetUserId = request.UserId > 0 ? request.UserId : 1;
+            await _sessionRepository.UpdateDdpiStatusAsync(targetUserId, request.IsDdpiEnabled);
+            _logger.LogInformation("Updated DDPI status for User {UserId} to {Status}", targetUserId, request.IsDdpiEnabled);
+            return Ok(new { success = true, userId = targetUserId, isDdpiEnabled = request.IsDdpiEnabled });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update DDPI status.");
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 
@@ -280,10 +308,19 @@ public class ZerodhaAuthController : ControllerBase
                 throw new InvalidOperationException("Zerodha returned an empty access token.");
             }
 
-            _logger.LogInformation("Successfully exchanged request_token for User {UserId}. Storing access token...", userId);
+            _logger.LogInformation("Successfully exchanged request_token for User {UserId} (Client ID: {ClientId}, Name: {UserName}). Storing access token...", 
+                userId, userSession.UserId, userSession.UserName);
 
             // 1. Store in PostgreSQL database for specific user
-            await _sessionRepository.UpsertSessionAsync(userId, _config.ApiKey, _config.ApiSecret, accessToken);
+            await _sessionRepository.UpsertSessionAsync(
+                userId, 
+                _config.ApiKey, 
+                _config.ApiSecret, 
+                accessToken,
+                clientId: userSession.UserId,
+                userName: userSession.UserName,
+                userEmail: userSession.Email
+            );
 
             // 2. Immediately activate token in DB if valid for today
             await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey, userId);
@@ -291,7 +328,7 @@ public class ZerodhaAuthController : ControllerBase
             // 3. Persist to appsettings.json dynamically
             UpdateAppsettingsInAllPaths(accessToken);
 
-            _logger.LogInformation("Zerodha Access Token successfully stored for User {UserId}.", userId);
+            _logger.LogInformation("Zerodha Access Token successfully stored for User {UserId} (Client: {ClientId}).", userId, userSession.UserId);
 
             // 4. Resolve the Web UI base URL:
             //    - First priority: URL cached during login-url call (dynamic, works on any port)

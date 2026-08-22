@@ -212,13 +212,25 @@ function updateDashboardUI(data) {
         }
     }
 
+    // Client ID Tag in Broker Metrics Header
+    const clientTag = document.getElementById("brokerClientIdTag");
+    if (clientTag) {
+        if (data.clientId) {
+            clientTag.innerText = `Client: ${data.clientId}${data.accountHolderName ? ' (' + data.accountHolderName + ')' : ''}`;
+            clientTag.style.display = "inline-block";
+        } else {
+            clientTag.style.display = "none";
+        }
+    }
+
     // Token Badge & Connect Button
     const tokenBadge = document.getElementById("broker-token-badge");
     const btnConnectHeader = document.getElementById("btnConnectZerodhaHeader");
     if (tokenBadge) {
         if (data.isBrokerTokenActive) {
             tokenBadge.className = "badge-token active";
-            tokenBadge.innerHTML = `<span class="token-dot"></span> Zerodha: Active (${data.brokerTokenCreatedIst || 'Today'})`;
+            const clientText = data.clientId ? `${data.clientId} • ` : "";
+            tokenBadge.innerHTML = `<span class="token-dot"></span> Zerodha: Active (${clientText}${data.brokerTokenCreatedIst || 'Today'})`;
             if (btnConnectHeader) {
                 btnConnectHeader.style.display = "none";
             }
@@ -711,7 +723,7 @@ function setupEventListeners() {
     const handleConnectZerodha = async function () {
         try {
             const returnUrl = window.location.origin;
-            const res = await fetch(`${apiBaseUrl}/api/zerodha/login-url?returnUrl=${encodeURIComponent(returnUrl)}`);
+            const res = await fetch(`${apiBaseUrl}/api/zerodha/login-url?returnUrl=${encodeURIComponent(returnUrl)}&userId=${currentUserId}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.loginUrl) {
@@ -1052,7 +1064,7 @@ function isDdpiActive() {
     return localStorage.getItem(key) === "true" || localStorage.getItem("quantedge_ddpi_active") === "true";
 }
 
-function setDdpiActive(active) {
+async function setDdpiActive(active) {
     const key = `quantedge_ddpi_active_${currentUserId}`;
     if (active) {
         localStorage.setItem(key, "true");
@@ -1062,6 +1074,16 @@ function setDdpiActive(active) {
         localStorage.removeItem("quantedge_ddpi_active");
     }
     renderDdpiStatus();
+
+    try {
+        await fetch(`${apiBaseUrl}/api/zerodha/ddpi-status`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: currentUserId, isDdpiEnabled: active })
+        });
+    } catch (err) {
+        console.warn("Could not sync DDPI status to database:", err);
+    }
 }
 
 function renderDdpiStatus() {

@@ -59,6 +59,9 @@ public class RealTradeDashboardDto
     public decimal AvailableBrokerMargin { get; set; }
     public decimal UsedBrokerMargin { get; set; }
     public bool IsBrokerTokenActive { get; set; }
+    public bool IsDdpiEnabled { get; set; }
+    public string ClientId { get; set; } = string.Empty;
+    public string AccountHolderName { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty;
     public string BrokerTokenCreatedIst { get; set; } = string.Empty;
     public string BrokerTokenExpiresIst { get; set; } = string.Empty;
@@ -80,6 +83,12 @@ public class RealTradeDashboardDto
     public decimal ZerodhaTotalM2M { get; set; }
     public decimal ZerodhaRealizedPnl { get; set; }
     public decimal ZerodhaUnrealizedPnl { get; set; }
+}
+
+public class UpdateDdpiDto
+{
+    public int UserId { get; set; } = 1;
+    public bool IsDdpiEnabled { get; set; }
 }
 
 public class ZerodhaPositionsDto
