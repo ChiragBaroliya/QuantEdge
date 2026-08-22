@@ -195,6 +195,8 @@ public class StockMasterRepository : IStockMasterRepository
                 p_histry_1m = request.Get1mValue(),
                 p_histry_5m = request.Get5mValue(),
                 p_histry_15m = request.Get15mValue(),
+                p_histry_60m = request.Get60mValue(),
+                p_histry_1d = request.Get1dValue()
             }
         );
 
