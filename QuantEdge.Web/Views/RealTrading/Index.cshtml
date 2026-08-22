@@ -31,18 +31,21 @@
 
     <div id="banner-ddpi-activation" class="prerequisite-banner banner-tpin-notice">
         <div class="banner-content">
-            <span class="banner-icon">🚀</span>
-            <div class="banner-text">
+            <span class="banner-icon" id="bannerDdpiIcon">🚀</span>
+            <div class="banner-text" id="bannerDdpiText">
                 <strong>Automated Real Trading Prerequisite:</strong> To allow the engine to automatically execute CNC Sell & Target exit orders via Zerodha API, please activate <strong>1-time DDPI</strong> in your Zerodha account.
             </div>
         </div>
-        <div class="banner-actions-group">
+        <div class="banner-actions-group" id="bannerDdpiActions">
             <button type="button" class="btn-tpin-guide" data-bs-toggle="modal" data-bs-target="#modalDdpiGuideline" title="Step-by-step 1-time DDPI activation guide">
-                📖 DDPI Activation Guide
+                📖 DDPI Guide
             </button>
-            <a href="https://console.zerodha.com/account/demat" target="_blank" class="btn-ddpi-enable">
+            <a href="https://console.zerodha.com/account/demat" target="_blank" class="btn-ddpi-enable" id="btnDdpiOpenConsole">
                 <span>Enable DDPI Online</span> <span class="ddpi-arrow">↗</span>
             </a>
+            <button type="button" class="btn-ddpi-verify-action" id="btnDdpiMarkComplete" title="Click if DDPI status is Completed in Zerodha Demat Console">
+                ✅ I've Enabled DDPI
+            </button>
         </div>
     </div>
 
@@ -71,6 +74,9 @@
             </button>
             <div class="badge-token" id="broker-token-badge" title="Zerodha Session Token Status">
                 <span class="token-dot"></span> Checking Token...
+            </div>
+            <div class="badge-ddpi" id="broker-ddpi-badge" title="DDPI (Demat Debit and Pledge Instruction) Status for CNC Selling">
+                <span class="ddpi-dot"></span> <span id="ddpiBadgeText">DDPI: Active</span>
             </div>
             <div class="badge-counter" id="nextScanCountdownBadge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
                 ⏳ Next Scan: Initializing...
@@ -683,6 +689,9 @@
                 <a href="https://console.zerodha.com/account/demat" target="_blank" class="btn-ddpi-enable">
                     <span>Open Zerodha Demat Console</span> <span class="ddpi-arrow">↗</span>
                 </a>
+                <button type="button" class="btn btn-success fw-bold" id="btnModalConfirmDdpi" data-bs-dismiss="modal" title="Mark DDPI as verified and enabled">
+                    ✅ DDPI Completed (Mark as Active)
+                </button>
             </div>
         </div>
     </div>

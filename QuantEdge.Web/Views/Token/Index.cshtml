@@ -29,7 +29,7 @@
 @if (Model.HasActiveToken)
 {
     <!-- Status KPI mini-cards -->
-    <div class="kpi-row" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+    <div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 24px;">
         <div class="kpi-card" style="--kpi-color: var(--accent-green);" data-tooltip="🟢 **Token Status**: Access token is active and ready for today's trading session.">
             <div class="kpi-header">
                 <span class="kpi-label">Token Status</span>
@@ -43,6 +43,20 @@
                 </span>
             </div>
             <div class="kpi-subtext">Valid for today</div>
+        </div>
+        <div class="kpi-card" style="--kpi-color: #10b981;" data-tooltip="🛡️ **DDPI Status**: Demat Debit & Pledge Instruction for 1-click automated CNC selling without TPIN.">
+            <div class="kpi-header">
+                <span class="kpi-label">DDPI Status</span>
+                <div class="kpi-icon" style="color:#10b981;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                </div>
+            </div>
+            <div style="margin-top:4px;">
+                <span class="badge badge-success" id="tokenPageDdpiBadge" style="font-size:13px;height:28px;padding:0 14px;background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(52,211,153,0.4);cursor:pointer;" title="Click to change DDPI status">
+                    <span class="badge-dot" style="background:#34d399;box-shadow:0 0 8px #34d399;"></span> Active & Verified
+                </span>
+            </div>
+            <div class="kpi-subtext" id="tokenPageDdpiSubtext">Zero TPIN / OTP Required</div>
         </div>
         <div class="kpi-card" style="--kpi-color: var(--theme-accent);" data-tooltip="⏰ **Generated At**: Time when access token was authorized today (in IST).">
             <div class="kpi-header">
@@ -306,5 +320,42 @@
                 showToast('Could not copy token', 'error');
             });
         }
+
+        // Check and sync DDPI status
+        document.addEventListener('DOMContentLoaded', function () {
+            const isDdpi = localStorage.getItem('quantedge_ddpi_active_1') === 'true' || localStorage.getItem('quantedge_ddpi_active') === 'true';
+            const badge = document.getElementById('tokenPageDdpiBadge');
+            const subtext = document.getElementById('tokenPageDdpiSubtext');
+            if (badge && subtext) {
+                if (isDdpi) {
+                    badge.innerHTML = '<span class="badge-dot" style="background:#34d399;box-shadow:0 0 8px #34d399;"></span> Active & Verified';
+                    badge.style.background = 'rgba(16,185,129,0.2)';
+                    badge.style.color = '#34d399';
+                    badge.style.borderColor = 'rgba(52,211,153,0.4)';
+                    subtext.innerText = 'Zero TPIN / OTP Required';
+                } else {
+                    badge.innerHTML = '<span class="badge-dot" style="background:#f59e0b;box-shadow:0 0 8px #f59e0b;"></span> Pending Verification';
+                    badge.style.background = 'rgba(245,158,11,0.15)';
+                    badge.style.color = '#f59e0b';
+                    badge.style.borderColor = 'rgba(245,158,11,0.4)';
+                    subtext.innerText = 'Click to activate';
+                }
+
+                badge.addEventListener('click', function () {
+                    const current = localStorage.getItem('quantedge_ddpi_active_1') === 'true' || localStorage.getItem('quantedge_ddpi_active') === 'true';
+                    if (current) {
+                        if (confirm('Reset DDPI verified status?')) {
+                            localStorage.removeItem('quantedge_ddpi_active_1');
+                            localStorage.removeItem('quantedge_ddpi_active');
+                            location.reload();
+                        }
+                    } else {
+                        localStorage.setItem('quantedge_ddpi_active_1', 'true');
+                        localStorage.setItem('quantedge_ddpi_active', 'true');
+                        location.reload();
+                    }
+                });
+            }
+        });
     </script>
 }

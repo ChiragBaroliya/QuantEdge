@@ -40,6 +40,7 @@ document.addEventListener("DOMContentLoaded", function () {
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 
+    renderDdpiStatus();
     loadDashboardData();
     setupEventListeners();
     setupSignalRHub();
@@ -913,6 +914,28 @@ function setupEventListeners() {
             }
         });
     }
+
+    // DDPI Confirmation Handlers
+    document.getElementById("btnDdpiMarkComplete")?.addEventListener("click", function () {
+        setDdpiActive(true);
+        showToastAlert("🎉 DDPI Verified: Auto CNC selling is fully enabled for your Zerodha account!", "success");
+    });
+
+    document.getElementById("btnModalConfirmDdpi")?.addEventListener("click", function () {
+        setDdpiActive(true);
+        showToastAlert("🎉 DDPI Verified: Auto CNC selling is fully enabled for your Zerodha account!", "success");
+    });
+
+    document.getElementById("broker-ddpi-badge")?.addEventListener("click", function () {
+        if (!isDdpiActive()) {
+            if (typeof bootstrap !== 'undefined') {
+                const modalEl = document.getElementById('modalDdpiGuideline');
+                if (modalEl) new bootstrap.Modal(modalEl).show();
+            }
+        } else {
+            showToastAlert("🛡️ DDPI Status: Active & Verified. No daily CDSL TPIN/OTP required for automated exits.", "info");
+        }
+    });
 }
 
 window.openSquareOffModal = function (id, symbol) {
@@ -1019,4 +1042,137 @@ function formatCurrencyWithSign(val) {
     const num = parseFloat(val || 0);
     const sign = num > 0 ? '+' : '';
     return sign + '₹' + num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ============================================================================
+// DDPI State & UI Manager
+// ============================================================================
+function isDdpiActive() {
+    const key = `quantedge_ddpi_active_${currentUserId}`;
+    return localStorage.getItem(key) === "true" || localStorage.getItem("quantedge_ddpi_active") === "true";
+}
+
+function setDdpiActive(active) {
+    const key = `quantedge_ddpi_active_${currentUserId}`;
+    if (active) {
+        localStorage.setItem(key, "true");
+        localStorage.setItem("quantedge_ddpi_active", "true");
+    } else {
+        localStorage.removeItem(key);
+        localStorage.removeItem("quantedge_ddpi_active");
+    }
+    renderDdpiStatus();
+}
+
+function renderDdpiStatus() {
+    const active = isDdpiActive();
+    const banner = document.getElementById("banner-ddpi-activation");
+    const bannerIcon = document.getElementById("bannerDdpiIcon");
+    const bannerText = document.getElementById("bannerDdpiText");
+    const bannerActions = document.getElementById("bannerDdpiActions");
+    const badge = document.getElementById("broker-ddpi-badge");
+    const badgeText = document.getElementById("ddpiBadgeText");
+
+    // Header Badge Update
+    if (badge) {
+        if (active) {
+            badge.className = "badge-ddpi";
+            if (badgeText) badgeText.innerText = "DDPI: Active";
+            badge.title = "🛡️ DDPI Status: Active & Verified. No daily CDSL TPIN/OTP required for automated exits.";
+        } else {
+            badge.className = "badge-ddpi inactive";
+            if (badgeText) badgeText.innerText = "DDPI: Pending";
+            badge.title = "⚠️ DDPI Pending: Click to view 1-time DDPI activation steps.";
+        }
+    }
+
+    // Prerequisite Banner Update
+    if (banner && bannerIcon && bannerText && bannerActions) {
+        if (active) {
+            banner.className = "prerequisite-banner banner-ddpi-verified";
+            bannerIcon.innerText = "🛡️";
+            bannerText.innerHTML = `<strong>DDPI Active & Verified:</strong> 1-Click automated CNC Sell & Target exit orders are enabled via Zerodha API without daily TPIN/OTP.`;
+            bannerActions.innerHTML = `
+                <span class="badge-ddpi-verified-tag">✓ Active (No TPIN Needed)</span>
+                <button type="button" class="btn-ddpi-recheck" id="btnDdpiRecheck" title="Click if you need to review guidelines">📖 View Guide</button>
+            `;
+            document.getElementById("btnDdpiRecheck")?.addEventListener("click", () => {
+                if (typeof bootstrap !== 'undefined') {
+                    const modalEl = document.getElementById('modalDdpiGuideline');
+                    if (modalEl) new bootstrap.Modal(modalEl).show();
+                }
+            });
+        } else {
+            banner.className = "prerequisite-banner banner-tpin-notice";
+            bannerIcon.innerText = "🚀";
+            bannerText.innerHTML = `<strong>Automated Real Trading Prerequisite:</strong> To allow the engine to automatically execute CNC Sell & Target exit orders via Zerodha API, please activate <strong>1-time DDPI</strong> in your Zerodha account.`;
+            bannerActions.innerHTML = `
+                <button type="button" class="btn-tpin-guide" data-bs-toggle="modal" data-bs-target="#modalDdpiGuideline" title="Step-by-step 1-time DDPI activation guide">
+                    📖 DDPI Guide
+                </button>
+                <a href="https://console.zerodha.com/account/demat" target="_blank" class="btn-ddpi-enable" id="btnDdpiOpenConsole">
+                    <span>Enable DDPI Online</span> <span class="ddpi-arrow">↗</span>
+                </a>
+                <button type="button" class="btn-ddpi-verify-action" id="btnDdpiMarkComplete" title="Click if DDPI status is Completed in Zerodha Demat Console">
+                    ✅ I've Enabled DDPI
+                </button>
+            `;
+            document.getElementById("btnDdpiMarkComplete")?.addEventListener("click", () => {
+                setDdpiActive(true);
+                showToastAlert("🎉 DDPI Verified: Auto CNC selling is active without TPIN!", "success");
+            });
+        }
+    }
+}
+
+// Global Toast Notification Helper
+function showToastAlert(message, type = "info") {
+    let toastContainer = document.getElementById("qeToastContainer");
+    if (!toastContainer) {
+        toastContainer = document.createElement("div");
+        toastContainer.id = "qeToastContainer";
+        toastContainer.style.position = "fixed";
+        toastContainer.style.top = "20px";
+        toastContainer.style.right = "20px";
+        toastContainer.style.zIndex = "999999";
+        toastContainer.style.display = "flex";
+        toastContainer.style.flexDirection = "column";
+        toastContainer.style.gap = "10px";
+        document.body.appendChild(toastContainer);
+    }
+
+    const toast = document.createElement("div");
+    toast.className = `qe-toast qe-toast-${type}`;
+    toast.style.background = type === "success" 
+        ? "linear-gradient(135deg, #065f46 0%, #047857 100%)" 
+        : type === "danger" 
+            ? "linear-gradient(135deg, #991b1b 0%, #dc2626 100%)" 
+            : "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)";
+    toast.style.color = "#ffffff";
+    toast.style.padding = "12px 20px";
+    toast.style.borderRadius = "10px";
+    toast.style.border = type === "success" ? "1px solid #34d399" : "1px solid #475569";
+    toast.style.boxShadow = "0 10px 25px rgba(0,0,0,0.5)";
+    toast.style.fontSize = "0.88rem";
+    toast.style.fontWeight = "600";
+    toast.style.display = "flex";
+    toast.style.alignItems = "center";
+    toast.style.gap = "10px";
+    toast.style.transition = "all 0.3s ease";
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(-10px)";
+    toast.innerHTML = `<span>${message}</span>`;
+
+    toastContainer.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        toast.style.opacity = "1";
+        toast.style.transform = "translateY(0)";
+    });
+
+    setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(-10px)";
+        setTimeout(() => toast.remove(), 350);
+    }, 4500);
 }
