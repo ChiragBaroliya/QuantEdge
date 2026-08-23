@@ -20,6 +20,7 @@ $(document).ready(function () {
         searchQuery: '',
         statusFilter: 'all',
         historyFilter: 'all',
+        alphabetFilter: 'all',
         totalCount: 0,
         totalPages: 0,
         selectedStockId: null,
@@ -87,6 +88,7 @@ $(document).ready(function () {
             search: state.searchQuery,
             status: state.statusFilter,
             historyFilter: state.historyFilter,
+            alphabet: state.alphabetFilter,
             page: state.currentPage,
             pageSize: state.pageSize
         };
@@ -645,6 +647,12 @@ $(document).ready(function () {
             loadPaginatedList();
         });
 
+        $('#alphabetFilter').on('change', function () {
+            state.alphabetFilter = $(this).val();
+            state.currentPage = 1;
+            loadPaginatedList();
+        });
+
         // Page Size change
         $('#pageSizeSelect').on('change', function () {
             state.pageSize = parseInt($(this).val(), 10) || 25;
@@ -680,7 +688,8 @@ $(document).ready(function () {
             const params = new URLSearchParams({
                 search: state.searchQuery || '',
                 status: state.statusFilter || 'all',
-                historyFilter: state.historyFilter || 'all'
+                historyFilter: state.historyFilter || 'all',
+                alphabet: state.alphabetFilter || 'all'
             });
 
             const exportUrl = getEndpointUrl('/datacoverage/export-excel?' + params.toString());

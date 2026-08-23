@@ -559,11 +559,13 @@ $$;
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS sp_get_paginated_stock_coverage CASCADE;
 DROP FUNCTION IF EXISTS sp_get_paginated_stock_coverage(VARCHAR, VARCHAR, VARCHAR, INT, INT) CASCADE;
+DROP FUNCTION IF EXISTS sp_get_paginated_stock_coverage(VARCHAR, VARCHAR, VARCHAR, VARCHAR, INT, INT) CASCADE;
 
 CREATE OR REPLACE FUNCTION sp_get_paginated_stock_coverage(
     p_search VARCHAR DEFAULT NULL,
     p_status_filter VARCHAR DEFAULT NULL,
     p_history_filter VARCHAR DEFAULT NULL,
+    p_alphabet_filter VARCHAR DEFAULT NULL,
     p_page_number INT DEFAULT 1,
     p_page_size INT DEFAULT 25
 )
@@ -623,6 +625,11 @@ BEGIN
                 OR (LOWER(p_history_filter) = 'has_15m' AND COALESCE(s.is_histry_stored_15m, 0) = 1)
                 OR (LOWER(p_history_filter) = 'has_60m' AND COALESCE(s.is_histry_stored_60m, 0) = 1)
                 OR (LOWER(p_history_filter) = 'has_1d' AND COALESCE(s.is_histry_stored_1d, 0) = 1)
+            )
+            AND (
+                p_alphabet_filter IS NULL OR p_alphabet_filter = '' OR LOWER(p_alphabet_filter) = 'all'
+                OR (p_alphabet_filter = '0-9' AND s.symbol ~ '^[0-9]')
+                OR (UPPER(s.symbol) LIKE UPPER(p_alphabet_filter) || '%')
             )
     ),
     counted AS (

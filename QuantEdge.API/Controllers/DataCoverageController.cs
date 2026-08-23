@@ -48,12 +48,13 @@ public class DataCoverageController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
         [FromQuery] string? historyFilter = null,
+        [FromQuery] string? alphabet = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25)
     {
         try
         {
-            var result = await _stockMasterRepository.GetPaginatedCoverageAsync(search, status, historyFilter, page, pageSize);
+            var result = await _stockMasterRepository.GetPaginatedCoverageAsync(search, status, historyFilter, alphabet, page, pageSize);
             return Ok(result);
         }
         catch (Exception ex)
@@ -70,11 +71,12 @@ public class DataCoverageController : ControllerBase
     public async Task<IActionResult> ExportExcel(
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
-        [FromQuery] string? historyFilter = null)
+        [FromQuery] string? historyFilter = null,
+        [FromQuery] string? alphabet = null)
     {
         try
         {
-            var excelBytes = await _stockMasterRepository.ExportStockCoverageToExcelAsync(search, status, historyFilter);
+            var excelBytes = await _stockMasterRepository.ExportStockCoverageToExcelAsync(search, status, historyFilter, alphabet);
             string fileName = $"Stock_Coverage_Export_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
             return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
         }

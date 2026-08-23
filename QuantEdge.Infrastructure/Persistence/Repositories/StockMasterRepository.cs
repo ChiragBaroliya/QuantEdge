@@ -154,15 +154,16 @@ public class StockMasterRepository : IStockMasterRepository
     /// <summary>
     /// Retrieves paginated stock coverage data using sp_get_paginated_stock_coverage.
     /// </summary>
-    public async Task<PaginatedCoverageResult> GetPaginatedCoverageAsync(string? search, string? statusFilter, string? historyFilter, int pageNumber, int pageSize)
+    public async Task<PaginatedCoverageResult> GetPaginatedCoverageAsync(string? search, string? statusFilter, string? historyFilter, string? alphabetFilter, int pageNumber, int pageSize)
     {
         using var connection = _connectionFactory.CreateConnection();
         var items = (await connection.QueryAsync<StockCoverageDto>(
-            "SELECT * FROM sp_get_paginated_stock_coverage(@p_search, @p_status_filter, @p_history_filter, @p_page_number, @p_page_size);",
+            "SELECT * FROM sp_get_paginated_stock_coverage(@p_search, @p_status_filter, @p_history_filter, @p_alphabet_filter, @p_page_number, @p_page_size);",
             new {
                 p_search = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
                 p_status_filter = string.IsNullOrWhiteSpace(statusFilter) ? null : statusFilter.Trim(),
                 p_history_filter = string.IsNullOrWhiteSpace(historyFilter) ? null : historyFilter.Trim(),
+                p_alphabet_filter = string.IsNullOrWhiteSpace(alphabetFilter) ? null : alphabetFilter.Trim(),
                 p_page_number = pageNumber < 1 ? 1 : pageNumber,
                 p_page_size = pageSize < 1 ? 25 : pageSize
             }
@@ -242,9 +243,9 @@ public class StockMasterRepository : IStockMasterRepository
     /// <summary>
     /// Generates and exports Excel report (.xlsx) of stock coverage data based on search and filter criteria.
     /// </summary>
-    public async Task<byte[]> ExportStockCoverageToExcelAsync(string? search, string? statusFilter, string? historyFilter)
+    public async Task<byte[]> ExportStockCoverageToExcelAsync(string? search, string? statusFilter, string? historyFilter, string? alphabetFilter = null)
     {
-        var result = await GetPaginatedCoverageAsync(search, statusFilter, historyFilter, pageNumber: 1, pageSize: 100000);
+        var result = await GetPaginatedCoverageAsync(search, statusFilter, historyFilter, alphabetFilter, pageNumber: 1, pageSize: 100000);
         var items = result.Items ?? Enumerable.Empty<StockCoverageDto>();
 
         using var workbook = new XLWorkbook();
@@ -257,7 +258,7 @@ public class StockMasterRepository : IStockMasterRepository
         worksheet.Cell("A1").Style.Font.FontColor = XLColor.FromHtml("#1E293B");
 
         string generatedTimeStr = DateTime.Now.ToString("dd-MMM-yyyy HH:mm:ss");
-        worksheet.Cell("A2").Value = $"Generated: {generatedTimeStr} | Status Filter: {statusFilter ?? "All"} | History Filter: {historyFilter ?? "All"} | Search: {search ?? "None"} | Total Records: {result.TotalCount}";
+        worksheet.Cell("A2").Value = $"Generated: {generatedTimeStr} | Status Filter: {statusFilter ?? "All"} | History Filter: {historyFilter ?? "All"} | Alphabet: {alphabetFilter ?? "All"} | Search: {search ?? "None"} | Total Records: {result.TotalCount}";
         worksheet.Cell("A2").Style.Font.Italic = true;
         worksheet.Cell("A2").Style.Font.FontSize = 10;
         worksheet.Cell("A2").Style.Font.FontColor = XLColor.FromHtml("#64748B");

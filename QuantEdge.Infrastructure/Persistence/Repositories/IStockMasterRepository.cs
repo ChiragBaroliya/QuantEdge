@@ -35,9 +35,9 @@ public interface IStockMasterRepository
     Task<QuantEdge.Infrastructure.DTOs.CoverageSummaryDto> GetCoverageSummaryAsync();
 
     /// <summary>
-    /// Retrieves paginated stock coverage data matching search and filter criteria.
+    /// Retrieves paginated stock coverage data matching search, status, history, and alphabet filter criteria.
     /// </summary>
-    Task<QuantEdge.Infrastructure.DTOs.PaginatedCoverageResult> GetPaginatedCoverageAsync(string? search, string? statusFilter, string? historyFilter, int pageNumber, int pageSize);
+    Task<QuantEdge.Infrastructure.DTOs.PaginatedCoverageResult> GetPaginatedCoverageAsync(string? search, string? statusFilter, string? historyFilter, string? alphabetFilter, int pageNumber, int pageSize);
 
     /// <summary>
     /// Updates a stock's active status and timeframe history stored flags.
@@ -57,7 +57,7 @@ public interface IStockMasterRepository
     /// <summary>
     /// Generates and exports Excel report (.xlsx) of stock coverage data based on search and filter criteria.
     /// </summary>
-    Task<byte[]> ExportStockCoverageToExcelAsync(string? search, string? statusFilter, string? historyFilter);
+    Task<byte[]> ExportStockCoverageToExcelAsync(string? search, string? statusFilter, string? historyFilter, string? alphabetFilter = null);
 }
 
 
