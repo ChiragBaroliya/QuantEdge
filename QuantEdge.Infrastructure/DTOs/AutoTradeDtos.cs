@@ -9,7 +9,7 @@ public class AutoTradeSettingsUpdateDto
 {
     public bool IsAutoTradeEnabled { get; set; } = false;
 
-    [Range(typeof(decimal), "1000", "10000000", ErrorMessage = "Available Capital must be between ₹1,000 and ₹1,00,00,000.")]
+    [Range(typeof(decimal), "100", "10000000", ErrorMessage = "Available Capital must be between ₹100 and ₹1,00,00,000.")]
     public decimal AvailableCapital { get; set; } = 100000.00m;
 
     [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Profit Target % must be between 0.1% and 100%.")]
@@ -28,7 +28,7 @@ public class AutoTradeSettingsUpdateDto
     public decimal FixedAmountPerTrade { get; set; } = 20000.00m;
 
     [Range(1, 13, ErrorMessage = "Min Conditions Match must be between 1 and 13.")]
-    public int MinConditionsMatch { get; set; } = 12;
+    public int MinConditionsMatch { get; set; } = 10;
 
     public string TradingWindowStart { get; set; } = "09:15";
     public string TradingWindowEnd { get; set; } = "15:30";

@@ -15,4 +15,5 @@ public interface IAutoTradeRepository
     Task<int> GetTodayAutoTradeCountAsync(string userId = "default_user");
     Task LogExecutionAsync(AutoTradeExecutionLog log);
     Task<IEnumerable<AutoTradeExecutionLog>> GetTodayLogsAsync(string userId = "default_user", int limit = 50);
+    Task ClearLogsAsync(string userId = "default_user");
 }

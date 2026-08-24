@@ -72,6 +72,28 @@ public class AutoTradeService : IAutoTradeService
 
         var updated = await _repository.UpsertSettingsAsync(existing);
 
+        // Synchronize paper account balance with newly configured Available Capital
+        var paperAccount = await _paperRepository.GetAccountAsync(userId);
+        if (paperAccount != null)
+        {
+            if (paperAccount.UsedMargin == 0)
+            {
+                await _paperRepository.UpdateAccountBalanceAndMarginAsync(
+                    paperAccount.Id, 
+                    updateDto.AvailableCapital, 
+                    0m, 
+                    paperAccount.RealizedPnl);
+            }
+            else
+            {
+                await _paperRepository.UpdateAccountBalanceAndMarginAsync(
+                    paperAccount.Id, 
+                    updateDto.AvailableCapital, 
+                    paperAccount.UsedMargin, 
+                    paperAccount.RealizedPnl);
+            }
+        }
+
         // Invalidate Memory Cache
         string cacheKey = $"autotrade:settings:{userId}";
         await _cacheService.RemoveAsync(cacheKey);
@@ -117,12 +139,23 @@ public class AutoTradeService : IAutoTradeService
         int todayCount = await GetTodayAutoTradeCountAsync(userId);
 
         decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
-        var todayHistory = (await _paperRepository.GetTradeHistoryAsync(paperAccount?.Id ?? 0, 100))
-            .Where(t => t.TradeType == TradeType.Auto && t.ExecutedAt >= DateTime.UtcNow.Date)
-            .ToList();
+
+        DateTime nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneHelper.IndianTimeZone);
+        DateTime todayStartIst = nowIst.Date;
+        DateTime todayStartUtc = TimeZoneInfo.ConvertTimeToUtc(todayStartIst, TimeZoneHelper.IndianTimeZone);
+
+        var historyFilter = new PaperTradeHistoryFilterDto
+        {
+            Page = 1,
+            PageSize = 1000,
+            FromDate = todayStartUtc,
+            ToDate = null
+        };
+        var (historyItems, _) = await _paperRepository.GetTradeHistoryPagedAsync(paperAccount?.Id ?? 0, historyFilter);
+        var todayHistory = historyItems.Where(t => t.TradeType == TradeType.Auto).ToList();
 
         decimal todayRealizedPnl = todayHistory.Sum(t => t.RealizedPnl);
-        decimal todayTradeAmount = todayHistory.Where(t => t.Side == TradeSide.BUY).Sum(t => t.Quantity * t.ExecutedPrice);
+        decimal todayTradeAmount = todayHistory.Where(t => t.Side == TradeSide.BUY).Sum(t => t.Quantity * (t.EntryPrice > 0 ? t.EntryPrice : t.ExecutedPrice));
         if (todayTradeAmount == 0 && todayCount > 0)
         {
             todayTradeAmount = todayCount * settings.FixedAmountPerTrade;
@@ -434,8 +467,8 @@ public class AutoTradeService : IAutoTradeService
             shouldExit = true;
             exitReason = "Target Hit";
         }
-        // 2. Stop Loss Hit Check
-        else if (position.StopLoss.HasValue && currentLtp <= position.StopLoss.Value)
+        // 2. Stop Loss Hit Check (Only evaluate if Stop Loss is enabled in Settings AND position has Stop Loss)
+        else if (settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0 && position.StopLoss.HasValue && position.StopLoss.Value > 0 && currentLtp <= position.StopLoss.Value)
         {
             shouldExit = true;
             exitReason = "Stop Loss Hit";
@@ -516,6 +549,36 @@ public class AutoTradeService : IAutoTradeService
             _logger.LogError(ex, "Failed to execute auto sell for position #{PositionId} on {Symbol}", position.Id, position.Symbol);
             return false;
         }
+    }
+
+    public async Task ResetAutoPaperTradingAsync(string userId = "default_user")
+    {
+        var settings = await GetSettingsAsync(userId);
+        var paperAccount = await _paperRepository.GetAccountAsync(userId);
+        decimal initialBalance = settings.AvailableCapital > 0 ? settings.AvailableCapital : 100000m;
+
+        if (paperAccount == null)
+        {
+            paperAccount = await _paperRepository.CreateAccountAsync(userId, "Virtual Trading Account", initialBalance);
+        }
+        else
+        {
+            await _paperRepository.ResetAccountAsync(paperAccount.Id, initialBalance);
+        }
+
+        // Clear execution logs
+        await _repository.ClearLogsAsync(userId);
+
+        // Clear memory/distributed cache
+        string todayKey = $"autotrade:today_count:{userId}:{DateTime.UtcNow:yyyyMMdd}";
+        string settingsKey = $"autotrade:settings:{userId}";
+        await _cacheService.RemoveAsync(todayKey);
+        await _cacheService.RemoveAsync(settingsKey);
+
+        await LogAuditAsync("SYSTEM", "RESET_PAPER_TRADING", null, null,
+            "All paper trading positions, orders, trade history, and logs have been reset & cleared. Account balance reset to initial capital.", userId);
+
+        await BroadcastDashboardUpdateAsync(userId);
     }
 
     private bool IsWithinTradingWindow(string startStr, string endStr)

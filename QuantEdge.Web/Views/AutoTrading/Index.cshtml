@@ -39,6 +39,12 @@
                     <span class="slider"></span>
                 </label>
             </div>
+            @if (User.IsInRole("Admin"))
+            {
+                <button type="button" id="btnResetPaperTrading" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1 px-3 py-1" style="border-radius: 8px; font-weight: 600; font-size: 12px; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1);" title="Reset all open positions, execution history, and logs to start fresh with initial capital">
+                    🗑️ Reset Paper Trading
+                </button>
+            }
         </div>
     </div>
 
@@ -238,12 +244,12 @@
                     {
                         <div class="form-group col-half">
                             <label class="form-label" title="Budget limit allocated for auto trading.">Available Capital (₹)</label>
-                            <input type="number" id="txtCapital" class="form-input" value="100000" min="1000" step="5000" title="Budget limit allocated for auto trading." />
+                            <input type="number" id="txtCapital" class="form-input" value="100000" min="100" step="100" title="Budget limit allocated for auto trading." />
                         </div>
 
                         <div class="form-group col-half">
                             <label class="form-label" title="Maximum money spent per auto trade.">Trade Amount (₹)</label>
-                            <input type="number" id="txtFixedAmount" class="form-input" value="20000" min="500" step="1000" title="Maximum money spent per auto trade." />
+                            <input type="number" id="txtFixedAmount" class="form-input" value="2000" min="100" step="100" title="Maximum money spent per auto trade." />
                             <small class="form-help-text">Trade qty up to this amount.</small>
                         </div>
 
@@ -279,6 +285,9 @@
                         </div>
 
                         <button type="button" class="btn-save-settings col-full" id="btnSaveSettings">💾 Save Auto Settings</button>
+                        <button type="button" class="btn btn-outline-danger col-full mt-2 fw-semibold" id="btnResetPaperTradingSettings" style="border-radius: 8px; font-size: 13px; padding: 9px; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.08);" title="Clear all paper positions and trade logs">
+                            🗑️ Reset & Clear Paper Trading Data
+                        </button>
                     }
                     else
                     {

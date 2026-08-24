@@ -24,4 +24,9 @@ public interface IAutoTradeService
     /// Evaluates real-time price against position Target %, Stop Loss %, or Max Duration and executes auto sell order if hit.
     /// </summary>
     Task<bool> EvaluateAndExecuteAutoSellAsync(PaperPosition position, decimal currentLtp, string userId = "default_user");
+
+    /// <summary>
+    /// Completely clears and resets all paper trading positions, orders, trade history, and execution logs for a fresh start.
+    /// </summary>
+    Task ResetAutoPaperTradingAsync(string userId = "default_user");
 }

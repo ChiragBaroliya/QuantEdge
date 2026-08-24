@@ -93,4 +93,11 @@ public class AutoTradeRepository : IAutoTradeRepository
 
         return await connection.QueryAsync<AutoTradeExecutionLog>(sql, new { userId, todayStartUtc, limit });
     }
+
+    public async Task ClearLogsAsync(string userId = "default_user")
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = "DELETE FROM auto_trade_execution_logs WHERE user_id = @userId;";
+        await connection.ExecuteAsync(sql, new { userId });
+    }
 }

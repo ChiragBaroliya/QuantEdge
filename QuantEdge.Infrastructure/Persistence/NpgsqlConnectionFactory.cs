@@ -28,15 +28,14 @@ public class NpgsqlConnectionFactory : IDbConnectionFactory
             throw new InvalidOperationException("PostgreSQL ConnectionString is not configured.");
         }
 
-        var builder = new NpgsqlConnectionStringBuilder(_config.ConnectionString)
+        var builder = new NpgsqlConnectionStringBuilder(_config.ConnectionString);
+        if (builder.Pooling)
         {
-            Pooling = true,
-            MinPoolSize = 0,
-            MaxPoolSize = 30,
-            ConnectionIdleLifetime = 15,
-            Timeout = 15,
-            CommandTimeout = 30
-        };
+            builder.MinPoolSize = builder.MinPoolSize > 0 ? builder.MinPoolSize : 0;
+            builder.MaxPoolSize = builder.MaxPoolSize > 0 ? builder.MaxPoolSize : 30;
+            builder.ConnectionIdleLifetime = builder.ConnectionIdleLifetime >= 10 ? builder.ConnectionIdleLifetime : 300;
+            builder.ConnectionPruningInterval = 10;
+        }
 
         return new NpgsqlConnection(builder.ConnectionString);
     }

@@ -82,5 +82,15 @@ public class AutoTradeController : ControllerBase
         var logs = await _autoTradeService.GetTodayLogsAsync(GetCurrentUserId(), limit);
         return Ok(logs);
     }
+
+    /// <summary>
+    /// Resets all auto paper trading data: deletes positions, orders, history, and logs for a completely fresh start.
+    /// </summary>
+    [HttpPost("reset")]
+    public async Task<IActionResult> ResetAutoPaperTrading()
+    {
+        await _autoTradeService.ResetAutoPaperTradingAsync(GetCurrentUserId());
+        return Ok(new { success = true, message = "Auto Paper Trading data has been reset and cleared successfully." });
+    }
 }
 

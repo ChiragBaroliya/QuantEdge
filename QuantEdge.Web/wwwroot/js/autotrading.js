@@ -684,15 +684,21 @@ function setupEventListeners() {
                 ? parseFloat(rawSl)
                 : null;
 
+            const rawCap = document.getElementById("txtCapital")?.value;
+            const parsedCap = (rawCap !== "" && rawCap !== null && !isNaN(rawCap)) ? parseFloat(rawCap) : 2000;
+
+            const rawFixed = document.getElementById("txtFixedAmount")?.value;
+            const parsedFixed = (rawFixed !== "" && rawFixed !== null && !isNaN(rawFixed)) ? parseFloat(rawFixed) : 2000;
+
             const dto = {
                 isAutoTradeEnabled: document.getElementById("chkAutoTradeToggle").checked,
-                availableCapital: parseFloat(document.getElementById("txtCapital").value) || 100000,
+                availableCapital: parsedCap,
                 profitTargetPct: parseFloat(document.getElementById("txtTargetPct").value) || 5.0,
                 stopLossPct: parsedSl,
                 maxDurationDays: parseInt(document.getElementById("txtMaxDuration").value) || 20,
                 maxTradesPerDay: parseInt(document.getElementById("txtMaxTrades").value) || 5,
-                fixedAmountPerTrade: parseFloat(document.getElementById("txtFixedAmount").value) || 20000,
-                minConditionsMatch: parseInt(document.getElementById("txtMinConditions").value) || 12,
+                fixedAmountPerTrade: parsedFixed,
+                minConditionsMatch: parseInt(document.getElementById("txtMinConditions").value) || 10,
                 tradingWindowStart: "09:15",
                 tradingWindowEnd: "15:30"
             };
@@ -724,6 +730,125 @@ function setupEventListeners() {
                 console.error("Settings update failed:", err);
             }
         });
+    }
+
+    // Reset Paper Trading Handler with SweetAlert2
+    async function handleResetPaperTrading() {
+        if (typeof Swal !== "undefined") {
+            const result = await Swal.fire({
+                title: 'Reset Paper Trading?',
+                html: `
+                    <div style="text-align: left; font-size: 14px; color: #cbd5e1; line-height: 1.6;">
+                        <p style="margin-bottom: 12px; color: #f87171; font-weight: 600;">
+                            ⚠️ This action is permanent and will completely clear:
+                        </p>
+                        <ul style="margin: 0 0 16px 20px; padding: 0; color: #94a3b8;">
+                            <li>All <strong>Open Paper Positions</strong></li>
+                            <li>All <strong>Orders & Execution History</strong></li>
+                            <li>All <strong>Live Auto Trade Audit Logs</strong></li>
+                        </ul>
+                        <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 10px; color: #38bdf8; font-size: 13px;">
+                            💼 Virtual Trading Balance will be reset to <strong>₹1,00,000.00</strong>.
+                        </div>
+                    </div>
+                `,
+                icon: 'warning',
+                iconColor: '#f87171',
+                showCancelButton: true,
+                confirmButtonText: '🗑️ Yes, Reset Everything',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#334155',
+                background: '#1e293b',
+                color: '#ffffff',
+                reverseButtons: true,
+                focusCancel: true
+            });
+
+            if (!result.isConfirmed) return;
+        } else {
+            const confirmed = confirm("⚠️ Are you sure you want to RESET all Auto Paper Trading data?\n\nThis will permanently delete:\n- All Open Paper Positions\n- All Orders & Execution History\n- All Live Audit Logs\n\nYour virtual trading balance will be reset to initial capital (₹1,00,000.00).");
+            if (!confirmed) return;
+        }
+
+        try {
+            if (typeof Swal !== "undefined") {
+                Swal.fire({
+                    title: 'Resetting Paper Trading...',
+                    text: 'Please wait while all positions and records are cleared.',
+                    background: '#1e293b',
+                    color: '#ffffff',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+            }
+
+            const res = await fetch(`${apiBaseUrl}/api/autotrade/reset`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+            });
+
+            if (res.ok) {
+                if (typeof Swal !== "undefined") {
+                    await Swal.fire({
+                        icon: 'success',
+                        iconColor: '#34d399',
+                        title: 'Paper Trading Reset!',
+                        text: 'All paper trading data has been cleared. Account balance has been reset to initial capital.',
+                        confirmButtonText: 'OK',
+                        confirmButtonColor: '#10b981',
+                        background: '#1e293b',
+                        color: '#ffffff'
+                    });
+                } else {
+                    showToast("🗑️ All Paper Trading data has been cleared & reset successfully!", "success");
+                }
+                loadDashboardData();
+                loadActiveStocks();
+                loadOrders();
+                loadHistory(1);
+            } else {
+                if (typeof Swal !== "undefined") {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Reset Failed',
+                        text: 'Failed to reset paper trading data. Please try again.',
+                        confirmButtonColor: '#ef4444',
+                        background: '#1e293b',
+                        color: '#ffffff'
+                    });
+                } else {
+                    showToast("Failed to reset paper trading data.", "error");
+                }
+            }
+        } catch (err) {
+            console.error("Reset paper trading failed:", err);
+            if (typeof Swal !== "undefined") {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'An error occurred while resetting paper trading.',
+                    confirmButtonColor: '#ef4444',
+                    background: '#1e293b',
+                    color: '#ffffff'
+                });
+            } else {
+                showToast("Error occurred while resetting paper trading.", "error");
+            }
+        }
+    }
+
+    const btnReset = document.getElementById("btnResetPaperTrading");
+    if (btnReset) {
+        btnReset.addEventListener("click", handleResetPaperTrading);
+    }
+
+    const btnResetSettings = document.getElementById("btnResetPaperTradingSettings");
+    if (btnResetSettings) {
+        btnResetSettings.addEventListener("click", handleResetPaperTrading);
     }
 }
 
