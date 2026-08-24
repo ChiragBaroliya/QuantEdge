@@ -357,8 +357,7 @@ RETURNS TABLE (
     exit_reason VARCHAR(255),
     realized_pnl NUMERIC(18, 4),
     opened_at TIMESTAMP WITH TIME ZONE,
-    closed_at TIMESTAMP WITH TIME ZONE,
-    updated_at TIMESTAMP WITH TIME ZONE
+    closed_at TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
 AS $$
@@ -381,8 +380,7 @@ BEGIN
         p.exit_reason,
         p.realized_pnl,
         p.opened_at,
-        p.closed_at,
-        p.updated_at
+        p.closed_at
     FROM real_positions p
     WHERE p.status = 0 -- OPEN
     ORDER BY p.opened_at DESC;

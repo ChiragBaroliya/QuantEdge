@@ -64,7 +64,7 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
 
                     if (activeUserSettings.Any())
                     {
-                        _logger.LogInformation("Executing 15-minute Single-Pass REAL MONEY Scan over ~190 stocks for {UserCount} active user(s)...", activeUserSettings.Count);
+                        _logger.LogInformation("Executing 15-minute Single-Pass REAL MONEY Scan over active stocks for {UserCount} active user(s)...", activeUserSettings.Count);
                         await RunSinglePassScanAndExecuteAsync(scope.ServiceProvider, realTradeService, activeUserSettings, stoppingToken);
                     }
                     else

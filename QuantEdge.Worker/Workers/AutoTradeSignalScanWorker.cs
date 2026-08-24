@@ -57,7 +57,7 @@ public class AutoTradeSignalScanWorker : BackgroundService
 
                     if (activeUserSettings.Any())
                     {
-                            _logger.LogInformation("Executing 15-minute Auto Trade Signal Scan for {UserCount} active user(s) over ~190 stocks...", activeUserSettings.Count);
+                            _logger.LogInformation("Executing 15-minute Auto Trade Signal Scan for {UserCount} active user(s) over active stocks...", activeUserSettings.Count);
                             
                             foreach (var userSettings in activeUserSettings)
                             {
@@ -107,7 +107,7 @@ public class AutoTradeSignalScanWorker : BackgroundService
         var stockRepo = provider.GetRequiredService<IStockMasterRepository>();
         var candleRepo = provider.GetRequiredService<IMarketCandleRepository>();
 
-        // Dynamically fetch ~190 active stocks from stock_master database
+        // Dynamically fetch active stocks from stock_master database
         var activeStocks = (await stockRepo.GetActiveStocksAsync()).ToList();
         if (!activeStocks.Any())
         {

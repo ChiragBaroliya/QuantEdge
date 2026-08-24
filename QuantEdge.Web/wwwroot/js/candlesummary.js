@@ -120,7 +120,7 @@ async function loadActiveSymbols() {
         const selectSymbol = document.getElementById("filterSymbol");
         if (!selectSymbol || !symbols) return;
 
-        selectSymbol.innerHTML = '<option value="ALL" selected>All Symbols (~190 NSE)</option>';
+        selectSymbol.innerHTML = '<option value="ALL" selected>All Active Symbols</option>';
 
         symbols.forEach(sym => {
             const opt = document.createElement("option");

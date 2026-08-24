@@ -6,7 +6,7 @@ This plan details how to register, deploy, configure, and monitor the **Auto Pap
 
 ## Background Context
 The `autotrade` worker job runs two core continuous hosted services:
-1. **`AutoTradeSignalScanWorker`**: Executes a 15-minute signal scan during the trading window (**09:15 AM – 15:30 PM IST**) over **~190 active NSE symbols** (dynamically loaded from `stock_master`) using the 13-condition `SwingDecisionEngine`.
+1. **`AutoTradeSignalScanWorker`**: Executes a 15-minute signal scan during the trading window (**09:15 AM – 15:30 PM IST**) over **active NSE symbols** (dynamically loaded from `stock_master`) using the 13-condition `SwingDecisionEngine`.
 2. **`AutoTradePositionMonitorWorker`**: Real-time tick-by-tick monitoring via Zerodha KiteTicker WebSocket with automatic **REST Polling Fallback** (30s) and proactive **AccessToken expiry handling** for position exits (Target +5%, Stop Loss -3%, Max Duration 20 days).
 
 ---
