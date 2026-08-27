@@ -56,6 +56,16 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
             }
         }
 
+        // For Default User (userId == 1), if DB session is not yet loaded or missing, fallback to Token Manager configured token in BrokerConfig
+        if (userId == 1 && (session == null || string.IsNullOrWhiteSpace(session.AccessToken)))
+        {
+            if (!string.IsNullOrWhiteSpace(_config.AccessToken) && !string.IsNullOrWhiteSpace(_config.ApiKey))
+            {
+                _logger.LogInformation("Using Token Manager configured token from BrokerConfig for Default User (UserId: 1).");
+                return (true, _config.AccessToken, _config.ApiKey, "Default User Token Manager token is active.");
+            }
+        }
+
         if (session == null || string.IsNullOrWhiteSpace(session.AccessToken))
         {
             return (false, null, null, $"No active Zerodha session token found for user {userId}. Please click 'Connect Zerodha' on Auto Real Trade page.");
@@ -68,6 +78,14 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         if (indianTime.Date != nowIst.Date || indianTime < cutoff)
         {
+            // For Default User (userId == 1), if Token Manager updated _config.AccessToken in appsettings, use it as fallback
+            if (userId == 1 && !string.IsNullOrWhiteSpace(_config.AccessToken))
+            {
+                string configKey = !string.IsNullOrWhiteSpace(session.ApiKey) ? session.ApiKey : _config.ApiKey;
+                _logger.LogInformation("Database token for Default User is stale, using Token Manager configured token from appsettings.");
+                return (true, _config.AccessToken, configKey, "Active Zerodha session is valid (Token Manager configured).");
+            }
+
             return (false, null, null, $"Zerodha session token for user {userId} is stale (created {indianTime:yyyy-MM-dd hh:mm tt} IST). Fresh token post 6:00 AM IST required.");
         }
 
