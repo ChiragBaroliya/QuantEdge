@@ -238,6 +238,13 @@
     background: rgba(167, 139, 250, 0.04);
 }
 
+.user-registered-date {
+    color: #ffffff !important;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+
 /* User Identity Cell */
 .user-identity-cell {
     display: flex;

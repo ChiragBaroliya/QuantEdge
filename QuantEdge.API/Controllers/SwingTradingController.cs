@@ -46,6 +46,78 @@ public class SwingTradingController : ControllerBase
         return Ok(status);
     }
 
+    [HttpGet("slots")]
+    public async Task<IActionResult> GetSlots([FromQuery] string? date, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("API GET Request: Fetching swing scan slots for date: {Date}", date);
+        try
+        {
+            DateTime queryDate = DateTime.UtcNow.Date;
+            if (!string.IsNullOrWhiteSpace(date) && DateTime.TryParse(date, out var parsedDate))
+            {
+                queryDate = parsedDate.Date;
+            }
+
+            var slots = await _swingTradingService.GetScanSlotsAsync(queryDate, cancellationToken);
+            return Ok(slots);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve scan slots for date: {Date}", date);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    [HttpGet("slot-recommendations")]
+    public async Task<IActionResult> GetSlotRecommendations([FromQuery] string? date, [FromQuery] string? slot, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("API GET Request: Fetching swing slot recommendations for date: {Date}, slot: {Slot}", date, slot);
+        try
+        {
+            DateTime queryDate = DateTime.UtcNow.Date;
+            if (!string.IsNullOrWhiteSpace(date) && DateTime.TryParse(date, out var parsedDate))
+            {
+                queryDate = parsedDate.Date;
+            }
+
+            string slotLabel = slot ?? "all";
+            var recommendations = await _swingTradingService.GetSlotRecommendationsAsync(queryDate, slotLabel, cancellationToken);
+            return Ok(recommendations);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve slot recommendations for date: {Date}, slot: {Slot}", date, slot);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    [HttpPost("run-intraday")]
+    public IActionResult RunIntradayScan()
+    {
+        _logger.LogInformation("API POST Request: Triggering 30-minute Swing Trading intraday scan in background.");
+        if (_swingTradingService.IsJobRunning("intraday30m"))
+        {
+            return Ok(new { Message = "30-minute Swing Trading scan is already running in background.", TaskStarted = false });
+        }
+
+        _swingTradingService.UpdateJobProgress("intraday30m", true, 0, "Initiating 30-minute Intraday Swing Scan...");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _swingTradingService.RunIntradaySlotScanAsync(null, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background 30-minute Swing Scan failed.");
+                _swingTradingService.UpdateJobProgress("intraday30m", false, 0, "30-minute scan failed.", ex.Message);
+            }
+        });
+
+        return Accepted(new { Message = "30-minute Swing Trading scan initiated in background.", TaskStarted = true });
+    }
+
     [HttpPost("run-job")]
     public IActionResult RunJob()
     {
@@ -100,4 +172,5 @@ public class SwingTradingController : ControllerBase
         return Accepted(new { Message = "Historical backtest task started in background. Processing symbols and backtesting historical performance...", TaskStarted = true });
     }
 }
+
 

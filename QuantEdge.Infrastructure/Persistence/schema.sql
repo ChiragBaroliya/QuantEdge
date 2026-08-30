@@ -375,6 +375,37 @@ CREATE TABLE IF NOT EXISTS swing_positions (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
+-- Table: swing_slot_recommendations (30-Minute Interval Swing Recommendations)
+CREATE TABLE IF NOT EXISTS swing_slot_recommendations (
+    id SERIAL PRIMARY KEY,
+    scan_date DATE NOT NULL,
+    slot_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    slot_label VARCHAR(20) NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    decision VARCHAR(20) NOT NULL,
+    score INT NOT NULL,
+    confidence_pct NUMERIC(5, 2),
+    entry_price NUMERIC(18, 4),
+    stop_loss NUMERIC(18, 4),
+    target1 NUMERIC(18, 4),
+    target2 NUMERIC(18, 4),
+    risk_reward_ratio NUMERIC(18, 4),
+    volume_multiplier NUMERIC(18, 4),
+    rsi14 NUMERIC(18, 4),
+    adx14 NUMERIC(18, 4),
+    ema20 NUMERIC(18, 4),
+    ema50 NUMERIC(18, 4),
+    ema200 NUMERIC(18, 4),
+    passed_rules TEXT,
+    failed_rules TEXT,
+    reason TEXT,
+    timeframe_used VARCHAR(50) DEFAULT '1D + 15M + 60M',
+    checklist_json JSONB,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_swing_slot_rec UNIQUE (scan_date, slot_label, symbol)
+);
+
+
 
 -- ----------------------------------------------------------------------------
 -- 2. Optional: TimescaleDB Hypertables Configuration
@@ -436,6 +467,13 @@ ON daily_stock_analysis (stock_id, trade_date DESC);
 
 CREATE INDEX IF NOT EXISTS ix_swing_positions_symbol_closed 
 ON swing_positions (symbol, is_closed);
+
+CREATE INDEX IF NOT EXISTS ix_swing_slot_rec_date_slot 
+ON swing_slot_recommendations (scan_date, slot_label);
+
+CREATE INDEX IF NOT EXISTS ix_swing_slot_rec_symbol 
+ON swing_slot_recommendations (symbol, scan_date);
+
 
 
 -- ----------------------------------------------------------------------------

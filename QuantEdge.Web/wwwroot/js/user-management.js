@@ -223,10 +223,11 @@ $(document.body).ready(function () {
                     </td>
                     <td><span class="monospace text-info">${escapeHtml(user.username)}</span></td>
                     <td>${user.email ? escapeHtml(user.email) : '<span class="text-muted">—</span>'}</td>
-                    <td>${user.mobileNo ? escapeHtml(user.mobileNo) : '<span class="text-muted">—</span>'}</td>
+                    <td>${user.mobileNo ? `<span style="color: #ffffff; font-family: monospace;">${escapeHtml(user.mobileNo)}</span>` : '<span class="text-muted">—</span>'}</td>
                     <td><span class="role-badge ${roleBadgeClass}">${escapeHtml(user.role)}</span></td>
-                    <td><span class="text-muted small">${createdFormatted}</span></td>
+                    <td><span class="user-registered-date" style="color: #ffffff !important; font-size: 12px; font-weight: 500;">${createdFormatted}</span></td>
                     <td>
+
                         <div class="action-btn-group">
                             <button type="button" class="btn-table-action btn-action-edit btn-edit-user" 
                                     data-id="${user.id}" 

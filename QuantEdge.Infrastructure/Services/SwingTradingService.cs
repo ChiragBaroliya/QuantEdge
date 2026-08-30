@@ -22,6 +22,7 @@ public class SwingTradingService : ISwingTradingService
     private readonly IMarketCandleRepository _candleRepository;
     private readonly IHistoricalDataService _historicalDataService;
     private readonly IDbConnectionFactory _connectionFactory;
+    private readonly ISwingSlotRecommendationRepository _slotRecommendationRepository;
     private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly ICacheService? _cacheService;
     private readonly ILogger<SwingTradingService> _logger;
@@ -31,6 +32,7 @@ public class SwingTradingService : ISwingTradingService
         IMarketCandleRepository candleRepository,
         IHistoricalDataService historicalDataService,
         IDbConnectionFactory connectionFactory,
+        ISwingSlotRecommendationRepository slotRecommendationRepository,
         ILogger<SwingTradingService> logger,
         IHubContext<MarketDataHub>? hubContext = null,
         ICacheService? cacheService = null)
@@ -39,10 +41,12 @@ public class SwingTradingService : ISwingTradingService
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _historicalDataService = historicalDataService ?? throw new ArgumentNullException(nameof(historicalDataService));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+        _slotRecommendationRepository = slotRecommendationRepository ?? throw new ArgumentNullException(nameof(slotRecommendationRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _hubContext = hubContext;
         _cacheService = cacheService;
     }
+
 
     public async Task<SwingTradingDashboardDto> GetDashboardDataAsync(CancellationToken cancellationToken)
     {
@@ -66,24 +70,15 @@ public class SwingTradingService : ISwingTradingService
             }
         }
 
-        // Ensure we have active stocks and NIFTY 50
-        var activeStocks = (await _stockMasterRepository.GetActiveStocksAsync()).ToList();
-        var niftyStock = await _stockMasterRepository.GetBySymbolAsync("NIFTY 50");
-
-        if (niftyStock == null)
+        // 1. Fetch latest daily Nifty status (using memory cache if available)
+        NiftyStatusDto? niftyStatus = null;
+        string niftyCacheKey = "swing_nifty_status";
+        if (_cacheService != null)
         {
-            _logger.LogWarning("NIFTY 50 is not active or present in stock_master. Activating it.");
-            // Set active if exists
-            using (var conn = _connectionFactory.CreateConnection())
-            {
-                await conn.ExecuteAsync("UPDATE stock_master SET is_active = TRUE WHERE symbol = 'NIFTY 50'");
-            }
-            niftyStock = await _stockMasterRepository.GetBySymbolAsync("NIFTY 50");
+            niftyStatus = await _cacheService.GetAsync<NiftyStatusDto>(niftyCacheKey);
         }
 
-        // 1. Fetch latest daily Nifty status
-        NiftyStatusDto? niftyStatus = null;
-        if (niftyStock != null)
+        if (niftyStatus == null)
         {
             var niftyCandles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
                 .OrderBy(c => c.CandleTime)
@@ -115,221 +110,42 @@ public class SwingTradingService : ISwingTradingService
                     IsEmaBullish: isEmaBullish,
                     IsMarketFilterPassed: isAboveSma50 && isEmaBullish
                 );
+
+                if (_cacheService != null)
+                {
+                    await _cacheService.SetAsync(niftyCacheKey, niftyStatus, TimeSpan.FromMinutes(5));
+                }
+            }
+            else
+            {
+                niftyStatus = new NiftyStatusDto("NIFTY 50", 22000m, 21800m, 21900m, 21850m, true, true, true);
             }
         }
 
-        if (niftyStatus == null)
+        // 2. Fetch latest recommendations for today from memory cache or slot recommendations repository
+        DateTime todayIst = GetIstNow().Date;
+        var stockSignals = (await GetSlotRecommendationsAsync(todayIst, "all", cancellationToken)).ToList();
+
+        var nextRunInfo = CalculateNextRunInfo();
+
+        var dashboardResult = new SwingTradingDashboardDto(
+            NiftyStatus: niftyStatus,
+            StockSignals: stockSignals,
+            BacktestStats15Days: new BacktestStatsDto(15, 0, 0, 0, 0m, 0m, 0m),
+            BacktestStats30Days: new BacktestStatsDto(30, 0, 0, 0, 0m, 0m, 0m),
+            RecentTrades: new List<SwingTradeDto>(),
+            NextRunTime: nextRunInfo.NextRunTime,
+            NextRunSeconds: nextRunInfo.NextRunSeconds,
+            NextRunFormatted: nextRunInfo.FormattedText,
+            IsMarketOpen: nextRunInfo.IsMarketOpen
+        );
+
+        if (_cacheService != null)
         {
-            niftyStatus = new NiftyStatusDto("NIFTY 50", 22000m, 21800m, 21900m, 21850m, true, true, true);
+            await _cacheService.SetAsync(cacheKey, dashboardResult, TimeSpan.FromMinutes(2));
         }
 
-        // 2. Fetch latest daily stock analysis records and evaluate with SwingDecisionEngine
-        var stockSignals = new List<SwingStockSignalDto>();
-        var niftyCandlesGlobal = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
-            .OrderBy(c => c.CandleTime)
-            .ToList();
-
-        using (var conn = _connectionFactory.CreateConnection())
-        {
-            var openPositionSymbols = (await conn.QueryAsync<string>(
-                "SELECT DISTINCT symbol FROM swing_positions WHERE is_closed = FALSE"))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var stock in activeStocks)
-            {
-                if (stock.Symbol == "NIFTY 50") continue;
-
-                var stockCandles = (await _candleRepository.GetHistoryAsync(stock.Symbol, "1d", limit: 300))
-                    .OrderBy(c => c.CandleTime)
-                    .ToList();
-
-                var stockCandles15m = (await _candleRepository.GetHistoryAsync(stock.Symbol, "15m", limit: 100))
-                    .OrderBy(c => c.CandleTime)
-                    .ToList();
-
-                var stockCandles60m = (await conn.QueryAsync<MarketCandle>(@"
-                    SELECT * FROM market_candles_60m 
-                    WHERE symbol = @Symbol 
-                    ORDER BY candle_time DESC 
-                    LIMIT 100",
-                    new { Symbol = stock.Symbol }))
-                    .OrderBy(c => c.CandleTime)
-                    .ToList();
-
-                if (stockCandles.Count >= 50)
-                {
-                    var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles, stockCandles15m, stockCandles60m, niftyCandlesGlobal);
-                    
-                    bool isAlreadyOpen = openPositionSymbols.Contains(stock.Symbol);
-                    if (isAlreadyOpen && evalResult.IsBuySignal)
-                    {
-                        evalResult.IsAlreadyOpen = true;
-                        evalResult.Decision = "WATCH";
-                        evalResult.IsBuySignal = false;
-                        evalResult.Reason = $"Position already active in portfolio for {stock.Symbol}. Duplicate BUY skipped.";
-                    }
-
-                    int idx = stockCandles.Count - 1;
-                    var c = stockCandles[idx];
-
-                    var closes = stockCandles.Select(x => x.Close).ToList();
-                    var highs = stockCandles.Select(x => x.High).ToList();
-                    var lows = stockCandles.Select(x => x.Low).ToList();
-                    var volumes = stockCandles.Select(x => x.Volume).ToList();
-
-                    var ema20 = IndicatorCalculator.CalculateEma(closes, 20);
-                    var ema50 = IndicatorCalculator.CalculateEma(closes, 50);
-                    var ema200 = IndicatorCalculator.CalculateEma(closes, 200);
-                    var rsi14 = IndicatorCalculator.CalculateRsi(closes, 14);
-                    var (macd, macdSignal) = IndicatorCalculator.CalculateMacd(closes);
-                    var adx14 = IndicatorCalculator.CalculateAdx(highs, lows, closes, 14);
-                    var atr14 = IndicatorCalculator.CalculateAtr(highs, lows, closes, 14);
-                    var high52W = IndicatorCalculator.Calculate52WeekHigh(highs, Math.Min(250, highs.Count));
-
-                    var prev20Vol = volumes.Skip(Math.Max(0, idx - 20)).Take(Math.Min(20, idx)).ToList();
-                    decimal avgVol20 = prev20Vol.Any() ? (decimal)prev20Vol.Average(v => (double)v) : 0m;
-                    decimal volMult = avgVol20 > 0m ? Math.Round(c.Volume / avgVol20, 2) : 0m;
-                    bool is52W = c.Close >= 0.90m * high52W[idx];
-
-                    stockSignals.Add(new SwingStockSignalDto(
-                        Symbol: stock.Symbol,
-                        Close: evalResult.EntryPrice > 0m ? evalResult.EntryPrice : c.Close,
-                        Open: c.Open,
-                        High: c.High,
-                        Low: c.Low,
-                        Ema20: Math.Round(ema20[idx], 2),
-                        Ema50: Math.Round(ema50[idx], 2),
-                        Ema200: Math.Round(ema200[idx], 2),
-                        Rsi14: Math.Round(rsi14[idx], 2),
-                        Macd: Math.Round(macd[idx], 2),
-                        MacdSignal: Math.Round(macdSignal[idx], 2),
-                        Adx14: Math.Round(adx14[idx], 2),
-                        Atr14: Math.Round(atr14[idx], 2),
-                        Volume: c.Volume,
-                        AvgVolume20: (long)avgVol20,
-                        VolumeMultiplier: volMult,
-                        Is52WeekHigh: is52W,
-                        High52Week: Math.Round(high52W[idx], 2),
-                        ClosenessTo52WeekHighPct: high52W[idx] > 0m ? Math.Round(c.Close / high52W[idx] * 100m, 2) : 0m,
-                        IsLastCandleBullish: c.Close > c.Open,
-                        MeetsStockFilter: evalResult.IsBuySignal,
-                        MeetsAllBuyRules: evalResult.IsBuySignal && niftyStatus.IsMarketFilterPassed,
-                        Decision: evalResult.Decision,
-                        Reason: evalResult.Reason,
-                        Checklist: evalResult.Checklist,
-                        Score: evalResult.Score,
-                        ConfidencePct: evalResult.ConfidencePct,
-                        EntryPrice: evalResult.EntryPrice,
-                        StopLoss: evalResult.StopLoss,
-                        Target1: evalResult.Target1,
-                        Target2: evalResult.Target2,
-                        RiskRewardRatio: evalResult.RiskRewardRatio,
-                        PassedRules: evalResult.PassedRules,
-                        FailedRules: evalResult.FailedRules,
-                        Sector: evalResult.Sector,
-                        HardFiltersPassed: evalResult.HardFiltersPassed,
-                        IsAlreadyOpen: isAlreadyOpen,
-                        RecommendedQty: evalResult.RecommendedQty,
-                        CalculatedRiskAmount: evalResult.CalculatedRiskAmount,
-                        TimeframeUsed: evalResult.TimeframeUsed,
-                        ExitSignalReason: evalResult.ExitSignalReason
-                    ));
-                }
-                else
-                {
-                    var emptyChecklist = BuildConditionChecklist(niftyStatus, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, false, false, "");
-                    stockSignals.Add(new SwingStockSignalDto(
-                        stock.Symbol, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0, 0m, 0m, false, 0m, 0m, false, false, false, "NO SIGNAL", "Insufficient candle data. Please run EOD Job.", emptyChecklist
-                    ));
-                }
-            }
-
-            // 3. Fetch active positions and trades
-            var allTradesRaw = (await conn.QueryAsync<dynamic>(@"
-                SELECT id, symbol, 
-                       entry_date::text AS entry_date_str, 
-                       entry_price, quantity, is_closed, 
-                       exit_date::text AS exit_date_str, 
-                       exit_price, exit_reason,
-                       COALESCE(
-                           CASE 
-                               WHEN is_closed = TRUE THEN (exit_date - entry_date)
-                               ELSE (CURRENT_DATE - entry_date)
-                           END, 0) AS hold_days,
-                       COALESCE(
-                           CASE 
-                               WHEN is_closed = TRUE THEN ROUND(((exit_price - entry_price) / entry_price * 100)::numeric, 2)
-                               ELSE ROUND((((SELECT close_price FROM daily_stock_analysis d JOIN stock_master s ON d.stock_id = s.id WHERE s.symbol = t.symbol ORDER BY d.trade_date DESC LIMIT 1) - entry_price) / entry_price * 100)::numeric, 2)
-                           END, 0) AS profit_loss_pct
-                FROM swing_positions t
-                ORDER BY entry_date DESC")).ToList();
-
-            var allTrades = new List<SwingTradeDto>();
-            foreach (var r in allTradesRaw)
-            {
-                DateTime entryD = DateTime.UtcNow;
-                DateTime pEntry = DateTime.UtcNow;
-                if (r.entry_date_str != null && DateTime.TryParse(Convert.ToString(r.entry_date_str), out pEntry))
-                {
-                    entryD = pEntry;
-                }
-
-                DateTime? exitD = null;
-                DateTime pExit = DateTime.UtcNow;
-                if (r.exit_date_str != null && DateTime.TryParse(Convert.ToString(r.exit_date_str), out pExit))
-                {
-                    exitD = pExit;
-                }
-
-                allTrades.Add(new SwingTradeDto
-                {
-                    Id = (int)r.id,
-                    Symbol = (string)r.symbol,
-                    EntryDate = entryD,
-                    EntryPrice = r.entry_price != null ? Convert.ToDecimal(r.entry_price) : 0m,
-                    Quantity = r.quantity != null ? Convert.ToInt32(r.quantity) : 0,
-                    IsClosed = r.is_closed != null && Convert.ToBoolean(r.is_closed),
-                    ExitDate = exitD,
-                    ExitPrice = r.exit_price != null ? Convert.ToDecimal(r.exit_price) : null,
-                    ExitReason = r.exit_reason != null ? Convert.ToString(r.exit_reason) : null,
-                    HoldDays = r.hold_days != null ? Convert.ToInt32(r.hold_days) : 0,
-                    ProfitLossPct = r.profit_loss_pct != null ? Convert.ToDecimal(r.profit_loss_pct) : 0m
-                });
-            }
-
-
-
-            // Calculate backtest stats for 15 days
-            var trades15 = allTrades.Where(t => t.EntryDate >= DateTime.UtcNow.AddDays(-15)).ToList();
-            var stats15 = CalculatePeriodStats(trades15, 15);
-
-            // Calculate backtest stats for 30 days
-            var trades30 = allTrades.Where(t => t.EntryDate >= DateTime.UtcNow.AddDays(-30)).ToList();
-            var stats30 = CalculatePeriodStats(trades30, 30);
-
-            var nextRunInfo = CalculateNextRunInfo();
-
-            var dashboardResult = new SwingTradingDashboardDto(
-                NiftyStatus: niftyStatus,
-                StockSignals: stockSignals,
-                BacktestStats15Days: stats15,
-                BacktestStats30Days: stats30,
-                RecentTrades: allTrades.Take(30).ToList(),
-                NextRunTime: nextRunInfo.NextRunTime,
-                NextRunSeconds: nextRunInfo.NextRunSeconds,
-                NextRunFormatted: nextRunInfo.FormattedText,
-                IsMarketOpen: nextRunInfo.IsMarketOpen
-            );
-
-            if (_cacheService != null)
-            {
-                await _cacheService.SetAsync("swing_dashboard_data", dashboardResult, TimeSpan.FromMinutes(1));
-            }
-
-            return dashboardResult;
-        }
-
-
+        return dashboardResult;
     }
 
     public static (DateTime NextRunTime, int NextRunSeconds, string FormattedText, bool IsMarketOpen) CalculateNextRunInfo()
@@ -518,13 +334,70 @@ public class SwingTradingService : ISwingTradingService
 
         _logger.LogInformation("EOD Job completed successfully!");
         UpdateJobProgress("eod", false, 100, "Swing Trading EOD Daily Job completed successfully!");
+        if (_cacheService != null)
+        {
+            DateTime todayIst = GetIstNow().Date;
+            await _cacheService.RemoveAsync("swing_dashboard_data");
+            await _cacheService.RemoveAsync($"swing_slots_{todayIst:yyyy-MM-dd}");
+            await _cacheService.RemoveAsync($"swing_slot_recs_{todayIst:yyyy-MM-dd}_all");
+        }
         await BroadcastSwingDashboardUpdateAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<SwingScanSlotDto>> GetScanSlotsAsync(DateTime scanDate, CancellationToken cancellationToken)
+    {
+        string cacheKey = $"swing_slots_{scanDate:yyyy-MM-dd}";
+        if (_cacheService != null)
+        {
+            var cached = await _cacheService.GetAsync<IReadOnlyList<SwingScanSlotDto>>(cacheKey);
+            if (cached != null)
+            {
+                return cached;
+            }
+        }
+
+        var slots = await _slotRecommendationRepository.GetScanSlotsAsync(scanDate, cancellationToken);
+        if (_cacheService != null && slots != null)
+        {
+            await _cacheService.SetAsync(cacheKey, slots, TimeSpan.FromMinutes(5));
+        }
+        return slots ?? Array.Empty<SwingScanSlotDto>();
+    }
+
+    public async Task<IReadOnlyList<SwingStockSignalDto>> GetSlotRecommendationsAsync(DateTime scanDate, string slotLabel, CancellationToken cancellationToken)
+    {
+        string cacheKey = $"swing_slot_recs_{scanDate:yyyy-MM-dd}_{slotLabel.ToLowerInvariant()}";
+        if (_cacheService != null)
+        {
+            var cached = await _cacheService.GetAsync<IReadOnlyList<SwingStockSignalDto>>(cacheKey);
+            if (cached != null)
+            {
+                return cached;
+            }
+        }
+
+        var recommendations = await _slotRecommendationRepository.GetSlotRecommendationsAsync(scanDate, slotLabel, cancellationToken);
+        if (_cacheService != null && recommendations != null)
+        {
+            await _cacheService.SetAsync(cacheKey, recommendations, TimeSpan.FromMinutes(5));
+        }
+        return recommendations ?? Array.Empty<SwingStockSignalDto>();
+    }
+
+
     public async Task RunIntraday30MinJobAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Executing 30-Minute Intraday Swing Trading Job (1D + 15M + 60M)...");
-        UpdateJobProgress("intraday30m", true, 5, "Initiating 30-minute intraday Swing Trading analysis...");
+        await RunIntradaySlotScanAsync(null, cancellationToken);
+    }
+
+    public async Task RunIntradaySlotScanAsync(DateTime? customSlotTime, CancellationToken cancellationToken)
+    {
+        DateTime nowIst = customSlotTime ?? GetIstNow();
+        string slotLabel = ComputeSlotLabel(nowIst);
+
+        _logger.LogInformation("Executing 30-Minute Intraday Swing Trading Scan for Slot '{SlotLabel}' ({Time:yyyy-MM-dd HH:mm:ss} IST)...", 
+            slotLabel, nowIst);
+        UpdateJobProgress("intraday30m", true, 5, $"Initiating 30-min Swing Scan for slot {slotLabel}...");
 
         try
         {
@@ -556,24 +429,262 @@ public class SwingTradingService : ISwingTradingService
                 _logger.LogWarning(ex, "Failed to sync NIFTY 50 EOD candles during 30m job.");
             }
 
-            // Step 2: Invalidate memory cache & broadcast updated SignalR dashboard
-            UpdateJobProgress("intraday30m", true, 80, "Evaluating 3-Timeframe Hard Filters & 100-Point Matrix...");
-            if (_cacheService != null)
+            // Step 2: Evaluate 3-Timeframe Hard Filters & 100-Point Scoring Matrix
+            UpdateJobProgress("intraday30m", true, 60, $"Evaluating 3-Timeframe Matrix for slot {slotLabel}...");
+
+            var niftyCandlesGlobal = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
+                .OrderBy(c => c.CandleTime)
+                .ToList();
+
+            NiftyStatusDto? niftyStatus = null;
+            if (niftyCandlesGlobal.Count >= 50)
             {
-                await _cacheService.RemoveAsync("swing_dashboard_data");
+                var niftyCloses = niftyCandlesGlobal.Select(c => c.Close).ToList();
+                var niftySma50 = IndicatorCalculator.CalculateSma(niftyCloses, 50);
+                var niftyEma20 = IndicatorCalculator.CalculateEma(niftyCloses, 20);
+                var niftyEma50 = IndicatorCalculator.CalculateEma(niftyCloses, 50);
+
+                int nIdx = niftyCandlesGlobal.Count - 1;
+                decimal lastClose = niftyCloses[nIdx];
+                decimal lastSma50 = niftySma50[nIdx];
+                decimal lastEma20 = niftyEma20[nIdx];
+                decimal lastEma50 = niftyEma50[nIdx];
+
+                bool isAboveSma50 = lastClose > lastSma50;
+                bool isEmaBullish = lastEma20 > lastEma50;
+
+                niftyStatus = new NiftyStatusDto(
+                    Symbol: "NIFTY 50",
+                    Close: lastClose,
+                    Sma50: Math.Round(lastSma50, 2),
+                    Ema20: Math.Round(lastEma20, 2),
+                    Ema50: Math.Round(lastEma50, 2),
+                    IsAboveSma50: isAboveSma50,
+                    IsEmaBullish: isEmaBullish,
+                    IsMarketFilterPassed: isAboveSma50 && isEmaBullish
+                );
+            }
+            else
+            {
+                niftyStatus = new NiftyStatusDto("NIFTY 50", 22000m, 21800m, 21900m, 21850m, true, true, true);
             }
 
-            UpdateJobProgress("intraday30m", true, 90, "Broadcasting updated Swing Dashboard via SignalR...");
+            var evaluatedSlotSignals = new List<SwingStockSignalDto>();
+
+            using (var conn = _connectionFactory.CreateConnection())
+            {
+                var openPositionSymbols = (await conn.QueryAsync<string>(
+                    "SELECT DISTINCT symbol FROM swing_positions WHERE is_closed = FALSE"))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var stock in activeStocks)
+                {
+                    if (stock.Symbol == "NIFTY 50") continue;
+                    if (cancellationToken.IsCancellationRequested) break;
+
+                    var stockCandles = (await _candleRepository.GetHistoryAsync(stock.Symbol, "1d", limit: 300))
+                        .OrderBy(c => c.CandleTime)
+                        .ToList();
+
+                    var stockCandles15m = (await _candleRepository.GetHistoryAsync(stock.Symbol, "15m", limit: 100))
+                        .OrderBy(c => c.CandleTime)
+                        .ToList();
+
+                    var stockCandles60m = (await conn.QueryAsync<MarketCandle>(@"
+                        SELECT * FROM market_candles_60m 
+                        WHERE symbol = @Symbol 
+                        ORDER BY candle_time DESC 
+                        LIMIT 100",
+                        new { Symbol = stock.Symbol }))
+                        .OrderBy(c => c.CandleTime)
+                        .ToList();
+
+                    if (stockCandles.Count >= 50)
+                    {
+                        var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles, stockCandles15m, stockCandles60m, niftyCandlesGlobal);
+                        
+                        bool isAlreadyOpen = openPositionSymbols.Contains(stock.Symbol);
+                        if (isAlreadyOpen && evalResult.IsBuySignal)
+                        {
+                            evalResult.IsAlreadyOpen = true;
+                            evalResult.Decision = "WATCH";
+                            evalResult.IsBuySignal = false;
+                            evalResult.Reason = $"Position already active in portfolio for {stock.Symbol}. Duplicate BUY skipped.";
+                        }
+
+                        // Store BUY and WATCH recommendations (Score >= 50 or BUY/WATCH decision)
+                        if (evalResult.Score >= 50 || evalResult.Decision == "BUY" || evalResult.Decision == "WATCH")
+                        {
+                            int idx = stockCandles.Count - 1;
+                            var c = stockCandles[idx];
+
+                            var closes = stockCandles.Select(x => x.Close).ToList();
+                            var highs = stockCandles.Select(x => x.High).ToList();
+                            var lows = stockCandles.Select(x => x.Low).ToList();
+                            var volumes = stockCandles.Select(x => x.Volume).ToList();
+
+                            var ema20 = IndicatorCalculator.CalculateEma(closes, 20);
+                            var ema50 = IndicatorCalculator.CalculateEma(closes, 50);
+                            var ema200 = IndicatorCalculator.CalculateEma(closes, 200);
+                            var rsi14 = IndicatorCalculator.CalculateRsi(closes, 14);
+                            var (macd, macdSignal) = IndicatorCalculator.CalculateMacd(closes);
+                            var adx14 = IndicatorCalculator.CalculateAdx(highs, lows, closes, 14);
+                            var atr14 = IndicatorCalculator.CalculateAtr(highs, lows, closes, 14);
+                            var high52W = IndicatorCalculator.Calculate52WeekHigh(highs, Math.Min(250, highs.Count));
+
+                            var prev20Vol = volumes.Skip(Math.Max(0, idx - 20)).Take(Math.Min(20, idx)).ToList();
+                            decimal avgVol20 = prev20Vol.Any() ? (decimal)prev20Vol.Average(v => (double)v) : 0m;
+                            decimal volMult = avgVol20 > 0m ? Math.Round(c.Volume / avgVol20, 2) : 0m;
+                            bool is52W = c.Close >= 0.90m * high52W[idx];
+
+                            decimal executionPrice = evalResult.EntryPrice > 0m ? evalResult.EntryPrice : c.Close;
+
+                            evaluatedSlotSignals.Add(new SwingStockSignalDto(
+                                Symbol: stock.Symbol,
+                                Close: executionPrice,
+                                Open: c.Open,
+                                High: c.High,
+                                Low: c.Low,
+                                Ema20: Math.Round(ema20[idx], 2),
+                                Ema50: Math.Round(ema50[idx], 2),
+                                Ema200: Math.Round(ema200[idx], 2),
+                                Rsi14: Math.Round(rsi14[idx], 2),
+                                Macd: Math.Round(macd[idx], 2),
+                                MacdSignal: Math.Round(macdSignal[idx], 2),
+                                Adx14: Math.Round(adx14[idx], 2),
+                                Atr14: Math.Round(atr14[idx], 2),
+                                Volume: c.Volume,
+                                AvgVolume20: (long)avgVol20,
+                                VolumeMultiplier: volMult,
+                                Is52WeekHigh: is52W,
+                                High52Week: Math.Round(high52W[idx], 2),
+                                ClosenessTo52WeekHighPct: high52W[idx] > 0m ? Math.Round(c.Close / high52W[idx] * 100m, 2) : 0m,
+                                IsLastCandleBullish: c.Close > c.Open,
+                                MeetsStockFilter: evalResult.IsBuySignal,
+                                MeetsAllBuyRules: evalResult.IsBuySignal && niftyStatus.IsMarketFilterPassed,
+                                Decision: evalResult.Decision,
+                                Reason: evalResult.Reason,
+                                Checklist: evalResult.Checklist,
+                                Score: evalResult.Score,
+                                ConfidencePct: evalResult.ConfidencePct,
+                                EntryPrice: executionPrice,
+                                StopLoss: evalResult.StopLoss,
+                                Target1: evalResult.Target1,
+                                Target2: evalResult.Target2,
+                                RiskRewardRatio: evalResult.RiskRewardRatio,
+                                PassedRules: evalResult.PassedRules,
+                                FailedRules: evalResult.FailedRules,
+                                Sector: evalResult.Sector,
+                                HardFiltersPassed: evalResult.HardFiltersPassed,
+                                IsAlreadyOpen: isAlreadyOpen,
+                                RecommendedQty: evalResult.RecommendedQty,
+                                CalculatedRiskAmount: evalResult.CalculatedRiskAmount,
+                                TimeframeUsed: evalResult.TimeframeUsed,
+                                ExitSignalReason: evalResult.ExitSignalReason
+                            ));
+                        }
+                    }
+                }
+            }
+
+            // Step 3: Persist slot recommendations batch
+            UpdateJobProgress("intraday30m", true, 85, $"Persisting {evaluatedSlotSignals.Count} signals for slot {slotLabel}...");
+            await _slotRecommendationRepository.SaveSlotRecommendationsAsync(nowIst.Date, nowIst, slotLabel, evaluatedSlotSignals, cancellationToken);
+
+            var sortedSignals = evaluatedSlotSignals.OrderByDescending(s => s.Score).ToList();
+
+            // Step 4: Proactively write generated recommendations directly to memory cache
+            UpdateJobProgress("intraday30m", true, 90, "Caching recommendations and broadcasting via SignalR...");
+            if (_cacheService != null)
+            {
+                string slotKey = $"swing_slot_recs_{nowIst:yyyy-MM-dd}_{slotLabel.ToLowerInvariant()}";
+                string allKey = $"swing_slot_recs_{nowIst:yyyy-MM-dd}_all";
+                string slotsKey = $"swing_slots_{nowIst:yyyy-MM-dd}";
+
+                // Cache specific slot recommendations
+                await _cacheService.SetAsync(slotKey, (IReadOnlyList<SwingStockSignalDto>)sortedSignals, TimeSpan.FromMinutes(30));
+                
+                // Clear existing 'all' and 'slots' cache
+                await _cacheService.RemoveAsync(allKey);
+                await _cacheService.RemoveAsync(slotsKey);
+                await _cacheService.RemoveAsync("swing_dashboard_data");
+
+                // Immediately query and cache updated scan slots & all recommendations for the date
+                var updatedSlots = await _slotRecommendationRepository.GetScanSlotsAsync(nowIst.Date, cancellationToken);
+                await _cacheService.SetAsync(slotsKey, updatedSlots, TimeSpan.FromMinutes(30));
+
+                var updatedAllRecs = await _slotRecommendationRepository.GetSlotRecommendationsAsync(nowIst.Date, "all", cancellationToken);
+                await _cacheService.SetAsync(allKey, updatedAllRecs, TimeSpan.FromMinutes(30));
+            }
+
+            int buyCount = evaluatedSlotSignals.Count(s => s.Decision.Equals("BUY", StringComparison.OrdinalIgnoreCase));
+            int watchCount = evaluatedSlotSignals.Count(s => s.Decision.Equals("WATCH", StringComparison.OrdinalIgnoreCase));
+
+            var slotUpdate = new SwingSlotUpdateDto(
+                ScanDate: nowIst.Date,
+                SlotTime: nowIst,
+                SlotLabel: slotLabel,
+                BuyCount: buyCount,
+                WatchCount: watchCount,
+                TotalCount: evaluatedSlotSignals.Count,
+                Signals: sortedSignals,
+                NiftyStatus: niftyStatus
+            );
+
+            if (_hubContext != null)
+            {
+                await _hubContext.Clients.Group("SwingDashboard").SendAsync("ReceiveSwingSlotUpdate", slotUpdate, cancellationToken);
+                await _hubContext.Clients.All.SendAsync("ReceiveSwingSlotUpdate", slotUpdate, cancellationToken);
+            }
+
             await BroadcastSwingDashboardUpdateAsync(cancellationToken);
 
-            UpdateJobProgress("intraday30m", false, 100, "30-minute Swing Trading intraday job completed successfully!");
-            _logger.LogInformation("30-Minute Intraday Swing Trading Job completed successfully!");
+            UpdateJobProgress("intraday30m", false, 100, $"30-minute Swing Scan for slot '{slotLabel}' completed! ({buyCount} BUY, {watchCount} WATCH).");
+            _logger.LogInformation("30-Minute Intraday Swing Trading Job completed successfully for slot '{SlotLabel}' ({Count} recommendations).", slotLabel, evaluatedSlotSignals.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error occurred during 30-Minute Intraday Swing Trading Job.");
+            _logger.LogError(ex, "Error occurred during 30-Minute Intraday Swing Trading Job for slot '{SlotLabel}'.", slotLabel);
             UpdateJobProgress("intraday30m", false, 0, "30-minute Swing Trading job failed.", ex.Message);
             throw;
+        }
+    }
+
+    public static string ComputeSlotLabel(DateTime istTime)
+    {
+        // Compute standard slot label rounded to nearest 30-min market boundary
+        int minute = istTime.Minute;
+        int snappedMinute;
+        int hour = istTime.Hour;
+
+        if (minute < 15)
+        {
+            snappedMinute = 45;
+            hour = (hour - 1 + 24) % 24;
+        }
+        else if (minute < 45)
+        {
+            snappedMinute = 15;
+        }
+        else
+        {
+            snappedMinute = 45;
+        }
+
+        var snappedTime = new DateTime(istTime.Year, istTime.Month, istTime.Day, hour, snappedMinute, 0);
+        return snappedTime.ToString("hh:mm tt");
+    }
+
+    private static DateTime GetIstNow()
+    {
+        try
+        {
+            var istZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, istZone);
+        }
+        catch
+        {
+            return DateTime.UtcNow.AddHours(5).AddMinutes(30);
         }
     }
 
@@ -598,6 +709,7 @@ public class SwingTradingService : ISwingTradingService
             _logger.LogError(ex, "Failed to broadcast Swing Dashboard updates over SignalR.");
         }
     }
+
 
 
     private async Task AnalyzeStockForDateAsync(

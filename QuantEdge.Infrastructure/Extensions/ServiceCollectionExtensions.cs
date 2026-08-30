@@ -55,7 +55,9 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IZerodhaSessionRepository, ZerodhaSessionRepository>();
         services.AddTransient<IIndianHolidayRepository, IndianHolidayRepository>();
         services.AddTransient<IUserRepository, UserRepository>();
+        services.AddTransient<ISwingSlotRecommendationRepository, SwingSlotRecommendationRepository>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
+
         services.AddTransient<IIndicatorService, IndicatorService>();
         services.AddSingleton<IMarketHoursService, MarketHoursService>();
 

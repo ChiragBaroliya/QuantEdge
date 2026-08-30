@@ -350,3 +350,77 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_save_swing_slot_recommendations
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_save_swing_slot_recommendations CASCADE;
+
+CREATE OR REPLACE PROCEDURE sp_save_swing_slot_recommendations(
+
+    p_scan_date DATE,
+    p_slot_time TIMESTAMP WITH TIME ZONE,
+    p_slot_label VARCHAR(20),
+    p_symbol VARCHAR(50),
+    p_decision VARCHAR(20),
+    p_score INT,
+    p_confidence_pct NUMERIC,
+    p_entry_price NUMERIC,
+    p_stop_loss NUMERIC,
+    p_target1 NUMERIC,
+    p_target2 NUMERIC,
+    p_risk_reward_ratio NUMERIC,
+    p_volume_multiplier NUMERIC,
+    p_rsi14 NUMERIC,
+    p_adx14 NUMERIC,
+    p_ema20 NUMERIC,
+    p_ema50 NUMERIC,
+    p_ema200 NUMERIC,
+    p_passed_rules TEXT,
+    p_failed_rules TEXT,
+    p_reason TEXT,
+    p_timeframe_used VARCHAR(50),
+    p_checklist_json JSONB
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO swing_slot_recommendations (
+        scan_date, slot_time, slot_label, symbol, decision, score, confidence_pct,
+        entry_price, stop_loss, target1, target2, risk_reward_ratio, volume_multiplier,
+        rsi14, adx14, ema20, ema50, ema200, passed_rules, failed_rules, reason,
+        timeframe_used, checklist_json, created_at
+    )
+    VALUES (
+        p_scan_date, p_slot_time, p_slot_label, p_symbol, p_decision, p_score, p_confidence_pct,
+        p_entry_price, p_stop_loss, p_target1, p_target2, p_risk_reward_ratio, p_volume_multiplier,
+        p_rsi14, p_adx14, p_ema20, p_ema50, p_ema200, p_passed_rules, p_failed_rules, p_reason,
+        p_timeframe_used, p_checklist_json, NOW()
+    )
+    ON CONFLICT (scan_date, slot_label, symbol)
+    DO UPDATE SET
+        slot_time = EXCLUDED.slot_time,
+        decision = EXCLUDED.decision,
+        score = EXCLUDED.score,
+        confidence_pct = EXCLUDED.confidence_pct,
+        entry_price = EXCLUDED.entry_price,
+        stop_loss = EXCLUDED.stop_loss,
+        target1 = EXCLUDED.target1,
+        target2 = EXCLUDED.target2,
+        risk_reward_ratio = EXCLUDED.risk_reward_ratio,
+        volume_multiplier = EXCLUDED.volume_multiplier,
+        rsi14 = EXCLUDED.rsi14,
+        adx14 = EXCLUDED.adx14,
+        ema20 = EXCLUDED.ema20,
+        ema50 = EXCLUDED.ema50,
+        ema200 = EXCLUDED.ema200,
+        passed_rules = EXCLUDED.passed_rules,
+        failed_rules = EXCLUDED.failed_rules,
+        reason = EXCLUDED.reason,
+        timeframe_used = EXCLUDED.timeframe_used,
+        checklist_json = EXCLUDED.checklist_json,
+        created_at = NOW();
+END;
+$$;
+
+
+

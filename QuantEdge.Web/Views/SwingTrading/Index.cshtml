@@ -40,14 +40,11 @@
             </button>
             @if (isAdmin)
             {
-                <button id="btnRunBackfill" class="btn-trigger" data-tooltip="🔄 **Run Backtest**: Run historical backtest on past 2 years of market data.">
+                <button id="btnRunIntradayScan" class="btn-trigger" data-tooltip="⚡ **30-Min Scan Now**: Execute immediate 30-minute interval swing scan.">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-                        <path d="M16 3h5v5"></path>
-                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-                        <path d="M8 21H3v-5"></path>
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                     </svg>
-                    Run Historical Backtest
+                    Scan 30-Min Now
                 </button>
                 <button id="btnRunJob" class="btn-trigger btn-primary-trigger" data-tooltip="🚀 **Execute EOD Job**: Scan market after close (3:45 PM IST) for new swing trade setups.">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -66,65 +63,45 @@
         </div>
     </div>
 
-    <!-- Performance Stats Grid -->
+    <!-- Live Scan & Strategy Metrics Grid -->
     <div class="stats-grid">
-        <!-- 15-Day Performance -->
-        <div class="card-glow stat-metric-card" data-tooltip="📊 **15-Day Performance**: Total profit (%) and win rate over the last 15 days.">
+        <!-- Today's Scan Execution Summary -->
+        <div class="card-glow stat-metric-card" data-tooltip="⏱️ **Scan Intervals**: Total 30-minute interval scans executed during market hours today.">
             <div class="stat-metric-header">
-                <span>15-Day Performance</span>
+                <span>Today's Scan Intervals</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                    <line x1="16" y1="2" x2="16" y2="6"></line>
-                    <line x1="8" y1="2" x2="8" y2="6"></line>
-                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
                 </svg>
             </div>
             <div>
                 <div class="stat-metric-value-row">
-                    <span id="pnl15" class="stat-metric-value positive">0.00%</span>
-                    <span id="winRate15" class="pnl-text positive" style="font-size: 14px;">WR: 0%</span>
+                    <span id="statTotalSlotsToday" class="stat-metric-value" style="color: #38bdf8;">0 Slots</span>
+                    <span id="statLatestSlotLabel" class="pnl-text positive" style="font-size: 13px;">Latest: None</span>
                 </div>
                 <div class="stat-metric-sub">
-                    <span id="tradesCount15">0</span> trades generated in the last 15 days
+                    Scanned every 30 mins (09:15 AM – 03:30 PM IST)
                 </div>
             </div>
         </div>
 
-        <!-- 30-Day Performance -->
-        <div class="card-glow stat-metric-card" data-tooltip="📊 **30-Day Performance**: Total profit (%) and win rate over the last 30 days.">
+        <!-- Today's Total Recommendations -->
+        <div class="card-glow stat-metric-card" data-tooltip="🚀 **Today's Recommendations**: Total BUY recommendations and WATCH candidates generated today.">
             <div class="stat-metric-header">
-                <span>30-Day Performance</span>
+                <span>Active Recommendations</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                    <line x1="16" y1="2" x2="16" y2="6"></line>
-                    <line x1="8" y1="2" x2="8" y2="6"></line>
-                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                    <polyline points="16 7 22 7 22 13"></polyline>
                 </svg>
             </div>
             <div>
                 <div class="stat-metric-value-row">
-                    <span id="pnl30" class="stat-metric-value positive">0.00%</span>
-                    <span id="winRate30" class="pnl-text positive" style="font-size: 14px;">WR: 0%</span>
+                    <span id="statTotalRecsToday" class="stat-metric-value" style="color: #34d399;">0</span>
+                    <span id="statRecsBreakdown" class="pnl-text positive" style="font-size: 13px;">0 BUY • 0 WATCH</span>
                 </div>
                 <div class="stat-metric-sub">
-                    <span id="tradesCount30">0</span> trades generated in the last 30 days
+                    Score ≥ 50 with 3-Timeframe Hard Filters Passed
                 </div>
-            </div>
-        </div>
-
-        <!-- Strategy Parameters Summary -->
-        <div class="card-glow stat-metric-card" style="justify-content: flex-start; gap: 8px;" data-tooltip="🎯 **Trading Parameters**: Profit Target (+5%), Stop Loss (-3%), and Max Duration (20 Days).">
-            <div class="stat-metric-header" style="margin-bottom: 4px;">
-                <span>Trading Parameters</span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
-            </div>
-            <div style="font-size: 13px; color: rgba(255,255,255,0.7); display: flex; flex-direction: column; gap: 4px;">
-                <div>• Profit Target: <strong class="pnl-text positive">+5%</strong></div>
-                <div>• Stop Loss: <strong class="pnl-text negative">-3%</strong></div>
-                <div>• Max Duration: <strong>20 Trading Days</strong></div>
             </div>
         </div>
     </div>
@@ -166,89 +143,83 @@
         </div>
     </div>
 
-    <!-- Main Section Navigation Tabs -->
-    <div class="swing-tabs-nav">
-        <button class="swing-tab-btn active" id="tabBtnRecommendations" data-pane="paneRecommendations" data-tooltip="📈 **Stock Recommendations**: Stocks passing EOD breakout scanner.">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="20" x2="18" y2="10"></line>
-                <line x1="12" y1="20" x2="12" y2="4"></line>
-                <line x1="6" y1="20" x2="6" y2="14"></line>
-            </svg>
-            Stock Recommendations
-            <span class="tab-badge" id="recommendationsBadge">0</span>
-        </button>
-        <button class="swing-tab-btn" id="tabBtnTradeLog" data-pane="paneTradeLog" data-tooltip="📜 **Positions & Trade Log**: Active simulated positions and closed trade history.">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-            Simulated Positions & Trade Log
-            <span class="tab-badge" id="tradeLogBadge">0</span>
-        </button>
-        <button class="swing-tab-btn" id="tabBtnParameters" data-pane="paneParameters" data-tooltip="⚙️ **Strategy Parameters**: Risk management, leverage, and fee configuration.">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-            Strategy Parameters
-        </button>
-    </div>
-
-    <!-- PANE 1: Recommendations Watchlist -->
+    <!-- Recommendations Watchlist -->
     <div class="swing-tab-pane active" id="paneRecommendations">
-        <!-- Executive KPI Metrics Summary for 3,000+ Symbols -->
-        <div class="executive-kpi-grid">
-            <div class="kpi-card" data-tooltip="📊 **Total Symbols Scanned**: Over 3,000 NSE stocks scanned daily.">
-                <div class="kpi-left">
-                    <span class="kpi-label">Total Symbols Scanned</span>
-                    <span class="kpi-value" id="kpiTotalSymbols">0</span>
+        
+        <!-- 30-Minute Slot Navigation & Date Selector Card -->
+        <div class="slot-navigation-card">
+            <div class="slot-nav-header">
+                <div class="slot-nav-title-group">
+                    <h4 class="slot-nav-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        30-Minute Scan Intervals
+                    </h4>
                 </div>
-                <div class="kpi-icon-wrapper">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+
+                <div class="slot-date-controls">
+                    <button class="slot-quick-date-btn active" id="btnDateToday">Today</button>
+                    <button class="slot-quick-date-btn" id="btnDateYesterday">Yesterday</button>
+                    <div class="slot-date-input-wrapper">
+                        <input type="date" id="slotDatePicker" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- Horizontal Slot Pills Bar -->
+            <div class="slot-pills-scroll-wrapper">
+                <button class="slot-scroll-arrow" id="btnScrollSlotsLeft" title="Scroll Left">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="15 18 9 12 15 6"></polyline>
                     </svg>
-                </div>
-            </div>
+                </button>
 
-            <div class="kpi-card" style="border-color: rgba(52, 211, 153, 0.25);" data-tooltip="🚀 **BUY Recommendations**: Breakout stocks matching buy criteria today.">
-                <div class="kpi-left">
-                    <span class="kpi-label" style="color: #34d399;">🟢 BUY Recommendations</span>
-                    <span class="kpi-value buy-glow" id="kpiBuyCount">0</span>
+                <div class="slot-pills-scroll" id="slotPillsContainer">
+                    <div class="slot-pill active" data-slot="all">
+                        <span class="slot-pill-time">All Slots (Today)</span>
+                        <div class="slot-pill-badges">
+                            <span class="slot-badge-count total" id="badgeAllSlotsTotal">0</span>
+                        </div>
+                    </div>
+                    <!-- Dynamically populated 30-minute interval slot pills -->
                 </div>
-                <div class="kpi-icon-wrapper" style="background: rgba(52, 211, 153, 0.1); color: #34d399;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
-                        <polyline points="16 7 22 7 22 13"></polyline>
+
+                <button class="slot-scroll-arrow" id="btnScrollSlotsRight" title="Scroll Right">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="9 18 15 12 9 6"></polyline>
                     </svg>
-                </div>
+                </button>
             </div>
 
-            <div class="kpi-card" style="border-color: rgba(251, 191, 36, 0.25);">
-                <div class="kpi-left">
-                    <span class="kpi-label" style="color: #fbbf24;">⭐ High Met Watchlist (6+)</span>
-                    <span class="kpi-value met-glow" id="kpiHighMetCount">0</span>
+            <!-- Selected Slot Summary Strip -->
+            <div class="slot-summary-strip">
+                <div class="slot-summary-left">
+                    <span class="slot-summary-label">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                        Selected Interval:
+                    </span>
+                    <span class="slot-summary-value" id="selectedSlotText">All Slots (Today)</span>
+                    <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25" id="selectedSlotDateBadge">Loading...</span>
                 </div>
-                <div class="kpi-icon-wrapper" style="background: rgba(251, 191, 36, 0.1); color: #fbbf24;">
-                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                </div>
-            </div>
 
-            <div class="kpi-card">
-                <div class="kpi-left">
-                    <span class="kpi-label">🟡 Neutral / Hold</span>
-                    <span class="kpi-value" id="kpiNeutralCount" style="color: rgba(255,255,255,0.6);">0</span>
-                </div>
-                <div class="kpi-icon-wrapper">
-                    <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2"></line>
+                <div class="slot-summary-stats">
+                    <span class="slot-stat-tag buy">
+                        <span>🟢 BUY Signals:</span>
+                        <strong id="slotSummaryBuyCount">0</strong>
+                    </span>
+                    <span class="slot-stat-tag watch">
+                        <span>🟡 WATCH Candidates:</span>
+                        <strong id="slotSummaryWatchCount">0</strong>
+                    </span>
                 </div>
             </div>
         </div>
 
-        <div class="card-glow">
+        <div class="card-glow mt-3">
             <!-- Search, Filter & View Control Bar -->
             <div class="stock-filter-bar">
                 <div class="filter-left-group">
@@ -261,11 +232,10 @@
                     </div>
 
                     <div class="filter-pills-group">
-                        <!-- Actionable Default: BUY Signals active by default for 3000+ stocks -->
                         <span class="filter-pill pill-buy active" id="pillBuy" data-filter="buy">🟢 BUY Signals (<span id="countBuyPill">0</span>)</span>
-                        <span class="filter-pill" id="pillTopMet" data-filter="topmet">⭐ High Met (6+)</span>
-                        <span class="filter-pill" id="pillNeutral" data-filter="neutral">🟡 Neutral (<span id="countNeutralPill">0</span>)</span>
-                        <span class="filter-pill" id="pillAll" data-filter="all">All Symbols</span>
+                        <span class="filter-pill" id="pillWatch" data-filter="watch">🟡 WATCH Candidates (<span id="countWatchPill">0</span>)</span>
+                        <span class="filter-pill" id="pillHighScore" data-filter="highscore">⭐ High Score (70+)</span>
+                        <span class="filter-pill" id="pillAll" data-filter="all">All Recommendations (<span id="countAllPill">0</span>)</span>
                     </div>
                 </div>
 
@@ -307,21 +277,20 @@
                     <thead>
                         <tr>
                             <th>Symbol</th>
-                            <th>Close</th>
-                            <th>Decision</th>
-                            <th>Conditions Met</th>
-                            <th>RSI (14)</th>
-                            <th>ADX (14)</th>
-                            <th>EMA (20/50/200)</th>
-                            <th>MACD</th>
-                            <th>Vol Spike</th>
-                            <th>52W High</th>
-                            <th>Details</th>
+                            <th>Entry Price</th>
+                            <th>Decision & Score</th>
+                            <th>Stop Loss</th>
+                            <th>Targets (T1 / T2)</th>
+                            <th>Risk:Reward</th>
+                            <th>Vol Surge</th>
+                            <th>RSI & ADX</th>
+                            <th>EMA Trend</th>
+                            <th>11-Rule Analysis</th>
                         </tr>
                     </thead>
                     <tbody id="watchlistTableBody">
                         <tr>
-                            <td colspan="11" class="text-center py-4">
+                            <td colspan="10" class="text-center py-4">
                                 <span class="text-muted">Loading recommendations...</span>
                             </td>
                         </tr>
@@ -329,7 +298,7 @@
                 </table>
             </div>
 
-            <!-- Interactive Pagination Bar for Scalable 3,000+ Symbols -->
+            <!-- Interactive Pagination Bar -->
             <div class="pagination-wrapper">
                 <div class="page-size-selector">
                     <span>Rows per page:</span>
@@ -351,89 +320,15 @@
             </div>
         </div>
     </div>
-
-    <!-- PANE 2: Simulated Positions & Recent Trade Log -->
-    <div class="swing-tab-pane" id="paneTradeLog">
-        <div class="card-glow">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <h3 class="nifty-title" style="margin: 0;">SIMULATED POSITIONS & RECENT TRADE LOG</h3>
-                <span class="text-muted" style="font-size: 12px;">Auto-simulated by EOD Backtest engine</span>
-            </div>
-            <div class="table-scroll-container" style="max-height: 600px;">
-                <table class="swing-table">
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Status</th>
-                            <th>Entry Date</th>
-                            <th>Entry Price</th>
-                            <th>Exit Date</th>
-                            <th>Exit Price</th>
-                            <th>Reason / Exit Factor</th>
-                            <th>Hold Days</th>
-                            <th>P&L (%)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tradeLogTableBody">
-                        <tr>
-                            <td colspan="9" class="text-center py-4">
-                                <span class="text-muted">Loading trade logs...</span>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- PANE 3: Strategy Parameters & Rules -->
-    <div class="swing-tab-pane" id="paneParameters">
-        <div class="card-glow">
-            <h3 class="nifty-title" style="margin-top: 0; margin-bottom: 16px;">EOD SWING TRADING STRATEGY SPECIFICATIONS</h3>
-            
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
-                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 12px;">
-                    <h4 style="color: var(--theme-accent); font-size: 15px; margin-top: 0;">1. Market Filter (Nifty 50)</h4>
-                    <p style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
-                        Trade recommendations are only valid when the overall market condition passes:
-                        <br/>• <strong>Nifty Price > 50-Day SMA</strong>
-                        <br/>• <strong>Nifty 20 EMA > 50 EMA</strong> (Bullish alignment)
-                    </p>
-                </div>
-
-                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 12px;">
-                    <h4 style="color: var(--theme-accent); font-size: 15px; margin-top: 0;">2. 8-Point Entry Checklist</h4>
-                    <p style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
-                        A <strong>BUY</strong> signal requires meeting <strong>ALL 8 conditions</strong>:
-                        <br/>1. Close > 200 EMA & 2. Close > 50 EMA & 3. Close > 20 EMA
-                        <br/>4. EMA Alignment: EMA20 > EMA50 > EMA200
-                        <br/>5. RSI (14) between 55 and 70 (Bullish Momentum)
-                        <br/>6. ADX (14) > 25 (Strong Trend)
-                        <br/>7. MACD Line > MACD Signal Line
-                        <br/>8. Volume Spike ≥ 1.5x of 20-day Average Volume
-                    </p>
-                </div>
-
-                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 12px;">
-                    <h4 style="color: var(--theme-accent); font-size: 15px; margin-top: 0;">3. Risk & Exit Management</h4>
-                    <p style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
-                        Simulated trade positions enforce strict exit rules:
-                        <br/>• <strong class="pnl-text positive">+5% Profit Target</strong> from entry
-                        <br/>• <strong class="pnl-text negative">-3% Stop Loss</strong> from entry
-                        <br/>• <strong>Time Stop: Exit after 20 Trading Days</strong> if neither Target nor Stop Loss is triggered.
-                    </p>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <!-- Floating Non-Blocking Background Job Progress Card -->
+
 <div id="jobFloatCard" class="job-float-card">
     <div class="job-float-header">
         <div class="job-float-title">
             <div class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></div>
-            <span id="jobFloatTitle">Historical Backtest Running...</span>
+            <span id="jobFloatTitle">30-Minute Swing Scan Running...</span>
         </div>
         <span id="jobFloatProgressText" class="job-float-progress-text">0%</span>
     </div>
@@ -441,14 +336,6 @@
         <div id="jobFloatBarFill" class="job-float-fill"></div>
     </div>
     <div id="jobFloatDesc" class="job-float-desc">Initiating background processing...</div>
-</div>
-
-<!-- Global Loading Overlay -->
-<div id="loadingOverlay" class="loading-overlay">
-    <div class="loading-content">
-        <div class="spinner"></div>
-        <div id="loadingMessage" class="loading-text">Processing EOD Daily analysis, please wait...</div>
-    </div>
 </div>
 
 <partial name="_StrategyFormulasModal" />
@@ -460,12 +347,15 @@
         
         let allStockSignals = [];
         let allTrades = [];
-        let currentFilter = "buy"; // Actionable-First: BUY signals active by default for 3000+ stocks!
+        let currentFilter = "buy";
         let searchQuery = "";
         let currentViewMode = window.innerWidth < 768 ? "grid" : "table";
         let currentPage = 1;
         let pageSize = 25;
         let jobPollInterval = null;
+        let selectedDateStr = new Date().toISOString().split('T')[0];
+        let selectedSlotLabel = "all";
+        let currentSlotsList = [];
 
         // SignalR Connection Setup for Real-time 30-Min Intraday Scan Auto-Update
         function initSwingSignalR() {
@@ -476,12 +366,21 @@
                 .withAutomaticReconnect()
                 .build();
 
+            connection.on("ReceiveSwingSlotUpdate", function(slotUpdate) {
+                console.log("⚡ SignalR Received Swing Slot Update:", slotUpdate);
+                if (slotUpdate) {
+                    handleSlotUpdatePush(slotUpdate);
+                }
+            });
+
             connection.on("ReceiveSwingDashboardUpdate", function(dashboardData) {
                 console.log("⚡ SignalR Received Swing Dashboard Update:", dashboardData);
                 if (dashboardData) {
-                    applyDashboardData(dashboardData);
-                    const timeStr = new Date().toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                    $("#lastScanBadge").text(`⚡ 30-Min Scan Updated (${timeStr})`);
+                    populateNifty(dashboardData.niftyStatus);
+                    const nextRunTime = dashboardData.nextRunTime || dashboardData.NextRunTime;
+                    const nextRunFormatted = dashboardData.nextRunFormatted || dashboardData.NextRunFormatted;
+                    const isMarketOpen = dashboardData.isMarketOpen !== undefined ? dashboardData.isMarketOpen : (dashboardData.IsMarketOpen !== undefined ? dashboardData.IsMarketOpen : false);
+                    startNextScanCountdownTimer(nextRunTime, nextRunFormatted, isMarketOpen);
                 }
             });
 
@@ -491,14 +390,76 @@
             }).catch(err => console.error("SignalR Connection Error:", err));
         }
 
+        function handleSlotUpdatePush(slotUpdate) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const scanDateStr = slotUpdate.scanDate ? slotUpdate.scanDate.split('T')[0] : todayStr;
+
+            // Toast notification
+            Swal.fire({
+                icon: 'success',
+                title: `⚡ 30-Min Scan: ${slotUpdate.slotLabel}`,
+                text: `Generated ${slotUpdate.buyCount} BUY and ${slotUpdate.watchCount} WATCH recommendations!`,
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 5000,
+                timerProgressBar: true
+            });
+
+            if (selectedDateStr === scanDateStr) {
+                loadSlotsForDate(selectedDateStr, selectedSlotLabel);
+                loadSlotRecommendations(selectedDateStr, selectedSlotLabel);
+            }
+        }
+
         $(document).ready(function() {
+            // Set initial date picker value
+            $("#slotDatePicker").val(selectedDateStr);
+            $("#selectedSlotDateBadge").text(formatDateBadge(selectedDateStr));
+
             startNextScanCountdownTimer();
             updateViewModeUI();
-            loadDashboard();
             initSwingSignalR();
 
-            // Check if any job is currently running in background on startup
+            // Load initial dashboard stats and slots
+            loadDashboard();
+            loadSlotsForDate(selectedDateStr, "all");
+            loadSlotRecommendations(selectedDateStr, "all");
+
             checkRunningBackgroundJobs();
+
+            // Date picker listener
+            $("#slotDatePicker").change(function() {
+                selectedDateStr = $(this).val();
+                updateQuickDateButtons();
+                $("#selectedSlotDateBadge").text(formatDateBadge(selectedDateStr));
+                selectedSlotLabel = "all";
+                loadSlotsForDate(selectedDateStr, "all");
+                loadSlotRecommendations(selectedDateStr, "all");
+            });
+
+            // Quick Date Buttons
+            $("#btnDateToday").click(function() {
+                const today = new Date().toISOString().split('T')[0];
+                $("#slotDatePicker").val(today).trigger("change");
+            });
+
+            $("#btnDateYesterday").click(function() {
+                const yest = new Date();
+                yest.setDate(yest.getDate() - 1);
+                $("#slotDatePicker").val(yest.toISOString().split('T')[0]).trigger("change");
+            });
+
+            // Scroll arrows
+            $("#btnScrollSlotsLeft").click(function() {
+                const container = $("#slotPillsContainer");
+                container.animate({ scrollLeft: container.scrollLeft() - 200 }, 200);
+            });
+
+            $("#btnScrollSlotsRight").click(function() {
+                const container = $("#slotPillsContainer");
+                container.animate({ scrollLeft: container.scrollLeft() + 200 }, 200);
+            });
 
             // Section Tabs Switching
             $(".swing-tab-btn").click(function() {
@@ -578,16 +539,11 @@
                 }
             });
 
-            // Modal Tab switching
-            $(".qe-modal-nav-btn").click(function() {
-                const tabId = $(this).data("tab");
-                $(".qe-modal-nav-btn").removeClass("active");
-                $(".qe-modal-pane").removeClass("active");
-                $(this).addClass("active");
-                $(`#${tabId}`).addClass("active");
+            // Trigger Background Actions
+            $("#btnRunIntradayScan").click(function() {
+                triggerBackgroundJob("/api/swing/run-intraday", "intraday30m", "30-Minute Swing Scan Running...");
             });
 
-            // Trigger Background Actions (Non-Blocking!)
             $("#btnRunJob").click(function() {
                 triggerBackgroundJob("/api/swing/run-job", "eod", "Executing EOD Daily Analysis Job...");
             });
@@ -596,6 +552,22 @@
                 triggerBackgroundJob("/api/swing/backfill", "backfill", "Historical 2-Year Backtest Running...");
             });
         });
+
+        function formatDateBadge(dateStr) {
+            if (!dateStr) return "";
+            const d = new Date(dateStr + "T00:00:00");
+            return d.toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+
+        function updateQuickDateButtons() {
+            const today = new Date().toISOString().split('T')[0];
+            const yest = new Date();
+            yest.setDate(yest.getDate() - 1);
+            const yestStr = yest.toISOString().split('T')[0];
+
+            $("#btnDateToday").toggleClass("active", selectedDateStr === today);
+            $("#btnDateYesterday").toggleClass("active", selectedDateStr === yestStr);
+        }
 
         function updateViewModeUI() {
             if (currentViewMode === "grid") {
@@ -622,58 +594,6 @@
         }
 
         let countdownInterval = null;
-
-        function getClientNextRunFallback() {
-            const now = new Date();
-            const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
-            const istNow = new Date(utcMs + (3600000 * 5.5)); // IST = UTC + 5:30
-
-            const day = istNow.getDay();
-            const isWeekend = (day === 0 || day === 6);
-            const hours = istNow.getHours();
-            const minutes = istNow.getMinutes();
-            const currentMins = hours * 60 + minutes;
-
-            const marketStartMins = 9 * 60 + 15; // 09:15 AM IST
-            const marketEndMins = 15 * 60 + 30; // 03:30 PM IST
-            const isMarketOpen = !isWeekend && (currentMins >= marketStartMins && currentMins <= marketEndMins);
-
-            let targetIst = new Date(istNow);
-
-            if (isMarketOpen) {
-                let nextMin;
-                if (minutes < 15) nextMin = 15;
-                else if (minutes < 45) nextMin = 45;
-                else {
-                    nextMin = 15;
-                    targetIst.setHours(targetIst.getHours() + 1);
-                }
-                targetIst.setMinutes(nextMin, 0, 0);
-
-                if ((targetIst.getHours() * 60 + targetIst.getMinutes()) > marketEndMins) {
-                    targetIst.setDate(targetIst.getDate() + 1);
-                    targetIst.setHours(9, 45, 0, 0);
-                    while (targetIst.getDay() === 0 || targetIst.getDay() === 6) {
-                        targetIst.setDate(targetIst.getDate() + 1);
-                    }
-                }
-            } else {
-                if (currentMins > marketEndMins) {
-                    targetIst.setDate(targetIst.getDate() + 1);
-                }
-                targetIst.setHours(9, 45, 0, 0);
-                while (targetIst.getDay() === 0 || targetIst.getDay() === 6) {
-                    targetIst.setDate(targetIst.getDate() + 1);
-                }
-            }
-
-            const diffMs = targetIst.getTime() - istNow.getTime();
-            return {
-                targetMs: Date.now() + diffMs,
-                isMarketOpen: isMarketOpen,
-                formatted: targetIst.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' })
-            };
-        }
 
         function startNextScanCountdownTimer(nextRunTimeIso, nextRunFormatted, isMarketOpen) {
             if (countdownInterval) {
@@ -728,36 +648,49 @@
             countdownInterval = setInterval(updateTimer, 1000);
         }
 
-        function applyDashboardData(data) {
-            if (!data) return;
-            populateNifty(data.niftyStatus);
-            allStockSignals = data.stockSignals || [];
-            allTrades = data.recentTrades || [];
+        function getClientNextRunFallback() {
+            const now = new Date();
+            const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const istNow = new Date(utcMs + (3600000 * 5.5));
 
-            // Trigger live next job countdown timer with camelCase or PascalCase property support
-            const nextRunTime = data.nextRunTime || data.NextRunTime;
-            const nextRunFormatted = data.nextRunFormatted || data.NextRunFormatted;
-            const isMarketOpen = data.isMarketOpen !== undefined ? data.isMarketOpen : (data.IsMarketOpen !== undefined ? data.IsMarketOpen : false);
+            const day = istNow.getDay();
+            const isWeekend = (day === 0 || day === 6);
+            const hours = istNow.getHours();
+            const minutes = istNow.getMinutes();
+            const currentMins = hours * 60 + minutes;
 
-            startNextScanCountdownTimer(nextRunTime, nextRunFormatted, isMarketOpen);
+            const marketStartMins = 9 * 60 + 15;
+            const marketEndMins = 15 * 60 + 30;
+            const isMarketOpen = !isWeekend && (currentMins >= marketStartMins && currentMins <= marketEndMins);
 
-            // Update Executive KPI Badges for 3000+ stocks
-            const totalScanned = allStockSignals.length;
-            const buyCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "BUY").length;
-            const highMetCount = allStockSignals.filter(s => (s.checklist ? s.checklist.metCount : 0) >= 6).length;
-            const neutralCount = totalScanned - buyCount;
+            let targetIst = new Date(istNow);
 
-            $("#kpiTotalSymbols").text(totalScanned.toLocaleString());
-            $("#kpiBuyCount").text(buyCount.toLocaleString());
-            $("#kpiHighMetCount").text(highMetCount.toLocaleString());
-            $("#kpiNeutralCount").text(neutralCount.toLocaleString());
+            if (isMarketOpen) {
+                let nextMin = minutes < 15 ? 15 : (minutes < 45 ? 45 : 15);
+                if (minutes >= 45) targetIst.setHours(targetIst.getHours() + 1);
+                targetIst.setMinutes(nextMin, 0, 0);
 
-            $("#recommendationsBadge").text(buyCount);
-            $("#tradeLogBadge").text(allTrades.length);
+                if ((targetIst.getHours() * 60 + targetIst.getMinutes()) > marketEndMins) {
+                    targetIst.setDate(targetIst.getDate() + 1);
+                    targetIst.setHours(9, 45, 0, 0);
+                    while (targetIst.getDay() === 0 || targetIst.getDay() === 6) {
+                        targetIst.setDate(targetIst.getDate() + 1);
+                    }
+                }
+            } else {
+                if (currentMins > marketEndMins) targetIst.setDate(targetIst.getDate() + 1);
+                targetIst.setHours(9, 45, 0, 0);
+                while (targetIst.getDay() === 0 || targetIst.getDay() === 6) {
+                    targetIst.setDate(targetIst.getDate() + 1);
+                }
+            }
 
-            filterAndRenderStocks();
-            populatePerformance(data.backtestStats15Days, data.backtestStats30Days);
-            populateTrades(allTrades);
+            const diffMs = targetIst.getTime() - istNow.getTime();
+            return {
+                targetMs: Date.now() + diffMs,
+                isMarketOpen: isMarketOpen,
+                formatted: targetIst.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' })
+            };
         }
 
         function loadDashboard() {
@@ -765,18 +698,136 @@
                 url: getEndpointUrl('/api/swing/dashboard'),
                 type: "GET",
                 success: function(data) {
-                    applyDashboardData(data);
+                    if (!data) return;
+                    populateNifty(data.niftyStatus);
+
+                    const nextRunTime = data.nextRunTime || data.NextRunTime;
+                    const nextRunFormatted = data.nextRunFormatted || data.NextRunFormatted;
+                    const isMarketOpen = data.isMarketOpen !== undefined ? data.isMarketOpen : (data.IsMarketOpen !== undefined ? data.IsMarketOpen : false);
+                    startNextScanCountdownTimer(nextRunTime, nextRunFormatted, isMarketOpen);
                 },
                 error: function(err) {
                     console.error("Failed to load dashboard data.", err);
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Connection Error',
-                        text: 'Error loading dashboard data. Check if API is running at ' + API_BASE_URL,
-                        confirmButtonColor: 'var(--theme-accent)',
-                        background: 'var(--bg-card)',
-                        color: 'var(--text-primary)'
+                }
+            });
+        }
+
+        function loadSlotsForDate(dateStr, activeSlot) {
+            $.ajax({
+                url: getEndpointUrl(`/api/swing/slots?date=${dateStr}`),
+                type: "GET",
+                success: function(slots) {
+                    currentSlotsList = slots || [];
+                    renderSlotPills(currentSlotsList, activeSlot || "all");
+                },
+                error: function(err) {
+                    console.error("Failed to load scan slots for date:", dateStr, err);
+                }
+            });
+        }
+
+        function renderSlotPills(slots, activeSlot) {
+            const container = $("#slotPillsContainer");
+            container.empty();
+
+            let totalAllBuy = 0;
+            let totalAllWatch = 0;
+            let totalAll = 0;
+            let latestSlot = null;
+
+            if (slots && slots.length > 0) {
+                totalAllBuy = slots.reduce((acc, s) => acc + (s.buyCount || 0), 0);
+                totalAllWatch = slots.reduce((acc, s) => acc + (s.watchCount || 0), 0);
+                totalAll = slots.reduce((acc, s) => acc + (s.totalCount || 0), 0);
+                latestSlot = slots.find(s => s.isLatest) || slots[slots.length - 1];
+
+                $("#statTotalSlotsToday").text(`${slots.length} Slots`);
+                $("#statLatestSlotLabel").text(`Latest: ${latestSlot ? latestSlot.slotLabel : 'None'}`);
+                $("#statTotalRecsToday").text(totalAll);
+                $("#statRecsBreakdown").text(`${totalAllBuy} BUY • ${totalAllWatch} WATCH`);
+            } else {
+                $("#statTotalSlotsToday").text(`0 Slots`);
+                $("#statLatestSlotLabel").text(`Latest: None`);
+                $("#statTotalRecsToday").text(`0`);
+                $("#statRecsBreakdown").text(`0 BUY • 0 WATCH`);
+            }
+
+            // All Slots Pill
+            const isAllActive = (activeSlot === "all" || !activeSlot);
+            const allPill = $(`
+                <div class="slot-pill ${isAllActive ? 'active' : ''}" data-slot="all">
+                    <span class="slot-pill-time">All Slots</span>
+                    <div class="slot-pill-badges">
+                        <span class="slot-badge-count buy" title="${totalAllBuy} BUY Signals">${totalAllBuy} B</span>
+                        <span class="slot-badge-count watch" title="${totalAllWatch} WATCH Candidates">${totalAllWatch} W</span>
+                    </div>
+                </div>
+            `);
+            allPill.click(function() {
+                selectSlot("all", "All Slots (Today)");
+            });
+            container.append(allPill);
+
+            if (slots && slots.length > 0) {
+                slots.forEach((s, idx) => {
+                    const isSelected = (activeSlot === s.slotLabel);
+                    const isLatest = s.isLatest;
+
+                    const slotPill = $(`
+                        <div class="slot-pill ${isSelected ? 'active' : ''}" data-slot="${s.slotLabel}">
+                            <span class="slot-pill-time">${s.slotLabel}</span>
+                            <div class="slot-pill-badges">
+                                <span class="slot-badge-count buy" title="${s.buyCount} BUY Signals">${s.buyCount} B</span>
+                                <span class="slot-badge-count watch" title="${s.watchCount} WATCH Candidates">${s.watchCount} W</span>
+                            </div>
+                            ${isLatest ? `
+                                <div class="slot-live-indicator">
+                                    <span class="slot-live-dot"></span>
+                                    <span>LIVE</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `);
+
+                    slotPill.click(function() {
+                        selectSlot(s.slotLabel, `${s.slotLabel} IST`);
                     });
+
+                    container.append(slotPill);
+                });
+            }
+        }
+
+        function selectSlot(slotLabel, displayText) {
+            selectedSlotLabel = slotLabel;
+            $("#selectedSlotText").text(displayText);
+            $(".slot-pill").removeClass("active");
+            $(`.slot-pill[data-slot="${slotLabel}"]`).addClass("active");
+            loadSlotRecommendations(selectedDateStr, slotLabel);
+        }
+
+        function loadSlotRecommendations(dateStr, slotLabel) {
+            const tbody = $("#watchlistTableBody");
+            tbody.html('<tr><td colspan="10" class="text-center py-4"><span class="text-muted">Loading recommendations for slot...</span></td></tr>');
+
+            $.ajax({
+                url: getEndpointUrl(`/api/swing/slot-recommendations?date=${dateStr}&slot=${encodeURIComponent(slotLabel)}`),
+                type: "GET",
+                success: function(signals) {
+                    allStockSignals = signals || [];
+
+                    const buyCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "BUY").length;
+                    const watchCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "WATCH").length;
+
+                    $("#slotSummaryBuyCount").text(buyCount);
+                    $("#slotSummaryWatchCount").text(watchCount);
+                    $("#recommendationsBadge").text(buyCount);
+
+                    filterAndRenderStocks();
+                },
+                error: function(err) {
+                    console.error("Failed to load slot recommendations:", err);
+                    tbody.html('<tr><td colspan="10" class="text-center text-danger py-4">Error loading recommendations. Check API connection.</td></tr>');
                 }
             });
         }
@@ -813,6 +864,11 @@
         }
 
         function checkRunningBackgroundJobs() {
+            $.get(getEndpointUrl(`/api/swing/job-status?jobType=intraday30m`), function(res) {
+                if (res && res.isRunning) {
+                    startJobStatusPolling("intraday30m", "30-Minute Swing Scan Running...");
+                }
+            });
             $.get(getEndpointUrl(`/api/swing/job-status?jobType=backfill`), function(res) {
                 if (res && res.isRunning) {
                     startJobStatusPolling("backfill", "Historical 2-Year Backtest Running...");
@@ -829,7 +885,6 @@
             jobPollInterval = setInterval(function() {
                 $.get(getEndpointUrl(`/api/swing/job-status?jobType=${jobType}`), function(status) {
                     if (!status) return;
-
 
                     if (status.isRunning) {
                         const pct = status.progressPercent || 0;
@@ -858,6 +913,8 @@
                                 background: 'var(--bg-card)',
                                 color: 'var(--text-primary)'
                             });
+                            loadSlotsForDate(selectedDateStr, selectedSlotLabel);
+                            loadSlotRecommendations(selectedDateStr, selectedSlotLabel);
                             loadDashboard();
                         }
                     }
@@ -914,22 +971,22 @@
         function filterAndRenderStocks() {
             let filtered = allStockSignals;
 
-            // Summary counts for filter pills
             const buyCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "BUY").length;
-            const neutralCount = allStockSignals.filter(s => !s.decision || s.decision.toUpperCase() !== "BUY").length;
-            $("#countBuyPill").text(buyCount);
-            $("#countNeutralPill").text(neutralCount);
+            const watchCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "WATCH").length;
+            const highScoreCount = allStockSignals.filter(s => (s.score || 0) >= 70).length;
 
-            // Filter logic
+            $("#countBuyPill").text(buyCount);
+            $("#countWatchPill").text(watchCount);
+            $("#countAllPill").text(allStockSignals.length);
+
             if (currentFilter === "buy") {
                 filtered = filtered.filter(s => s.decision && s.decision.toUpperCase() === "BUY");
-            } else if (currentFilter === "neutral") {
-                filtered = filtered.filter(s => !s.decision || s.decision.toUpperCase() !== "BUY");
-            } else if (currentFilter === "topmet") {
-                filtered = filtered.filter(s => (s.checklist ? s.checklist.metCount : 0) >= 6);
+            } else if (currentFilter === "watch") {
+                filtered = filtered.filter(s => s.decision && s.decision.toUpperCase() === "WATCH");
+            } else if (currentFilter === "highscore") {
+                filtered = filtered.filter(s => (s.score || 0) >= 70);
             }
 
-            // Search query logic
             if (searchQuery) {
                 filtered = filtered.filter(s => s.symbol.toLowerCase().includes(searchQuery));
             }
@@ -945,7 +1002,7 @@
             if (totalFiltered === 0) {
                 $("#resultsCounterText").text("Showing 0 stocks");
             } else {
-                $("#resultsCounterText").text(`Showing ${startIdx + 1}–${endIdx} of ${totalFiltered} stocks`);
+                $("#resultsCounterText").text(`Showing ${startIdx + 1}–${endIdx} of ${totalFiltered} recommendations`);
             }
 
             renderStockTable(pageSlice);
@@ -991,6 +1048,7 @@
             const dUpper = decision.toUpperCase();
             if (dUpper.includes("STRONG BUY")) return "strong-buy";
             if (dUpper.includes("BUY")) return "buy";
+            if (dUpper.includes("WATCH")) return "hold";
             if (dUpper.includes("SELL")) return "sell";
             if (dUpper.includes("AVOID")) return "avoid";
             return "hold";
@@ -1011,24 +1069,25 @@
             tbody.empty();
 
             if (!signals || signals.length === 0) {
-                tbody.append('<tr><td colspan="11" class="text-center text-muted py-4">No matching stocks found.</td></tr>');
+                tbody.append('<tr><td colspan="10" class="text-center text-muted py-4">No matching recommendations found for this slot and filter criteria.</td></tr>');
                 return;
             }
 
             signals.forEach((s, index) => {
                 const decClass = getDecisionClass(s.decision);
-                const reasonTitle = escapeHtml(s.reason || "Decision based on technical analysis rules.");
+                const reasonTitle = escapeHtml(s.reason || "Evaluated by 11-Point Multi-Timeframe Scoring Model.");
                 const meetsEma = s.ema20 > s.ema50 && s.ema50 > s.ema200;
-                
-                let volClass = s.volumeMultiplier >= 1.5 ? "positive" : "";
-                let rsiClass = s.rsi14 >= 55 && s.rsi14 <= 70 ? "positive" : (s.rsi14 < 45 ? "negative" : "");
+                const score = s.score || 0;
+                const isBuy = (s.decision && s.decision.toUpperCase() === "BUY");
+                const scoreType = isBuy ? "buy" : "watch";
 
-                const checklist = s.checklist || { metCount: 0, totalCount: 8, conditions: [] };
-                const metCount = checklist.metCount;
-                const totalCount = checklist.totalCount || 8;
-                const pct = Math.round((metCount / totalCount) * 100);
+                let volChipClass = s.volumeMultiplier >= 2.5 ? "high" : (s.volumeMultiplier >= 1.5 ? "medium" : "normal");
 
-                let badgeClass = metCount === totalCount ? "all-met" : (metCount >= 5 ? "partial-met" : "low-met");
+                const checklist = s.checklist || { metCount: 0, totalCount: 11, conditions: [] };
+                const metCount = checklist.metCount || 0;
+                const totalCount = checklist.totalCount || 11;
+                const pct = totalCount > 0 ? Math.round((metCount / totalCount) * 100) : 0;
+                let badgeClass = metCount >= 8 ? "all-met" : (metCount >= 5 ? "partial-met" : "low-met");
 
                 let condCardsHtml = "";
                 if (checklist.conditions && checklist.conditions.length > 0) {
@@ -1053,45 +1112,68 @@
                         </div>
                     `).join("");
                 } else {
-                    condCardsHtml = '<div class="text-muted" style="font-size: 12px;">No checklist details available.</div>';
+                    condCardsHtml = '<div class="text-muted" style="font-size: 12px;">No detailed checklist items recorded for this stock.</div>';
                 }
 
                 const mainRow = `
                     <tr class="stock-main-row stagger-row" style="animation-delay: ${Math.min(index * 0.02, 0.4)}s">
-                        <td class="td-symbol">${s.symbol}</td>
-                        <td class="td-monospace">${Number(s.close).toFixed(2)}</td>
                         <td>
-                            <span class="rec-badge ${decClass}" title="${reasonTitle}" style="cursor: help;" data-bs-toggle="tooltip">
-                                ${s.decision}
-                            </span>
+                            <div class="td-symbol-block">
+                                <span class="td-symbol-name">${s.symbol}</span>
+                                <span class="td-symbol-sector">${s.sector || 'NSE'}</span>
+                            </div>
+                        </td>
+                        <td class="td-monospace" style="font-size: 14px; font-weight: 700;">
+                            ₹${Number(s.close || s.entryPrice).toFixed(2)}
                         </td>
                         <td>
-                            <div class="cond-pill-container" onclick="toggleChecklist('${s.symbol}')" title="Click to view detailed condition checklist">
-                                <span class="cond-count-badge ${badgeClass}">${metCount}/${totalCount} Met</span>
-                                <div class="cond-progress-mini">
-                                    <div class="cond-progress-fill ${badgeClass}" style="width: ${pct}%"></div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="rec-badge ${decClass}" title="${reasonTitle}" style="cursor: help;">
+                                    ${s.decision}
+                                </span>
+                                <div class="score-progress-wrapper">
+                                    <div class="score-progress-header ${scoreType}">
+                                        <span>Score</span>
+                                        <span>${score}/100</span>
+                                    </div>
+                                    <div class="score-progress-bar">
+                                        <div class="score-progress-fill ${scoreType}" style="width: ${score}%"></div>
+                                    </div>
                                 </div>
                             </div>
                         </td>
-                        <td class="td-monospace ${rsiClass}">${Number(s.rsi14).toFixed(1)}</td>
-                        <td class="td-monospace ${s.adx14 > 25 ? 'positive' : ''}">${Number(s.adx14).toFixed(1)}</td>
-                        <td style="font-size: 11px;">
-                            <span class="td-monospace ${meetsEma ? 'positive' : ''}">EMA20 > 50 > 200</span><br/>
-                            <span class="text-muted">${Number(s.ema20).toFixed(0)} / ${Number(s.ema50).toFixed(0)} / ${Number(s.ema200).toFixed(0)}</span>
-                        </td>
-                        <td style="font-size: 11px;">
-                            <span class="td-monospace ${s.macd > s.macdSignal ? 'positive' : ''}">MACD Cross</span><br/>
-                            <span class="text-muted">${Number(s.macd).toFixed(1)} / ${Number(s.macdSignal).toFixed(1)}</span>
-                        </td>
-                        <td class="td-monospace ${volClass}">
-                            <strong>${s.volumeMultiplier.toFixed(1)}x</strong><br/>
-                            <span class="text-muted" style="font-size: 10px;">${(s.volume/100000).toFixed(1)}L / ${(s.avgVolume20/100000).toFixed(1)}L</span>
-                        </td>
-                        <td class="td-monospace ${s.is52WeekHigh ? 'positive' : ''}">
-                            ${s.is52WeekHigh ? 'Near 52W High' : 'Below 10%'}
+                        <td>
+                            <span class="metric-chip metric-chip-sl">
+                                SL: ₹${Number(s.stopLoss).toFixed(2)}
+                            </span>
                         </td>
                         <td>
-                            <button class="btn-toggle-checklist" onclick="toggleChecklist('${s.symbol}')" id="btn-toggle-${s.symbol}" title="Toggle Condition Checklist">
+                            <div class="metric-chip-group">
+                                <span class="metric-chip metric-chip-target">T1: ₹${Number(s.target1).toFixed(2)}</span>
+                                <span class="metric-chip metric-chip-target" style="opacity: 0.85;">T2: ₹${Number(s.target2).toFixed(2)}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="metric-chip metric-chip-rr">
+                                1:${Number(s.riskRewardRatio).toFixed(1)}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="vol-surge-chip ${volChipClass}">
+                                ⚡ ${Number(s.volumeMultiplier).toFixed(1)}x
+                            </span>
+                        </td>
+                        <td style="font-size: 12px;">
+                            <span class="td-monospace ${s.rsi14 >= 50 && s.rsi14 <= 75 ? 'positive' : ''}">RSI: ${Number(s.rsi14).toFixed(1)}</span><br/>
+                            <span class="td-monospace ${s.adx14 >= 20 ? 'positive' : 'text-muted'}">ADX: ${Number(s.adx14).toFixed(1)}</span>
+                        </td>
+                        <td style="font-size: 11px;">
+                            <span class="td-monospace ${meetsEma ? 'positive' : 'text-muted'}">20 > 50 > 200</span><br/>
+                            <span class="text-muted">${Number(s.ema20).toFixed(0)} / ${Number(s.ema50).toFixed(0)}</span>
+                        </td>
+                        <td>
+                            <button class="btn-toggle-checklist" onclick="toggleChecklist('${s.symbol}')" id="btn-toggle-${s.symbol}" title="Toggle 11-Rule Analysis Checklist">
+                                <span style="font-size: 11px; font-weight: 700; margin-right: 4px;">${metCount}/${totalCount}</span>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon">
                                     <polyline points="6 9 12 15 18 9"></polyline>
                                 </svg>
@@ -1099,16 +1181,19 @@
                         </td>
                     </tr>
                     <tr id="checklist-row-${s.symbol}" class="checklist-subrow" style="display: none;">
-                        <td colspan="11" class="checklist-drawer-cell">
+                        <td colspan="10" class="checklist-drawer-cell">
                             <div class="checklist-drawer-container">
                                 <div class="checklist-header">
                                     <div class="checklist-title">
                                         <span class="symbol-tag">${s.symbol}</span>
-                                        <span class="title-text">BUY Signal Condition Checklist</span>
+                                        <span class="title-text">11-Rule Technical Scoring & Analysis</span>
                                     </div>
                                     <div class="checklist-summary">
-                                        <span class="summary-count ${badgeClass}">${metCount} of ${totalCount} Conditions Met (${pct}%)</span>
+                                        <span class="summary-count ${badgeClass}">${metCount} of ${totalCount} Conditions Met (${pct}%) • Score: ${score}/100</span>
                                     </div>
+                                </div>
+                                <div style="margin-bottom: 12px; font-size: 12px; color: #cbd5e1; background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 8px;">
+                                    <strong>Engine Rationale:</strong> ${reasonTitle}
                                 </div>
                                 <div class="checklist-cards-grid">
                                     ${condCardsHtml}
@@ -1126,18 +1211,21 @@
             container.empty();
 
             if (!signals || signals.length === 0) {
-                container.append('<div class="text-center text-muted py-4 w-100">No matching stocks found.</div>');
+                container.append('<div class="text-center text-muted py-4 w-100">No matching recommendations found for this slot and filter criteria.</div>');
                 return;
             }
 
             signals.forEach(s => {
                 const decClass = getDecisionClass(s.decision);
-                const reasonTitle = escapeHtml(s.reason || "Decision based on technical analysis rules.");
-                const checklist = s.checklist || { metCount: 0, totalCount: 8, conditions: [] };
-                const metCount = checklist.metCount;
-                const totalCount = checklist.totalCount || 8;
-                const pct = Math.round((metCount / totalCount) * 100);
-                let badgeClass = metCount === totalCount ? "all-met" : (metCount >= 5 ? "partial-met" : "low-met");
+                const reasonTitle = escapeHtml(s.reason || "Evaluated by 11-Point Multi-Timeframe Scoring Model.");
+                const checklist = s.checklist || { metCount: 0, totalCount: 11, conditions: [] };
+                const metCount = checklist.metCount || 0;
+                const totalCount = checklist.totalCount || 11;
+                const pct = totalCount > 0 ? Math.round((metCount / totalCount) * 100) : 0;
+                let badgeClass = metCount >= 8 ? "all-met" : (metCount >= 5 ? "partial-met" : "low-met");
+                const score = s.score || 0;
+                const isBuy = (s.decision && s.decision.toUpperCase() === "BUY");
+                const scoreType = isBuy ? "buy" : "watch";
 
                 let condCardsHtml = "";
                 if (checklist.conditions && checklist.conditions.length > 0) {
@@ -1158,31 +1246,39 @@
                         <div class="stock-card-top">
                             <div class="stock-card-symbol-block">
                                 <span class="stock-card-symbol">${s.symbol}</span>
-                                <span class="stock-card-price">₹${Number(s.close).toFixed(2)}</span>
+                                <span class="stock-card-price">₹${Number(s.close || s.entryPrice).toFixed(2)}</span>
                             </div>
-                            <span class="rec-badge ${decClass}" title="${reasonTitle}" style="cursor: help;" data-bs-toggle="tooltip">${s.decision}</span>
+                            <span class="rec-badge ${decClass}" title="${reasonTitle}">${s.decision}</span>
                         </div>
 
                         <div class="stock-card-progress">
-                            <div class="stock-card-progress-header">
-                                <span>Conditions Met</span>
-                                <span class="${badgeClass}">${metCount}/${totalCount} (${pct}%)</span>
-                            </div>
-                            <div class="cond-progress-mini">
-                                <div class="cond-progress-fill ${badgeClass}" style="width: ${pct}%"></div>
+                            <div class="score-progress-wrapper">
+                                <div class="score-progress-header ${scoreType}">
+                                    <span>Score & Rules</span>
+                                    <span>${score}/100 (${metCount}/${totalCount})</span>
+                                </div>
+                                <div class="score-progress-bar">
+                                    <div class="score-progress-fill ${scoreType}" style="width: ${score}%"></div>
+                                </div>
                             </div>
                         </div>
 
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; font-size: 11px;">
+                            <div class="metric-chip metric-chip-sl">SL: ₹${Number(s.stopLoss).toFixed(2)}</div>
+                            <div class="metric-chip metric-chip-target">T1: ₹${Number(s.target1).toFixed(2)}</div>
+                            <div class="metric-chip metric-chip-target">T2: ₹${Number(s.target2).toFixed(2)}</div>
+                            <div class="metric-chip metric-chip-rr">R:R 1:${Number(s.riskRewardRatio).toFixed(1)}</div>
+                        </div>
+
                         <div class="stock-card-chips">
-                            <span class="stock-chip ${s.rsi14 >= 55 && s.rsi14 <= 70 ? 'positive' : ''}">RSI: ${Number(s.rsi14).toFixed(1)}</span>
-                            <span class="stock-chip ${s.adx14 > 25 ? 'positive' : ''}">ADX: ${Number(s.adx14).toFixed(1)}</span>
-                            <span class="stock-chip ${s.volumeMultiplier >= 1.5 ? 'positive' : ''}">Vol: ${s.volumeMultiplier.toFixed(1)}x</span>
-                            <span class="stock-chip ${s.is52WeekHigh ? 'positive' : ''}">${s.is52WeekHigh ? '52W High' : 'Normal'}</span>
+                            <span class="stock-chip ${s.rsi14 >= 50 && s.rsi14 <= 75 ? 'positive' : ''}">RSI: ${Number(s.rsi14).toFixed(1)}</span>
+                            <span class="stock-chip ${s.adx14 >= 20 ? 'positive' : ''}">ADX: ${Number(s.adx14).toFixed(1)}</span>
+                            <span class="stock-chip ${s.volumeMultiplier >= 1.5 ? 'positive' : ''}">Vol: ${Number(s.volumeMultiplier).toFixed(1)}x</span>
                         </div>
 
                         <div class="stock-card-footer">
                             <button class="btn-card-toggle" id="btn-card-toggle-${s.symbol}" onclick="toggleChecklist('${s.symbol}')">
-                                <span>Checklist Details (${metCount}/${totalCount})</span>
+                                <span>11-Rule Analysis Details</span>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <polyline points="6 9 12 15 18 9"></polyline>
                                 </svg>
@@ -1190,6 +1286,9 @@
                         </div>
 
                         <div class="card-checklist-drawer" id="card-drawer-${s.symbol}">
+                            <div style="margin-bottom: 8px; font-size: 11px; color: #cbd5e1; background: rgba(0,0,0,0.3); padding: 6px 10px; border-radius: 6px;">
+                                ${reasonTitle}
+                            </div>
                             <div class="checklist-cards-grid">
                                 ${condCardsHtml}
                             </div>
@@ -1199,74 +1298,6 @@
                 container.append(cardHtml);
             });
         }
-
-        function populatePerformance(stats15, stats30) {
-            updatePnlCard(stats15, "#pnl15", "#winRate15", "#tradesCount15");
-            updatePnlCard(stats30, "#pnl30", "#winRate30", "#tradesCount30");
-        }
-
-        function updatePnlCard(stats, pnlSel, wrSel, countSel) {
-            if (!stats) return;
-
-            const pnlEl = $(pnlSel);
-            const wrEl = $(wrSel);
-            const cntEl = $(countSel);
-
-            pnlEl.removeClass("positive negative");
-            wrEl.removeClass("positive negative");
-
-            const sign = stats.netProfitLossPct >= 0 ? "+" : "";
-            pnlEl.text(`${sign}${stats.netProfitLossPct.toFixed(2)}%`);
-            wrEl.text(`WR: ${stats.winRatePct.toFixed(0)}%`);
-            cntEl.text(stats.totalTrades);
-
-            if (stats.netProfitLossPct >= 0) {
-                pnlEl.addClass("positive");
-                wrEl.addClass("positive");
-            } else {
-                pnlEl.addClass("negative");
-                wrEl.addClass("negative");
-            }
-        }
-
-        function populateTrades(trades) {
-            const tbody = $("#tradeLogTableBody");
-            tbody.empty();
-
-            if (!trades || trades.length === 0) {
-                tbody.append('<tr><td colspan="9" class="text-center text-muted py-4">No simulated trades executed yet. Click Run Historical Backtest to generate data.</td></tr>');
-                return;
-            }
-
-            trades.forEach((t, index) => {
-                const pnlClass = t.profitLossPct >= 0 ? "positive" : "negative";
-                const sign = t.profitLossPct >= 0 ? "+" : "";
-                
-                const entryD = new Date(t.entryDate).toLocaleDateString("en-IN");
-                const exitD = t.isClosed ? new Date(t.exitDate).toLocaleDateString("en-IN") : "Active";
-                const exitP = t.isClosed ? Number(t.exitPrice).toFixed(2) : "—";
-                
-                const statusBadge = t.isClosed 
-                    ? '<span class="rec-badge sell">CLOSED</span>' 
-                    : '<span class="rec-badge buy">OPEN</span>';
-
-                const row = `
-                    <tr class="stagger-row" style="animation-delay: ${Math.min(index * 0.02, 0.4)}s">
-                        <td class="td-symbol">${t.symbol}</td>
-                        <td>${statusBadge}</td>
-                        <td class="td-monospace">${entryD}</td>
-                        <td class="td-monospace">${Number(t.entryPrice).toFixed(2)}</td>
-                        <td class="td-monospace">${exitD}</td>
-                        <td class="td-monospace">${exitP}</td>
-                        <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${t.exitReason || ''}">
-                            ${t.exitReason || 'Holding position...'}
-                        </td>
-                        <td class="td-monospace">${t.holdDays} days</td>
-                        <td class="pnl-text ${pnlClass}">${sign}${t.profitLossPct.toFixed(2)}%</td>
-                    </tr>
-                `;
-                tbody.append(row);
-            });
-        }
     </script>
 }
+

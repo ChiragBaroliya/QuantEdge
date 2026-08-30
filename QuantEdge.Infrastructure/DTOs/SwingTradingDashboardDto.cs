@@ -123,3 +123,24 @@ public record SwingJobStatusDto(
     string NextRunFormatted = ""
 );
 
+public record SwingScanSlotDto(
+    string SlotLabel,
+    DateTime SlotTime,
+    int BuyCount,
+    int WatchCount,
+    int TotalCount,
+    bool IsLatest = false
+);
+
+public record SwingSlotUpdateDto(
+    DateTime ScanDate,
+    DateTime SlotTime,
+    string SlotLabel,
+    int BuyCount,
+    int WatchCount,
+    int TotalCount,
+    List<SwingStockSignalDto> Signals,
+    NiftyStatusDto? NiftyStatus = null
+);
+
+

@@ -2545,6 +2545,148 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- Function: sp_get_swing_scan_slots
+-- Returns all distinct 30-minute scan slots for a given date with signal counts.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS sp_get_swing_scan_slots(DATE);
+
+CREATE OR REPLACE FUNCTION sp_get_swing_scan_slots(
+    p_date DATE
+)
+RETURNS TABLE (
+    SlotLabel VARCHAR,
+    SlotTime TIMESTAMP WITH TIME ZONE,
+    BuyCount BIGINT,
+    WatchCount BIGINT,
+    TotalCount BIGINT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        r.slot_label::VARCHAR AS SlotLabel,
+        MAX(r.slot_time) AS SlotTime,
+        COUNT(*) FILTER (WHERE UPPER(r.decision) = 'BUY') AS BuyCount,
+        COUNT(*) FILTER (WHERE UPPER(r.decision) = 'WATCH') AS WatchCount,
+        COUNT(*) AS TotalCount
+    FROM swing_slot_recommendations r
+    WHERE r.scan_date = p_date
+    GROUP BY r.slot_label
+    ORDER BY MAX(r.slot_time) ASC;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: sp_get_swing_slot_recommendations
+-- Returns all stock recommendations for a given date and slot label ('all' for all slots).
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS sp_get_swing_slot_recommendations(DATE, VARCHAR);
+
+CREATE OR REPLACE FUNCTION sp_get_swing_slot_recommendations(
+    p_date DATE,
+    p_slot_label VARCHAR
+)
+RETURNS TABLE (
+    Id INT,
+    ScanDate DATE,
+    SlotTime TIMESTAMP WITH TIME ZONE,
+    SlotLabel VARCHAR,
+    Symbol VARCHAR,
+    Decision VARCHAR,
+    Score INT,
+    ConfidencePct NUMERIC,
+    EntryPrice NUMERIC,
+    StopLoss NUMERIC,
+    Target1 NUMERIC,
+    Target2 NUMERIC,
+    RiskRewardRatio NUMERIC,
+    VolumeMultiplier NUMERIC,
+    Rsi14 NUMERIC,
+    Adx14 NUMERIC,
+    Ema20 NUMERIC,
+    Ema50 NUMERIC,
+    Ema200 NUMERIC,
+    PassedRules TEXT,
+    FailedRules TEXT,
+    Reason TEXT,
+    TimeframeUsed VARCHAR,
+    ChecklistJson JSONB,
+    CreatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF LOWER(p_slot_label) = 'all' OR p_slot_label IS NULL OR TRIM(p_slot_label) = '' THEN
+        RETURN QUERY
+        SELECT 
+            r.id AS Id,
+            r.scan_date AS ScanDate,
+            r.slot_time AS SlotTime,
+            r.slot_label::VARCHAR AS SlotLabel,
+            r.symbol::VARCHAR AS Symbol,
+            r.decision::VARCHAR AS Decision,
+            r.score AS Score,
+            r.confidence_pct AS ConfidencePct,
+            r.entry_price AS EntryPrice,
+            r.stop_loss AS StopLoss,
+            r.target1 AS Target1,
+            r.target2 AS Target2,
+            r.risk_reward_ratio AS RiskRewardRatio,
+            r.volume_multiplier AS VolumeMultiplier,
+            r.rsi14 AS Rsi14,
+            r.adx14 AS Adx14,
+            r.ema20 AS Ema20,
+            r.ema50 AS Ema50,
+            r.ema200 AS Ema200,
+            r.passed_rules AS PassedRules,
+            r.failed_rules AS FailedRules,
+            r.reason AS Reason,
+            r.timeframe_used::VARCHAR AS TimeframeUsed,
+            r.checklist_json AS ChecklistJson,
+            r.created_at AS CreatedAt
+        FROM swing_slot_recommendations r
+        WHERE r.scan_date = p_date
+        ORDER BY r.score DESC, r.slot_time DESC, r.symbol ASC;
+    ELSE
+        RETURN QUERY
+        SELECT 
+            r.id AS Id,
+            r.scan_date AS ScanDate,
+            r.slot_time AS SlotTime,
+            r.slot_label::VARCHAR AS SlotLabel,
+            r.symbol::VARCHAR AS Symbol,
+            r.decision::VARCHAR AS Decision,
+            r.score AS Score,
+            r.confidence_pct AS ConfidencePct,
+            r.entry_price AS EntryPrice,
+            r.stop_loss AS StopLoss,
+            r.target1 AS Target1,
+            r.target2 AS Target2,
+            r.risk_reward_ratio AS RiskRewardRatio,
+            r.volume_multiplier AS VolumeMultiplier,
+            r.rsi14 AS Rsi14,
+            r.adx14 AS Adx14,
+            r.ema20 AS Ema20,
+            r.ema50 AS Ema50,
+            r.ema200 AS Ema200,
+            r.passed_rules AS PassedRules,
+            r.failed_rules AS FailedRules,
+            r.reason AS Reason,
+            r.timeframe_used::VARCHAR AS TimeframeUsed,
+            r.checklist_json AS ChecklistJson,
+            r.created_at AS CreatedAt
+        FROM swing_slot_recommendations r
+        WHERE r.scan_date = p_date AND r.slot_label = p_slot_label
+        ORDER BY r.score DESC, r.symbol ASC;
+    END IF;
+END;
+$$;
+
+
+
 
 
 
