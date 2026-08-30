@@ -422,5 +422,286 @@ BEGIN
 END;
 $$;
 
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_trading_report_trades
+-- Aggregates real and paper trading history and simulated swing positions
+-- for performance and investment reporting.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_trading_report_trades(TEXT, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, TEXT);
+
+CREATE OR REPLACE FUNCTION fn_get_trading_report_trades(
+    p_mode TEXT DEFAULT 'all',
+    p_user_id TEXT DEFAULT NULL,
+    p_start_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_end_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_symbol TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    id BIGINT,
+    mode TEXT,
+    symbol VARCHAR(50),
+    side INT,
+    quantity INT,
+    entry_price NUMERIC(18, 4),
+    executed_price NUMERIC(18, 4),
+    realized_pnl NUMERIC(18, 4),
+    trade_type INT,
+    exit_reason VARCHAR(100),
+    executed_at TIMESTAMP WITH TIME ZONE,
+    opened_at TIMESTAMP WITH TIME ZONE,
+    hold_days INT,
+    username VARCHAR(100)
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_mode TEXT := LOWER(COALESCE(p_mode, 'all'));
+    v_symbol TEXT := CASE WHEN p_symbol IS NOT NULL AND TRIM(p_symbol) <> '' THEN '%' || TRIM(p_symbol) || '%' ELSE NULL END;
+BEGIN
+    RETURN QUERY
+    WITH all_trades AS (
+        -- 1. Paper Trade History
+        SELECT 
+            th.id::BIGINT AS id,
+            'Paper'::TEXT AS mode,
+            th.symbol,
+            th.side,
+            th.quantity,
+            th.entry_price,
+            th.executed_price,
+            th.realized_pnl,
+            th.trade_type,
+            th.exit_reason,
+            th.executed_at,
+            NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
+            0::INT AS hold_days,
+            COALESCE(a.user_id, 'default_user')::VARCHAR(100) AS username
+        FROM paper_trade_history th
+        LEFT JOIN paper_accounts a ON th.account_id = a.id
+        WHERE (v_mode = 'all' OR v_mode = 'paper')
+          AND (p_start_date IS NULL OR th.executed_at >= p_start_date)
+          AND (p_end_date IS NULL OR th.executed_at <= p_end_date)
+          AND (v_symbol IS NULL OR th.symbol ILIKE v_symbol)
+          AND (p_user_id IS NULL OR p_user_id = 'all' OR a.user_id = p_user_id)
+
+        UNION ALL
+
+        -- 2. Real Trade History
+        SELECT 
+            rth.id::BIGINT AS id,
+            'Real'::TEXT AS mode,
+            rth.symbol,
+            rth.side,
+            rth.quantity,
+            rth.entry_price,
+            rth.executed_price,
+            rth.realized_pnl,
+            rth.trade_type,
+            rth.exit_reason,
+            rth.executed_at,
+            NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
+            0::INT AS hold_days,
+            COALESCE(u.username, 'admin')::VARCHAR(100) AS username
+        FROM real_trade_history rth
+        LEFT JOIN app_users u ON rth.user_id = u.id
+        WHERE (v_mode = 'all' OR v_mode = 'real')
+          AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
+          AND (p_end_date IS NULL OR rth.executed_at <= p_end_date)
+          AND (v_symbol IS NULL OR rth.symbol ILIKE v_symbol)
+          AND (p_user_id IS NULL OR p_user_id = 'all' OR u.id::TEXT = p_user_id OR u.username = p_user_id)
+
+        UNION ALL
+
+        -- 3. Swing Positions (Simulated closed swing trades)
+        SELECT 
+            (sp.id + 100000)::BIGINT AS id,
+            'Swing Sim'::TEXT AS mode,
+            sp.symbol,
+            1::INT AS side,
+            sp.quantity,
+            sp.entry_price,
+            COALESCE(sp.exit_price, 0)::NUMERIC(18, 4) AS executed_price,
+            COALESCE((sp.exit_price - sp.entry_price) * sp.quantity, 0)::NUMERIC(18, 4) AS realized_pnl,
+            1::INT AS trade_type,
+            COALESCE(sp.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
+            COALESCE(sp.exit_date, sp.entry_date) AS executed_at,
+            sp.entry_date AS opened_at,
+            COALESCE((sp.exit_date - sp.entry_date), 0)::INT AS hold_days,
+            'System'::VARCHAR(100) AS username
+        FROM swing_positions sp
+        WHERE sp.is_closed = TRUE
+          AND (v_mode = 'all' OR v_mode = 'paper')
+          AND (p_start_date IS NULL OR sp.exit_date >= p_start_date)
+          AND (p_end_date IS NULL OR sp.exit_date <= p_end_date)
+          AND (v_symbol IS NULL OR sp.symbol ILIKE v_symbol)
+    )
+    SELECT * FROM all_trades ORDER BY executed_at DESC;
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_trading_report_trades_paged
+-- Returns paginated closed trades log with total count and server-side filters.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_trading_report_trades_paged(TEXT, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, TEXT, TEXT, TEXT, INT, INT);
+
+CREATE OR REPLACE FUNCTION fn_get_trading_report_trades_paged(
+    p_mode TEXT DEFAULT 'all',
+    p_user_id TEXT DEFAULT NULL,
+    p_start_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_end_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_symbol TEXT DEFAULT NULL,
+    p_trade_type TEXT DEFAULT 'all',
+    p_pnl_filter TEXT DEFAULT 'all',
+    p_page INT DEFAULT 1,
+    p_page_size INT DEFAULT 10
+)
+RETURNS TABLE (
+    total_count BIGINT,
+    id BIGINT,
+    mode TEXT,
+    symbol VARCHAR(50),
+    side INT,
+    quantity INT,
+    entry_price NUMERIC(18, 4),
+    executed_price NUMERIC(18, 4),
+    realized_pnl NUMERIC(18, 4),
+    trade_type INT,
+    exit_reason VARCHAR(100),
+    executed_at TIMESTAMP WITH TIME ZONE,
+    opened_at TIMESTAMP WITH TIME ZONE,
+    hold_days INT,
+    username VARCHAR(100)
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_mode TEXT := LOWER(COALESCE(p_mode, 'all'));
+    v_symbol TEXT := CASE WHEN p_symbol IS NOT NULL AND TRIM(p_symbol) <> '' THEN '%' || TRIM(p_symbol) || '%' ELSE NULL END;
+    v_trade_type TEXT := LOWER(COALESCE(p_trade_type, 'all'));
+    v_pnl_filter TEXT := LOWER(COALESCE(p_pnl_filter, 'all'));
+    v_limit INT := GREATEST(1, COALESCE(p_page_size, 10));
+    v_offset INT := GREATEST(0, (GREATEST(1, COALESCE(p_page, 1)) - 1) * v_limit);
+BEGIN
+    RETURN QUERY
+    WITH all_trades AS (
+        -- 1. Paper Trade History
+        SELECT 
+            th.id::BIGINT AS id,
+            'Paper'::TEXT AS mode,
+            th.symbol,
+            th.side,
+            th.quantity,
+            th.entry_price,
+            th.executed_price,
+            th.realized_pnl,
+            th.trade_type,
+            th.exit_reason,
+            th.executed_at,
+            NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
+            0::INT AS hold_days,
+            COALESCE(a.user_id, 'default_user')::VARCHAR(100) AS username
+        FROM paper_trade_history th
+        LEFT JOIN paper_accounts a ON th.account_id = a.id
+        WHERE (v_mode = 'all' OR v_mode = 'paper')
+          AND (p_start_date IS NULL OR th.executed_at >= p_start_date)
+          AND (p_end_date IS NULL OR th.executed_at <= p_end_date)
+          AND (v_symbol IS NULL OR th.symbol ILIKE v_symbol)
+          AND (p_user_id IS NULL OR p_user_id = 'all' OR a.user_id = p_user_id)
+
+        UNION ALL
+
+        -- 2. Real Trade History
+        SELECT 
+            rth.id::BIGINT AS id,
+            'Real'::TEXT AS mode,
+            rth.symbol,
+            rth.side,
+            rth.quantity,
+            rth.entry_price,
+            rth.executed_price,
+            rth.realized_pnl,
+            rth.trade_type,
+            rth.exit_reason,
+            rth.executed_at,
+            NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
+            0::INT AS hold_days,
+            COALESCE(u.username, 'admin')::VARCHAR(100) AS username
+        FROM real_trade_history rth
+        LEFT JOIN app_users u ON rth.user_id = u.id
+        WHERE (v_mode = 'all' OR v_mode = 'real')
+          AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
+          AND (p_end_date IS NULL OR rth.executed_at <= p_end_date)
+          AND (v_symbol IS NULL OR rth.symbol ILIKE v_symbol)
+          AND (p_user_id IS NULL OR p_user_id = 'all' OR u.id::TEXT = p_user_id OR u.username = p_user_id)
+
+        UNION ALL
+
+        -- 3. Swing Positions (Simulated closed swing trades)
+        SELECT 
+            (sp.id + 100000)::BIGINT AS id,
+            'Swing Sim'::TEXT AS mode,
+            sp.symbol,
+            1::INT AS side,
+            sp.quantity,
+            sp.entry_price,
+            COALESCE(sp.exit_price, 0)::NUMERIC(18, 4) AS executed_price,
+            COALESCE((sp.exit_price - sp.entry_price) * sp.quantity, 0)::NUMERIC(18, 4) AS realized_pnl,
+            1::INT AS trade_type,
+            COALESCE(sp.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
+            COALESCE(sp.exit_date, sp.entry_date) AS executed_at,
+            sp.entry_date AS opened_at,
+            COALESCE((sp.exit_date - sp.entry_date), 0)::INT AS hold_days,
+            'System'::VARCHAR(100) AS username
+        FROM swing_positions sp
+        WHERE sp.is_closed = TRUE
+          AND (v_mode = 'all' OR v_mode = 'paper')
+          AND (p_start_date IS NULL OR sp.exit_date >= p_start_date)
+          AND (p_end_date IS NULL OR sp.exit_date <= p_end_date)
+          AND (v_symbol IS NULL OR sp.symbol ILIKE v_symbol)
+    ),
+    filtered_trades AS (
+        SELECT t.*
+        FROM all_trades t
+        WHERE (
+            v_trade_type = 'all' OR 
+            (v_trade_type = 'intraday' AND t.trade_type = 0) OR
+            (v_trade_type = 'swing' AND t.trade_type = 1) OR
+            (v_trade_type = 'auto' AND t.trade_type = 2)
+        )
+        AND (
+            v_pnl_filter = 'all' OR
+            (v_pnl_filter = 'profit' AND t.realized_pnl > 0) OR
+            (v_pnl_filter = 'loss' AND t.realized_pnl < 0)
+        )
+    ),
+    counted AS (
+        SELECT COUNT(*)::BIGINT AS total_rows FROM filtered_trades
+    )
+    SELECT 
+        COALESCE(c.total_rows, 0::BIGINT) AS total_count,
+        f.id,
+        f.mode,
+        f.symbol,
+        f.side,
+        f.quantity,
+        f.entry_price,
+        f.executed_price,
+        f.realized_pnl,
+        f.trade_type,
+        f.exit_reason,
+        f.executed_at,
+        f.opened_at,
+        f.hold_days,
+        f.username
+    FROM filtered_trades f
+    CROSS JOIN counted c
+    ORDER BY f.executed_at DESC
+    LIMIT v_limit OFFSET v_offset;
+END;
+$$;
+
+
+
 
 

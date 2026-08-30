@@ -255,6 +255,8 @@
             }
         }
     </style>
+
+    @await RenderSectionAsync("Styles", required: false)
 </head>
 <body>
 
@@ -327,6 +329,17 @@
                 </svg>
                 <span class="nav-label">Swing Trading</span>
             </a>
+            <a asp-controller="Report" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Report" ? "active" : "")"
+               data-tooltip="📊 **Trading Reports**: Daily, Weekly, Fortnightly, Monthly & Yearly investment turnover and ROI analytics.">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+                <span class="nav-label">Trading Reports</span>
+            </a>
+
             @if (false /* Paper Trading hidden - merged into Auto Trading */)
             {
                 <a asp-controller="PaperTrading" asp-action="Index"

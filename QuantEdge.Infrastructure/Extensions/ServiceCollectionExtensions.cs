@@ -114,6 +114,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRealTradeCacheService, RealTradeCacheService>();
         services.AddSingleton<IAutoRealTradeService, AutoRealTradeService>();
 
+        // Register Trading Reports & Performance Analytics
+        services.AddTransient<ITradingReportRepository, TradingReportRepository>();
+        services.AddTransient<ITradingReportService, TradingReportService>();
+
         services.AddTransient<ICandleSummaryService, CandleSummaryService>();
 
         return services;
