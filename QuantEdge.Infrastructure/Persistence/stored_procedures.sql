@@ -460,7 +460,7 @@ DECLARE
 BEGIN
     RETURN QUERY
     WITH all_trades AS (
-        -- 1. Paper Trade History
+        -- 1. Paper Trade History (Only Closed Trades / Sell Exits)
         SELECT 
             th.id::BIGINT AS id,
             'Paper'::TEXT AS mode,
@@ -471,7 +471,7 @@ BEGIN
             th.executed_price,
             th.realized_pnl,
             th.trade_type,
-            th.exit_reason,
+            COALESCE(th.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
             th.executed_at,
             NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
             0::INT AS hold_days,
@@ -479,6 +479,7 @@ BEGIN
         FROM paper_trade_history th
         LEFT JOIN paper_accounts a ON th.account_id = a.id
         WHERE (v_mode = 'all' OR v_mode = 'paper')
+          AND (th.side = 1 OR th.exit_reason IS NOT NULL OR th.realized_pnl <> 0)
           AND (p_start_date IS NULL OR th.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR th.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR th.symbol ILIKE v_symbol)
@@ -486,7 +487,7 @@ BEGIN
 
         UNION ALL
 
-        -- 2. Real Trade History
+        -- 2. Real Trade History (Only Closed Trades / Sell Exits)
         SELECT 
             rth.id::BIGINT AS id,
             'Real'::TEXT AS mode,
@@ -497,7 +498,7 @@ BEGIN
             rth.executed_price,
             rth.realized_pnl,
             rth.trade_type,
-            rth.exit_reason,
+            COALESCE(rth.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
             rth.executed_at,
             NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
             0::INT AS hold_days,
@@ -505,6 +506,7 @@ BEGIN
         FROM real_trade_history rth
         LEFT JOIN app_users u ON rth.user_id = u.id
         WHERE (v_mode = 'all' OR v_mode = 'real')
+          AND (rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
           AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR rth.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR rth.symbol ILIKE v_symbol)
@@ -512,7 +514,7 @@ BEGIN
 
         UNION ALL
 
-        -- 3. Swing Positions (Simulated closed swing trades)
+        -- 3. Swing Positions (Simulated closed swing trades - Only queried when mode is 'swing')
         SELECT 
             (sp.id + 100000)::BIGINT AS id,
             'Swing Sim'::TEXT AS mode,
@@ -530,7 +532,7 @@ BEGIN
             'System'::VARCHAR(100) AS username
         FROM swing_positions sp
         WHERE sp.is_closed = TRUE
-          AND (v_mode = 'all' OR v_mode = 'paper')
+          AND (v_mode = 'swing')
           AND (p_start_date IS NULL OR sp.exit_date >= p_start_date)
           AND (p_end_date IS NULL OR sp.exit_date <= p_end_date)
           AND (v_symbol IS NULL OR sp.symbol ILIKE v_symbol)
@@ -585,7 +587,7 @@ DECLARE
 BEGIN
     RETURN QUERY
     WITH all_trades AS (
-        -- 1. Paper Trade History
+        -- 1. Paper Trade History (Only Closed Trades / Sell Exits)
         SELECT 
             th.id::BIGINT AS id,
             'Paper'::TEXT AS mode,
@@ -596,7 +598,7 @@ BEGIN
             th.executed_price,
             th.realized_pnl,
             th.trade_type,
-            th.exit_reason,
+            COALESCE(th.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
             th.executed_at,
             NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
             0::INT AS hold_days,
@@ -604,6 +606,7 @@ BEGIN
         FROM paper_trade_history th
         LEFT JOIN paper_accounts a ON th.account_id = a.id
         WHERE (v_mode = 'all' OR v_mode = 'paper')
+          AND (th.side = 1 OR th.exit_reason IS NOT NULL OR th.realized_pnl <> 0)
           AND (p_start_date IS NULL OR th.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR th.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR th.symbol ILIKE v_symbol)
@@ -611,7 +614,7 @@ BEGIN
 
         UNION ALL
 
-        -- 2. Real Trade History
+        -- 2. Real Trade History (Only Closed Trades / Sell Exits)
         SELECT 
             rth.id::BIGINT AS id,
             'Real'::TEXT AS mode,
@@ -622,7 +625,7 @@ BEGIN
             rth.executed_price,
             rth.realized_pnl,
             rth.trade_type,
-            rth.exit_reason,
+            COALESCE(rth.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
             rth.executed_at,
             NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
             0::INT AS hold_days,
@@ -630,6 +633,7 @@ BEGIN
         FROM real_trade_history rth
         LEFT JOIN app_users u ON rth.user_id = u.id
         WHERE (v_mode = 'all' OR v_mode = 'real')
+          AND (rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
           AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR rth.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR rth.symbol ILIKE v_symbol)
@@ -637,7 +641,7 @@ BEGIN
 
         UNION ALL
 
-        -- 3. Swing Positions (Simulated closed swing trades)
+        -- 3. Swing Positions (Simulated closed swing trades - Only queried when mode is 'swing')
         SELECT 
             (sp.id + 100000)::BIGINT AS id,
             'Swing Sim'::TEXT AS mode,
@@ -655,7 +659,7 @@ BEGIN
             'System'::VARCHAR(100) AS username
         FROM swing_positions sp
         WHERE sp.is_closed = TRUE
-          AND (v_mode = 'all' OR v_mode = 'paper')
+          AND (v_mode = 'swing')
           AND (p_start_date IS NULL OR sp.exit_date >= p_start_date)
           AND (p_end_date IS NULL OR sp.exit_date <= p_end_date)
           AND (v_symbol IS NULL OR sp.symbol ILIKE v_symbol)
@@ -665,9 +669,10 @@ BEGIN
         FROM all_trades t
         WHERE (
             v_trade_type = 'all' OR 
+            (v_trade_type = 'manual' AND t.trade_type = 0) OR
             (v_trade_type = 'intraday' AND t.trade_type = 0) OR
-            (v_trade_type = 'swing' AND t.trade_type = 1) OR
-            (v_trade_type = 'auto' AND t.trade_type = 2)
+            (v_trade_type = 'auto' AND t.trade_type = 1) OR
+            (v_trade_type = 'swing' AND (t.trade_type = 1 OR t.mode = 'Swing Sim'))
         )
         AND (
             v_pnl_filter = 'all' OR
@@ -675,11 +680,11 @@ BEGIN
             (v_pnl_filter = 'loss' AND t.realized_pnl < 0)
         )
     ),
-    counted AS (
-        SELECT COUNT(*)::BIGINT AS total_rows FROM filtered_trades
+    total_agg AS (
+        SELECT COUNT(*) AS cnt FROM filtered_trades
     )
     SELECT 
-        COALESCE(c.total_rows, 0::BIGINT) AS total_count,
+        (SELECT cnt FROM total_agg) AS total_count,
         f.id,
         f.mode,
         f.symbol,
@@ -695,13 +700,9 @@ BEGIN
         f.hold_days,
         f.username
     FROM filtered_trades f
-    CROSS JOIN counted c
     ORDER BY f.executed_at DESC
     LIMIT v_limit OFFSET v_offset;
 END;
-$$;
-
-
 
 
 

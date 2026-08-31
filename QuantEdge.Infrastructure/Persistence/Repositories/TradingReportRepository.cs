@@ -266,19 +266,19 @@ public class TradingReportRepository : ITradingReportRepository
             int sideVal = r.side != null ? Convert.ToInt32(r.side) : 0;
             string sideText = sideVal == 0 ? "BUY" : "SELL";
 
+            string modeStr = Convert.ToString(r.mode) ?? "Paper";
             int tradeTypeVal = r.trade_type != null ? Convert.ToInt32(r.trade_type) : 0;
-            string tradeTypeText = tradeTypeVal switch
+            string tradeTypeText = modeStr == "Swing Sim" ? "Swing" : tradeTypeVal switch
             {
-                0 => "Intraday",
-                1 => "Swing",
-                2 => "Auto",
-                _ => "Standard"
+                0 => "Manual",
+                1 => "Auto",
+                _ => "Auto"
             };
 
             result.Add(new TradingReportTradeDto(
                 Id: Convert.ToInt64(r.id),
                 Symbol: Convert.ToString(r.symbol) ?? "UNKNOWN",
-                Mode: Convert.ToString(r.mode) ?? "Paper",
+                Mode: modeStr,
                 Side: sideText,
                 Quantity: qty,
                 EntryPrice: Math.Round(entryPrice, 2),
