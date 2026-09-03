@@ -850,6 +850,53 @@ function setupEventListeners() {
     if (btnResetSettings) {
         btnResetSettings.addEventListener("click", handleResetPaperTrading);
     }
+
+    // Auto Paper Trading Guide Modal Setup
+    const btnOpenPaperGuide = document.getElementById("btnOpenPaperGuide");
+    const paperModal = document.getElementById("paperTradingGuideModal");
+    const btnClosePaperGuideModal = document.getElementById("btnClosePaperGuideModal");
+
+    if (btnOpenPaperGuide && paperModal) {
+        btnOpenPaperGuide.addEventListener("click", () => {
+            paperModal.classList.add("active");
+            document.body.style.overflow = "hidden";
+        });
+
+        const closeGuideModal = () => {
+            paperModal.classList.remove("active");
+            document.body.style.overflow = "";
+        };
+
+        if (btnClosePaperGuideModal) {
+            btnClosePaperGuideModal.addEventListener("click", closeGuideModal);
+        }
+
+        paperModal.addEventListener("click", (e) => {
+            if (e.target === paperModal) {
+                closeGuideModal();
+            }
+        });
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && paperModal.classList.contains("active")) {
+                closeGuideModal();
+            }
+        });
+
+        // Tab Navigation
+        const tabBtns = paperModal.querySelectorAll(".qe-modal-nav-btn");
+        const panes = paperModal.querySelectorAll(".qe-modal-pane");
+        tabBtns.forEach(btn => {
+            btn.addEventListener("click", () => {
+                tabBtns.forEach(b => b.classList.remove("active"));
+                panes.forEach(p => p.classList.remove("active"));
+                btn.classList.add("active");
+                const targetId = btn.dataset.tab;
+                const targetPane = document.getElementById(targetId);
+                if (targetPane) targetPane.classList.add("active");
+            });
+        });
+    }
 }
 
 function setupSignalRHub() {

@@ -958,6 +958,53 @@ function setupEventListeners() {
             showToastAlert("🛡️ DDPI Status: Active & Verified. No daily CDSL TPIN/OTP required for automated exits.", "info");
         }
     });
+
+    // Auto Real Trading Guide Modal Setup
+    const btnOpenRealGuide = document.getElementById("btnOpenRealGuide");
+    const realModal = document.getElementById("realTradingGuideModal");
+    const btnCloseRealGuideModal = document.getElementById("btnCloseRealGuideModal");
+
+    if (btnOpenRealGuide && realModal) {
+        btnOpenRealGuide.addEventListener("click", () => {
+            realModal.classList.add("active");
+            document.body.style.overflow = "hidden";
+        });
+
+        const closeGuideModal = () => {
+            realModal.classList.remove("active");
+            document.body.style.overflow = "";
+        };
+
+        if (btnCloseRealGuideModal) {
+            btnCloseRealGuideModal.addEventListener("click", closeGuideModal);
+        }
+
+        realModal.addEventListener("click", (e) => {
+            if (e.target === realModal) {
+                closeGuideModal();
+            }
+        });
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && realModal.classList.contains("active")) {
+                closeGuideModal();
+            }
+        });
+
+        // Tab Navigation
+        const tabBtns = realModal.querySelectorAll(".qe-modal-nav-btn");
+        const panes = realModal.querySelectorAll(".qe-modal-pane");
+        tabBtns.forEach(btn => {
+            btn.addEventListener("click", () => {
+                tabBtns.forEach(b => b.classList.remove("active"));
+                panes.forEach(p => p.classList.remove("active"));
+                btn.classList.add("active");
+                const targetId = btn.dataset.tab;
+                const targetPane = document.getElementById(targetId);
+                if (targetPane) targetPane.classList.add("active");
+            });
+        });
+    }
 }
 
 window.openSquareOffModal = function (id, symbol) {

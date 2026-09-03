@@ -31,13 +31,7 @@
             </p>
         </div>
         <div class="action-buttons-group">
-            <button id="btnOpenReference" class="btn-trigger allow-view" data-tooltip="📖 **Rules & Formulas**: View swing trading filters and strategy math formulas.">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                </svg>
-                Rules & Formulas
-            </button>
+
             @if (isAdmin)
             {
                 <button id="btnRunIntradayScan" class="btn-trigger" data-tooltip="⚡ **30-Min Scan Now**: Execute immediate 30-minute interval swing scan.">
@@ -338,7 +332,6 @@
     <div id="jobFloatDesc" class="job-float-desc">Initiating background processing...</div>
 </div>
 
-<partial name="_StrategyFormulasModal" />
 
 @section Scripts {
     <script src="~/lib/microsoft/signalr/dist/browser/signalr.min.js"></script>
@@ -518,26 +511,7 @@
                 updateViewModeUI();
             });
 
-            // Open Modal
-            $("#btnOpenReference").click(function() {
-                $("#strategyFormulasModal").addClass("active");
-                $("body").css("overflow", "hidden");
-            });
 
-            // Close Modal
-            $("#btnCloseModal, #strategyFormulasModal").click(function(e) {
-                if (e.target === this || $(e.target).closest('#btnCloseModal').length) {
-                    $("#strategyFormulasModal").removeClass("active");
-                    $("body").css("overflow", "");
-                }
-            });
-
-            $(document).keydown(function(e) {
-                if (e.key === "Escape" && $("#strategyFormulasModal").hasClass("active")) {
-                    $("#strategyFormulasModal").removeClass("active");
-                    $("body").css("overflow", "");
-                }
-            });
 
             // Trigger Background Actions
             $("#btnRunIntradayScan").click(function() {

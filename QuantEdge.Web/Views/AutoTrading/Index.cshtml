@@ -16,6 +16,14 @@
         </div>
 
         <div class="autotrade-status-badges">
+            <button type="button" id="btnOpenPaperGuide" class="btn-guide-trigger" data-tooltip="📖 How It Works: Step-by-step beginner guide with practical examples.">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <span>User Guide</span>
+            </button>
             <div class="badge-counter" id="nextScanCountdownBadge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
                 ⏳ Next Scan: Initializing...
             </div>
@@ -337,6 +345,8 @@
         </div>
     </div>
 </div>
+
+<partial name="_AutoPaperTradingGuideModal" />
 
 @section Scripts {
     <script src="~/js/autotrading.js" asp-append-version="true"></script>

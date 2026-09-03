@@ -1,0 +1,451 @@
+<!-- Auto Real Trading Guide Modal (Beginner & Non-Technical Friendly) -->
+<div id="realTradingGuideModal" class="qe-modal-backdrop">
+    <div class="qe-modal">
+        <!-- Header -->
+        <div class="qe-modal-header">
+            <div class="qe-modal-title-area">
+                <span class="qe-modal-title">⚡ Auto Real Trading — User Safety & Guide</span>
+                <span class="qe-modal-subtitle">Direct Zerodha broker automation explained simply with safety precautions and practical examples.</span>
+            </div>
+            <button id="btnCloseRealGuideModal" class="qe-modal-close-btn" title="Close Guide (Esc)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="qe-modal-body">
+            <!-- Sidebar Navigation -->
+            <div class="qe-modal-sidebar">
+                <button class="qe-modal-nav-btn active" data-tab="tabRealIntro">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    What is Auto Real Trade?
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabRealPrereq">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    3 Setup Steps
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabRealConditions">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 11l3 3L22 4"></path>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    Order Placement Rules
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabRealSafety">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    Money Safety & Protection
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabRealExample">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="1" x2="12" y2="23"></line>
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                    </svg>
+                    Real-Life Trade Example
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabRealComparison">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                    Paper vs Real Trading
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="qe-modal-content">
+
+                <!-- Tab 1: Introduction -->
+                <div id="tabRealIntro" class="qe-modal-pane active">
+                    <div class="qe-ref-section">
+                        <h3>⚡ What is Auto Real Trading?</h3>
+                        <p>
+                            <strong>Auto Real Trading</strong> connects your QuantEdge algorithm directly to your <strong>Zerodha Demat and Trading account</strong>. Instead of paper simulation, the bot automatically buys and sells real shares on the National Stock Exchange (NSE) using your <strong>real cash balance</strong>.
+                        </p>
+
+                        <div class="guide-example-box amber-box">
+                            <div class="guide-example-header">
+                                <span class="guide-example-title">⚠️ Important: Real Money is Active</span>
+                                <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25 guide-example-badge">Live Broker Orders</span>
+                            </div>
+                            <p style="margin: 0; font-size: 13.5px; color: #cbd5e1; line-height: 1.6;">
+                                • Every order placed by the bot is a genuine order executed on the exchange through Zerodha.<br />
+                                • Real profits are deposited directly into your Demat account, and real losses affect your Demat balance.<br />
+                                • We strongly recommend running <strong>Auto Paper Trading</strong> for at least 1-2 weeks first until you are fully confident with the strategy!
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>🚀 Why Use Auto Real Trading?</h3>
+                        <div class="guide-def-grid">
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🎯 Zero Emotion Trading</div>
+                                <p class="guide-def-text">No fear or greed. The bot executes strictly according to disciplined algorithmic rules without hesitation.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">⚡ Split-Second Execution</div>
+                                <p class="guide-def-text">The bot sends orders to Zerodha in milliseconds the moment a breakout setup is confirmed.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🛡️ Built-in Risk Management</div>
+                                <p class="guide-def-text">Every trade has an automatic Target and Stop Loss, strictly capping downside risk.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🚨 1-Click Panic Kill Switch</div>
+                                <p class="guide-def-text">Want to stop immediately? A single click instantly cancels pending orders and pauses trading.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: 3 Setup Steps -->
+                <div id="tabRealPrereq" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>🔑 3 Simple Steps to Start (Takes 2 Minutes)</h3>
+                        <p>Before the bot can place real trades on your behalf, complete these 3 simple checks:</p>
+
+                        <!-- Step 1 -->
+                        <div class="guide-step-card">
+                            <div class="guide-step-num">1</div>
+                            <div class="guide-step-body">
+                                <div class="guide-step-title">Connect Zerodha Every Morning (1-Click Login)</div>
+                                <p class="guide-step-desc">
+                                    Indian stock market regulations (SEBI) require a fresh login token every morning. Simply click <strong>"⚡ Connect Zerodha"</strong> in the top header once between <strong>08:30 AM and 09:15 AM</strong>. Once connected, the token stays active for the entire trading day.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="guide-step-card">
+                            <div class="guide-step-num">2</div>
+                            <div class="guide-step-body">
+                                <div class="guide-step-title">One-Time DDPI Activation (Free & Online)</div>
+                                <p class="guide-step-desc">
+                                    <strong>DDPI</strong> (Demat Debit and Pledge Instruction) gives Zerodha permission to automatically sell shares when your target is reached — <strong>without asking you to enter a CDSL TPIN / OTP manually every single day</strong>.<br />
+                                    • You only need to do this <strong>once</strong> via Zerodha Console with Aadhaar OTP eSign.<br />
+                                    • Click the <strong>"📖 DDPI Guide"</strong> button on the dashboard for quick instructions.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="guide-step-card">
+                            <div class="guide-step-num">3</div>
+                            <div class="guide-step-body">
+                                <div class="guide-step-title">Ensure Available Cash in Zerodha</div>
+                                <p class="guide-step-desc">
+                                    Make sure your Zerodha equity account has sufficient unencumbered cash balance. For example, if your trade budget is set to ₹20,000 per trade and max trades is 3, having ₹60,000 ensures all trades can be taken smoothly.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Real Order Placement Rules -->
+                <div id="tabRealConditions" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>🎯 Background Conditions Required to Place a Live Broker Order</h3>
+                        <p>
+                            Because real money is on the line, the bot enforces a strict <strong>3-tier validation architecture</strong> before sending a single buy order to Zerodha KiteConnect.
+                        </p>
+
+                        <!-- Tier 1: Gatekeeper Rules -->
+                        <h4 style="color: #38bdf8; font-size: 14.5px; margin: 18px 0 10px 0; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                            <span>🛡️ TIER 1: 3 Mandatory Market Filters (Zero-Tolerance)</span>
+                        </h4>
+                        <p style="font-size: 12.5px; color: #94a3b8; margin-bottom: 10px;">
+                            If any of these 3 conditions fail, the stock is <strong>immediately REJECTED</strong>. No trade is taken:
+                        </p>
+
+                        <div class="guide-def-grid" style="margin-bottom: 20px;">
+                            <div class="guide-def-card" style="border-left: 3px solid #34d399;">
+                                <div class="guide-def-term" style="color: #34d399;">✅ 1. NIFTY Market Filter (Bullish Market)</div>
+                                <p class="guide-def-text">
+                                    Nifty 50 Close must be above its 50-day average, and 20 EMA &gt; 50 EMA. If the market is crashing or in defensive mode, all buy orders are paused.
+                                </p>
+                            </div>
+                            <div class="guide-def-card" style="border-left: 3px solid #38bdf8;">
+                                <div class="guide-def-term" style="color: #38bdf8;">✅ 2. Stock Upward Trend (Price &gt; 20 EMA &gt; 50 EMA)</div>
+                                <p class="guide-def-text">
+                                    The stock must be trading above its 20 and 50-day moving averages with upward slopes. We only trade stocks already going UP.
+                                </p>
+                            </div>
+                            <div class="guide-def-card" style="border-left: 3px solid #a78bfa;">
+                                <div class="guide-def-term" style="color: #a78bfa;">✅ 3. Trend Strength (ADX &ge; 20.0)</div>
+                                <p class="guide-def-text">
+                                    Filters out choppy, flat stocks. The stock must demonstrate strong directional buying momentum.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Tier 2: 8-Factor Quality Matrix -->
+                        <h4 style="color: #38bdf8; font-size: 14.5px; margin: 22px 0 10px 0; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                            <span>⭐ TIER 2: 8-Factor Quality Scoring Matrix (Score &ge; 70 or 10/11 Match)</span>
+                        </h4>
+                        <p style="font-size: 12.5px; color: #94a3b8; margin-bottom: 12px;">
+                            A live BUY signal is generated only when the stock accumulates <strong>&ge; 70 Points out of 100</strong> across these technical factors:
+                        </p>
+
+                        <div class="guide-example-box" style="margin: 10px 0 20px 0; padding: 14px;">
+                            <table class="guide-compare-table" style="margin: 0; font-size: 12.5px;">
+                                <thead>
+                                    <tr>
+                                        <th>Factor</th>
+                                        <th>Condition</th>
+                                        <th>Weight</th>
+                                        <th>Safety Purpose</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>4. Breakout Group</strong></td>
+                                        <td>Breaks Prev Day High, 2-Week High, or 52W High</td>
+                                        <td><span class="badge bg-primary">+20 Pts</span></td>
+                                        <td>Price is breaking out into fresh highs with no overhead sellers.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>5. Heavy Volume Surge</strong></td>
+                                        <td>15m Volume &ge; 1.5x to 2.5x 20-candle average</td>
+                                        <td><span class="badge bg-primary">+15 Pts</span></td>
+                                        <td>Confirms institutional buying backing the price move.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>6. Relative Strength</strong></td>
+                                        <td>Stock 1M/3M Return &gt; NIFTY 50 Return</td>
+                                        <td><span class="badge bg-primary">+15 Pts</span></td>
+                                        <td>Selects top performers that lead the broader stock market.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>7. Hourly Multi-Timeframe</strong></td>
+                                        <td>60-minute Hourly Close &gt; EMA20</td>
+                                        <td><span class="badge bg-primary">+15 Pts</span></td>
+                                        <td>Ensures both short-term (15m) and long-term (1h/1d) trends agree.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>8. RSI Momentum</strong></td>
+                                        <td>15m RSI between 50 and 75 (Sweet spot: 55-70)</td>
+                                        <td><span class="badge bg-primary">+10 Pts</span></td>
+                                        <td>Good upside speed without being extremely overextended.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>9. MACD Bullish</strong></td>
+                                        <td>MACD Line &gt; Signal Line</td>
+                                        <td><span class="badge bg-primary">+10 Pts</span></td>
+                                        <td>Positive momentum acceleration.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>10. Bullish Candle</strong></td>
+                                        <td>15m candle close near high or &gt; 1.2x ATR</td>
+                                        <td><span class="badge bg-primary">+8 Pts</span></td>
+                                        <td>Strong buying conviction right into the candle close.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>11. Risk : Reward Ratio</strong></td>
+                                        <td>Target (2x ATR) vs Stop Loss (1.5x ATR) &ge; 1:2.0</td>
+                                        <td><span class="badge bg-primary">+7 Pts</span></td>
+                                        <td>Ensures potential profit is at least twice the potential stop loss.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Tier 3: Zerodha Broker Pre-Flight Checks -->
+                        <h4 style="color: #38bdf8; font-size: 14.5px; margin: 22px 0 10px 0; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                            <span>🚦 TIER 3: Zerodha Broker Pre-Flight Safety Checks</span>
+                        </h4>
+                        <p style="font-size: 12.5px; color: #94a3b8; margin-bottom: 12px;">
+                            Right before transmitting the live CNC buy order to Zerodha's servers, the engine checks:
+                        </p>
+
+                        <div class="guide-def-grid">
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🔑 1. Valid Zerodha Session Token</div>
+                                <p class="guide-def-text">Verifies that today's 1-Click login token is active and has not expired.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">📑 2. Active DDPI Status</div>
+                                <p class="guide-def-text">Ensures DDPI is authorized so the bot can automatically exit the position when Target is hit.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🔘 3. Live Trading Toggle is ON</div>
+                                <p class="guide-def-text">Admin master switch must be active.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">⏰ 4. Market Hours (09:15 – 03:30)</div>
+                                <p class="guide-def-text">Orders are only placed during regular NSE equity trading hours.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🛑 5. Max Daily Limit (e.g. 5 Trades)</div>
+                                <p class="guide-def-text">Prevents overtrading. Caps real trades strictly at your configured daily limit.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">💵 6. Zerodha Cash Balance Check</div>
+                                <p class="guide-def-text">Confirms your Zerodha Demat account has enough free cash to buy the shares.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Money Safety & Protection -->
+                <div id="tabRealSafety" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>🛡️ How Your Money is Protected</h3>
+                        <p>Trading with real money requires rock-solid risk boundaries. The engine includes 4 layers of safety protections:</p>
+
+                        <div class="guide-def-grid">
+                            <div class="guide-def-card" style="border-left: 3px solid #38bdf8;">
+                                <div class="guide-def-term">💰 Fixed Budget Per Trade</div>
+                                <p class="guide-def-text">The bot never puts all your money into one stock. If you set ₹20,000 per trade, it will only buy up to ₹20,000 worth of shares per company.</p>
+                            </div>
+
+                            <div class="guide-def-card" style="border-left: 3px solid #f59e0b;">
+                                <div class="guide-def-term">🛑 Daily Trade Cap (Speed Limit)</div>
+                                <p class="guide-def-text">Configured with a maximum limit (e.g. 5 trades per day). Even if the market gives 20 buy signals, the bot stops after 5 trades to avoid overtrading.</p>
+                            </div>
+
+                            <div class="guide-def-card" style="border-left: 3px solid #f87171;">
+                                <div class="guide-def-term">🛡️ Automated Stop Loss Protection</div>
+                                <p class="guide-def-text">Every position is watched constantly. If a stock falls by <strong>-3%</strong>, the bot automatically cuts the trade so you never suffer a catastrophic loss.</p>
+                            </div>
+
+                            <div class="guide-def-card" style="border-left: 3px solid #ef4444; background: rgba(239, 68, 68, 0.08);">
+                                <div class="guide-def-term" style="color: #f87171;">🚨 Emergency Panic Kill Switch</div>
+                                <p class="guide-def-text">Located right in the top bar. If you feel uncomfortable, see extreme market volatility, or want to exit, clicking this button immediately pauses the bot and safely exits open orders.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: Real-Life Trade Example -->
+                <div id="tabRealExample" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>📈 Practical Real Trade Walkthrough</h3>
+                        <p>Here is what happens in the background when a real trade takes place:</p>
+
+                        <div class="guide-example-box green-box">
+                            <div class="guide-example-header">
+                                <span class="guide-example-title">📌 Live Trade: Buying Tata Motors (TATAMOTORS)</span>
+                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25 guide-example-badge">Real Money</span>
+                            </div>
+
+                            <div class="guide-example-grid">
+                                <div class="guide-mini-metric">
+                                    <div class="guide-mini-metric-label">Zerodha Cash Balance</div>
+                                    <div class="guide-mini-metric-val" style="color: #38bdf8;">₹50,000</div>
+                                </div>
+                                <div class="guide-mini-metric">
+                                    <div class="guide-mini-metric-label">Allocated Trade Budget</div>
+                                    <div class="guide-mini-metric-val" style="color: #f59e0b;">₹20,000</div>
+                                </div>
+                                <div class="guide-mini-metric">
+                                    <div class="guide-mini-metric-label">Stock Entry Price</div>
+                                    <div class="guide-mini-metric-val">₹1,000 / share</div>
+                                </div>
+                                <div class="guide-mini-metric">
+                                    <div class="guide-mini-metric-label">Shares Bought</div>
+                                    <div class="guide-mini-metric-val">20 Shares</div>
+                                </div>
+                            </div>
+
+                            <p style="font-size: 13px; color: #cbd5e1; margin-bottom: 12px;">
+                                At 10:45 AM, the scanner confirms a strong breakout in Tata Motors.<br />
+                                • The bot automatically places a real <strong>CNC Buy order on Zerodha</strong> for 20 shares at ₹1,000.<br />
+                                • Total money deducted from your Zerodha cash balance: <strong>₹20,000</strong>.<br />
+                                • Your remaining free Zerodha balance is <strong>₹30,000</strong>.
+                            </p>
+
+                            <!-- Scenario A: Target Hit -->
+                            <div class="guide-scenario-card win">
+                                <div class="guide-scenario-title" style="color: #34d399;">
+                                    🏆 Outcome A: Target Reached (+5% Profit)
+                                </div>
+                                <p class="guide-scenario-desc">
+                                    Tata Motors rises to <strong>₹1,050 (+5.0%)</strong>.<br />
+                                    • The bot automatically places a real <strong>CNC Sell order on Zerodha</strong> for 20 shares.<br />
+                                    • Total money received: <strong>₹21,000</strong>.<br />
+                                    • <strong style="color: #34d399;">+₹1,000 Real Profit</strong> is credited directly to your Zerodha Demat account!<br />
+                                    • Your Zerodha balance is now <strong style="color: #34d399;">₹51,000</strong>.
+                                </p>
+                            </div>
+
+                            <!-- Scenario B: Stop Loss Hit -->
+                            <div class="guide-scenario-card loss">
+                                <div class="guide-scenario-title" style="color: #f87171;">
+                                    🛡️ Outcome B: Market Turnaround (-3% Stop Loss)
+                                </div>
+                                <p class="guide-scenario-desc">
+                                    Market turns weak and Tata Motors falls to <strong>₹970 (-3.0%)</strong>.<br />
+                                    • The bot automatically sells to protect you from bigger drops. Total sale proceeds: <strong>₹19,400</strong>.<br />
+                                    • Real loss strictly limited to <strong style="color: #f87171;">-₹600</strong>.<br />
+                                    • Your Zerodha balance is safely preserved at <strong style="color: #f87171;">₹49,400</strong>.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 5: Paper vs Real Comparison -->
+                <div id="tabRealComparison" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>⚖️ Paper Trading vs Real Trading Comparison</h3>
+                        <p>Here is a simple side-by-side comparison to help you choose what to use:</p>
+
+                        <table class="guide-compare-table">
+                            <thead>
+                                <tr>
+                                    <th>Feature</th>
+                                    <th>🤖 Auto Paper Trading</th>
+                                    <th>⚡ Auto Real Trading</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Money Used</strong></td>
+                                    <td><span class="badge bg-info bg-opacity-25 text-info">₹1,00,000 Virtual Demo Cash</span></td>
+                                    <td><span class="badge bg-warning bg-opacity-25 text-warning">Real Money from Zerodha</span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Financial Risk</strong></td>
+                                    <td><strong style="color: #34d399;">Zero (0% Risk)</strong></td>
+                                    <td><strong style="color: #f59e0b;">Real Market Risk (Capped by SL)</strong></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Broker Login Required?</strong></td>
+                                    <td>No — works instantly anytime</td>
+                                    <td>Yes — 1-Click Login every morning</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>DDPI Setup Needed?</strong></td>
+                                    <td>No</td>
+                                    <td>Yes (1-time free activation)</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Live Market Prices?</strong></td>
+                                    <td>Yes (Real-time NSE ticks)</td>
+                                    <td>Yes (Real-time NSE ticks)</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Who Should Use It?</strong></td>
+                                    <td>Beginners, learners, & strategy testers</td>
+                                    <td>Users ready for live automated profits</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>

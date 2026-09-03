@@ -1,0 +1,422 @@
+<!-- Auto Paper Trading Guide Modal (Beginner & Non-Technical Friendly) -->
+<div id="paperTradingGuideModal" class="qe-modal-backdrop">
+    <div class="qe-modal">
+        <!-- Header -->
+        <div class="qe-modal-header">
+            <div class="qe-modal-title-area">
+                <span class="qe-modal-title">🤖 Auto Paper Trading — Beginner's Guide</span>
+                <span class="qe-modal-subtitle">Learn how automated simulated trading works step-by-step with real-world examples.</span>
+            </div>
+            <button id="btnClosePaperGuideModal" class="qe-modal-close-btn" title="Close Guide (Esc)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="qe-modal-body">
+            <!-- Sidebar Navigation -->
+            <div class="qe-modal-sidebar">
+                <button class="qe-modal-nav-btn active" data-tab="tabPaperIntro">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    What is Paper Trading?
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabPaperHowItWorks">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    How the Bot Trades
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabPaperConditions">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 11l3 3L22 4"></path>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    Stock Order Conditions
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabPaperExample">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                    </svg>
+                    Real-Life Trade Example
+                </button>
+                <button class="qe-modal-nav-btn" data-tab="tabPaperDictionary">
+                    <svg class="qe-modal-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                    Dashboard Dictionary
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="qe-modal-content">
+
+                <!-- Tab 1: Introduction -->
+                <div id="tabPaperIntro" class="qe-modal-pane active">
+                    <div class="qe-ref-section">
+                        <h3>🟢 What is Auto Paper Trading?</h3>
+                        <p>
+                            Think of <strong>Paper Trading</strong> as a flight simulator for stock trading. It gives you <strong>₹1,00,000 of virtual practice money</strong> so you can watch how the automated trading algorithm picks stocks, executes trades, and manages profits and losses in live Indian stock market conditions — <strong>without risking a single rupee of your real savings</strong>!
+                        </p>
+
+                        <div class="guide-example-box green-box">
+                            <div class="guide-example-header">
+                                <span class="guide-example-title">🛡️ 100% Risk-Free Guarantee</span>
+                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25 guide-example-badge">Virtual Demo</span>
+                            </div>
+                            <p style="margin: 0; font-size: 13.5px; color: #cbd5e1; line-height: 1.6;">
+                                • <strong>Zero Real Money:</strong> No bank account or Demat balance is ever deducted.<br />
+                                • <strong>Real Live Prices:</strong> The bot uses real, live second-by-second NSE stock prices.<br />
+                                • <strong>Completely Automated:</strong> Once turned ON, the bot scans, buys, tracks, and sells completely on its own.<br />
+                                • <strong>Safe Learning:</strong> Ideal for building confidence and observing performance over days and weeks.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="qe-ref-section">
+                        <h3>✨ Key Benefits for You</h3>
+                        <div class="guide-def-grid">
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🎯 Test Before You Invest</div>
+                                <p class="guide-def-text">See how many trades win and how much virtual profit you accumulate before connecting your real broker.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">⏱️ Hands-Free Automation</div>
+                                <p class="guide-def-text">You don't need to sit glued to computer screens all day. The bot automatically checks every 15 minutes during market hours.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🔄 Fresh Start Anytime</div>
+                                <p class="guide-def-text">Made a mistake or want to test a new period? Click <strong>"Reset Paper Trading"</strong> to start fresh with ₹1,00,000 anytime.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">📊 Transparent P&L</div>
+                                <p class="guide-def-text">Track your open positions, realized profits, winning percentages, and transaction logs in real-time.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: How It Works Step-by-Step -->
+                <div id="tabPaperHowItWorks" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>⚙️ How the Bot Trades (Step-by-Step)</h3>
+                        <p>The entire auto paper trading process happens in 4 simple, automated stages:</p>
+
+                        <!-- Step 1 -->
+                        <div class="guide-step-card">
+                            <div class="guide-step-num">1</div>
+                            <div class="guide-step-body">
+                                <div class="guide-step-title">Automated Market Scan (Every 15 Minutes)</div>
+                                <p class="guide-step-desc">
+                                    During official market hours (<strong>09:15 AM to 03:30 PM IST</strong>), the bot automatically wakes up every 15 minutes and scans the top active NSE stocks looking for strong buying momentum.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="guide-step-card">
+                            <div class="guide-step-num">2</div>
+                            <div class="guide-step-body">
+                                <div class="guide-step-title">Strict Quality Filter Check</div>
+                                <p class="guide-step-desc">
+                                    The bot does not buy blindly. It verifies that the broader market (NIFTY 50) is healthy, buyer trading volume is unusually high, and the stock is showing a clear upward breakout. If any quality test fails, the stock is rejected.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="guide-step-card">
+                            <div class="guide-step-num">3</div>
+                            <div class="guide-step-body">
+                                <div class="guide-step-title">Automatic Virtual Buy Entry</div>
+                                <p class="guide-step-desc">
+                                    When a high-quality stock is detected, the bot automatically buys shares using your allocated trade budget (e.g. ₹20,000 per trade). It logs the entry price, time, and quantity in your dashboard.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 4 -->
+                        <div class="guide-step-card">
+                            <div class="guide-step-num">4</div>
+                            <div class="guide-step-body">
+                                <div class="guide-step-title">Automatic Target Exit or Stop Loss</div>
+                                <p class="guide-step-desc">
+                                    The bot continuously watches the stock price tick-by-tick. When the stock gains <strong>+5% profit</strong>, the bot automatically sells and books your virtual profit. If the stock falls by <strong>-3%</strong>, it cuts the position to protect your remaining capital.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Stock Order Conditions -->
+                <div id="tabPaperConditions" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>🎯 Background Conditions to Place a Stock BUY Order</h3>
+                        <p>
+                            To protect your capital and ensure only high-probability stocks are purchased, the bot tests every stock against <strong>3 Gatekeeper Hard Filters</strong>, an <strong>8-Factor Quality Score</strong>, and <strong>5 Pre-Flight Safety Checks</strong> before placing an order.
+                        </p>
+
+                        <!-- Section 1: Gatekeeper Rules -->
+                        <h4 style="color: #38bdf8; font-size: 14.5px; margin: 18px 0 10px 0; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                            <span>🛡️ STAGE 1: The 3 Gatekeeper Rules (Must Pass 100%)</span>
+                        </h4>
+                        <p style="font-size: 12.5px; color: #94a3b8; margin-bottom: 10px;">
+                            If ANY of these 3 rules fail, the stock is <strong>instantly REJECTED</strong>. No order will ever be placed:
+                        </p>
+
+                        <div class="guide-def-grid" style="margin-bottom: 20px;">
+                            <div class="guide-def-card" style="border-left: 3px solid #34d399;">
+                                <div class="guide-def-term" style="color: #34d399;">✅ 1. Market Filter (Nifty Health)</div>
+                                <p class="guide-def-text">
+                                    <strong>What it checks:</strong> Is Nifty 50 trading above its 50-day average?<br />
+                                    <strong>Why:</strong> When the overall market is in a deep crash or panic, individual stocks often fall too. The bot refuses to buy in bad market conditions to keep your money safe.
+                                </p>
+                            </div>
+                            <div class="guide-def-card" style="border-left: 3px solid #38bdf8;">
+                                <div class="guide-def-term" style="color: #38bdf8;">✅ 2. Stock Upward Trend (Direction)</div>
+                                <p class="guide-def-text">
+                                    <strong>What it checks:</strong> Is the stock price above its 20-day and 50-day averages?<br />
+                                    <strong>Why:</strong> We only buy stocks that are moving <strong>UPWARDS</strong>. The bot never tries to guess the bottom of falling stocks ("falling knives").
+                                </p>
+                            </div>
+                            <div class="guide-def-card" style="border-left: 3px solid #a78bfa;">
+                                <div class="guide-def-term" style="color: #a78bfa;">✅ 3. Trend Strength (Power / ADX &ge; 20)</div>
+                                <p class="guide-def-text">
+                                    <strong>What it checks:</strong> Is the stock moving with real speed and strength?<br />
+                                    <strong>Why:</strong> Filters out slow, flat, sideways stocks that trap your money without making any progress.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Section 2: 8 Quality Factors -->
+                        <h4 style="color: #38bdf8; font-size: 14.5px; margin: 22px 0 10px 0; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                            <span>⭐ STAGE 2: 8 Quality Scoring Checks (Need 70+ Points or 10/11 Match)</span>
+                        </h4>
+                        <p style="font-size: 12.5px; color: #94a3b8; margin-bottom: 12px;">
+                            Stocks passing the Gatekeeper rules are evaluated across 8 factors totaling up to 100 points. A BUY signal triggers when the score reaches <strong>&ge; 70 Points</strong> (or matches &ge; 10 out of 11 conditions):
+                        </p>
+
+                        <div class="guide-example-box" style="margin: 10px 0 20px 0; padding: 14px;">
+                            <table class="guide-compare-table" style="margin: 0; font-size: 12.5px;">
+                                <thead>
+                                    <tr>
+                                        <th>Factor</th>
+                                        <th>What It Looks For</th>
+                                        <th>Points</th>
+                                        <th>Simple Reason</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>4. Price Breakout</strong></td>
+                                        <td>Crosses yesterday's high or 2-week high</td>
+                                        <td><span class="badge bg-primary">+20 Pts</span></td>
+                                        <td>Confirms buyers are willing to pay fresh higher prices.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>5. Heavy Buyer Volume</strong></td>
+                                        <td>Volume &ge; 1.5x to 2.5x normal average</td>
+                                        <td><span class="badge bg-primary">+15 Pts</span></td>
+                                        <td>Big institutions, mutual funds, and smart money are actively buying.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>6. Beating Nifty 50</strong></td>
+                                        <td>Stock return &gt; Nifty 50 over 1 to 3 months</td>
+                                        <td><span class="badge bg-primary">+15 Pts</span></td>
+                                        <td>Picks market leaders that run faster than ordinary index stocks.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>7. Hourly Trend Check</strong></td>
+                                        <td>60-Minute hourly candle is also bullish</td>
+                                        <td><span class="badge bg-primary">+15 Pts</span></td>
+                                        <td>Ensures both long-term and short-term trends are pointing in the same direction.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>8. Healthy Speed (RSI)</strong></td>
+                                        <td>RSI index in sweet spot (50 to 75)</td>
+                                        <td><span class="badge bg-primary">+10 Pts</span></td>
+                                        <td>Has solid upside momentum without being dangerously overheated.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>9. MACD Indicator</strong></td>
+                                        <td>MACD line above signal line</td>
+                                        <td><span class="badge bg-primary">+10 Pts</span></td>
+                                        <td>Confirms acceleration is positive and speeding up.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>10. Strong Green Candle</strong></td>
+                                        <td>15-min candle closed near highest price</td>
+                                        <td><span class="badge bg-primary">+8 Pts</span></td>
+                                        <td>Shows aggressive buyers dominated all the way until the close.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>11. Smart Odds (R:R &ge; 1:2)</strong></td>
+                                        <td>Potential profit is at least double the risk</td>
+                                        <td><span class="badge bg-primary">+7 Pts</span></td>
+                                        <td>Ensures you stand to win ₹2 for every ₹1 potentially risked.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Section 3: Pre-Flight Safety Checks -->
+                        <h4 style="color: #38bdf8; font-size: 14.5px; margin: 22px 0 10px 0; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                            <span>🚦 STAGE 3: 5 Account Pre-Flight Checks (Final Clearance)</span>
+                        </h4>
+                        <p style="font-size: 12.5px; color: #94a3b8; margin-bottom: 12px;">
+                            Even if a stock scores 90/100, the bot performs 5 final safety checks right before placing the order:
+                        </p>
+
+                        <div class="guide-def-grid">
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🔘 1. Master Switch is ON</div>
+                                <p class="guide-def-text">If the Auto Trading toggle is OFF, the signal is logged in audit, but no order is placed.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">⏰ 2. Within Market Window</div>
+                                <p class="guide-def-text">Orders are only placed between <strong>09:15 AM and 03:30 PM</strong> on active exchange trading days.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🚫 3. No Duplicate Positions</div>
+                                <p class="guide-def-text">If you already own RELIANCE from a previous trade today, the bot will never buy it again until closed.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🛑 4. Under Daily Limit (Max 5)</div>
+                                <p class="guide-def-text">Once 5 auto trades have been executed today, the bot automatically stops taking new trades.</p>
+                            </div>
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">💵 5. Available Cash Check</div>
+                                <p class="guide-def-text">Your Available Margin must have at least enough cash to cover the fixed trade budget (e.g. ₹20,000).</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Real-Life Example -->
+                <div id="tabPaperExample" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>📈 Practical Example with Real Numbers</h3>
+                        <p>Here is an easy-to-understand walkthrough of how a single trade looks from start to finish:</p>
+
+                        <div class="guide-example-box">
+                            <div class="guide-example-header">
+                                <span class="guide-example-title">📌 Trade Setup: Buying Reliance Industries</span>
+                                <span class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25 guide-example-badge">Example</span>
+                            </div>
+
+                            <div class="guide-example-grid">
+                                <div class="guide-mini-metric">
+                                    <div class="guide-mini-metric-label">Your Starting Balance</div>
+                                    <div class="guide-mini-metric-val" style="color: #38bdf8;">₹1,00,000</div>
+                                </div>
+                                <div class="guide-mini-metric">
+                                    <div class="guide-mini-metric-label">Budget Per Trade</div>
+                                    <div class="guide-mini-metric-val" style="color: #f59e0b;">₹20,000</div>
+                                </div>
+                                <div class="guide-mini-metric">
+                                    <div class="guide-mini-metric-label">Stock Entry Price</div>
+                                    <div class="guide-mini-metric-val">₹2,500 / share</div>
+                                </div>
+                                <div class="guide-mini-metric">
+                                    <div class="guide-mini-metric-label">Shares Bought</div>
+                                    <div class="guide-mini-metric-val">8 Shares</div>
+                                </div>
+                            </div>
+
+                            <p style="font-size: 13px; color: #cbd5e1; margin-bottom: 12px;">
+                                At 10:15 AM, the bot buys 8 shares of Reliance at ₹2,500 = <strong>₹20,000 total investment</strong>.<br />
+                                • <strong>Available Margin:</strong> Drops from ₹1,00,000 to <strong>₹80,000</strong> (money left for other trades).<br />
+                                • <strong>Used Margin:</strong> Becomes <strong>₹20,000</strong> (locked in Reliance shares).
+                            </p>
+
+                            <!-- Scenario A: Target Hit -->
+                            <div class="guide-scenario-card win">
+                                <div class="guide-scenario-title" style="color: #34d399;">
+                                    🏆 Outcome A: Stock Rises (Target +5% Achieved)
+                                </div>
+                                <p class="guide-scenario-desc">
+                                    Later in the afternoon, Reliance shares climb to <strong>₹2,625 (+5.0%)</strong>.<br />
+                                    • The bot detects the price has crossed target and automatically sells all 8 shares for <strong>₹21,000</strong>.<br />
+                                    • You made <strong style="color: #34d399;">+₹1,000 Virtual Profit</strong>!<br />
+                                    • Your new account balance increases to <strong style="color: #34d399;">₹1,01,000</strong>.
+                                </p>
+                            </div>
+
+                            <!-- Scenario B: Stop Loss -->
+                            <div class="guide-scenario-card loss">
+                                <div class="guide-scenario-title" style="color: #f87171;">
+                                    🛡️ Outcome B: Market Drops (Stop Loss -3% Protection)
+                                </div>
+                                <p class="guide-scenario-desc">
+                                    Suppose bad global news breaks and Reliance drops to <strong>₹2,425 (-3.0%)</strong>.<br />
+                                    • The bot immediately sells to prevent a larger loss. Total sale amount = <strong>₹19,400</strong>.<br />
+                                    • Your loss is strictly capped at <strong style="color: #f87171;">-₹600</strong>.<br />
+                                    • Your remaining balance stays protected at <strong style="color: #f87171;">₹99,400</strong>.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: Dashboard Dictionary -->
+                <div id="tabPaperDictionary" class="qe-modal-pane">
+                    <div class="qe-ref-section">
+                        <h3>📖 Plain English Dashboard Dictionary</h3>
+                        <p>Confused by trading terms on the screen? Here is what every card and number means in plain English:</p>
+
+                        <div class="guide-def-grid">
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🔘 Auto Trading Switch (ON/OFF)</div>
+                                <p class="guide-def-text">The master power button. When <strong>ON</strong>, the bot is active and takes trades. When <strong>OFF</strong>, the bot is paused and will not place any new orders.</p>
+                            </div>
+
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">💵 Available Margin</div>
+                                <p class="guide-def-text">Free cash sitting in your virtual account. This is the money ready to be used for taking upcoming new stock trades.</p>
+                            </div>
+
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🔒 Used Margin</div>
+                                <p class="guide-def-text">The amount of money currently tied up in your active open stock positions. Once a trade is closed, this money returns to Available Margin.</p>
+                            </div>
+
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">📊 Unrealized P&L (Floating)</div>
+                                <p class="guide-def-text">Live running profit or loss of your current open positions based on the latest market price. It is not permanent until the trade is sold.</p>
+                            </div>
+
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">💰 Realized P&L (Booked)</div>
+                                <p class="guide-def-text">Permanent profit or loss from trades that have been officially closed and sold. This amount is permanently added to or deducted from your account balance.</p>
+                            </div>
+
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🛑 Max Trades / Day (e.g. 5)</div>
+                                <p class="guide-def-text">A safety speed-limit. It ensures the bot never takes more than 5 trades in a single day, preventing overtrading during turbulent market days.</p>
+                            </div>
+
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">⏱️ 15-Minute Scan Countdown</div>
+                                <p class="guide-def-text">Shows the exact countdown until the bot runs its next automated market check during active trading hours (09:15 AM to 03:30 PM).</p>
+                            </div>
+
+                            <div class="guide-def-card">
+                                <div class="guide-def-term">🗑️ Reset Paper Trading</div>
+                                <p class="guide-def-text">A one-click reset button (available to Admin). Clears all test trade history and restores your starting balance back to ₹1,00,000.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>

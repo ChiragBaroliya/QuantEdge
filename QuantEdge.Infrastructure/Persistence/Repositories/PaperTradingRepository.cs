@@ -274,14 +274,14 @@ public class PaperTradingRepository : IPaperTradingRepository
                     status = @Status,
                     exit_reason = COALESCE(@ExitReason, exit_reason),
                     realized_pnl = @RealizedPnl
-                WHERE id = @Id
+                WHERE id = @Id AND (status = 0 OR @Status = 1)
                 RETURNING 
                     id AS Id, account_id AS AccountId, symbol AS Symbol, side AS Side,
                     quantity AS Quantity, average_entry_price AS AverageEntryPrice, current_price AS CurrentPrice,
                     unrealized_pnl AS UnrealizedPnl, stop_loss AS StopLoss, take_profit AS TakeProfit,
                     status AS Status, trade_type AS TradeType, exit_reason AS ExitReason, opened_at AS OpenedAt, closed_at AS ClosedAt, realized_pnl AS RealizedPnl;";
 
-            return await connection.QuerySingleAsync<PaperPosition>(sqlUpdate, new
+            var updated = await connection.QuerySingleOrDefaultAsync<PaperPosition>(sqlUpdate, new
             {
                 position.Id,
                 position.Quantity,
@@ -294,6 +294,8 @@ public class PaperTradingRepository : IPaperTradingRepository
                 position.ExitReason,
                 position.RealizedPnl
             });
+
+            return updated ?? position;
         }
     }
 

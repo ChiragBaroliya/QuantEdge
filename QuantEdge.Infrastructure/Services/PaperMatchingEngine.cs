@@ -19,6 +19,7 @@ public class PaperMatchingEngine
     private readonly IPaperTradingRepository _repository;
     private readonly ILogger<PaperMatchingEngine> _logger;
     private readonly ConcurrentDictionary<string, decimal> _latestPrices = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<int, byte> _closingPositions = new();
 
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
     private DateTime _lastCacheRefresh = DateTime.MinValue;
@@ -82,14 +83,10 @@ public class PaperMatchingEngine
 
         foreach (var pos in matchingPositions)
         {
-            // Update current price & unrealized PnL
-            decimal unrealizedPnl = pos.Side == TradeSide.BUY
-                ? (ltp - pos.AverageEntryPrice) * pos.Quantity
-                : (pos.AverageEntryPrice - ltp) * pos.Quantity;
-
-            pos.CurrentPrice = ltp;
-            pos.UnrealizedPnl = unrealizedPnl;
-            await _repository.UpsertPositionAsync(pos);
+            if (pos.Status == PositionStatus.CLOSED || _closingPositions.ContainsKey(pos.Id))
+            {
+                continue;
+            }
 
             // Check Stop-Loss Trigger
             bool slTriggered = false;
@@ -109,6 +106,12 @@ public class PaperMatchingEngine
 
             if (slTriggered || tpTriggered)
             {
+                // Atomic Gate: Only ONE concurrent thread can ever close this position ID
+                if (!_closingPositions.TryAdd(pos.Id, 0))
+                {
+                    continue;
+                }
+
                 pos.Status = PositionStatus.CLOSED;
 
                 string reason = slTriggered ? "Stop-Loss Triggered" : "Take-Profit Triggered";
@@ -149,7 +152,19 @@ public class PaperMatchingEngine
                     Remarks = $"Auto-Exit: {reason}"
                 });
 
+                _cachedOpenPositions.RemoveAll(p => p.Id == pos.Id);
                 InvalidateCache();
+            }
+            else
+            {
+                // Update current price & unrealized PnL only when NOT closing
+                decimal unrealizedPnl = pos.Side == TradeSide.BUY
+                    ? (ltp - pos.AverageEntryPrice) * pos.Quantity
+                    : (pos.AverageEntryPrice - ltp) * pos.Quantity;
+
+                pos.CurrentPrice = ltp;
+                pos.UnrealizedPnl = unrealizedPnl;
+                await _repository.UpsertPositionAsync(pos);
             }
         }
 
