@@ -725,6 +725,67 @@ input:checked + .slider:before {
 .weekly-pnl-subtitle {
     font-size: 11.5px;
     color: var(--text-secondary);
+    padding: 10px 24px 0 24px;
+}
+
+.weekly-pnl-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.weekly-pnl-nav-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--transition);
+    padding: 0;
+}
+
+.weekly-pnl-nav-btn:hover:not(:disabled) {
+    background: var(--theme-glow-card);
+    border-color: var(--theme-accent);
+    color: var(--text-primary);
+}
+
+.weekly-pnl-nav-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.weekly-pnl-range-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 108px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.weekly-pnl-today-btn {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    background: var(--theme-glow-card);
+    color: var(--theme-accent);
+    border: 1px solid var(--theme-border);
+    border-radius: 20px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all var(--transition);
+    display: none;
+}
+
+.weekly-pnl-today-btn:hover {
+    transform: scale(1.05);
 }
 
 .weekly-pnl-body {

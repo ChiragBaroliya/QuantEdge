@@ -11,6 +11,7 @@ let priceChart = null;
 let rsiChart = null;
 let macdChart = null;
 let weeklyPnlChart = null;
+let weeklyPnlOffset = 0; // 0 = current week, -1 = previous week, etc.
 
 // Series definitions
 let candleSeries = null;
@@ -92,6 +93,18 @@ $(document).ready(async function () {
         } else {
             stopAutoRefresh();
         }
+    });
+
+    // Weekly P/L % chart week-navigation click handlers
+    $("#weeklyPnlPrevBtn").on("click", function() {
+        fetchWeeklyPnl(activeSymbol, weeklyPnlOffset - 1);
+    });
+    $("#weeklyPnlNextBtn").on("click", function() {
+        if (weeklyPnlOffset >= 0) return;
+        fetchWeeklyPnl(activeSymbol, weeklyPnlOffset + 1);
+    });
+    $("#weeklyPnlTodayBtn").on("click", function() {
+        fetchWeeklyPnl(activeSymbol, 0);
     });
 
     // Start 1m Auto Refresh timer
@@ -457,12 +470,16 @@ async function fetchStockMasterDetails(symbol) {
     }
 }
 
-// Fetch day-wise Current Week P/L % data for the active symbol and render the bar chart
-async function fetchWeeklyPnl(symbol) {
+// Fetch day-wise Weekly P/L % data for the active symbol and render the bar chart.
+// offset: 0 = current week, -1 = previous week, etc. Omit to keep the currently browsed week.
+async function fetchWeeklyPnl(symbol, offset) {
     if (!symbol) return;
+    if (offset === undefined || offset === null) offset = weeklyPnlOffset;
+    weeklyPnlOffset = offset;
+
     try {
-        const response = await fetch(`${API_BASE_URL}/api/marketdata/weekly-pnl?symbol=${symbol}`);
-        if (!response.ok) throw new Error("Failed to load Current Week P/L data.");
+        const response = await fetch(`${API_BASE_URL}/api/marketdata/weekly-pnl?symbol=${symbol}&weekOffset=${offset}`);
+        if (!response.ok) throw new Error("Failed to load Weekly P/L data.");
         const data = await response.json();
         renderWeeklyPnlChart(data);
     } catch (ex) {
@@ -471,11 +488,42 @@ async function fetchWeeklyPnl(symbol) {
     }
 }
 
-// Render the "Current Week P/L %" bar chart (Chart.js) - green bars for positive days, red for negative
+// Update the week navigation controls (Prev/Next/This Week, range label, title/subtitle)
+function updateWeeklyPnlNav(data) {
+    const rangeLabel = document.getElementById('weeklyPnlRangeLabel');
+    const nextBtn = document.getElementById('weeklyPnlNextBtn');
+    const todayBtn = document.getElementById('weeklyPnlTodayBtn');
+    const titleEl = document.getElementById('weeklyPnlTitle');
+    const subtitleEl = document.getElementById('weeklyPnlSubtitle');
+
+    const isCurrentWeek = !data || data.isCurrentWeek !== false;
+
+    if (nextBtn) nextBtn.disabled = isCurrentWeek;
+    if (todayBtn) todayBtn.style.display = isCurrentWeek ? "none" : "inline-block";
+    if (titleEl) titleEl.textContent = isCurrentWeek ? "Current Week P/L %" : "Weekly P/L %";
+    if (subtitleEl) {
+        subtitleEl.textContent = isCurrentWeek
+            ? "Daily price performance for the current trading week"
+            : "Daily price performance for the selected trading week";
+    }
+
+    if (rangeLabel) {
+        if (data && data.weekStart && data.weekEnd) {
+            const fmt = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+            rangeLabel.textContent = `${fmt(data.weekStart)} - ${fmt(data.weekEnd)}`;
+        } else {
+            rangeLabel.textContent = "-";
+        }
+    }
+}
+
+// Render the "Weekly P/L %" bar chart (Chart.js) - green bars for positive days, red for negative
 function renderWeeklyPnlChart(data) {
     const canvas = document.getElementById('weeklyPnlChartCanvas');
     const emptyState = document.getElementById('weeklyPnlEmptyState');
     if (!canvas) return;
+
+    updateWeeklyPnlNav(data);
 
     if (weeklyPnlChart) {
         weeklyPnlChart.destroy();
@@ -487,7 +535,7 @@ function renderWeeklyPnlChart(data) {
     if (!days.length) {
         canvas.style.display = "none";
         if (emptyState) {
-            emptyState.textContent = (data && data.message) || "No trading data available yet for the current week.";
+            emptyState.textContent = (data && data.message) || "No trading data available for this week.";
             emptyState.style.display = "flex";
         }
         return;
@@ -575,7 +623,7 @@ async function switchSymbol(symbol) {
     $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe} - IST)`);
     await fetchChartHistory();
     await fetchStockMasterDetails(symbol);
-    fetchWeeklyPnl(symbol);
+    fetchWeeklyPnl(symbol, 0); // reset to the current week whenever a different stock is selected
 
     // Re-subscribe to SignalR groups
     if (connection && connection.state === signalR.HubConnectionState.Connected) {

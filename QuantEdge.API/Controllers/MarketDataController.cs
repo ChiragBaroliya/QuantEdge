@@ -234,15 +234,19 @@ public class MarketDataController : ControllerBase
     }
 
     /// <summary>
-    /// Computes day-wise Profit/Loss percentage for the given symbol across the current trading week
-    /// (Monday through today, IST). Daily P/L% = ((Close - PreviousTradingDayClose) / PreviousTradingDayClose) * 100.
-    /// The first trading day shown in the week uses the close of the most recent trading day before Monday as its baseline.
-    /// Reuses the same daily candle source (live cache with DB fallback) as the main price chart.
+    /// Computes day-wise Profit/Loss percentage for the given symbol across a trading week (Monday through
+    /// Sunday, IST), selected by <paramref name="weekOffset"/> relative to the current week (0 = current week,
+    /// -1 = previous week, etc; positive values are clamped to 0 since future weeks have no data).
+    /// Daily P/L% = ((Close - PreviousTradingDayClose) / PreviousTradingDayClose) * 100. The first trading day
+    /// shown in the week uses the close of the most recent trading day before that week's Monday as its baseline.
+    /// Reuses the same daily candle source (live cache for the current week, DB range query for past weeks -
+    /// both backed by IMarketCandleRepository) as the main price chart.
     /// </summary>
     [HttpGet("weekly-pnl")]
-    public async Task<IActionResult> GetWeeklyPnl([FromQuery] string symbol)
+    public async Task<IActionResult> GetWeeklyPnl([FromQuery] string symbol, [FromQuery] int weekOffset = 0)
     {
         if (string.IsNullOrWhiteSpace(symbol)) return BadRequest("Symbol parameter is required.");
+        if (weekOffset > 0) weekOffset = 0;
 
         try
         {
@@ -250,10 +254,29 @@ public class MarketDataController : ControllerBase
             DateTime nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, indianTz);
             DateTime todayIst = nowIst.Date;
             int daysSinceMonday = ((int)todayIst.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-            DateTime mondayIst = todayIst.AddDays(-daysSinceMonday);
+            DateTime currentWeekMondayIst = todayIst.AddDays(-daysSinceMonday);
 
-            // Reuse the same live-cache-first / DB-fallback daily candle source as GetChartData above.
-            var rawCandles = await GetRecentCandlesForSymbolAsync(symbol, "1d", limit: 15);
+            bool isCurrentWeek = weekOffset == 0;
+            DateTime mondayIst = currentWeekMondayIst.AddDays(weekOffset * 7);
+            // Current week is bounded by "today" (may be mid-week); a past week always spans its full Mon-Sun range
+            // (only actual trading-day candles within it will end up populating the chart).
+            DateTime weekEndIst = isCurrentWeek ? todayIst : mondayIst.AddDays(6);
+
+            List<QuantEdge.Domain.Entities.MarketCandle> rawCandles;
+            if (isCurrentWeek)
+            {
+                // Reuse the same live-cache-first / DB-fallback daily candle source as GetChartData above.
+                rawCandles = await GetRecentCandlesForSymbolAsync(symbol, "1d", limit: 15);
+            }
+            else
+            {
+                // Past weeks aren't served by the "most recent" cache - page back from just after the target
+                // week using the same beforeTime cursor pattern GetChartData uses for historical pagination.
+                DateTime cursorUtc = TimeZoneInfo.ConvertTimeToUtc(mondayIst.AddDays(7), indianTz);
+                rawCandles = (await _candleRepository.GetHistoryAsync(symbol, "1d", limit: 10, beforeTime: cursorUtc))
+                    .OrderBy(c => c.CandleTime)
+                    .ToList();
+            }
 
             // Group by IST trading date (candle_time is stored UTC) in case of any duplicate entries per day.
             var dailyCloses = rawCandles
@@ -273,7 +296,8 @@ public class MarketDataController : ControllerBase
             // it won't exist yet. Fall back to the latest available intraday candle close for today (the same
             // live-updated source that drives the real-time price shown elsewhere on the dashboard) so today's
             // bar reflects the current in-progress price instead of being omitted until market close.
-            if (!dailyCloses.Any(d => d.Date == todayIst))
+            // Only relevant for the current week - past weeks are always fully finalized.
+            if (isCurrentWeek && !dailyCloses.Any(d => d.Date == todayIst))
             {
                 decimal? todaysLiveClose = await GetLatestIntradayCloseForDateAsync(symbol, todayIst, indianTz);
                 if (todaysLiveClose.HasValue && todaysLiveClose.Value > 0m)
@@ -283,7 +307,7 @@ public class MarketDataController : ControllerBase
                 }
             }
 
-            var weekDays = dailyCloses.Where(d => d.Date >= mondayIst && d.Date <= todayIst).ToList();
+            var weekDays = dailyCloses.Where(d => d.Date >= mondayIst && d.Date <= weekEndIst).ToList();
 
             var days = new List<object>();
             for (int i = 0; i < weekDays.Count; i++)
@@ -313,16 +337,18 @@ public class MarketDataController : ControllerBase
             return Ok(new
             {
                 symbol = symbol.ToUpper(),
+                weekOffset,
+                isCurrentWeek,
                 weekStart = mondayIst.ToString("yyyy-MM-dd"),
-                weekEnd = todayIst.ToString("yyyy-MM-dd"),
+                weekEnd = weekEndIst.ToString("yyyy-MM-dd"),
                 hasData = days.Count > 0,
-                message = days.Count > 0 ? null : "Insufficient historical data to compute the current week's P/L for this stock.",
+                message = days.Count > 0 ? null : "Insufficient historical data to compute this week's P/L for this stock.",
                 days
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to compute weekly P/L for symbol {Symbol}.", symbol);
+            _logger.LogError(ex, "Failed to compute weekly P/L for symbol {Symbol} (weekOffset {WeekOffset}).", symbol, weekOffset);
             return StatusCode(500, $"Internal server error: {ex.Message}");
         }
     }

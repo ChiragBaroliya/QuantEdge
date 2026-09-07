@@ -365,14 +365,24 @@
                 </svg>
                 <span class="panel-title" id="weeklyPnlTitle">Current Week P/L %</span>
             </div>
-            <div class="weekly-pnl-subtitle">Daily price performance for the current trading week</div>
+            <div class="weekly-pnl-nav">
+                <button id="weeklyPnlTodayBtn" class="weekly-pnl-today-btn" type="button" title="Jump to current week">This Week</button>
+                <button id="weeklyPnlPrevBtn" class="weekly-pnl-nav-btn" type="button" title="Previous Week" aria-label="Previous Week">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <span id="weeklyPnlRangeLabel" class="weekly-pnl-range-label">&ndash;</span>
+                <button id="weeklyPnlNextBtn" class="weekly-pnl-nav-btn" type="button" title="Next Week" aria-label="Next Week" disabled>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div>
         </div>
+        <div class="weekly-pnl-subtitle" id="weeklyPnlSubtitle">Daily price performance for the current trading week</div>
 
         <div class="chart-panel-body weekly-pnl-body">
             <div class="chart-container-pane weekly-pnl-pane">
                 <canvas id="weeklyPnlChartCanvas"></canvas>
                 <div id="weeklyPnlEmptyState" class="weekly-pnl-empty-state">
-                    No trading data available yet for the current week.
+                    No trading data available for this week.
                 </div>
             </div>
         </div>
