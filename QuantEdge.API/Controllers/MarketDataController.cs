@@ -234,6 +234,142 @@ public class MarketDataController : ControllerBase
     }
 
     /// <summary>
+    /// Computes day-wise Profit/Loss percentage for the given symbol across the current trading week
+    /// (Monday through today, IST). Daily P/L% = ((Close - PreviousTradingDayClose) / PreviousTradingDayClose) * 100.
+    /// The first trading day shown in the week uses the close of the most recent trading day before Monday as its baseline.
+    /// Reuses the same daily candle source (live cache with DB fallback) as the main price chart.
+    /// </summary>
+    [HttpGet("weekly-pnl")]
+    public async Task<IActionResult> GetWeeklyPnl([FromQuery] string symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest("Symbol parameter is required.");
+
+        try
+        {
+            var indianTz = QuantEdge.Infrastructure.Helpers.TimeZoneHelper.IndianTimeZone;
+            DateTime nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, indianTz);
+            DateTime todayIst = nowIst.Date;
+            int daysSinceMonday = ((int)todayIst.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+            DateTime mondayIst = todayIst.AddDays(-daysSinceMonday);
+
+            // Reuse the same live-cache-first / DB-fallback daily candle source as GetChartData above.
+            var rawCandles = await GetRecentCandlesForSymbolAsync(symbol, "1d", limit: 15);
+
+            // Group by IST trading date (candle_time is stored UTC) in case of any duplicate entries per day.
+            var dailyCloses = rawCandles
+                .Select(c => new
+                {
+                    Date = TimeZoneInfo.ConvertTimeFromUtc(
+                        c.CandleTime.Kind == DateTimeKind.Utc ? c.CandleTime : DateTime.SpecifyKind(c.CandleTime, DateTimeKind.Utc),
+                        indianTz).Date,
+                    c.Close
+                })
+                .GroupBy(x => x.Date)
+                .Select(g => new { Date = g.Key, Close = g.Last().Close })
+                .OrderBy(x => x.Date)
+                .ToList();
+
+            // The "1d" candle for today is only finalized at end-of-day, so during an ongoing trading session
+            // it won't exist yet. Fall back to the latest available intraday candle close for today (the same
+            // live-updated source that drives the real-time price shown elsewhere on the dashboard) so today's
+            // bar reflects the current in-progress price instead of being omitted until market close.
+            if (!dailyCloses.Any(d => d.Date == todayIst))
+            {
+                decimal? todaysLiveClose = await GetLatestIntradayCloseForDateAsync(symbol, todayIst, indianTz);
+                if (todaysLiveClose.HasValue && todaysLiveClose.Value > 0m)
+                {
+                    dailyCloses.Add(new { Date = todayIst, Close = todaysLiveClose.Value });
+                    dailyCloses = dailyCloses.OrderBy(x => x.Date).ToList();
+                }
+            }
+
+            var weekDays = dailyCloses.Where(d => d.Date >= mondayIst && d.Date <= todayIst).ToList();
+
+            var days = new List<object>();
+            for (int i = 0; i < weekDays.Count; i++)
+            {
+                decimal? prevClose = i == 0
+                    ? dailyCloses.Where(d => d.Date < mondayIst)
+                        .OrderByDescending(d => d.Date)
+                        .Select(d => (decimal?)d.Close)
+                        .FirstOrDefault()
+                    : weekDays[i - 1].Close;
+
+                // Skip days where a valid baseline can't be determined rather than fabricating a value.
+                if (!prevClose.HasValue || prevClose.Value <= 0m) continue;
+
+                decimal pnlPercent = Math.Round(((weekDays[i].Close - prevClose.Value) / prevClose.Value) * 100m, 2);
+
+                days.Add(new
+                {
+                    date = weekDays[i].Date.ToString("yyyy-MM-dd"),
+                    day = weekDays[i].Date.ToString("ddd"),
+                    close = weekDays[i].Close,
+                    previousClose = prevClose.Value,
+                    pnlPercent
+                });
+            }
+
+            return Ok(new
+            {
+                symbol = symbol.ToUpper(),
+                weekStart = mondayIst.ToString("yyyy-MM-dd"),
+                weekEnd = todayIst.ToString("yyyy-MM-dd"),
+                hasData = days.Count > 0,
+                message = days.Count > 0 ? null : "Insufficient historical data to compute the current week's P/L for this stock.",
+                days
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to compute weekly P/L for symbol {Symbol}.", symbol);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Fetches recent candles for a symbol/timeframe using the same live-cache-first, DB-fallback
+    /// pattern as GetChartData, so callers don't duplicate that source-selection logic.
+    /// </summary>
+    private async Task<List<QuantEdge.Domain.Entities.MarketCandle>> GetRecentCandlesForSymbolAsync(string symbol, string timeframe, int limit)
+    {
+        if (_cacheService != null)
+        {
+            return await _cacheService.GetRecentCandlesAsync(symbol, timeframe, limit);
+        }
+
+        return (await _candleRepository.GetHistoryAsync(symbol, timeframe, limit))
+            .OrderBy(c => c.CandleTime)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Finds the latest available intraday close for a symbol on a given IST trading date, trying
+    /// progressively coarser timeframes. Used as a fallback for "today" when the daily ("1d") candle
+    /// hasn't been finalized yet (it's only written at end-of-day) - this is the same live-updated
+    /// intraday data that already drives the real-time price shown elsewhere on the dashboard.
+    /// </summary>
+    private async Task<decimal?> GetLatestIntradayCloseForDateAsync(string symbol, DateTime targetDateIst, TimeZoneInfo indianTz)
+    {
+        foreach (var timeframe in new[] { "1m", "5m", "15m", "60m" })
+        {
+            var candles = await GetRecentCandlesForSymbolAsync(symbol, timeframe, limit: 400);
+            var lastForDate = candles
+                .Where(c =>
+                {
+                    DateTime utc = c.CandleTime.Kind == DateTimeKind.Utc ? c.CandleTime : DateTime.SpecifyKind(c.CandleTime, DateTimeKind.Utc);
+                    return TimeZoneInfo.ConvertTimeFromUtc(utc, indianTz).Date == targetDateIst;
+                })
+                .OrderBy(c => c.CandleTime)
+                .LastOrDefault();
+
+            if (lastForDate != null) return lastForDate.Close;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Deletes all history for today for a specific symbol and timeframe.
     /// </summary>
     [HttpDelete("history/today/{symbol}")]

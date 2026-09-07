@@ -10,6 +10,7 @@ let activeTimeframe = "1m";
 let priceChart = null;
 let rsiChart = null;
 let macdChart = null;
+let weeklyPnlChart = null;
 
 // Series definitions
 let candleSeries = null;
@@ -145,6 +146,7 @@ async function triggerDashboardRefresh(isManual = true) {
         if (activeSymbol) {
             await fetchChartHistory();
             await fetchStockMasterDetails(activeSymbol);
+            fetchWeeklyPnl(activeSymbol);
         }
     } catch (ex) {
         console.error("Dashboard refresh error:", ex);
@@ -455,6 +457,109 @@ async function fetchStockMasterDetails(symbol) {
     }
 }
 
+// Fetch day-wise Current Week P/L % data for the active symbol and render the bar chart
+async function fetchWeeklyPnl(symbol) {
+    if (!symbol) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/marketdata/weekly-pnl?symbol=${symbol}`);
+        if (!response.ok) throw new Error("Failed to load Current Week P/L data.");
+        const data = await response.json();
+        renderWeeklyPnlChart(data);
+    } catch (ex) {
+        console.error("Weekly P/L fetch error:", ex);
+        renderWeeklyPnlChart(null);
+    }
+}
+
+// Render the "Current Week P/L %" bar chart (Chart.js) - green bars for positive days, red for negative
+function renderWeeklyPnlChart(data) {
+    const canvas = document.getElementById('weeklyPnlChartCanvas');
+    const emptyState = document.getElementById('weeklyPnlEmptyState');
+    if (!canvas) return;
+
+    if (weeklyPnlChart) {
+        weeklyPnlChart.destroy();
+        weeklyPnlChart = null;
+    }
+
+    const days = (data && Array.isArray(data.days)) ? data.days : [];
+
+    if (!days.length) {
+        canvas.style.display = "none";
+        if (emptyState) {
+            emptyState.textContent = (data && data.message) || "No trading data available yet for the current week.";
+            emptyState.style.display = "flex";
+        }
+        return;
+    }
+
+    canvas.style.display = "block";
+    if (emptyState) emptyState.style.display = "none";
+
+    const labels = days.map(d => d.day);
+    const pnlData = days.map(d => d.pnlPercent);
+
+    weeklyPnlChart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Daily P/L %',
+                data: pnlData,
+                backgroundColor: pnlData.map(v => v >= 0 ? 'rgba(52, 211, 153, 0.85)' : 'rgba(248, 113, 113, 0.85)'),
+                borderRadius: 6,
+                maxBarThickness: 56
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderWidth: 1,
+                    padding: 10,
+                    titleColor: '#e2e8f0',
+                    bodyColor: '#cbd5e1',
+                    displayColors: false,
+                    callbacks: {
+                        title: (items) => {
+                            const d = days[items[0].dataIndex];
+                            const dt = new Date(d.date + 'T00:00:00');
+                            return `Date: ${dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
+                        },
+                        label: (item) => {
+                            const d = days[item.dataIndex];
+                            const sign = d.pnlPercent >= 0 ? "+" : "";
+                            return [
+                                `Previous Close: ₹${d.previousClose.toFixed(2)}`,
+                                `Close: ₹${d.close.toFixed(2)}`,
+                                `Daily P/L: ${sign}${d.pnlPercent.toFixed(2)}%`
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                    ticks: { color: '#94a3b8', font: { size: 11 } }
+                },
+                y: {
+                    grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                    ticks: {
+                        color: '#94a3b8',
+                        font: { size: 10 },
+                        callback: v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%"
+                    }
+                }
+            }
+        }
+    });
+}
+
 // Switch viewed stock symbol
 async function switchSymbol(symbol) {
     currentLivePrice = null;
@@ -470,6 +575,7 @@ async function switchSymbol(symbol) {
     $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe} - IST)`);
     await fetchChartHistory();
     await fetchStockMasterDetails(symbol);
+    fetchWeeklyPnl(symbol);
 
     // Re-subscribe to SignalR groups
     if (connection && connection.state === signalR.HubConnectionState.Connected) {

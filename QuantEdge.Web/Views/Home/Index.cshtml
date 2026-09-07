@@ -353,6 +353,30 @@
             </div>
         </div>
     </div>
+
+    <!-- Current Week P/L % Chart -->
+    <div class="chart-panel card weekly-pnl-panel">
+        <div class="chart-panel-header">
+            <div class="panel-title-wrapper">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="12" width="4" height="8"></rect>
+                    <rect x="10" y="6" width="4" height="14"></rect>
+                    <rect x="17" y="9" width="4" height="11"></rect>
+                </svg>
+                <span class="panel-title" id="weeklyPnlTitle">Current Week P/L %</span>
+            </div>
+            <div class="weekly-pnl-subtitle">Daily price performance for the current trading week</div>
+        </div>
+
+        <div class="chart-panel-body weekly-pnl-body">
+            <div class="chart-container-pane weekly-pnl-pane">
+                <canvas id="weeklyPnlChartCanvas"></canvas>
+                <div id="weeklyPnlEmptyState" class="weekly-pnl-empty-state">
+                    No trading data available yet for the current week.
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 
@@ -380,6 +404,8 @@
     
     <!-- TradingView Lightweight Charts CDN -->
     <script src="~/js/theme/lightweight-charts.standalone.production.js"></script>
+    <!-- Chart.js CDN (Current Week P/L % bar chart) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <!-- Microsoft SignalR JS Client CDN -->
     <script src="~/js/theme/signalr.min.js"></script>
     <script>
