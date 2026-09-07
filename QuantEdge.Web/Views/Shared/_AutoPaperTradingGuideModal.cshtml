@@ -127,7 +127,7 @@
                             <div class="guide-step-body">
                                 <div class="guide-step-title">Strict Quality Filter Check</div>
                                 <p class="guide-step-desc">
-                                    The bot does not buy blindly. It verifies that the broader market (NIFTY 50) is healthy, buyer trading volume is unusually high, and the stock is showing a clear upward breakout. If any quality test fails, the stock is rejected.
+                                    The bot does not buy blindly. It verifies that the stock itself is trending up with real strength, buyer trading volume is unusually high, and it is showing a clear upward breakout. If the broader market (NIFTY 50) is unhealthy, the bot doesn't reject the stock outright &mdash; it lowers the confidence score and trade size instead, so a genuinely strong stock can still be bought even in a weak market.
                                 </p>
                             </div>
                         </div>
@@ -161,37 +161,43 @@
                     <div class="qe-ref-section">
                         <h3>🎯 Background Conditions to Place a Stock BUY Order</h3>
                         <p>
-                            To protect your capital and ensure only high-probability stocks are purchased, the bot tests every stock against <strong>3 Gatekeeper Hard Filters</strong>, an <strong>8-Factor Quality Score</strong>, and <strong>5 Pre-Flight Safety Checks</strong> before placing an order.
+                            To protect your capital and ensure only high-probability stocks are purchased, the bot tests every stock against <strong>2 Gatekeeper Hard Filters</strong> (stock-level), a <strong>non-blocking Market Health Check</strong>, an <strong>8-Factor Quality Score</strong>, and <strong>5 Pre-Flight Safety Checks</strong> before placing an order.
                         </p>
 
                         <!-- Section 1: Gatekeeper Rules -->
                         <h4 style="color: #38bdf8; font-size: 14.5px; margin: 18px 0 10px 0; font-weight: 700; display: flex; align-items: center; gap: 8px;">
-                            <span>🛡️ STAGE 1: The 3 Gatekeeper Rules (Must Pass 100%)</span>
+                            <span>🛡️ STAGE 1: The 2 Gatekeeper Hard Filters (Must Pass 100%)</span>
                         </h4>
                         <p style="font-size: 12.5px; color: #94a3b8; margin-bottom: 10px;">
-                            If ANY of these 3 rules fail, the stock is <strong>instantly REJECTED</strong>. No order will ever be placed:
+                            These look only at the stock itself. If EITHER rule fails, the stock is <strong>instantly REJECTED</strong>. No order will ever be placed:
                         </p>
 
                         <div class="guide-def-grid" style="margin-bottom: 20px;">
-                            <div class="guide-def-card" style="border-left: 3px solid #34d399;">
-                                <div class="guide-def-term" style="color: #34d399;">✅ 1. Market Filter (Nifty Health)</div>
-                                <p class="guide-def-text">
-                                    <strong>What it checks:</strong> Is Nifty 50 trading above its 50-day average?<br />
-                                    <strong>Why:</strong> When the overall market is in a deep crash or panic, individual stocks often fall too. The bot refuses to buy in bad market conditions to keep your money safe.
-                                </p>
-                            </div>
                             <div class="guide-def-card" style="border-left: 3px solid #38bdf8;">
-                                <div class="guide-def-term" style="color: #38bdf8;">✅ 2. Stock Upward Trend (Direction)</div>
+                                <div class="guide-def-term" style="color: #38bdf8;">✅ 1. Stock Upward Trend (Direction)</div>
                                 <p class="guide-def-text">
                                     <strong>What it checks:</strong> Is the stock price above its 20-day and 50-day averages?<br />
                                     <strong>Why:</strong> We only buy stocks that are moving <strong>UPWARDS</strong>. The bot never tries to guess the bottom of falling stocks ("falling knives").
                                 </p>
                             </div>
                             <div class="guide-def-card" style="border-left: 3px solid #a78bfa;">
-                                <div class="guide-def-term" style="color: #a78bfa;">✅ 3. Trend Strength (Power / ADX &ge; 20)</div>
+                                <div class="guide-def-term" style="color: #a78bfa;">✅ 2. Trend Strength (Power / ADX &ge; 20)</div>
                                 <p class="guide-def-text">
                                     <strong>What it checks:</strong> Is the stock moving with real speed and strength?<br />
                                     <strong>Why:</strong> Filters out slow, flat, sideways stocks that trap your money without making any progress.
+                                </p>
+                            </div>
+                        </div>
+
+                        <h4 style="color: #fbbf24; font-size: 14.5px; margin: 18px 0 10px 0; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                            <span>⚖️ Market Filter (Nifty Health) &mdash; Risk Factor, Not a Reject Rule</span>
+                        </h4>
+                        <div class="guide-def-grid" style="margin-bottom: 20px;">
+                            <div class="guide-def-card" style="border-left: 3px solid #fbbf24;">
+                                <div class="guide-def-term" style="color: #fbbf24;">⚖️ Is Nifty 50 Healthy?</div>
+                                <p class="guide-def-text">
+                                    <strong>What it checks:</strong> Is Nifty 50 trading above its 50-day average with bullish short-term EMAs?<br />
+                                    <strong>Why:</strong> A weak overall market raises the risk on any individual trade. Instead of blocking every stock when the market dips, the bot lowers that stock's confidence score by 10 points and cuts the recommended trade size in half &mdash; a genuinely strong stock can still clear the BUY threshold, just with a smaller, more cautious position.
                                 </p>
                             </div>
                         </div>

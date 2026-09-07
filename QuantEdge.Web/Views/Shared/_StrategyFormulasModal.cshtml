@@ -156,20 +156,20 @@
                 <div id="tabSwing" class="qe-modal-pane">
                     <div class="qe-ref-section">
                         <h3>Multi-Timeframe Swing Strategy Architecture (1D + 15M + 60M)</h3>
-                        <p>Swing trading executes on a <strong>3-Timeframe Model</strong> combining <strong>3 Mandatory Hard Filters (1D)</strong>, an <strong>8-Factor 100-Point Weighted Scoring Matrix (15m/60m/1d)</strong>, and <strong>15m ATR Risk Management</strong> to deliver high-probability swing trade entries.</p>
+                        <p>Swing trading executes on a <strong>3-Timeframe Model</strong> combining <strong>2 Mandatory Stock-Level Hard Filters (1D)</strong> with an independent, non-blocking <strong>Market Context Filter</strong>, an <strong>8-Factor 100-Point Weighted Scoring Matrix (15m/60m/1d)</strong>, and <strong>15m ATR Risk Management</strong> to deliver high-probability swing trade entries.</p>
                     </div>
 
                     <div class="qe-ref-section">
-                        <h3>1. Mandatory Hard Filters (1D Timeframe)</h3>
-                        <p>If ANY of these 3 Hard Filters fail, the stock is immediately <strong>REJECTED</strong> without calculating scores:</p>
+                        <h3>1. Market Context (Risk Factor) &amp; Stock-Level Hard Filters (1D Timeframe)</h3>
+                        <p>Market context is evaluated independently from the individual stock setup and never blocks a trade by itself. If ANY of the 2 Stock-Level Hard Filters fail, the stock is immediately <strong>REJECTED</strong> without calculating scores:</p>
                         <ul>
-                            <li><strong>1. MARKET_FILTER:</strong> NIFTY 50 Close &gt; 50 DMA <strong>AND</strong> NIFTY EMA20 &gt; EMA50</li>
-                            <li><strong>2. EMA_TREND:</strong> Stock Close &gt; EMA20 &gt; EMA50 with rising slopes</li>
-                            <li><strong>3. ADX_STRENGTH:</strong> Stock Daily ADX(14) &ge; 20.0 (Filters out weak / choppy markets)</li>
+                            <li><strong>MARKET_FILTER (Context, non-blocking):</strong> NIFTY 50 Close &gt; 50 DMA <strong>AND</strong> NIFTY EMA20 &gt; EMA50. A failing market filter applies a &minus;10 point score penalty and halves the recommended position size &mdash; it does <strong>not</strong> reject the stock.</li>
+                            <li><strong>1. EMA_TREND (Hard Filter):</strong> Stock Close &gt; EMA20 &gt; EMA50 with rising slopes</li>
+                            <li><strong>2. ADX_STRENGTH (Hard Filter):</strong> Stock Daily ADX(14) &ge; 20.0 (Filters out weak / choppy markets)</li>
                         </ul>
                         <div class="qe-alert-box red">
                             <div class="qe-alert-box-title">Hard Filter Gate Action</div>
-                            If any Hard Filter fails, the stock is marked as <strong>REJECT</strong> and no BUY/WATCH signal is issued.
+                            If the EMA_TREND or ADX_STRENGTH stock-level filter fails, the stock is marked as <strong>REJECT</strong> and no BUY/WATCH signal is issued. A bearish/failing NIFTY market filter alone never triggers REJECT &mdash; a strong individual stock setup can still qualify for BUY even when the broader market is weak.
                         </div>
                     </div>
 

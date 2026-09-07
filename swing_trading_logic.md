@@ -45,21 +45,21 @@ flowchart TD
 
 ---
 
-## 3. Stage A: Mandatory Hard Filters (1D Timeframe)
+## 3. Stage A: Market Context (Non-Blocking) + Stock-Level Hard Filters (1D Timeframe)
 
-Hard Filters act as a **strict security gate**. If **ANY single filter fails**, the system immediately flags the stock as **`REJECT`** with a score of `0` and halts further indicator computations for that symbol.
+Market context and stock-level conditions are evaluated **independently**. Only the two **stock-level** Hard Filters act as a strict security gate — if **either fails**, the system immediately flags the stock as **`REJECT`** with a score of `0` and halts further indicator computations for that symbol. The `MARKET_FILTER` (NIFTY) is evaluated in parallel but is **not** part of this gate: a bearish/failing NIFTY never rejects a stock by itself. Instead it is applied in Stage C as a risk/confidence adjustment (score penalty + reduced position size) on top of an otherwise-qualifying stock-level setup. This keeps a bearish index from blanket-blocking a genuinely strong individual stock, while still down-weighting trades taken against the broader market.
 
-| # | Filter Key | Timeframe | Exact Formula / Condition | Failure Reason |
-| :-: | :--- | :-: | :--- | :--- |
-| **1** | `MARKET_FILTER` | `1d` (NIFTY) | $\text{Close}_{\text{NIFTY}} > \text{SMA50}_{\text{NIFTY}} \quad \mathbf{AND} \quad \text{EMA20}_{\text{NIFTY}} > \text{EMA50}_{\text{NIFTY}}$ | Market broad trend in correction / defensive mode |
-| **2** | `EMA_TREND` | `1d` (Stock) | $\text{Close} > \text{EMA20} > \text{EMA50} \quad \mathbf{AND} \quad \text{EMA20}_{\text{slope}} > 0 \quad \mathbf{AND} \quad \text{EMA50}_{\text{slope}} > 0$ | Stock trend structure weak or below moving averages |
-| **3** | `ADX_STRENGTH` | `1d` (Stock) | $\text{ADX}(14) \ge 20.0$ | Trend weak or sideways (choppy market filter) |
+| # | Filter Key | Type | Timeframe | Exact Formula / Condition | Effect if Failed |
+| :-: | :--- | :-: | :-: | :--- | :--- |
+| **1** | `MARKET_FILTER` | Market Context (risk factor, non-blocking) | `1d` (NIFTY) | $\text{Close}_{\text{NIFTY}} > \text{SMA50}_{\text{NIFTY}} \quad \mathbf{AND} \quad \text{EMA20}_{\text{NIFTY}} > \text{EMA50}_{\text{NIFTY}}$ | -10 pt score penalty + 0.5x position size; never REJECTs by itself |
+| **2** | `EMA_TREND` | Stock-Level Hard Filter | `1d` (Stock) | $\text{Close} > \text{EMA20} > \text{EMA50} \quad \mathbf{AND} \quad \text{EMA20}_{\text{slope}} > 0 \quad \mathbf{AND} \quad \text{EMA50}_{\text{slope}} > 0$ | Immediate `REJECT` (score 0) |
+| **3** | `ADX_STRENGTH` | Stock-Level Hard Filter | `1d` (Stock) | $\text{ADX}(14) \ge 20.0$ | Immediate `REJECT` (score 0) |
 
 ---
 
 ## 4. Stage B: 100-Point Weighted Scoring Matrix
 
-Evaluated **ONLY** when all 3 Hard Filters pass. Points are accumulated up to a maximum of **100 points**.
+Evaluated **ONLY** when both stock-level Hard Filters (`EMA_TREND`, `ADX_STRENGTH`) pass. Points are accumulated up to a maximum of **100 points**, then reduced by 10 points if the `MARKET_FILTER` (NIFTY) failed (see Section 3).
 
 ### Breakdown of Scoring Factors
 
@@ -89,7 +89,7 @@ Total Score = BREAKOUT_GROUP (20) + VOL_CONFIRMATION (15) + RELATIVE_STRENGTH (1
 | **`BUY`** | **$\ge 70$** | High probability setup. Approved for SignalR streaming and Paper Trade Auto-Execution. |
 | **`WATCH`** | **$50 - 69$** | Bullish setup forming, but pending breakout or volume surge. Added to Watchlist. |
 | **`NO SIGNAL`** | **$< 50$** | Insufficient score. No action taken. |
-| **`REJECT`** | **Hard Filter Fail** | Failed mandatory Market, EMA, or ADX filter. Excluded from watchlist. |
+| **`REJECT`** | **Hard Filter Fail** | Failed mandatory stock-level EMA or ADX filter. Excluded from watchlist. (A failing `MARKET_FILTER` alone never causes `REJECT` — see Section 3.) |
 
 ---
 
