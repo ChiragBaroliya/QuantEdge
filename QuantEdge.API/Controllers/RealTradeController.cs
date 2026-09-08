@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using QuantEdge.Infrastructure.DTOs;
@@ -112,6 +113,42 @@ public class RealTradeController : ControllerBase
     {
         var logs = await _realTradeService.GetTodayLogsAsync(GetCurrentUserId(userId), limit);
         return Ok(logs);
+    }
+
+    /// <summary>
+    /// Manual one-off Real Trade BUY (e.g. triggered from the Swing Trading dashboard for a specific signal),
+    /// bypassing the 15-minute auto-scan cycle. Still routed through the same risk checks as automatic
+    /// execution (master switch, token validity, market hours, daily trade/loss limits, duplicate position, capital).
+    /// </summary>
+    [HttpPost("manual-buy")]
+    public async Task<IActionResult> ManualBuy([FromBody] ManualRealBuyRequestDto dto, [FromQuery] int? userId = null)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Symbol) || dto.EntryPrice <= 0)
+        {
+            return BadRequest(new { success = false, message = "A valid Symbol and EntryPrice are required." });
+        }
+
+        int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+
+        bool executed = await _realTradeService.EvaluateAndExecuteRealBuyAsync(
+            dto.Symbol, dto.EntryPrice, dto.MetConditionsCount, targetUid, isBuySignal: true);
+
+        if (executed)
+        {
+            return Ok(new { success = true, message = $"Real BUY order submitted for {dto.Symbol.ToUpper().Trim()}." });
+        }
+
+        var recentLogs = await _realTradeService.GetTodayLogsAsync(targetUid, 20);
+        var latestForSymbol = recentLogs
+            .Where(l => string.Equals(l.Symbol, dto.Symbol.Trim(), StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(l => l.ExecutedAt)
+            .FirstOrDefault();
+
+        return Ok(new
+        {
+            success = false,
+            message = latestForSymbol?.Reason ?? "Real BUY was not executed. Ensure Real Trade master switch is ON and check the Auto Real Trade logs."
+        });
     }
 
     /// <summary>

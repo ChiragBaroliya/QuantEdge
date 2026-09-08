@@ -49,9 +49,11 @@ flowchart TD
 
 Market context and stock-level conditions are evaluated **independently**. Only the two **stock-level** Hard Filters act as a strict security gate — if **either fails**, the system immediately flags the stock as **`REJECT`** with a score of `0` and halts further indicator computations for that symbol. The `MARKET_FILTER` (NIFTY) is evaluated in parallel but is **not** part of this gate: a bearish/failing NIFTY never rejects a stock by itself. Instead it is applied in Stage C as a risk/confidence adjustment (score penalty + reduced position size) on top of an otherwise-qualifying stock-level setup. This keeps a bearish index from blanket-blocking a genuinely strong individual stock, while still down-weighting trades taken against the broader market.
 
+> **Configurable parameters**: the BUY/WATCH score thresholds (default 70/50), the `MARKET_FILTER` score penalty (default -10), and its position-size factor (default 0.5x) are stored in the `swing_strategy_settings` table and can be tuned from the "Strategy Settings" panel on the Swing Trading page (admin only), without a code change or redeploy. The same values are shared by the Auto Paper Trade and Auto Real Trade signal scanners, since they call the same `SwingDecisionEngine`.
+
 | # | Filter Key | Type | Timeframe | Exact Formula / Condition | Effect if Failed |
 | :-: | :--- | :-: | :-: | :--- | :--- |
-| **1** | `MARKET_FILTER` | Market Context (risk factor, non-blocking) | `1d` (NIFTY) | $\text{Close}_{\text{NIFTY}} > \text{SMA50}_{\text{NIFTY}} \quad \mathbf{AND} \quad \text{EMA20}_{\text{NIFTY}} > \text{EMA50}_{\text{NIFTY}}$ | -10 pt score penalty + 0.5x position size; never REJECTs by itself |
+| **1** | `MARKET_FILTER` | Market Context (risk factor, non-blocking) | `1d` (NIFTY) | $\text{Close}_{\text{NIFTY}} > \text{SMA50}_{\text{NIFTY}} \quad \mathbf{AND} \quad \text{EMA20}_{\text{NIFTY}} > \text{EMA50}_{\text{NIFTY}}$ | -10 pt score penalty (default) + 0.5x position size (default); never REJECTs by itself |
 | **2** | `EMA_TREND` | Stock-Level Hard Filter | `1d` (Stock) | $\text{Close} > \text{EMA20} > \text{EMA50} \quad \mathbf{AND} \quad \text{EMA20}_{\text{slope}} > 0 \quad \mathbf{AND} \quad \text{EMA50}_{\text{slope}} > 0$ | Immediate `REJECT` (score 0) |
 | **3** | `ADX_STRENGTH` | Stock-Level Hard Filter | `1d` (Stock) | $\text{ADX}(14) \ge 20.0$ | Immediate `REJECT` (score 0) |
 

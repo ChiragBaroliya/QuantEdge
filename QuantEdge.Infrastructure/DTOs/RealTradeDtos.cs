@@ -158,6 +158,19 @@ public class CloseRealPositionRequestDto
     public int? UserId { get; set; }
 }
 
+/// <summary>
+/// Manual one-off Real Trade BUY request, e.g. from the Swing Trading dashboard.
+/// Still routed through <see cref="Interfaces.IAutoRealTradeService.EvaluateAndExecuteRealBuyAsync"/>,
+/// so all existing safety checks (master switch, capital, daily limits, duplicate position) still apply.
+/// </summary>
+public class ManualRealBuyRequestDto
+{
+    public string Symbol { get; set; } = string.Empty;
+    public decimal EntryPrice { get; set; }
+    public int MetConditionsCount { get; set; }
+    public int? UserId { get; set; }
+}
+
 public class RealTradeLivePositionsFastDto
 {
     public bool Success { get; set; }

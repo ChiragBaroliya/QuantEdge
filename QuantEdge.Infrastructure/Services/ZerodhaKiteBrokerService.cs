@@ -5,9 +5,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using QuantEdge.Domain.Entities;
-using QuantEdge.Infrastructure.Configurations;
 using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Interfaces;
@@ -23,7 +21,6 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 {
     private readonly IZerodhaSessionRepository _sessionRepository;
     private readonly IRealTradeCacheService? _cacheService;
-    private readonly BrokerConfig _config;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ZerodhaKiteBrokerService> _logger;
 
@@ -31,13 +28,11 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
     public ZerodhaKiteBrokerService(
         IZerodhaSessionRepository sessionRepository,
-        IOptions<BrokerConfig> config,
         IHttpClientFactory httpClientFactory,
         ILogger<ZerodhaKiteBrokerService> logger,
         IRealTradeCacheService? cacheService = null)
     {
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
-        _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cacheService = cacheService;
@@ -45,25 +40,18 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
     public async Task<(bool IsValid, string? AccessToken, string? ApiKey, string? Message)> ValidateSessionTokenAsync(int userId = 1)
     {
-        // 1. Try RAM Cache first
-        var session = _cacheService?.GetUserSession(userId);
+        // 1. Resolve from the DB-backed session store first. Token Manager invalidates this
+        // repository's own (short-TTL) cache on every login, so a freshly generated token is
+        // picked up immediately. The RAM warmup cache is only a fallback for DB outages, since
+        // it is populated once at pre-market warmup and would otherwise mask a same-day re-login.
+        var session = await _sessionRepository.GetActiveSessionAsync(userId);
         if (session == null)
         {
-            session = await _sessionRepository.GetActiveSessionAsync(userId);
-            if (session != null && _cacheService != null)
-            {
-                _cacheService.SetUserSession(session);
-            }
+            session = _cacheService?.GetUserSession(userId);
         }
-
-        // For Default User (userId == 1), if DB session is not yet loaded or missing, fallback to Token Manager configured token in BrokerConfig
-        if (userId == 1 && (session == null || string.IsNullOrWhiteSpace(session.AccessToken)))
+        else
         {
-            if (!string.IsNullOrWhiteSpace(_config.AccessToken) && !string.IsNullOrWhiteSpace(_config.ApiKey))
-            {
-                _logger.LogInformation("Using Token Manager configured token from BrokerConfig for Default User (UserId: 1).");
-                return (true, _config.AccessToken, _config.ApiKey, "Default User Token Manager token is active.");
-            }
+            _cacheService?.SetUserSession(session);
         }
 
         if (session == null || string.IsNullOrWhiteSpace(session.AccessToken))
@@ -78,19 +66,10 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         if (indianTime.Date != nowIst.Date || indianTime < cutoff)
         {
-            // For Default User (userId == 1), if Token Manager updated _config.AccessToken in appsettings, use it as fallback
-            if (userId == 1 && !string.IsNullOrWhiteSpace(_config.AccessToken))
-            {
-                string configKey = !string.IsNullOrWhiteSpace(session.ApiKey) ? session.ApiKey : _config.ApiKey;
-                _logger.LogInformation("Database token for Default User is stale, using Token Manager configured token from appsettings.");
-                return (true, _config.AccessToken, configKey, "Active Zerodha session is valid (Token Manager configured).");
-            }
-
             return (false, null, null, $"Zerodha session token for user {userId} is stale (created {indianTime:yyyy-MM-dd hh:mm tt} IST). Fresh token post 6:00 AM IST required.");
         }
 
-        string apiKey = !string.IsNullOrWhiteSpace(session.ApiKey) ? session.ApiKey : _config.ApiKey;
-        return (true, session.AccessToken, apiKey, "Active Zerodha session is valid.");
+        return (true, session.AccessToken, session.ApiKey, "Active Zerodha session is valid.");
     }
 
     public async Task<(bool Success, string? BrokerOrderId, decimal ExecutedPrice, string? Message)> PlaceLiveOrderAsync(

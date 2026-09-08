@@ -347,6 +347,43 @@
     box-shadow: 0 0 15px rgba(248, 113, 113, 0.2);
 }
 
+.rec-badge.reject {
+    background: linear-gradient(135deg, rgba(148, 163, 184, 0.15), rgba(100, 116, 139, 0.05));
+    color: #94a3b8;
+    border-color: rgba(148, 163, 184, 0.25);
+    box-shadow: none;
+}
+
+.rec-badge.no-signal {
+    background: rgba(100, 116, 139, 0.1);
+    color: #64748b;
+    border-color: rgba(100, 116, 139, 0.2);
+    box-shadow: none;
+}
+
+.btn-send-real-trade {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #fca5a5;
+    background: linear-gradient(135deg, rgba(248, 113, 113, 0.18), rgba(220, 38, 38, 0.08));
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-send-real-trade:hover {
+    background: linear-gradient(135deg, rgba(248, 113, 113, 0.3), rgba(220, 38, 38, 0.15));
+    transform: translateY(-1px);
+}
+
 .pnl-text {
     font-weight: 800;
     font-family: monospace;

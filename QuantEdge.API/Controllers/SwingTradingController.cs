@@ -3,7 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.Interfaces;
+using QuantEdge.Infrastructure.Persistence.Repositories;
 
 namespace QuantEdge.API.Controllers;
 
@@ -13,14 +15,71 @@ public class SwingTradingController : ControllerBase
 
 {
     private readonly ISwingTradingService _swingTradingService;
+    private readonly ISwingStrategySettingsRepository _strategySettingsRepository;
     private readonly ILogger<SwingTradingController> _logger;
 
     public SwingTradingController(
         ISwingTradingService swingTradingService,
+        ISwingStrategySettingsRepository strategySettingsRepository,
         ILogger<SwingTradingController> logger)
     {
         _swingTradingService = swingTradingService ?? throw new ArgumentNullException(nameof(swingTradingService));
+        _strategySettingsRepository = strategySettingsRepository ?? throw new ArgumentNullException(nameof(strategySettingsRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    [HttpGet("settings")]
+    public async Task<IActionResult> GetSettings()
+    {
+        try
+        {
+            var settings = await _strategySettingsRepository.GetSettingsAsync();
+            return Ok(settings);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve swing strategy settings.");
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    [HttpPut("settings")]
+    public async Task<IActionResult> UpdateSettings([FromBody] SwingStrategySettings settings)
+    {
+        if (settings == null)
+        {
+            return BadRequest("Settings payload is required.");
+        }
+        if (settings.BuyScoreThreshold <= settings.WatchScoreThreshold)
+        {
+            return BadRequest("BuyScoreThreshold must be greater than WatchScoreThreshold.");
+        }
+        if (settings.BuyScoreThreshold < 0 || settings.BuyScoreThreshold > 100 ||
+            settings.WatchScoreThreshold < 0 || settings.WatchScoreThreshold > 100)
+        {
+            return BadRequest("Score thresholds must be between 0 and 100.");
+        }
+        if (settings.MarketContextScorePenalty < 0 || settings.MarketContextScorePenalty > 100)
+        {
+            return BadRequest("MarketContextScorePenalty must be between 0 and 100.");
+        }
+        if (settings.MarketContextPositionSizeFactor <= 0 || settings.MarketContextPositionSizeFactor > 1)
+        {
+            return BadRequest("MarketContextPositionSizeFactor must be between 0 (exclusive) and 1 (inclusive).");
+        }
+
+        try
+        {
+            var updated = await _strategySettingsRepository.UpdateSettingsAsync(settings);
+            _logger.LogInformation("Swing strategy settings updated: Buy>={Buy} Watch>={Watch} Penalty={Penalty} SizeFactor={Factor}",
+                updated.BuyScoreThreshold, updated.WatchScoreThreshold, updated.MarketContextScorePenalty, updated.MarketContextPositionSizeFactor);
+            return Ok(updated);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update swing strategy settings.");
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
     }
 
     [HttpGet("dashboard")]

@@ -47,6 +47,20 @@
                     </svg>
                     Execute EOD Job
                 </button>
+                <button id="btnRunBackfill" class="btn-trigger" data-tooltip="📊 **Historical Backtest**: Re-run the strategy against 2 years of history to validate performance.">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 3v18h18"></path>
+                        <path d="M18.7 8l-5.1 5.1-2.7-2.7L7 14.3"></path>
+                    </svg>
+                    Backtest 2Y
+                </button>
+                <button id="btnSwingSettings" class="btn-trigger" data-tooltip="⚙️ **Strategy Settings**: Tune BUY/WATCH score thresholds and the NIFTY market-context risk adjustment.">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    Strategy Settings
+                </button>
             }
             else
             {
@@ -229,7 +243,8 @@
                         <span class="filter-pill pill-buy active" id="pillBuy" data-filter="buy">🟢 BUY Signals (<span id="countBuyPill">0</span>)</span>
                         <span class="filter-pill" id="pillWatch" data-filter="watch">🟡 WATCH Candidates (<span id="countWatchPill">0</span>)</span>
                         <span class="filter-pill" id="pillHighScore" data-filter="highscore">⭐ High Score (70+)</span>
-                        <span class="filter-pill" id="pillAll" data-filter="all">All Recommendations (<span id="countAllPill">0</span>)</span>
+                        <span class="filter-pill" id="pillRejected" data-filter="rejected" data-tooltip="Stocks scanned today that did NOT qualify as BUY/WATCH, with the reason why.">⛔ Rejected / No Signal (<span id="countRejectedPill">0</span>)</span>
+                        <span class="filter-pill" id="pillAll" data-filter="all">All Scanned (<span id="countAllPill">0</span>)</span>
                     </div>
                 </div>
 
@@ -337,7 +352,8 @@
     <script src="~/lib/microsoft/signalr/dist/browser/signalr.min.js"></script>
     <script>
         const API_BASE_URL = "@ViewBag.ApiBaseUrl";
-        
+        const IS_ADMIN = @(isAdmin ? "true" : "false");
+
         let allStockSignals = [];
         let allTrades = [];
         let currentFilter = "buy";
@@ -523,9 +539,136 @@
             });
 
             $("#btnRunBackfill").click(function() {
-                triggerBackgroundJob("/api/swing/backfill", "backfill", "Historical 2-Year Backtest Running...");
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Run 2-Year Historical Backtest?',
+                    text: 'This re-evaluates the strategy across 2 years of history for every active stock. It can take several minutes.',
+                    showCancelButton: true,
+                    confirmButtonText: 'Run Backtest',
+                    confirmButtonColor: 'var(--theme-accent)',
+                    background: 'var(--bg-card)',
+                    color: 'var(--text-primary)'
+                }).then(function(result) {
+                    if (result.isConfirmed) {
+                        triggerBackgroundJob("/api/swing/backfill", "backfill", "Historical 2-Year Backtest Running...");
+                    }
+                });
+            });
+
+            $("#btnSwingSettings").click(function() {
+                openSwingSettingsModal();
             });
         });
+
+        function openSwingSettingsModal() {
+            $.ajax({
+                url: getEndpointUrl('/api/swing/settings'),
+                type: "GET",
+                success: function(s) {
+                    showSwingSettingsForm(s);
+                },
+                error: function(err) {
+                    console.error("Failed to load swing strategy settings.", err);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Failed to Load Settings',
+                        text: 'Could not fetch current strategy settings from the API.',
+                        confirmButtonColor: 'var(--theme-accent)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)'
+                    });
+                }
+            });
+        }
+
+        function showSwingSettingsForm(s) {
+            Swal.fire({
+                title: '⚙️ Swing Strategy Settings',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                width: 520,
+                html: `
+                    <div style="text-align:left; font-size: 13px;">
+                        <p style="color:#94a3b8; margin-bottom: 14px;">
+                            These parameters drive the shared scoring engine used by Swing Trading, Auto Paper Trade and Auto Real Trade.
+                        </p>
+                        <label style="display:block; margin-bottom:4px;">BUY Score Threshold (0-100)</label>
+                        <input type="number" id="setBuyThreshold" class="swal2-input" style="margin:0 0 10px 0;" value="${s.buyScoreThreshold}" min="0" max="100">
+
+                        <label style="display:block; margin-bottom:4px;">WATCH Score Threshold (0-100)</label>
+                        <input type="number" id="setWatchThreshold" class="swal2-input" style="margin:0 0 10px 0;" value="${s.watchScoreThreshold}" min="0" max="100">
+
+                        <label style="display:block; margin-bottom:4px;">NIFTY Filter Score Penalty (applied when Nifty is below its 50 DMA / EMA bullish cross)</label>
+                        <input type="number" id="setPenalty" class="swal2-input" style="margin:0 0 10px 0;" value="${s.marketContextScorePenalty}" min="0" max="100">
+
+                        <label style="display:block; margin-bottom:4px;">NIFTY Filter Position-Size Factor (0-1, e.g. 0.5 = half size)</label>
+                        <input type="number" id="setSizeFactor" class="swal2-input" style="margin:0;" value="${s.marketContextPositionSizeFactor}" min="0.01" max="1" step="0.05">
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Save Settings',
+                confirmButtonColor: 'var(--theme-accent)',
+                preConfirm: function() {
+                    const buy = parseInt($("#setBuyThreshold").val(), 10);
+                    const watch = parseInt($("#setWatchThreshold").val(), 10);
+                    const penalty = parseInt($("#setPenalty").val(), 10);
+                    const factor = parseFloat($("#setSizeFactor").val());
+
+                    if (isNaN(buy) || isNaN(watch) || isNaN(penalty) || isNaN(factor)) {
+                        Swal.showValidationMessage('All fields are required and must be numeric.');
+                        return false;
+                    }
+                    if (buy <= watch) {
+                        Swal.showValidationMessage('BUY threshold must be greater than WATCH threshold.');
+                        return false;
+                    }
+                    if (factor <= 0 || factor > 1) {
+                        Swal.showValidationMessage('Position-size factor must be between 0 (exclusive) and 1.');
+                        return false;
+                    }
+
+                    return {
+                        buyScoreThreshold: buy,
+                        watchScoreThreshold: watch,
+                        marketContextScorePenalty: penalty,
+                        marketContextPositionSizeFactor: factor
+                    };
+                }
+            }).then(function(result) {
+                if (result.isConfirmed && result.value) {
+                    saveSwingSettings(result.value);
+                }
+            });
+        }
+
+        function saveSwingSettings(payload) {
+            $.ajax({
+                url: getEndpointUrl('/api/swing/settings'),
+                type: "PUT",
+                contentType: "application/json",
+                data: JSON.stringify(payload),
+                success: function() {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Settings Saved',
+                        text: 'Strategy settings updated. New scans (and the next Auto Trade cycle) will use these values.',
+                        confirmButtonColor: 'var(--theme-accent)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)'
+                    });
+                },
+                error: function(err) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Save Failed',
+                        text: err.responseText || "Internal server error",
+                        confirmButtonColor: 'var(--theme-accent)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)'
+                    });
+                }
+            });
+        }
 
         function formatDateBadge(dateStr) {
             if (!dateStr) return "";
@@ -682,6 +825,7 @@
                 },
                 error: function(err) {
                     console.error("Failed to load dashboard data.", err);
+                    $("#nextScanCountdownBadge").html(`⚠️ Failed to load dashboard. <a href="#" onclick="loadDashboard(); return false;" style="color:#38bdf8; text-decoration:underline;">Retry</a>`);
                 }
             });
         }
@@ -696,6 +840,18 @@
                 },
                 error: function(err) {
                     console.error("Failed to load scan slots for date:", dateStr, err);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Failed to Load Scan Slots',
+                        toast: true,
+                        position: 'top-end',
+                        showConfirmButton: true,
+                        confirmButtonText: 'Retry',
+                        timer: 8000,
+                        timerProgressBar: true
+                    }).then(function(result) {
+                        if (result.isConfirmed) loadSlotsForDate(dateStr, activeSlot);
+                    });
                 }
             });
         }
@@ -717,8 +873,8 @@
 
                 $("#statTotalSlotsToday").text(`${slots.length} Slots`);
                 $("#statLatestSlotLabel").text(`Latest: ${latestSlot ? latestSlot.slotLabel : 'None'}`);
-                $("#statTotalRecsToday").text(totalAll);
-                $("#statRecsBreakdown").text(`${totalAllBuy} BUY • ${totalAllWatch} WATCH`);
+                $("#statTotalRecsToday").text(totalAllBuy + totalAllWatch);
+                $("#statRecsBreakdown").text(`${totalAllBuy} BUY • ${totalAllWatch} WATCH • ${totalAll} Scanned`);
             } else {
                 $("#statTotalSlotsToday").text(`0 Slots`);
                 $("#statLatestSlotLabel").text(`Latest: None`);
@@ -801,7 +957,10 @@
                 },
                 error: function(err) {
                     console.error("Failed to load slot recommendations:", err);
-                    tbody.html('<tr><td colspan="10" class="text-center text-danger py-4">Error loading recommendations. Check API connection.</td></tr>');
+                    tbody.html(`<tr><td colspan="10" class="text-center text-danger py-4">
+                        Error loading recommendations. Check API connection.
+                        <button type="button" class="btn-trigger" style="margin-left:10px; display:inline-flex;" onclick="loadSlotRecommendations('${dateStr}', '${slotLabel}')">Retry</button>
+                    </td></tr>`);
                 }
             });
         }
@@ -926,6 +1085,63 @@
             }
         }
 
+        function confirmSendToRealTrade(symbol, entryPrice, metConditionsCount) {
+            Swal.fire({
+                icon: 'warning',
+                title: `⚡ Send ${symbol} to Real Trade?`,
+                html: `
+                    <div style="text-align:left; font-size: 13px; color: #cbd5e1;">
+                        <p>This places a <strong style="color:#f87171;">REAL MONEY</strong> BUY order with your broker for <strong>${symbol}</strong> at ~₹${Number(entryPrice).toFixed(2)}, right now &mdash; it does not wait for the next auto-scan.</p>
+                        <p>Quantity is computed automatically from your Real Trade Settings (Fixed Amount per Trade / entry price), same as automatic execution.</p>
+                        <p>All existing safety checks still apply: Real Trade master switch must be ON, trading window, daily trade limit, daily loss limit, capital, and no duplicate open position in ${symbol}.</p>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Yes, Place Real Order',
+                confirmButtonColor: '#dc2626',
+                cancelButtonText: 'Cancel',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)'
+            }).then(function(result) {
+                if (result.isConfirmed) {
+                    sendToRealTrade(symbol, entryPrice, metConditionsCount);
+                }
+            });
+        }
+
+        function sendToRealTrade(symbol, entryPrice, metConditionsCount) {
+            $.ajax({
+                url: getEndpointUrl('/api/realtrade/manual-buy'),
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({
+                    symbol: symbol,
+                    entryPrice: entryPrice,
+                    metConditionsCount: metConditionsCount
+                }),
+                success: function(res) {
+                    Swal.fire({
+                        icon: res && res.success ? 'success' : 'info',
+                        title: res && res.success ? 'Real Order Submitted' : 'Not Executed',
+                        text: (res && res.message) || 'Request completed.',
+                        confirmButtonColor: 'var(--theme-accent)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)'
+                    });
+                },
+                error: function(err) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Request Failed',
+                        text: (err.responseJSON && err.responseJSON.message) || err.responseText || "Internal server error",
+                        confirmButtonColor: 'var(--theme-accent)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)'
+                    });
+                }
+            });
+        }
+
         function toggleChecklist(symbol) {
             const tableRow = $(`#checklist-row-${symbol}`);
             const tableBtn = $(`#btn-toggle-${symbol}`);
@@ -948,9 +1164,11 @@
             const buyCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "BUY").length;
             const watchCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "WATCH").length;
             const highScoreCount = allStockSignals.filter(s => (s.score || 0) >= 70).length;
+            const rejectedCount = allStockSignals.filter(s => s.decision && (s.decision.toUpperCase() === "REJECT" || s.decision.toUpperCase() === "NO SIGNAL")).length;
 
             $("#countBuyPill").text(buyCount);
             $("#countWatchPill").text(watchCount);
+            $("#countRejectedPill").text(rejectedCount);
             $("#countAllPill").text(allStockSignals.length);
 
             if (currentFilter === "buy") {
@@ -959,6 +1177,8 @@
                 filtered = filtered.filter(s => s.decision && s.decision.toUpperCase() === "WATCH");
             } else if (currentFilter === "highscore") {
                 filtered = filtered.filter(s => (s.score || 0) >= 70);
+            } else if (currentFilter === "rejected") {
+                filtered = filtered.filter(s => s.decision && (s.decision.toUpperCase() === "REJECT" || s.decision.toUpperCase() === "NO SIGNAL"));
             }
 
             if (searchQuery) {
@@ -1025,6 +1245,8 @@
             if (dUpper.includes("WATCH")) return "hold";
             if (dUpper.includes("SELL")) return "sell";
             if (dUpper.includes("AVOID")) return "avoid";
+            if (dUpper.includes("REJECT")) return "reject";
+            if (dUpper.includes("NO SIGNAL")) return "no-signal";
             return "hold";
         }
 
@@ -1114,6 +1336,12 @@
                                         <div class="score-progress-fill ${scoreType}" style="width: ${score}%"></div>
                                     </div>
                                 </div>
+                                ${(isBuy && IS_ADMIN) ? `
+                                    <button type="button" class="btn-send-real-trade" title="Manually send this BUY straight to Real Trade (bypasses the 15-min auto-scan; still enforces your Real Trade risk settings)"
+                                        onclick="confirmSendToRealTrade('${s.symbol}', ${Number(s.close || s.entryPrice)}, ${metCount})">
+                                        ⚡ Real Trade
+                                    </button>
+                                ` : ''}
                             </div>
                         </td>
                         <td>
@@ -1236,6 +1464,14 @@
                                 </div>
                             </div>
                         </div>
+
+                        ${(isBuy && IS_ADMIN) ? `
+                            <button type="button" class="btn-send-real-trade" style="width:100%; justify-content:center; margin-bottom:8px;"
+                                title="Manually send this BUY straight to Real Trade (bypasses the 15-min auto-scan; still enforces your Real Trade risk settings)"
+                                onclick="confirmSendToRealTrade('${s.symbol}', ${Number(s.close || s.entryPrice)}, ${metCount})">
+                                ⚡ Send to Real Trade
+                            </button>
+                        ` : ''}
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; font-size: 11px;">
                             <div class="metric-chip metric-chip-sl">SL: ₹${Number(s.stopLoss).toFixed(2)}</div>

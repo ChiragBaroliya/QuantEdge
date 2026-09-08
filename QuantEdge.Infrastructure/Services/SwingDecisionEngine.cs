@@ -35,19 +35,6 @@ public class SwingEvaluationResult
 public static class SwingDecisionEngine
 {
     /// <summary>
-    /// Score penalty (out of 100) applied when a market/index context filter (e.g. NIFTY) fails.
-    /// Market context is a risk factor, not a blocking gate: it never rejects a stock outright,
-    /// it only lowers the confidence score of an otherwise-qualifying stock-level setup.
-    /// </summary>
-    private const int MarketContextScorePenalty = 10;
-
-    /// <summary>
-    /// Position-size multiplier applied when a market/index context filter fails, to reduce
-    /// risk exposure on trades taken against the broader market trend.
-    /// </summary>
-    private const decimal MarketContextPositionSizeFactor = 0.5m;
-
-    /// <summary>
     /// Evaluates a stock using 2 Mandatory Stock-Level Hard Filters (1D) and an 8-factor 100-Point
     /// Weighted Scoring Matrix (15m/60m/1d). Market/index context (e.g. NIFTY trend) is evaluated
     /// independently and applied only as a non-blocking risk adjustment (score + position size) -
@@ -58,8 +45,15 @@ public static class SwingDecisionEngine
         List<MarketCandle> stockCandles1d,
         List<MarketCandle> stockCandles15m,
         List<MarketCandle> stockCandles60m,
-        List<MarketCandle> niftyCandles1d)
+        List<MarketCandle> niftyCandles1d,
+        QuantEdge.Domain.Entities.SwingStrategySettings? settings = null)
     {
+        settings ??= QuantEdge.Domain.Entities.SwingStrategySettings.Default;
+        int buyScoreThreshold = settings.BuyScoreThreshold;
+        int watchScoreThreshold = settings.WatchScoreThreshold;
+        int marketContextScorePenalty = settings.MarketContextScorePenalty;
+        decimal marketContextPositionSizeFactor = settings.MarketContextPositionSizeFactor;
+
         var result = new SwingEvaluationResult();
         string symbol = stock?.Symbol ?? "UNKNOWN";
         result.Sector = GetSectorForSymbol(symbol);
@@ -148,7 +142,7 @@ public static class SwingDecisionEngine
         if (niftyPassed)
             result.PassedRules.Add("Market Context: NIFTY Market Filter (Passed)");
         else
-            result.FailedRules.Add($"Market Context: NIFTY Market Filter (Failed - Defensive Mode, -{MarketContextScorePenalty} pt score penalty applied, not a block)");
+            result.FailedRules.Add($"Market Context: NIFTY Market Filter (Failed - Defensive Mode, -{marketContextScorePenalty} pt score penalty applied, not a block)");
 
         // --------------------------------------------------------------------
         // STAGE B: WEIGHTED SCORING MATRIX (100 Max Pts)
@@ -357,7 +351,7 @@ public static class SwingDecisionEngine
         // threshold even when the market/index filter fails.
         if (!niftyPassed)
         {
-            score -= MarketContextScorePenalty;
+            score -= marketContextScorePenalty;
         }
 
         result.Score = Math.Min(100, Math.Max(0, score));
@@ -365,14 +359,14 @@ public static class SwingDecisionEngine
         result.PassedRules = passedRules;
         result.FailedRules = failedRules;
 
-        if (result.Score >= 70)
+        if (result.Score >= buyScoreThreshold)
         {
             result.Decision = "BUY";
             result.IsBuySignal = true;
             string marketNote = niftyPassed ? string.Empty : " [Note: taken against a weak broader market - reduced size applied]";
             result.Reason = $"BUY Signal Confirmed (Score: {result.Score}/100). Passed Stock-Level Hard Filters & {passedRules.Count} Scoring Rules. Entry: ₹{currentPrice:F2}, SL: ₹{result.StopLoss:F2}, Target 1: ₹{result.Target1:F2} (1:{result.RiskRewardRatio:F1} R:R).{marketNote}";
         }
-        else if (result.Score >= 50)
+        else if (result.Score >= watchScoreThreshold)
         {
             result.Decision = "WATCH";
             result.IsBuySignal = false;
@@ -382,7 +376,7 @@ public static class SwingDecisionEngine
         {
             result.Decision = "NO SIGNAL";
             result.IsBuySignal = false;
-            result.Reason = $"NO SIGNAL (Score: {result.Score}/100 < 50 threshold). Failed factors: {string.Join("; ", failedRules.Take(3))}";
+            result.Reason = $"NO SIGNAL (Score: {result.Score}/100 < {watchScoreThreshold} threshold). Failed factors: {string.Join("; ", failedRules.Take(3))}";
         }
 
         // Calculate Position Sizing (1% Portfolio Risk Rule assuming ₹1,000,000 capital = ₹10,000 risk)
@@ -394,7 +388,7 @@ public static class SwingDecisionEngine
         // Defensive position sizing: reduce size (not block) when market context is weak
         if (!niftyPassed && result.RecommendedQty > 0)
         {
-            result.RecommendedQty = Math.Max(1, (int)Math.Floor(result.RecommendedQty * MarketContextPositionSizeFactor));
+            result.RecommendedQty = Math.Max(1, (int)Math.Floor(result.RecommendedQty * marketContextPositionSizeFactor));
         }
 
         // Build UI Checklist
@@ -414,9 +408,10 @@ public static class SwingDecisionEngine
         StockMaster stock,
         List<MarketCandle> stockCandles1d,
         List<MarketCandle> stockCandles60m,
-        List<MarketCandle> niftyCandles1d)
+        List<MarketCandle> niftyCandles1d,
+        QuantEdge.Domain.Entities.SwingStrategySettings? settings = null)
     {
-        return Evaluate(stock, stockCandles1d, null!, stockCandles60m, niftyCandles1d);
+        return Evaluate(stock, stockCandles1d, null!, stockCandles60m, niftyCandles1d, settings);
     }
 
     private static bool EvaluateNiftyMarketFilter(List<MarketCandle> niftyCandles)

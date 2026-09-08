@@ -471,8 +471,21 @@ ON swing_positions (symbol, is_closed);
 CREATE INDEX IF NOT EXISTS ix_swing_slot_rec_date_slot 
 ON swing_slot_recommendations (scan_date, slot_label);
 
-CREATE INDEX IF NOT EXISTS ix_swing_slot_rec_symbol 
+CREATE INDEX IF NOT EXISTS ix_swing_slot_rec_symbol
 ON swing_slot_recommendations (symbol, scan_date);
+
+-- Table: swing_strategy_settings (single-row global tuning for SwingDecisionEngine)
+CREATE TABLE IF NOT EXISTS swing_strategy_settings (
+    id INT PRIMARY KEY DEFAULT 1,
+    buy_score_threshold INT NOT NULL DEFAULT 70,
+    watch_score_threshold INT NOT NULL DEFAULT 50,
+    market_context_score_penalty INT NOT NULL DEFAULT 10,
+    market_context_position_size_factor NUMERIC(5, 2) NOT NULL DEFAULT 0.5,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_swing_strategy_settings_singleton CHECK (id = 1)
+);
+
+INSERT INTO swing_strategy_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 
 

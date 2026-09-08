@@ -23,6 +23,7 @@ public class SwingTradingService : ISwingTradingService
     private readonly IHistoricalDataService _historicalDataService;
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ISwingSlotRecommendationRepository _slotRecommendationRepository;
+    private readonly ISwingStrategySettingsRepository _strategySettingsRepository;
     private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly ICacheService? _cacheService;
     private readonly ILogger<SwingTradingService> _logger;
@@ -33,6 +34,7 @@ public class SwingTradingService : ISwingTradingService
         IHistoricalDataService historicalDataService,
         IDbConnectionFactory connectionFactory,
         ISwingSlotRecommendationRepository slotRecommendationRepository,
+        ISwingStrategySettingsRepository strategySettingsRepository,
         ILogger<SwingTradingService> logger,
         IHubContext<MarketDataHub>? hubContext = null,
         ICacheService? cacheService = null)
@@ -42,6 +44,7 @@ public class SwingTradingService : ISwingTradingService
         _historicalDataService = historicalDataService ?? throw new ArgumentNullException(nameof(historicalDataService));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _slotRecommendationRepository = slotRecommendationRepository ?? throw new ArgumentNullException(nameof(slotRecommendationRepository));
+        _strategySettingsRepository = strategySettingsRepository ?? throw new ArgumentNullException(nameof(strategySettingsRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _hubContext = hubContext;
         _cacheService = cacheService;
@@ -469,6 +472,7 @@ public class SwingTradingService : ISwingTradingService
                 niftyStatus = new NiftyStatusDto("NIFTY 50", 22000m, 21800m, 21900m, 21850m, true, true, true);
             }
 
+            var strategySettings = await _strategySettingsRepository.GetSettingsAsync();
             var evaluatedSlotSignals = new List<SwingStockSignalDto>();
 
             using (var conn = _connectionFactory.CreateConnection())
@@ -501,8 +505,8 @@ public class SwingTradingService : ISwingTradingService
 
                     if (stockCandles.Count >= 50)
                     {
-                        var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles, stockCandles15m, stockCandles60m, niftyCandlesGlobal);
-                        
+                        var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles, stockCandles15m, stockCandles60m, niftyCandlesGlobal, strategySettings);
+
                         bool isAlreadyOpen = openPositionSymbols.Contains(stock.Symbol);
                         if (isAlreadyOpen && evalResult.IsBuySignal)
                         {
@@ -512,8 +516,8 @@ public class SwingTradingService : ISwingTradingService
                             evalResult.Reason = $"Position already active in portfolio for {stock.Symbol}. Duplicate BUY skipped.";
                         }
 
-                        // Store BUY and WATCH recommendations (Score >= 50 or BUY/WATCH decision)
-                        if (evalResult.Score >= 50 || evalResult.Decision == "BUY" || evalResult.Decision == "WATCH")
+                        // Persist every evaluated stock (BUY/WATCH/NO SIGNAL/REJECT) so the dashboard can
+                        // surface near-miss and rejected setups, not just ones that already qualified.
                         {
                             int idx = stockCandles.Count - 1;
                             var c = stockCandles[idx];
@@ -561,7 +565,7 @@ public class SwingTradingService : ISwingTradingService
                                 ClosenessTo52WeekHighPct: high52W[idx] > 0m ? Math.Round(c.Close / high52W[idx] * 100m, 2) : 0m,
                                 IsLastCandleBullish: c.Close > c.Open,
                                 MeetsStockFilter: evalResult.IsBuySignal,
-                                MeetsAllBuyRules: evalResult.IsBuySignal && niftyStatus.IsMarketFilterPassed,
+                                MeetsAllBuyRules: evalResult.IsBuySignal,
                                 Decision: evalResult.Decision,
                                 Reason: evalResult.Reason,
                                 Checklist: evalResult.Checklist,

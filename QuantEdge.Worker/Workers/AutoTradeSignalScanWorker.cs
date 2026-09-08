@@ -106,6 +106,8 @@ public class AutoTradeSignalScanWorker : BackgroundService
     {
         var stockRepo = provider.GetRequiredService<IStockMasterRepository>();
         var candleRepo = provider.GetRequiredService<IMarketCandleRepository>();
+        var strategySettingsRepo = provider.GetRequiredService<ISwingStrategySettingsRepository>();
+        var strategySettings = await strategySettingsRepo.GetSettingsAsync();
 
         // Dynamically fetch active stocks from stock_master database
         var activeStocks = (await stockRepo.GetActiveStocksAsync()).ToList();
@@ -151,7 +153,7 @@ public class AutoTradeSignalScanWorker : BackgroundService
                 if (stockCandles1d.Count < 50) continue;
 
                 // Evaluate stock using SwingDecisionEngine with all 3 timeframe candles
-                var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles);
+                var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, strategySettings);
                 if (evalResult == null || evalResult.Checklist == null) continue;
 
                 int metCount = evalResult.Checklist.MetCount;
