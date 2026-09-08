@@ -67,6 +67,10 @@ public class SwingTradingController : ControllerBase
         {
             return BadRequest("MarketContextPositionSizeFactor must be between 0 (exclusive) and 1 (inclusive).");
         }
+        if (settings.MarketProtectionBufferPct <= 0 || settings.MarketProtectionBufferPct > 0.05m)
+        {
+            return BadRequest("MarketProtectionBufferPct must be between 0 (exclusive) and 0.05 (5%) inclusive.");
+        }
 
         try
         {

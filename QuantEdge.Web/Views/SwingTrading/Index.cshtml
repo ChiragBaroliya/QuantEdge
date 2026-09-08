@@ -590,7 +590,7 @@
                 html: `
                     <div style="text-align:left; font-size: 13px;">
                         <p style="color:#94a3b8; margin-bottom: 14px;">
-                            These parameters drive the shared scoring engine used by Swing Trading, Auto Paper Trade and Auto Real Trade.
+                            The first four parameters drive the shared scoring engine used by Swing Trading, Auto Paper Trade and Auto Real Trade. The last one controls how real-money orders are protected when placed with Zerodha.
                         </p>
                         <label style="display:block; margin-bottom:4px;">BUY Score Threshold (0-100)</label>
                         <input type="number" id="setBuyThreshold" class="swal2-input" style="margin:0 0 10px 0;" value="${s.buyScoreThreshold}" min="0" max="100">
@@ -602,7 +602,10 @@
                         <input type="number" id="setPenalty" class="swal2-input" style="margin:0 0 10px 0;" value="${s.marketContextScorePenalty}" min="0" max="100">
 
                         <label style="display:block; margin-bottom:4px;">NIFTY Filter Position-Size Factor (0-1, e.g. 0.5 = half size)</label>
-                        <input type="number" id="setSizeFactor" class="swal2-input" style="margin:0;" value="${s.marketContextPositionSizeFactor}" min="0.01" max="1" step="0.05">
+                        <input type="number" id="setSizeFactor" class="swal2-input" style="margin:0 0 10px 0;" value="${s.marketContextPositionSizeFactor}" min="0.01" max="1" step="0.05">
+
+                        <label style="display:block; margin-bottom:4px;">Real Order Market Protection Buffer % (0.1-5, used to convert a market-style Real Trade BUY/SELL into a protected Limit order for Zerodha)</label>
+                        <input type="number" id="setProtectionBufferPct" class="swal2-input" style="margin:0;" value="${(s.marketProtectionBufferPct * 100).toFixed(2)}" min="0.1" max="5" step="0.1">
                     </div>
                 `,
                 showCancelButton: true,
@@ -613,8 +616,9 @@
                     const watch = parseInt($("#setWatchThreshold").val(), 10);
                     const penalty = parseInt($("#setPenalty").val(), 10);
                     const factor = parseFloat($("#setSizeFactor").val());
+                    const protectionPctInput = parseFloat($("#setProtectionBufferPct").val());
 
-                    if (isNaN(buy) || isNaN(watch) || isNaN(penalty) || isNaN(factor)) {
+                    if (isNaN(buy) || isNaN(watch) || isNaN(penalty) || isNaN(factor) || isNaN(protectionPctInput)) {
                         Swal.showValidationMessage('All fields are required and must be numeric.');
                         return false;
                     }
@@ -626,12 +630,17 @@
                         Swal.showValidationMessage('Position-size factor must be between 0 (exclusive) and 1.');
                         return false;
                     }
+                    if (protectionPctInput <= 0 || protectionPctInput > 5) {
+                        Swal.showValidationMessage('Market protection buffer must be between 0.1% and 5%.');
+                        return false;
+                    }
 
                     return {
                         buyScoreThreshold: buy,
                         watchScoreThreshold: watch,
                         marketContextScorePenalty: penalty,
-                        marketContextPositionSizeFactor: factor
+                        marketContextPositionSizeFactor: factor,
+                        marketProtectionBufferPct: protectionPctInput / 100
                     };
                 }
             }).then(function(result) {

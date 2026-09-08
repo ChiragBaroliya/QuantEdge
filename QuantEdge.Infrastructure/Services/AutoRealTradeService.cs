@@ -619,6 +619,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 position.Symbol,
                 position.Quantity,
                 position.Side,
+                currentLtp,
                 settings.ProductType,
                 userId);
 

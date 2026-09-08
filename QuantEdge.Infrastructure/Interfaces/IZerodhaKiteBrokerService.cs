@@ -32,13 +32,14 @@ public interface IZerodhaKiteBrokerService
     Task<(bool Success, string? Message)> CancelLiveOrderAsync(string brokerOrderId, int userId = 1);
 
     /// <summary>
-    /// Squares off an open position with Zerodha broker by placing an opposing market order.
+    /// Squares off an open position with Zerodha broker by placing an opposing market-protected order.
     /// </summary>
     Task<(bool Success, string? BrokerOrderId, decimal ExecutedPrice, string? Message)> SquareOffLivePositionAsync(
-        string symbol, 
-        int quantity, 
-        TradeSide positionSide, 
-        string product = "CNC", 
+        string symbol,
+        int quantity,
+        TradeSide positionSide,
+        decimal currentPrice,
+        string product = "CNC",
         int userId = 1);
 
     /// <summary>

@@ -44,9 +44,11 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
                         watch_score_threshold INT NOT NULL DEFAULT 50,
                         market_context_score_penalty INT NOT NULL DEFAULT 10,
                         market_context_position_size_factor NUMERIC(5, 2) NOT NULL DEFAULT 0.5,
+                        market_protection_buffer_pct NUMERIC(6, 4) NOT NULL DEFAULT 0.005,
                         updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                         CONSTRAINT chk_swing_strategy_settings_singleton CHECK (id = 1)
                     );
+                    ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS market_protection_buffer_pct NUMERIC(6, 4) NOT NULL DEFAULT 0.005;
                     INSERT INTO swing_strategy_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
                 ");
                 _tableEnsured = true;
@@ -89,14 +91,15 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
         using var conn = _connectionFactory.CreateConnection();
         await conn.ExecuteAsync(@"
             INSERT INTO swing_strategy_settings
-                (id, buy_score_threshold, watch_score_threshold, market_context_score_penalty, market_context_position_size_factor, updated_at)
+                (id, buy_score_threshold, watch_score_threshold, market_context_score_penalty, market_context_position_size_factor, market_protection_buffer_pct, updated_at)
             VALUES
-                (1, @BuyScoreThreshold, @WatchScoreThreshold, @MarketContextScorePenalty, @MarketContextPositionSizeFactor, NOW())
+                (1, @BuyScoreThreshold, @WatchScoreThreshold, @MarketContextScorePenalty, @MarketContextPositionSizeFactor, @MarketProtectionBufferPct, NOW())
             ON CONFLICT (id) DO UPDATE SET
                 buy_score_threshold = EXCLUDED.buy_score_threshold,
                 watch_score_threshold = EXCLUDED.watch_score_threshold,
                 market_context_score_penalty = EXCLUDED.market_context_score_penalty,
                 market_context_position_size_factor = EXCLUDED.market_context_position_size_factor,
+                market_protection_buffer_pct = EXCLUDED.market_protection_buffer_pct,
                 updated_at = NOW();",
             settings);
 
@@ -115,6 +118,7 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
         public int WatchScoreThreshold { get; set; }
         public int MarketContextScorePenalty { get; set; }
         public decimal MarketContextPositionSizeFactor { get; set; }
+        public decimal MarketProtectionBufferPct { get; set; }
         public DateTime UpdatedAt { get; set; }
 
         public SwingStrategySettings ToDomain() => new()
@@ -124,6 +128,7 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
             WatchScoreThreshold = WatchScoreThreshold,
             MarketContextScorePenalty = MarketContextScorePenalty,
             MarketContextPositionSizeFactor = MarketContextPositionSizeFactor,
+            MarketProtectionBufferPct = MarketProtectionBufferPct,
             UpdatedAt = UpdatedAt
         };
     }

@@ -21,6 +21,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 {
     private readonly IZerodhaSessionRepository _sessionRepository;
     private readonly IRealTradeCacheService? _cacheService;
+    private readonly ISwingStrategySettingsRepository? _strategySettingsRepository;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ZerodhaKiteBrokerService> _logger;
 
@@ -30,12 +31,14 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         IZerodhaSessionRepository sessionRepository,
         IHttpClientFactory httpClientFactory,
         ILogger<ZerodhaKiteBrokerService> logger,
-        IRealTradeCacheService? cacheService = null)
+        IRealTradeCacheService? cacheService = null,
+        ISwingStrategySettingsRepository? strategySettingsRepository = null)
     {
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cacheService = cacheService;
+        _strategySettingsRepository = strategySettingsRepository;
     }
 
     public async Task<(bool IsValid, string? AccessToken, string? ApiKey, string? Message)> ValidateSessionTokenAsync(int userId = 1)
@@ -89,12 +92,39 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         }
 
         string transactionType = side == TradeSide.BUY ? "BUY" : "SELL";
-        string kiteOrderType = orderType == PaperOrderType.Limit ? "LIMIT" : "MARKET";
         string cleanSymbol = symbol.ToUpper().Trim();
         string kiteProduct = string.IsNullOrWhiteSpace(product) ? "CNC" : product.ToUpper().Trim();
 
+        // Kite Connect rejects plain MARKET orders on the "regular" variety via API ("Market orders
+        // without market protection are not allowed via API. Please set market protection or use a
+        // Limit order."). Zerodha's own suggested fix is used here: submit a LIMIT order with a small
+        // protection band around the reference price, in the direction that still fills immediately
+        // for a normal, liquid NSE equity move, instead of a bare MARKET order. Buffer is configurable
+        // via Strategy Settings (default 0.5%) so it can be tuned without a redeploy.
+        decimal marketProtectionBufferPct = 0.005m;
+        if (_strategySettingsRepository != null)
+        {
+            var strategySettings = await _strategySettingsRepository.GetSettingsAsync();
+            marketProtectionBufferPct = strategySettings.MarketProtectionBufferPct;
+        }
+        string kiteOrderType = "LIMIT";
+        decimal orderPrice = price;
+        if (orderType != PaperOrderType.Limit)
+        {
+            orderPrice = side == TradeSide.BUY
+                ? Math.Round(price * (1m + marketProtectionBufferPct), 2)
+                : Math.Round(price * (1m - marketProtectionBufferPct), 2);
+        }
+
+        if (orderPrice <= 0m)
+        {
+            _logger.LogError("PlaceLiveOrderAsync rejected for User {UserId}: no valid reference price supplied for {Symbol} (received ₹{Price:F2}). A LIMIT order cannot be submitted without a price.",
+                userId, symbol, price);
+            return (false, null, 0m, $"No valid reference price available for {symbol}; cannot submit order.");
+        }
+
         _logger.LogInformation("[REAL MONEY LIVE ORDER - User {UserId}] Placing KiteConnect order: {Symbol} {Side} Qty:{Qty} Product:{Product} @ ₹{Price:F2}",
-            userId, cleanSymbol, transactionType, quantity, kiteProduct, price);
+            userId, cleanSymbol, transactionType, quantity, kiteProduct, orderPrice);
 
         try
         {
@@ -114,9 +144,9 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
                 { "validity", "DAY" }
             };
 
-            if (orderType == PaperOrderType.Limit && price > 0m)
+            if (orderPrice > 0m)
             {
-                formData.Add("price", price.ToString("F2"));
+                formData.Add("price", orderPrice.ToString("F2"));
             }
 
             var requestContent = new FormUrlEncodedContent(formData);
@@ -201,11 +231,12 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         string symbol,
         int quantity,
         TradeSide positionSide,
+        decimal currentPrice,
         string product = "CNC",
         int userId = 1)
     {
         TradeSide exitSide = positionSide == TradeSide.BUY ? TradeSide.SELL : TradeSide.BUY;
-        return await PlaceLiveOrderAsync(symbol, exitSide, quantity, PaperOrderType.Market, 0m, product, userId);
+        return await PlaceLiveOrderAsync(symbol, exitSide, quantity, PaperOrderType.Market, currentPrice, product, userId);
     }
 
     public async Task<(bool Success, decimal AvailableCash, decimal UsedMargin, string? Message)> GetEquityMarginsAsync(int userId = 1)

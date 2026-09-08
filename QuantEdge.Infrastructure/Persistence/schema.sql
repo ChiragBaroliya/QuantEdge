@@ -481,6 +481,7 @@ CREATE TABLE IF NOT EXISTS swing_strategy_settings (
     watch_score_threshold INT NOT NULL DEFAULT 50,
     market_context_score_penalty INT NOT NULL DEFAULT 10,
     market_context_position_size_factor NUMERIC(5, 2) NOT NULL DEFAULT 0.5,
+    market_protection_buffer_pct NUMERIC(6, 4) NOT NULL DEFAULT 0.005,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_swing_strategy_settings_singleton CHECK (id = 1)
 );

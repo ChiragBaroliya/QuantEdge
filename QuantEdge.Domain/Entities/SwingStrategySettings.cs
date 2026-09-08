@@ -20,6 +20,13 @@ public class SwingStrategySettings
     /// <summary>Position-size multiplier applied when the NIFTY market-context filter fails.</summary>
     public decimal MarketContextPositionSizeFactor { get; set; } = 0.5m;
 
+    /// <summary>
+    /// Protection band (e.g. 0.005 = 0.5%) applied around the reference price when emulating a market
+    /// order as a Kite Connect LIMIT order for real-money orders (Zerodha rejects plain MARKET orders
+    /// via API on the "regular" variety). BUY adds this band, SELL subtracts it.
+    /// </summary>
+    public decimal MarketProtectionBufferPct { get; set; } = 0.005m;
+
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public static SwingStrategySettings Default => new();
