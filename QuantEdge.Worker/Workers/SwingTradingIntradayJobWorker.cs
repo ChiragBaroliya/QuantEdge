@@ -13,7 +13,6 @@ public class SwingTradingIntradayJobWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<SwingTradingIntradayJobWorker> _logger;
-    private readonly TimeSpan _interval = TimeSpan.FromMinutes(30);
 
     public SwingTradingIntradayJobWorker(
         IServiceProvider serviceProvider,
@@ -27,28 +26,41 @@ public class SwingTradingIntradayJobWorker : BackgroundService
     {
         _logger.LogInformation("SwingTradingIntradayJobWorker (30-Minute Job) background service starting up...");
 
-        // Startup delay
-        await Task.Delay(10000, stoppingToken);
-
         while (!stoppingToken.IsCancellationRequested)
         {
+            // Sleep until the next :15/:45 slot boundary instead of a fixed 30-min delay from
+            // whenever this loop last ran. A rolling delay drifts (and skips slots entirely)
+            // every time the process restarts; aligning to wall-clock boundaries keeps the scan
+            // cadence correct regardless of restarts/redeploys.
+            DateTime nowIst = GetIstTime();
+            DateTime nextBoundary = GetNextSlotBoundary(nowIst);
+
             try
             {
-                DateTime nowIst = GetIstTime();
+                await Task.Delay(nextBoundary - nowIst, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
 
-                if (IsWithinTradingWindow(nowIst))
+            try
+            {
+                DateTime runIst = GetIstTime();
+
+                if (IsWithinTradingWindow(runIst))
                 {
-                    _logger.LogInformation("Market open ({Time} IST). Running 30-Minute Swing Trading Intraday Job...", nowIst.ToString("HH:mm:ss"));
+                    _logger.LogInformation("Market open ({Time} IST). Running 30-Minute Swing Trading Intraday Job...", runIst.ToString("HH:mm:ss"));
 
                     using (var scope = _serviceProvider.CreateScope())
                     {
                         var swingTradingService = scope.ServiceProvider.GetRequiredService<ISwingTradingService>();
                         var holidayRepo = scope.ServiceProvider.GetService<IIndianHolidayRepository>();
 
-                        bool isHoliday = holidayRepo != null && await holidayRepo.IsHolidayAsync(nowIst.Date);
+                        bool isHoliday = holidayRepo != null && await holidayRepo.IsHolidayAsync(runIst.Date);
                         if (isHoliday)
                         {
-                            _logger.LogInformation("Today ({Date}) is a Market Holiday. Skipping 30-minute Swing Trading scan.", nowIst.ToString("yyyy-MM-dd"));
+                            _logger.LogInformation("Today ({Date}) is a Market Holiday. Skipping 30-minute Swing Trading scan.", runIst.ToString("yyyy-MM-dd"));
                         }
                         else
                         {
@@ -58,7 +70,7 @@ public class SwingTradingIntradayJobWorker : BackgroundService
                 }
                 else
                 {
-                    _logger.LogDebug("Outside Market Trading Window ({Time} IST). 30-Minute Swing Trading scan waiting...", nowIst.ToString("HH:mm:ss"));
+                    _logger.LogDebug("Outside Market Trading Window ({Time} IST). 30-Minute Swing Trading scan waiting...", runIst.ToString("HH:mm:ss"));
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -69,9 +81,22 @@ public class SwingTradingIntradayJobWorker : BackgroundService
             {
                 _logger.LogError(ex, "Error occurred in SwingTradingIntradayJobWorker loop.");
             }
-
-            await Task.Delay(_interval, stoppingToken);
         }
+    }
+
+    /// <summary>
+    /// Slot boundaries fall on :15 and :45 past every hour (matching SwingTradingService.ComputeSlotLabel).
+    /// Returns the next boundary strictly after <paramref name="istTime"/>.
+    /// </summary>
+    private static DateTime GetNextSlotBoundary(DateTime istTime)
+    {
+        DateTime hourStart = new DateTime(istTime.Year, istTime.Month, istTime.Day, istTime.Hour, 0, 0);
+        DateTime quarterPast = hourStart.AddMinutes(15);
+        DateTime quarterTo = hourStart.AddMinutes(45);
+
+        if (istTime < quarterPast) return quarterPast;
+        if (istTime < quarterTo) return quarterTo;
+        return quarterPast.AddHours(1);
     }
 
     private static bool IsWithinTradingWindow(DateTime istTime)
