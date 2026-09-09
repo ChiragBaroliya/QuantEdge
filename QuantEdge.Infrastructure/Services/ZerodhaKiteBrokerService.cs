@@ -112,9 +112,16 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         if (orderType != PaperOrderType.Limit)
         {
             orderPrice = side == TradeSide.BUY
-                ? Math.Round(price * (1m + marketProtectionBufferPct), 2)
-                : Math.Round(price * (1m - marketProtectionBufferPct), 2);
+                ? price * (1m + marketProtectionBufferPct)
+                : price * (1m - marketProtectionBufferPct);
         }
+
+        // NSE equities are rejected if the price is not a multiple of the script's tick size
+        // ("Tick size for this script is 0.05..."). 0.05 covers the vast majority of NSE
+        // equities; rounding here (rather than plain 2-decimal rounding) keeps the market
+        // protection band and any upstream price from landing on an invalid tick.
+        const decimal tickSize = 0.05m;
+        orderPrice = Math.Round(Math.Round(orderPrice / tickSize, MidpointRounding.AwayFromZero) * tickSize, 2);
 
         if (orderPrice <= 0m)
         {
