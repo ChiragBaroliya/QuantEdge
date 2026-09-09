@@ -322,12 +322,23 @@
                 <span class="badge bg-danger ms-auto" style="font-size: 0.6rem; padding: 2px 5px; font-weight: 700;">LIVE</span>
             </a>
             <a asp-controller="SwingTrading" asp-action="Index"
-               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" ? "active" : "")"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" && ViewContext.RouteData.Values["action"]?.ToString() != "EtfList" ? "active" : "")"
                data-tooltip="📈 **Swing Trading**: Multi-day entry/exit scanner and breakout trade setup.">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
                 </svg>
                 <span class="nav-label">Swing Trading</span>
+            </a>
+            <a asp-controller="SwingTrading" asp-action="EtfList"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" && ViewContext.RouteData.Values["action"]?.ToString() == "EtfList" ? "active" : "")"
+               data-tooltip="📃 **ETF List**: View ETFs from the instrument master and manually send them to Real Trade.">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                <span class="nav-label">ETF List</span>
             </a>
             <a asp-controller="Report" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Report" ? "active" : "")"

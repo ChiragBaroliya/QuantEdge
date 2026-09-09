@@ -99,6 +99,34 @@ public class StockMasterRepository : IStockMasterRepository
     }
 
     /// <summary>
+    /// Retrieves paginated stock master records whose symbol or name contains "ETF" using sp_get_paginated_etf_list,
+    /// for the Swing Trading ETF List screen.
+    /// </summary>
+    public async Task<PaginatedEtfListResult> GetEtfListAsync(string? search, string? statusFilter, int pageNumber, int pageSize)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        var items = (await connection.QueryAsync<EtfListItemDto>(
+            "SELECT * FROM sp_get_paginated_etf_list(@p_search, @p_status_filter, @p_page_number, @p_page_size);",
+            new {
+                p_search = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+                p_status_filter = string.IsNullOrWhiteSpace(statusFilter) ? null : statusFilter.Trim(),
+                p_page_number = pageNumber < 1 ? 1 : pageNumber,
+                p_page_size = pageSize < 1 ? 25 : pageSize
+            }
+        )).ToList();
+
+        int totalCount = items.FirstOrDefault()?.TotalRecords ?? 0;
+
+        return new PaginatedEtfListResult
+        {
+            Items = items,
+            TotalCount = totalCount,
+            PageNumber = pageNumber,
+            PageSize = pageSize
+        };
+    }
+
+    /// <summary>
     /// Updates the timeframe-specific history stored field for a stock master record.
     /// Invalidates affected memory cache keys.
     /// </summary>

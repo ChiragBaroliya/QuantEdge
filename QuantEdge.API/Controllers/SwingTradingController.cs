@@ -16,16 +16,38 @@ public class SwingTradingController : ControllerBase
 {
     private readonly ISwingTradingService _swingTradingService;
     private readonly ISwingStrategySettingsRepository _strategySettingsRepository;
+    private readonly IStockMasterRepository _stockMasterRepository;
     private readonly ILogger<SwingTradingController> _logger;
 
     public SwingTradingController(
         ISwingTradingService swingTradingService,
         ISwingStrategySettingsRepository strategySettingsRepository,
+        IStockMasterRepository stockMasterRepository,
         ILogger<SwingTradingController> logger)
     {
         _swingTradingService = swingTradingService ?? throw new ArgumentNullException(nameof(swingTradingService));
         _strategySettingsRepository = strategySettingsRepository ?? throw new ArgumentNullException(nameof(strategySettingsRepository));
+        _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    [HttpGet("etf-list")]
+    public async Task<IActionResult> GetEtfList(
+        [FromQuery] string? search,
+        [FromQuery] string? status,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 25)
+    {
+        try
+        {
+            var result = await _stockMasterRepository.GetEtfListAsync(search, status, pageNumber, pageSize);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve swing trading ETF list.");
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
     }
 
     [HttpGet("settings")]

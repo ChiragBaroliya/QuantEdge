@@ -482,6 +482,67 @@ $$;
 
 
 -- ----------------------------------------------------------------------------
+-- Function: sp_get_paginated_etf_list
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS sp_get_paginated_etf_list CASCADE;
+DROP FUNCTION IF EXISTS sp_get_paginated_etf_list(VARCHAR, VARCHAR, INT, INT) CASCADE;
+
+CREATE OR REPLACE FUNCTION sp_get_paginated_etf_list(
+    p_search VARCHAR DEFAULT NULL,
+    p_status_filter VARCHAR DEFAULT NULL,
+    p_page_number INT DEFAULT 1,
+    p_page_size INT DEFAULT 25
+)
+RETURNS TABLE (
+    id INT,
+    symbol VARCHAR(50),
+    name VARCHAR(100),
+    exchange VARCHAR(20),
+    last_price NUMERIC(18, 4),
+    is_active BOOLEAN,
+    total_records INT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_offset INT;
+BEGIN
+    v_offset := (GREATEST(1, p_page_number) - 1) * GREATEST(1, p_page_size);
+
+    RETURN QUERY
+    WITH filtered_etfs AS (
+        SELECT s.*
+        FROM stock_master s
+        WHERE
+            (s.symbol ILIKE '%ETF%' OR s.name ILIKE '%ETF%')
+            AND (p_search IS NULL OR p_search = '' OR UPPER(s.symbol) LIKE '%' || UPPER(p_search) || '%' OR UPPER(COALESCE(s.name, '')) LIKE '%' || UPPER(p_search) || '%')
+            AND (
+                p_status_filter IS NULL OR p_status_filter = '' OR LOWER(p_status_filter) = 'all'
+                OR (LOWER(p_status_filter) = 'active' AND s.is_active = TRUE)
+                OR (LOWER(p_status_filter) = 'inactive' AND s.is_active = FALSE)
+            )
+    ),
+    counted AS (
+        SELECT fe.*, COUNT(*) OVER()::INT AS full_count
+        FROM filtered_etfs fe
+        ORDER BY fe.symbol ASC
+        LIMIT GREATEST(1, p_page_size) OFFSET v_offset
+    )
+    SELECT
+        c.id,
+        c.symbol,
+        c.name,
+        c.exchange,
+        c.last_price,
+        c.is_active,
+        c.full_count AS total_records
+    FROM counted c
+    ORDER BY c.symbol ASC;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
 -- Function: sp_upsert_instruments
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS sp_upsert_instruments CASCADE;

@@ -21,4 +21,10 @@ public class SwingTradingController : Controller
         ViewBag.ApiBaseUrl = _configuration["ApiBaseUrl"] ?? "https://localhost:44370";
         return View();
     }
+
+    public IActionResult EtfList()
+    {
+        ViewBag.ApiBaseUrl = _configuration["ApiBaseUrl"] ?? "https://localhost:44370";
+        return View();
+    }
 }

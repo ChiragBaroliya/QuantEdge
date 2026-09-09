@@ -25,6 +25,11 @@ public interface IStockMasterRepository
     Task<IEnumerable<StockMaster>> GetAllAsync();
 
     /// <summary>
+    /// Retrieves paginated stock master records whose symbol or name contains "ETF", matching search and status filter criteria.
+    /// </summary>
+    Task<QuantEdge.Infrastructure.DTOs.PaginatedEtfListResult> GetEtfListAsync(string? search, string? statusFilter, int pageNumber, int pageSize);
+
+    /// <summary>
     /// Updates the timeframe-specific history stored field for a stock master record.
     /// </summary>
     Task UpdateHistoryStoredAsync(int id, string timeframe, int? status);

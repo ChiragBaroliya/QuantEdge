@@ -173,6 +173,9 @@
                     <div class="slot-date-input-wrapper">
                         <input type="date" id="slotDatePicker" />
                     </div>
+                    <a class="slot-quick-date-btn" href="@Url.Action("EtfList", "SwingTrading")" title="View ETFs and manually send them to Real Trade">
+                        📃 ETF List
+                    </a>
                 </div>
             </div>
 
@@ -349,9 +352,12 @@
 
 
 @section Scripts {
-    <script src="~/lib/microsoft/signalr/dist/browser/signalr.min.js"></script>
+    <script src="~/js/theme/signalr.min.js"></script>
     <script>
         const API_BASE_URL = "@ViewBag.ApiBaseUrl";
+    </script>
+    <script src="~/js/realtrade-actions.js" asp-append-version="true"></script>
+    <script>
         const IS_ADMIN = @(isAdmin ? "true" : "false");
 
         let allStockSignals = [];
@@ -707,16 +713,6 @@
                 $("#stockTableView").show();
                 $("#stockCardsGrid").hide();
             }
-        }
-
-        function getEndpointUrl(path) {
-            let base = (API_BASE_URL || '').replace(/\/+$/, '');
-            let endpoint = path.startsWith('/') ? path : '/' + path;
-
-            if (base.endsWith('/api') && endpoint.startsWith('/api/')) {
-                endpoint = endpoint.substring(4);
-            }
-            return base + endpoint;
         }
 
         let countdownInterval = null;
@@ -1094,62 +1090,7 @@
             }
         }
 
-        function confirmSendToRealTrade(symbol, entryPrice, metConditionsCount) {
-            Swal.fire({
-                icon: 'warning',
-                title: `⚡ Send ${symbol} to Real Trade?`,
-                html: `
-                    <div style="text-align:left; font-size: 13px; color: #cbd5e1;">
-                        <p>This places a <strong style="color:#f87171;">REAL MONEY</strong> BUY order with your broker for <strong>${symbol}</strong> at ~₹${Number(entryPrice).toFixed(2)}, right now &mdash; it does not wait for the next auto-scan.</p>
-                        <p>Quantity is computed automatically from your Real Trade Settings (Fixed Amount per Trade / entry price), same as automatic execution.</p>
-                        <p>All existing safety checks still apply: Real Trade master switch must be ON, trading window, daily trade limit, daily loss limit, capital, and no duplicate open position in ${symbol}.</p>
-                    </div>
-                `,
-                showCancelButton: true,
-                confirmButtonText: 'Yes, Place Real Order',
-                confirmButtonColor: '#dc2626',
-                cancelButtonText: 'Cancel',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)'
-            }).then(function(result) {
-                if (result.isConfirmed) {
-                    sendToRealTrade(symbol, entryPrice, metConditionsCount);
-                }
-            });
-        }
-
-        function sendToRealTrade(symbol, entryPrice, metConditionsCount) {
-            $.ajax({
-                url: getEndpointUrl('/api/realtrade/manual-buy'),
-                type: "POST",
-                contentType: "application/json",
-                data: JSON.stringify({
-                    symbol: symbol,
-                    entryPrice: entryPrice,
-                    metConditionsCount: metConditionsCount
-                }),
-                success: function(res) {
-                    Swal.fire({
-                        icon: res && res.success ? 'success' : 'info',
-                        title: res && res.success ? 'Real Order Submitted' : 'Not Executed',
-                        text: (res && res.message) || 'Request completed.',
-                        confirmButtonColor: 'var(--theme-accent)',
-                        background: 'var(--bg-card)',
-                        color: 'var(--text-primary)'
-                    });
-                },
-                error: function(err) {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Request Failed',
-                        text: (err.responseJSON && err.responseJSON.message) || err.responseText || "Internal server error",
-                        confirmButtonColor: 'var(--theme-accent)',
-                        background: 'var(--bg-card)',
-                        color: 'var(--text-primary)'
-                    });
-                }
-            });
-        }
+        // confirmSendToRealTrade / sendToRealTrade / getEndpointUrl now live in ~/js/realtrade-actions.js
 
         function toggleChecklist(symbol) {
             const tableRow = $(`#checklist-row-${symbol}`);

@@ -1,0 +1,267 @@
+@{
+    ViewData["Title"] = "Swing Trading - ETF List";
+    ViewData["PageTitle"] = "Swing Trading — ETF List";
+    bool isAdmin = User.IsInRole("Admin");
+}
+
+<link rel="stylesheet" href="~/css/swingtrading.css" asp-append-version="true" />
+
+<div class="swing-container">
+    @if (!isAdmin)
+    {
+        <div class="alert alert-dark border-secondary text-secondary py-2 px-3 mb-3 small d-flex align-items-center justify-content-between">
+            <span class="d-flex align-items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <strong>Read-Only Mode:</strong> Real Trade actions are disabled for User role.
+            </span>
+            <span class="badge bg-secondary">User Role</span>
+        </div>
+    }
+
+    <!-- Header Action Bar -->
+    <div class="swing-header-actions">
+        <div>
+            <p class="swing-header-subtitle d-flex align-items-center flex-wrap gap-2" style="margin: 0; font-size: 13px; color: #cbd5e1;">
+                <span>ETFs from the instrument master (symbol/name containing "ETF"). Use Real Trade to place a live buy order immediately, outside the auto-scan cycle.</span>
+            </p>
+        </div>
+        <div class="action-buttons-group">
+            <a href="@Url.Action("Index", "SwingTrading")" class="btn-trigger" title="Back to Swing Trading">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+                Back to Swing Trading
+            </a>
+            <button id="btnRefreshEtfList" class="btn-trigger" data-tooltip="Reload the ETF list from the instrument master.">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Search & Filter Bar -->
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <input type="text" id="etfSearchInput" class="form-control form-control-sm bg-dark text-light border-secondary" style="max-width: 260px;"
+               placeholder="Search symbol or name..." />
+        <select id="etfStatusFilter" class="form-select form-select-sm bg-dark text-light border-secondary" style="max-width: 150px;">
+            <option value="all">All Status</option>
+            <option value="active" selected>Active</option>
+            <option value="inactive">Inactive</option>
+        </select>
+        <span id="etfResultsCounterText" class="text-muted small ms-auto">Loading...</span>
+    </div>
+
+    <div class="card-glow">
+        <div id="etfListEmptyState" class="text-center text-muted py-4" style="display:none;">
+            No ETFs found in the instrument master.
+        </div>
+        <div style="overflow-x: auto;">
+            <table class="table table-dark table-hover align-middle mb-0" id="etfListTable">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Name</th>
+                        <th>Exchange</th>
+                        <th>Last Price</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="etfListTableBody">
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">Loading ETF list...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Interactive Pagination Bar -->
+        <div class="pagination-wrapper">
+            <div class="page-size-selector">
+                <span>Rows per page:</span>
+                <select id="etfPageSizeSelect">
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+
+            <div class="pagination-controls">
+                <button class="page-nav-btn" id="btnEtfPrevPage" disabled>◄ Prev</button>
+                <div class="page-numbers-group" id="etfPageNumbersContainer">
+                    <button class="page-num-btn active">1</button>
+                </div>
+                <button class="page-nav-btn" id="btnEtfNextPage" disabled>Next ►</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        const API_BASE_URL = "@ViewBag.ApiBaseUrl";
+        const IS_ADMIN = @(isAdmin ? "true" : "false");
+    </script>
+    <script src="~/js/realtrade-actions.js" asp-append-version="true"></script>
+    <script>
+        let etfCurrentPage = 1;
+        let etfPageSize = 25;
+        let etfSearchTimer = null;
+
+        $(function () {
+            loadEtfList();
+            $("#btnRefreshEtfList").on("click", function () { loadEtfList(); });
+
+            $("#etfSearchInput").on("input", function () {
+                clearTimeout(etfSearchTimer);
+                etfSearchTimer = setTimeout(function () {
+                    etfCurrentPage = 1;
+                    loadEtfList();
+                }, 350);
+            });
+
+            $("#etfStatusFilter").on("change", function () {
+                etfCurrentPage = 1;
+                loadEtfList();
+            });
+
+            $("#etfPageSizeSelect").on("change", function () {
+                etfPageSize = parseInt($(this).val(), 10) || 25;
+                etfCurrentPage = 1;
+                loadEtfList();
+            });
+
+            $("#btnEtfPrevPage").on("click", function () {
+                if (etfCurrentPage > 1) {
+                    etfCurrentPage--;
+                    loadEtfList();
+                }
+            });
+
+            $("#btnEtfNextPage").on("click", function () {
+                etfCurrentPage++;
+                loadEtfList();
+            });
+        });
+
+        function loadEtfList() {
+            const tbody = $("#etfListTableBody");
+            tbody.html('<tr><td colspan="6" class="text-center text-muted py-4">Loading ETF list...</td></tr>');
+            $("#etfListEmptyState").hide();
+
+            $.ajax({
+                url: getEndpointUrl('/swing/etf-list'),
+                type: "GET",
+                data: {
+                    search: $("#etfSearchInput").val() || "",
+                    status: $("#etfStatusFilter").val() || "all",
+                    pageNumber: etfCurrentPage,
+                    pageSize: etfPageSize
+                },
+                success: function (result) {
+                    renderEtfList(result.items || result.Items || []);
+                    renderEtfPagination(result);
+                },
+                error: function (err) {
+                    tbody.html('<tr><td colspan="6" class="text-center text-danger py-4">Failed to load ETF list: ' +
+                        ((err.responseJSON && err.responseJSON.message) || err.responseText || "Internal server error") + '</td></tr>');
+                }
+            });
+        }
+
+        function renderEtfPagination(result) {
+            const totalCount = result.totalCount ?? result.TotalCount ?? 0;
+            const pageNumber = result.pageNumber ?? result.PageNumber ?? 1;
+            const pageSize = result.pageSize ?? result.PageSize ?? etfPageSize;
+            const totalPages = result.totalPages ?? result.TotalPages ?? 0;
+
+            etfCurrentPage = pageNumber;
+
+            if (totalCount === 0) {
+                $("#etfResultsCounterText").text("Showing 0 ETFs");
+            } else {
+                const start = (pageNumber - 1) * pageSize + 1;
+                const end = Math.min(pageNumber * pageSize, totalCount);
+                $("#etfResultsCounterText").text(`Showing ${start}–${end} of ${totalCount} ETFs`);
+            }
+
+            $("#btnEtfPrevPage").prop("disabled", pageNumber <= 1);
+            $("#btnEtfNextPage").prop("disabled", pageNumber >= totalPages);
+
+            const container = $("#etfPageNumbersContainer");
+            container.empty();
+
+            let pagesToShow = [];
+            if (totalPages <= 5) {
+                for (let p = 1; p <= totalPages; p++) pagesToShow.push(p);
+            } else {
+                pagesToShow.push(1);
+                if (pageNumber > 2 && pageNumber < totalPages) {
+                    pagesToShow.push(pageNumber);
+                } else if (pageNumber <= 2) {
+                    pagesToShow.push(2);
+                } else if (pageNumber >= totalPages - 1) {
+                    pagesToShow.push(totalPages - 1);
+                }
+                pagesToShow.push(totalPages);
+                pagesToShow = [...new Set(pagesToShow)].sort((a, b) => a - b);
+            }
+
+            pagesToShow.forEach(function (p) {
+                const btn = $(`<button class="page-num-btn ${p === pageNumber ? 'active' : ''}">${p}</button>`);
+                btn.on("click", function () {
+                    etfCurrentPage = p;
+                    loadEtfList();
+                });
+                container.append(btn);
+            });
+        }
+
+        function renderEtfList(etfs) {
+            const tbody = $("#etfListTableBody");
+            tbody.empty();
+
+            if (!etfs.length) {
+                $("#etfListEmptyState").show();
+                return;
+            }
+
+            etfs.forEach(function (e) {
+                const symbol = e.symbol;
+                const name = e.name || "-";
+                const exchange = e.exchange || "-";
+                const lastPrice = Number(e.lastPrice || e.last_price || 0);
+                const isActive = e.isActive !== undefined ? e.isActive : e.is_active;
+
+                const statusBadge = isActive
+                    ? '<span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25">Active</span>'
+                    : '<span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary border-opacity-25">Inactive</span>';
+
+                const actionCell = IS_ADMIN
+                    ? `<button type="button" class="btn-send-real-trade" title="Manually send this ETF straight to Real Trade (still enforces your Real Trade risk settings)"
+                        onclick="confirmSendToRealTrade('${symbol}', ${lastPrice}, 0)">
+                        ⚡ Real Trade
+                    </button>`
+                    : '<span class="text-muted small">Read-only</span>';
+
+                tbody.append(`
+                    <tr>
+                        <td><strong>${symbol}</strong></td>
+                        <td>${name}</td>
+                        <td>${exchange}</td>
+                        <td>₹${lastPrice.toFixed(2)}</td>
+                        <td>${statusBadge}</td>
+                        <td>${actionCell}</td>
+                    </tr>
+                `);
+            });
+        }
+    </script>
+}
