@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -17,17 +18,20 @@ public class SwingTradingController : ControllerBase
     private readonly ISwingTradingService _swingTradingService;
     private readonly ISwingStrategySettingsRepository _strategySettingsRepository;
     private readonly IStockMasterRepository _stockMasterRepository;
+    private readonly IZerodhaKiteBrokerService _brokerService;
     private readonly ILogger<SwingTradingController> _logger;
 
     public SwingTradingController(
         ISwingTradingService swingTradingService,
         ISwingStrategySettingsRepository strategySettingsRepository,
         IStockMasterRepository stockMasterRepository,
+        IZerodhaKiteBrokerService brokerService,
         ILogger<SwingTradingController> logger)
     {
         _swingTradingService = swingTradingService ?? throw new ArgumentNullException(nameof(swingTradingService));
         _strategySettingsRepository = strategySettingsRepository ?? throw new ArgumentNullException(nameof(strategySettingsRepository));
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
+        _brokerService = brokerService ?? throw new ArgumentNullException(nameof(brokerService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -41,6 +45,28 @@ public class SwingTradingController : ControllerBase
         try
         {
             var result = await _stockMasterRepository.GetEtfListAsync(search, status, pageNumber, pageSize);
+
+            // stock_master.last_price is a static snapshot from the instrument master sync (Zerodha's
+            // instrument dump reports 0 for equities/ETFs) and is never refreshed afterwards, so it's
+            // useless for display. Overlay a live quote for just this page's symbols instead.
+            var items = result.Items?.ToList();
+            if (items != null && items.Count > 0)
+            {
+                var quoteResult = await _brokerService.GetLtpQuotesAsync(
+                    items.Select(i => (i.Symbol, i.Exchange ?? "NSE")));
+
+                if (quoteResult.Success && quoteResult.Ltps != null)
+                {
+                    foreach (var item in items)
+                    {
+                        if (quoteResult.Ltps.TryGetValue(item.Symbol, out var liveLtp) && liveLtp > 0)
+                        {
+                            item.LastPrice = liveLtp;
+                        }
+                    }
+                }
+            }
+
             return Ok(result);
         }
         catch (Exception ex)

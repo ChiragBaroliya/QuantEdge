@@ -437,6 +437,65 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         }
     }
 
+    public async Task<(bool Success, Dictionary<string, decimal>? Ltps, string? Message)> GetLtpQuotesAsync(
+        IEnumerable<(string Symbol, string Exchange)> instruments, int userId = 1)
+    {
+        var instrumentList = instruments
+            .Where(i => !string.IsNullOrWhiteSpace(i.Symbol))
+            .Select(i => (Symbol: i.Symbol.Trim().ToUpper(), Exchange: string.IsNullOrWhiteSpace(i.Exchange) ? "NSE" : i.Exchange.Trim().ToUpper()))
+            .Distinct()
+            .ToList();
+
+        if (instrumentList.Count == 0)
+        {
+            return (true, new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase), "No instruments requested.");
+        }
+
+        var tokenValidation = await ValidateSessionTokenAsync(userId);
+        if (!tokenValidation.IsValid)
+        {
+            return (false, null, tokenValidation.Message);
+        }
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
+
+            string query = string.Join("&", instrumentList.Select(i => $"i={Uri.EscapeDataString($"{i.Exchange}:{i.Symbol}")}"));
+            var response = await client.GetAsync($"https://api.kite.trade/quote/ltp?{query}");
+            var responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to fetch LTP quotes from Zerodha for User {UserId}: Code {Status}", userId, response.StatusCode);
+                return (false, null, $"Zerodha Error: {response.StatusCode}");
+            }
+
+            using var doc = JsonDocument.Parse(responseJson);
+            var result = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+
+            if (doc.RootElement.TryGetProperty("data", out var dataElem))
+            {
+                foreach (var prop in dataElem.EnumerateObject())
+                {
+                    // Key is "EXCHANGE:SYMBOL" (e.g. "NSE:INFY")
+                    var symbol = prop.Name.Contains(':') ? prop.Name.Split(':')[1] : prop.Name;
+                    result[symbol] = GetJsonDecimal(prop.Value, "last_price");
+                }
+            }
+
+            return (true, result, "LTP quotes fetched successfully.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception fetching live LTP quotes from Zerodha for User {UserId}", userId);
+            return (false, null, ex.Message);
+        }
+    }
+
     private static ZerodhaPositionItemDto? ParsePositionItem(JsonElement item)
     {
         try

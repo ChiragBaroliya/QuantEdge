@@ -46,24 +46,37 @@
         </div>
     </div>
 
-    <!-- Search & Filter Bar -->
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <input type="text" id="etfSearchInput" class="form-control form-control-sm bg-dark text-light border-secondary" style="max-width: 260px;"
-               placeholder="Search symbol or name..." />
-        <select id="etfStatusFilter" class="form-select form-select-sm bg-dark text-light border-secondary" style="max-width: 150px;">
-            <option value="all">All Status</option>
-            <option value="active" selected>Active</option>
-            <option value="inactive">Inactive</option>
-        </select>
-        <span id="etfResultsCounterText" class="text-muted small ms-auto">Loading...</span>
-    </div>
+    <div class="card-glow mt-1">
+        <!-- Search, Filter & Results Bar -->
+        <div class="stock-filter-bar">
+            <div class="filter-left-group">
+                <div class="filter-search-box">
+                    <svg class="filter-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="etfSearchInput" placeholder="Search symbol or name..." />
+                </div>
 
-    <div class="card-glow">
-        <div id="etfListEmptyState" class="text-center text-muted py-4" style="display:none;">
-            No ETFs found in the instrument master.
+                <div class="filter-pills-group">
+                    <span class="filter-pill pill-buy active" id="etfPillActive" data-filter="active">🟢 Active</span>
+                    <span class="filter-pill" id="etfPillInactive" data-filter="inactive">⚪ Inactive</span>
+                    <span class="filter-pill" id="etfPillAll" data-filter="all">All Status</span>
+                </div>
+            </div>
+
+            <div class="filter-right-group">
+                <span class="results-counter" id="etfResultsCounterText">Loading...</span>
+            </div>
         </div>
-        <div style="overflow-x: auto;">
-            <table class="table table-dark table-hover align-middle mb-0" id="etfListTable">
+
+        <div id="etfListEmptyState" class="text-center text-muted py-5" style="display:none;">
+            <div style="font-size: 32px; opacity: 0.5;">📭</div>
+            <div class="mt-2">No ETFs found in the instrument master.</div>
+        </div>
+
+        <div class="table-scroll-container">
+            <table class="swing-table" id="etfListTable">
                 <thead>
                     <tr>
                         <th>Symbol</th>
@@ -76,7 +89,7 @@
                 </thead>
                 <tbody id="etfListTableBody">
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">Loading ETF list...</td>
+                        <td colspan="6" class="text-center py-5" style="color: #ffffff;">Loading ETF list...</td>
                     </tr>
                 </tbody>
             </table>
@@ -114,6 +127,7 @@
         let etfCurrentPage = 1;
         let etfPageSize = 25;
         let etfSearchTimer = null;
+        let etfStatusValue = "active";
 
         $(function () {
             loadEtfList();
@@ -127,7 +141,10 @@
                 }, 350);
             });
 
-            $("#etfStatusFilter").on("change", function () {
+            $(".filter-pill").on("click", function () {
+                $(".filter-pill").removeClass("active");
+                $(this).addClass("active");
+                etfStatusValue = $(this).data("filter");
                 etfCurrentPage = 1;
                 loadEtfList();
             });
@@ -153,15 +170,19 @@
 
         function loadEtfList() {
             const tbody = $("#etfListTableBody");
-            tbody.html('<tr><td colspan="6" class="text-center text-muted py-4">Loading ETF list...</td></tr>');
+            const btnRefresh = $("#btnRefreshEtfList");
+
+            tbody.html('<tr><td colspan="6" class="text-center py-4" style="color: #ffffff;">Loading ETF list...</td></tr>');
             $("#etfListEmptyState").hide();
+            btnRefresh.prop("disabled", true).css("opacity", "0.6");
 
             $.ajax({
                 url: getEndpointUrl('/swing/etf-list'),
                 type: "GET",
+                cache: false,
                 data: {
                     search: $("#etfSearchInput").val() || "",
-                    status: $("#etfStatusFilter").val() || "all",
+                    status: etfStatusValue,
                     pageNumber: etfCurrentPage,
                     pageSize: etfPageSize
                 },
@@ -172,6 +193,9 @@
                 error: function (err) {
                     tbody.html('<tr><td colspan="6" class="text-center text-danger py-4">Failed to load ETF list: ' +
                         ((err.responseJSON && err.responseJSON.message) || err.responseText || "Internal server error") + '</td></tr>');
+                },
+                complete: function () {
+                    btnRefresh.prop("disabled", false).css("opacity", "1");
                 }
             });
         }
@@ -253,10 +277,10 @@
 
                 tbody.append(`
                     <tr>
-                        <td><strong>${symbol}</strong></td>
-                        <td>${name}</td>
-                        <td>${exchange}</td>
-                        <td>₹${lastPrice.toFixed(2)}</td>
+                        <td><strong style="color: #ffffff;">${symbol}</strong></td>
+                        <td style="color: rgba(255,255,255,0.65);">${name}</td>
+                        <td><span class="badge bg-dark border border-secondary text-light">${exchange}</span></td>
+                        <td><strong style="color: #ffffff;">₹${lastPrice.toFixed(2)}</strong></td>
                         <td>${statusBadge}</td>
                         <td>${actionCell}</td>
                     </tr>

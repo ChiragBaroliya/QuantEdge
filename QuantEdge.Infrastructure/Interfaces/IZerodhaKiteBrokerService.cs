@@ -56,4 +56,11 @@ public interface IZerodhaKiteBrokerService
     /// Retrieves active demat equity holdings and long-term P&L directly from Zerodha (GET /portfolio/holdings).
     /// </summary>
     Task<(bool Success, List<ZerodhaHoldingDto>? Holdings, string? Message)> GetLiveHoldingsAsync(int userId = 1);
+
+    /// <summary>
+    /// Retrieves live last-traded price for a batch of instruments directly from Zerodha (GET /quote/ltp).
+    /// Returned dictionary is keyed by trading symbol (case-insensitive).
+    /// </summary>
+    Task<(bool Success, Dictionary<string, decimal>? Ltps, string? Message)> GetLtpQuotesAsync(
+        IEnumerable<(string Symbol, string Exchange)> instruments, int userId = 1);
 }

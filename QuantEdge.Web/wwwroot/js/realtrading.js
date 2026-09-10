@@ -591,18 +591,28 @@ function renderZerodhaHoldings(holdings) {
         const pnl = h.pnl || 0;
         const pnlClass = pnl >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
         const dayChangeClass = (h.dayChange || 0) >= 0 ? "text-success" : "text-danger";
-        const invested = (h.averagePrice * h.quantity) || 0;
-        const currVal = h.value > 0 ? h.value : (h.lastPrice * h.quantity);
+
+        // Zerodha reports settled/free-to-sell qty separately from today's unsettled T1 buys
+        // (quantity=0 with t1Quantity>0 is normal for a same-day CNC buy, not a missing holding).
+        const settledQty = h.quantity || 0;
+        const t1Qty = h.t1Quantity || 0;
+        const totalQty = settledQty + t1Qty;
+        const qtyText = t1Qty > 0
+            ? `${totalQty} <small class="text-warning">(${t1Qty} T1 unsettled)</small>`
+            : `${totalQty}`;
+
+        const invested = (h.averagePrice * totalQty) || 0;
+        const currVal = h.value > 0 ? h.value : (h.lastPrice * totalQty);
 
         const monitoredPos = cachedOpenPositions.find(p => p.symbol && p.symbol.toUpperCase() === (h.tradingSymbol || "").toUpperCase());
         const targetCell = monitoredPos
             ? `<span class="badge bg-dark border border-info text-info">● Monitoring @ ₹${(monitoredPos.takeProfit || 0).toFixed(2)}</span>`
-            : `<button class="btn btn-sm btn-outline-info" onclick="openSetTargetModal('${(h.tradingSymbol || '').replace(/'/g, "")}', ${h.quantity}, ${h.averagePrice})">Set Target</button>`;
+            : `<button class="btn btn-sm btn-outline-info" onclick="openSetTargetModal('${(h.tradingSymbol || '').replace(/'/g, "")}', ${totalQty}, ${h.averagePrice})">Set Target</button>`;
 
         html += `
             <tr>
                 <td><strong class="text-white">${h.tradingSymbol}</strong> <small style="color: #cbd5e1;">(${h.exchange})</small></td>
-                <td><strong class="text-white">${h.quantity}</strong></td>
+                <td><strong class="text-white">${qtyText}</strong></td>
                 <td class="text-white">₹${h.averagePrice.toFixed(2)}</td>
                 <td><strong class="text-white">₹${h.lastPrice.toFixed(2)}</strong></td>
                 <td class="text-white">₹${invested.toFixed(2)}</td>
