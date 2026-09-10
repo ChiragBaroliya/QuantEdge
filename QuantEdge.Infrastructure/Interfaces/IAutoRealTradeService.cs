@@ -41,4 +41,11 @@ public interface IAutoRealTradeService
     /// Lightweight fast endpoint handler for high-frequency (e.g. 5-second) polling of Zerodha live positions, MTM, and P&L.
     /// </summary>
     Task<RealTradeLivePositionsFastDto> GetLivePositionsFastAsync(int userId = 1);
+
+    /// <summary>
+    /// Turns an existing Zerodha Holding into a monitored real_positions row (no BUY order is placed,
+    /// since the shares are already held). Once created, the existing position monitor watches it for
+    /// the target price and auto-sells through the same pipeline as any other real position.
+    /// </summary>
+    Task<(bool Success, string Message)> EnableHoldingMonitoringAsync(string symbol, int quantity, decimal averagePrice, decimal targetPrice, int userId = 1);
 }

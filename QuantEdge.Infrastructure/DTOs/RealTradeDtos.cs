@@ -171,6 +171,20 @@ public class ManualRealBuyRequestDto
     public int? UserId { get; set; }
 }
 
+/// <summary>
+/// Turns an existing Zerodha Holding into a monitored real_positions row (no BUY order is placed —
+/// the shares are already held). The bot's existing position monitor then watches it for the target
+/// price and auto-sells through the same pipeline as any other real position.
+/// </summary>
+public class EnableHoldingMonitoringRequestDto
+{
+    public string Symbol { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    public decimal AveragePrice { get; set; }
+    public decimal TargetPrice { get; set; }
+    public int? UserId { get; set; }
+}
+
 public class RealTradeLivePositionsFastDto
 {
     public bool Success { get; set; }

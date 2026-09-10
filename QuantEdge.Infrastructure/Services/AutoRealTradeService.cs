@@ -542,6 +542,73 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
     }
 
+    public async Task<(bool Success, string Message)> EnableHoldingMonitoringAsync(string symbol, int quantity, decimal averagePrice, decimal targetPrice, int userId = 1)
+    {
+        symbol = symbol.ToUpper().Trim();
+
+        if (quantity <= 0 || averagePrice <= 0 || targetPrice <= 0)
+        {
+            return (false, "Quantity, average price, and target price must all be greater than zero.");
+        }
+
+        if (targetPrice <= averagePrice)
+        {
+            return (false, $"Target price (₹{targetPrice:F2}) must be above the average buy price (₹{averagePrice:F2}).");
+        }
+
+        var existingOpenPos = await _repository.GetOpenPositionBySymbolAsync(userId, symbol);
+        if (existingOpenPos != null)
+        {
+            return (false, $"{symbol} already has an OPEN monitored position (Position #{existingOpenPos.Id}).");
+        }
+
+        var settings = await GetSettingsAsync(userId);
+        decimal? stopLoss = null;
+        if (settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0)
+        {
+            stopLoss = Math.Round(averagePrice * (1m - Math.Abs(settings.StopLossPct.Value) / 100m), 2);
+        }
+
+        var newPosition = await _repository.UpsertPositionAsync(new RealPosition
+        {
+            UserId = userId,
+            Symbol = symbol,
+            Side = TradeSide.BUY,
+            Quantity = quantity,
+            AverageEntryPrice = averagePrice,
+            CurrentPrice = averagePrice,
+            UnrealizedPnl = 0m,
+            StopLoss = stopLoss,
+            TakeProfit = targetPrice,
+            TrailingStopLoss = null,
+            Status = PositionStatus.OPEN,
+            TradeType = TradeType.Auto,
+            RealizedPnl = 0m
+        });
+
+        _realTradeCache?.AddOrUpdatePosition(newPosition);
+
+        await LogAuditAsync(symbol, "HOLDING_MONITOR_ENABLED", targetPrice, quantity,
+            $"📦 Zerodha Holding enrolled for auto-sell monitoring (Qty: {quantity}, Avg: ₹{averagePrice:F2}, Target: ₹{targetPrice:F2})", userId);
+
+        if (_hubContext != null)
+        {
+            await _hubContext.Clients.Group($"user-{userId}").SendAsync("ReceiveHoldingMonitorUpdate", new
+            {
+                symbol,
+                quantity,
+                averagePrice,
+                targetPrice,
+                positionId = newPosition.Id,
+                userId,
+                message = $"📦 {symbol} is now being auto-monitored for a sell at ₹{targetPrice:N2}."
+            });
+        }
+
+        await BroadcastDashboardUpdateAsync(userId);
+        return (true, $"{symbol} is now being monitored. It will be sold automatically once it reaches ₹{targetPrice:F2}.");
+    }
+
     public async Task<bool> EvaluateAndExecuteRealSellAsync(RealPosition position, decimal currentLtp, int userId = 1)
     {
         if (position == null || position.Status != PositionStatus.OPEN)
@@ -711,6 +778,17 @@ public class AutoRealTradeService : IAutoRealTradeService
                     brokerOrderId,
                     userId,
                     message = $"⚡ LIVE REAL SELL: {position.Symbol} ({exitReason}) @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}"
+                });
+
+                await _hubContext.Clients.Group($"user-{userId}").SendAsync("ReceiveHoldingSoldEvent", new
+                {
+                    symbol = position.Symbol,
+                    quantity = position.Quantity,
+                    price = executedPrice,
+                    realizedPnl,
+                    exitReason,
+                    brokerOrderId,
+                    userId
                 });
             }
 

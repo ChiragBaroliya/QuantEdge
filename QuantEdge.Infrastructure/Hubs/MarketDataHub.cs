@@ -48,8 +48,34 @@ public class MarketDataHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, "SwingDashboard");
     }
 
+    /// <summary>
+    /// Adds client connection to its own user group, so user-scoped events (e.g. real-trade holding
+    /// monitoring/sell updates) can be sent only to that user instead of broadcasting to every client.
+    /// </summary>
+    public async Task JoinUserGroup(string userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return;
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, GetUserGroupName(userId));
+    }
+
+    /// <summary>
+    /// Removes client connection from its user group.
+    /// </summary>
+    public async Task LeaveUserGroup(string userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return;
+
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, GetUserGroupName(userId));
+    }
+
     private static string GetGroupName(string symbol, string timeframe)
     {
         return $"{symbol.ToUpper().Trim()}_{timeframe.ToLower().Trim()}";
+    }
+
+    private static string GetUserGroupName(string userId)
+    {
+        return $"user-{userId.Trim()}";
     }
 }

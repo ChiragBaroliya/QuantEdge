@@ -152,6 +152,27 @@ public class RealTradeController : ControllerBase
     }
 
     /// <summary>
+    /// Enrolls an existing Zerodha Holding into the bot's monitoring pipeline for a target-price auto-sell.
+    /// No BUY order is placed since the shares are already held; it simply registers a real_positions row
+    /// that the existing position monitor watches, exactly like any bot-bought or manual-buy position.
+    /// </summary>
+    [HttpPost("holdings/enable-monitoring")]
+    public async Task<IActionResult> EnableHoldingMonitoring([FromBody] EnableHoldingMonitoringRequestDto dto, [FromQuery] int? userId = null)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Symbol) || dto.Quantity <= 0 || dto.AveragePrice <= 0 || dto.TargetPrice <= 0)
+        {
+            return BadRequest(new { success = false, message = "A valid Symbol, Quantity, AveragePrice, and TargetPrice are required." });
+        }
+
+        int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+
+        var (success, message) = await _realTradeService.EnableHoldingMonitoringAsync(
+            dto.Symbol, dto.Quantity, dto.AveragePrice, dto.TargetPrice, targetUid);
+
+        return Ok(new { success, message });
+    }
+
+    /// <summary>
     /// Emergency Panic Kill Switch: Instantly squares off all open real positions and turns OFF live bot.
     /// </summary>
     [HttpPost("kill-switch")]

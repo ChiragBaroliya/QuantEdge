@@ -8,6 +8,7 @@ let currentUserName = "Chirag";
 let countdownInterval = null;
 let modalSquareOff = null;
 let modalKillSwitch = null;
+let modalSetHoldingTarget = null;
 
 // Smart Polling Manager
 let pollingTimer = null;
@@ -30,6 +31,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const killModalEl = document.getElementById('modalEmergencyKillSwitch');
     if (killModalEl && typeof bootstrap !== 'undefined') {
         modalKillSwitch = new bootstrap.Modal(killModalEl);
+    }
+
+    const targetModalEl = document.getElementById('modalSetHoldingTarget');
+    if (targetModalEl && typeof bootstrap !== 'undefined') {
+        modalSetHoldingTarget = new bootstrap.Modal(targetModalEl);
     }
 
     // Check URL parameters for OAuth return
@@ -576,7 +582,7 @@ function renderZerodhaHoldings(holdings) {
     }
 
     if (holdingsList.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No demat equity holdings found in Zerodha.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No demat equity holdings found in Zerodha.</td></tr>`;
         return;
     }
 
@@ -588,6 +594,11 @@ function renderZerodhaHoldings(holdings) {
         const invested = (h.averagePrice * h.quantity) || 0;
         const currVal = h.value > 0 ? h.value : (h.lastPrice * h.quantity);
 
+        const monitoredPos = cachedOpenPositions.find(p => p.symbol && p.symbol.toUpperCase() === (h.tradingSymbol || "").toUpperCase());
+        const targetCell = monitoredPos
+            ? `<span class="badge bg-dark border border-info text-info">● Monitoring @ ₹${(monitoredPos.takeProfit || 0).toFixed(2)}</span>`
+            : `<button class="btn btn-sm btn-outline-info" onclick="openSetTargetModal('${(h.tradingSymbol || '').replace(/'/g, "")}', ${h.quantity}, ${h.averagePrice})">Set Target</button>`;
+
         html += `
             <tr>
                 <td><strong class="text-white">${h.tradingSymbol}</strong> <small style="color: #cbd5e1;">(${h.exchange})</small></td>
@@ -598,12 +609,28 @@ function renderZerodhaHoldings(holdings) {
                 <td class="text-white fw-bold">₹${currVal.toFixed(2)}</td>
                 <td class="${dayChangeClass}">${formatCurrencyWithSign(h.dayChange)} (${h.dayChangePercentage.toFixed(2)}%)</td>
                 <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
+                <td>${targetCell}</td>
             </tr>
         `;
     });
 
     tbody.innerHTML = html;
 }
+
+window.openSetTargetModal = function (symbol, quantity, averagePrice) {
+    const profitTargetPct = parseFloat(document.getElementById("inpProfitTarget")?.value || "0.5");
+    const suggestedTarget = averagePrice * (1 + Math.abs(profitTargetPct) / 100);
+
+    document.getElementById("htSymbol").innerText = symbol;
+    document.getElementById("htQuantity").innerText = quantity;
+    document.getElementById("htAveragePrice").innerText = `₹${averagePrice.toFixed(2)}`;
+    document.getElementById("htTargetPrice").value = suggestedTarget.toFixed(2);
+    document.getElementById("htRawQuantity").value = quantity;
+    document.getElementById("htRawAveragePrice").value = averagePrice;
+    document.getElementById("btnConfirmSetTarget").dataset.symbol = symbol;
+
+    if (modalSetHoldingTarget) modalSetHoldingTarget.show();
+};
 
 function renderRecentOrders(orders) {
     cachedRecentOrders = orders || [];
@@ -920,6 +947,36 @@ function setupEventListeners() {
         });
     }
 
+    // Set Holding Auto-Sell Target Confirm
+    const btnConfirmTarget = document.getElementById("btnConfirmSetTarget");
+    if (btnConfirmTarget) {
+        btnConfirmTarget.addEventListener("click", async function () {
+            const symbol = this.dataset.symbol;
+            const quantity = parseInt(document.getElementById("htRawQuantity")?.value || "0");
+            const averagePrice = parseFloat(document.getElementById("htRawAveragePrice")?.value || "0");
+            const targetPrice = parseFloat(document.getElementById("htTargetPrice")?.value || "0");
+            if (!symbol || !quantity || !averagePrice || !targetPrice) return;
+
+            this.disabled = true;
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/realtrade/holdings/enable-monitoring`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ Symbol: symbol, Quantity: quantity, AveragePrice: averagePrice, TargetPrice: targetPrice, UserId: currentUserId })
+                });
+
+                const data = await response.json();
+                if (modalSetHoldingTarget) modalSetHoldingTarget.hide();
+                alert(data.message || "Holding monitoring updated");
+                loadDashboardData();
+            } catch (err) {
+                console.error("Enable holding monitoring error:", err);
+            } finally {
+                this.disabled = false;
+            }
+        });
+    }
+
     // Clear Logs Button
     const btnClear = document.getElementById("btnClearLogs");
     if (btnClear) {
@@ -1055,8 +1112,24 @@ function setupSignalRHub() {
         appendLogEntry(log);
     });
 
+    connection.on("ReceiveHoldingMonitorUpdate", function (data) {
+        showToastAlert(data?.message || `${data?.symbol || "Holding"} is now being monitored.`);
+        loadDashboardData();
+    });
+
+    connection.on("ReceiveHoldingSoldEvent", function (data) {
+        showToastAlert(`${data?.symbol || "Holding"} auto-sold @ ₹${(data?.price || 0).toFixed(2)}`);
+        loadDashboardData();
+    });
+
+    connection.onreconnected(() => {
+        if (currentUserId) connection.invoke("JoinUserGroup", String(currentUserId)).catch(() => {});
+    });
+
     connection.start()
         .then(() => {
+            if (currentUserId) connection.invoke("JoinUserGroup", String(currentUserId)).catch(() => {});
+
             const wsBadge = document.getElementById("ws-status-badge");
             if (wsBadge) {
                 wsBadge.className = "badge-ws connected";

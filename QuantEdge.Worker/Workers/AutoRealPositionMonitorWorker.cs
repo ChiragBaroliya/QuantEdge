@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
@@ -51,6 +53,7 @@ public class AutoRealPositionMonitorWorker : BackgroundService
 
                     var realTradeService = scope.ServiceProvider.GetRequiredService<IAutoRealTradeService>();
                     var marketDataCache = scope.ServiceProvider.GetService<IMarketDataCacheService>();
+                    var brokerService = scope.ServiceProvider.GetRequiredService<IZerodhaKiteBrokerService>();
 
                     // Fetch all OPEN real positions from RAM (or DB fallback)
                     var openRealPositions = realTradeCache != null && realTradeCache.IsWarmedUp
@@ -59,28 +62,60 @@ public class AutoRealPositionMonitorWorker : BackgroundService
 
                     if (openRealPositions.Any())
                     {
+                        // Cache each user's live Zerodha holdings once per cycle (not once per position) — used
+                        // as a fallback LTP source for symbols not in the bot's WebSocket-fed 1m candle universe
+                        // (e.g. a demat holding enrolled for monitoring that isn't part of the scan universe).
+                        var holdingsByUser = new Dictionary<int, List<ZerodhaHoldingDto>>();
+
                         foreach (var position in openRealPositions)
                         {
                             if (stoppingToken.IsCancellationRequested) break;
 
-                            decimal ltp = 0m;
-                            if (marketDataCache != null)
+                            try
                             {
-                                var recentCandles = await marketDataCache.GetRecentCandlesAsync(position.Symbol, "1m", 1);
-                                if (recentCandles != null && recentCandles.Any())
+                                decimal ltp = 0m;
+                                if (marketDataCache != null)
                                 {
-                                    ltp = recentCandles.First().Close;
+                                    var recentCandles = await marketDataCache.GetRecentCandlesAsync(position.Symbol, "1m", 1);
+                                    if (recentCandles != null && recentCandles.Any())
+                                    {
+                                        ltp = recentCandles.First().Close;
+                                    }
+                                }
+
+                                if (ltp <= 0m)
+                                {
+                                    if (!holdingsByUser.TryGetValue(position.UserId, out var userHoldings))
+                                    {
+                                        var holdingsResult = await brokerService.GetLiveHoldingsAsync(position.UserId);
+                                        userHoldings = holdingsResult.Success && holdingsResult.Holdings != null
+                                            ? holdingsResult.Holdings
+                                            : new List<ZerodhaHoldingDto>();
+                                        holdingsByUser[position.UserId] = userHoldings;
+                                    }
+
+                                    var matchingHolding = userHoldings.FirstOrDefault(h =>
+                                        string.Equals(h.TradingSymbol, position.Symbol, StringComparison.OrdinalIgnoreCase));
+                                    if (matchingHolding != null && matchingHolding.LastPrice > 0m)
+                                    {
+                                        ltp = matchingHolding.LastPrice;
+                                    }
+                                }
+
+                                if (ltp <= 0m)
+                                {
+                                    ltp = position.CurrentPrice > 0m ? position.CurrentPrice : position.AverageEntryPrice;
+                                }
+
+                                if (ltp > 0m)
+                                {
+                                    await realTradeService.EvaluateAndExecuteRealSellAsync(position, ltp, position.UserId);
                                 }
                             }
-
-                            if (ltp <= 0m)
+                            catch (Exception ex)
                             {
-                                ltp = position.CurrentPrice > 0m ? position.CurrentPrice : position.AverageEntryPrice;
-                            }
-
-                            if (ltp > 0m)
-                            {
-                                await realTradeService.EvaluateAndExecuteRealSellAsync(position, ltp, position.UserId);
+                                _logger.LogError(ex, "Error evaluating real position #{PositionId} ({Symbol}, User {UserId}); continuing with remaining positions.",
+                                    position.Id, position.Symbol, position.UserId);
                             }
                         }
                     }
