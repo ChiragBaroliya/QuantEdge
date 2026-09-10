@@ -69,7 +69,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         if (indianTime.Date != nowIst.Date || indianTime < cutoff)
         {
-            return (false, null, null, $"Zerodha session token for user {userId} is stale (created {indianTime:yyyy-MM-dd hh:mm tt} IST). Fresh token post 6:00 AM IST required.");
+            return (false, null, null, $"Zerodha session token for user {userId} is stale (created {indianTime:yyyy-MM-dd hh:mm tt} IST, checked at {nowIst:yyyy-MM-dd hh:mm tt} IST, cutoff {cutoff:yyyy-MM-dd hh:mm tt} IST). Fresh token post 6:00 AM IST required.");
         }
 
         return (true, session.AccessToken, session.ApiKey, "Active Zerodha session is valid.");

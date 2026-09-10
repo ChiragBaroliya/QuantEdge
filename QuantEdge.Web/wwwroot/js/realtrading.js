@@ -432,10 +432,20 @@ function applyPositionsFilter() {
     renderFilteredOpenPositions(filtered);
 }
 
+// Returns the calendar date (YYYY-MM-DD) of a UTC timestamp as seen in IST, matching the "TIME (IST)" column.
+function toIstDateString(utcDateStr) {
+    return new Date(utcDateStr).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+function todayIstDateString() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
 function applyOrdersFilter() {
     const searchTerm = (document.getElementById("inpSearchOrders")?.value || "").trim().toUpperCase();
     const filterStatus = document.getElementById("selFilterOrderStatus")?.value || "";
     const filterSide = document.getElementById("selFilterOrderSide")?.value || "";
+    const filterDate = document.getElementById("inpFilterOrderDate")?.value || "";
 
     const filtered = cachedRecentOrders.filter(o => {
         if (searchTerm) {
@@ -450,6 +460,8 @@ function applyOrdersFilter() {
         if (filterStatus === "CANCELLED" && o.status !== 2) return false;
         if (filterStatus === "REJECTED" && o.status !== 3) return false;
         if (filterStatus === "PENDING" && o.status !== 0) return false;
+
+        if (filterDate && o.createdAt && toIstDateString(o.createdAt) !== filterDate) return false;
 
         return true;
     });
@@ -698,6 +710,11 @@ function setupEventListeners() {
     document.getElementById("inpSearchOrders")?.addEventListener("input", applyOrdersFilter);
     document.getElementById("selFilterOrderStatus")?.addEventListener("change", applyOrdersFilter);
     document.getElementById("selFilterOrderSide")?.addEventListener("change", applyOrdersFilter);
+    const inpOrderDate = document.getElementById("inpFilterOrderDate");
+    if (inpOrderDate) {
+        inpOrderDate.value = todayIstDateString();
+        inpOrderDate.addEventListener("change", applyOrdersFilter);
+    }
 
     // Advance Search: Logs Filter
     document.getElementById("inpSearchLogs")?.addEventListener("input", () => renderLogs(cachedTodayLogs));

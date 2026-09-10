@@ -356,13 +356,13 @@
                 <!-- Advance Search & Filter Bar for Orders -->
                 <div class="advance-search-bar mb-3">
                     <div class="row g-2 align-items-center">
-                        <div class="col-12 col-md-5">
+                        <div class="col-12 col-md-4">
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text bg-dark border-secondary text-light">🔍</span>
                                 <input type="text" class="form-control form-control-sm qe-search-input" id="inpSearchOrders" placeholder="Search by Symbol or Broker Order ID..." />
                             </div>
                         </div>
-                        <div class="col-6 col-md-3">
+                        <div class="col-6 col-md-2">
                             <select class="form-select form-select-sm qe-search-select" id="selFilterOrderStatus">
                                 <option value="">All Statuses</option>
                                 <option value="FILLED">FILLED</option>
@@ -371,12 +371,15 @@
                                 <option value="PENDING">PENDING</option>
                             </select>
                         </div>
-                        <div class="col-6 col-md-4">
+                        <div class="col-6 col-md-3">
                             <select class="form-select form-select-sm qe-search-select" id="selFilterOrderSide">
                                 <option value="">All Sides (BUY / SELL)</option>
                                 <option value="BUY">BUY</option>
                                 <option value="SELL">SELL</option>
                             </select>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <input type="date" class="form-control form-control-sm qe-search-select" id="inpFilterOrderDate" title="Filter by order date (IST)" />
                         </div>
                     </div>
                 </div>

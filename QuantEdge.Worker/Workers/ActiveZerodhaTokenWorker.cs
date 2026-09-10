@@ -172,9 +172,11 @@ public class ActiveZerodhaTokenWorker : BackgroundService
             else
             {
                 _logger.LogInformation(
-                    "ActiveZerodhaTokenWorker: Stale active token found from yesterday or before 6:00 AM today (created: {CreatedAt} IST). " +
+                    "ActiveZerodhaTokenWorker: Stale active token found from yesterday or before 6:00 AM today (created: {CreatedAt} IST, checked at: {NowIst} IST, cutoff: {Cutoff} IST). " +
                     "Checking for a new token to activate...",
-                    sessionCreatedAtIst.ToString("yyyy-MM-dd hh:mm:ss tt"));
+                    sessionCreatedAtIst.ToString("yyyy-MM-dd hh:mm:ss tt"),
+                    nowIst.ToString("yyyy-MM-dd hh:mm:ss tt"),
+                    cutoff.ToString("yyyy-MM-dd hh:mm:ss tt"));
             }
         }
 
