@@ -126,7 +126,7 @@
             </div>
             <div class="autotrade-stats-grid">
                 <div class="stat-card" title="Shows whether live real trading is ACTIVE or PAUSED.">
-                    <div class="stat-label">Bot Status</div>
+                    <div class="stat-label">Automation Status</div>
                     <div class="stat-value" id="sys-status-text" style="color: #f87171;">PAUSED</div>
                 </div>
                 <div class="stat-card" title="Maximum capital permitted for live auto trade bot.">
@@ -149,12 +149,12 @@
                     <div class="stat-label">Zerodha Realized P&L</div>
                     <div class="stat-value" id="stat-zerodha-realized-pnl" style="color: #34d399;">₹0.00</div>
                 </div>
-                <div class="stat-card" title="Open Real stock positions in Bot.">
-                    <div class="stat-label">Bot Open Positions</div>
+                <div class="stat-card" title="Open real-money positions QuantEdge is currently auto-managing (see the Auto-Managed Positions tab).">
+                    <div class="stat-label">Auto-Managed Open Positions</div>
                     <div class="stat-value" id="stat-open-count">0</div>
                 </div>
-                <div class="stat-card" title="Live unrealized profit or loss across open bot positions.">
-                    <div class="stat-label">Bot Unrealized P&L</div>
+                <div class="stat-card" title="Live unrealized profit or loss across auto-managed positions.">
+                    <div class="stat-label">Auto-Managed Unrealized P&L</div>
                     <div class="stat-value" id="stat-unrealized-pnl">₹0.00</div>
                 </div>
             </div>
@@ -174,8 +174,8 @@
                     <div class="stat-label">Today Deployed Capital</div>
                     <div class="stat-value" id="stat-today-used-amount" style="color: #38bdf8;">₹0.00</div>
                 </div>
-                <div class="stat-card" title="Realized profit or loss from live trades closed today in Bot DB.">
-                    <div class="stat-label">Bot Realized P&L Today</div>
+                <div class="stat-card" title="Realized profit or loss from live trades QuantEdge closed today.">
+                    <div class="stat-label">Auto-Managed Realized P&L Today</div>
                     <div class="stat-value" id="stat-realized-pnl">₹0.00</div>
                 </div>
             </div>
@@ -193,7 +193,7 @@
                         <ul class="nav nav-pills qe-nav-pills" id="positionTabs" role="tablist">
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link active" id="tab-bot-positions" data-bs-toggle="pill" data-bs-target="#content-bot-positions" type="button" role="tab">
-                                    ⚡ Bot Positions (<span id="badge-bot-count">0</span>)
+                                    ⚡ Auto-Managed Positions (<span id="badge-bot-count">0</span>)
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
@@ -226,15 +226,19 @@
                 </div>
 
                 <div class="tab-content mt-3" id="positionTabContent">
-                    <!-- Tab 1: Bot DB Positions -->
+                    <!-- Tab 1: Auto-Managed (Bot DB) Positions -->
                     <div class="tab-pane fade show active" id="content-bot-positions" role="tabpanel">
-                        <!-- Advance Search & Filter Bar for Bot Positions -->
+                        <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Real-money positions QuantEdge is actively auto-monitoring for Target/SL/Trailing-SL exit — empty until it buys, or you enable monitoring on a holding via "Set Target". (Zerodha Live Positions/Holdings below show your full broker account regardless of whether QuantEdge is managing the exit.)</small>
+                            <span class="badge bg-dark border border-secondary text-warning">Auto-Exit Engine</span>
+                        </div>
+                        <!-- Advance Search & Filter Bar for Auto-Managed Positions -->
                         <div class="advance-search-bar mb-3">
                             <div class="row g-2 align-items-center">
                                 <div class="col-12 col-md-5">
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text bg-dark border-secondary text-light">🔍</span>
-                                        <input type="text" class="form-control form-control-sm qe-search-input" id="inpSearchPositions" placeholder="Search Bot Positions (e.g. RELIANCE)..." />
+                                        <input type="text" class="form-control form-control-sm qe-search-input" id="inpSearchPositions" placeholder="Search Auto-Managed Positions (e.g. RELIANCE)..." />
                                     </div>
                                 </div>
                                 <div class="col-6 col-md-3">
@@ -284,7 +288,7 @@
                     <!-- Tab 2: Zerodha Direct Live Positions -->
                     <div class="tab-pane fade" id="content-zerodha-positions" role="tabpanel">
                         <div class="d-flex justify-content-between align-items-center mb-2 px-1">
-                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Live day and net positions directly from Zerodha Kite REST API (/portfolio/positions)</small>
+                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Today's intraday (MIS) and same-day equity activity, straight from Zerodha — rows already fully settled against your holdings are hidden here (see Holdings for what you still own).</small>
                             <span class="badge bg-dark border border-secondary text-info">Live Broker Feed</span>
                         </div>
                         <div class="table-responsive-wrapper">
@@ -302,6 +306,7 @@
                                             <th>UNREALISED</th>
                                             <th>REALISED</th>
                                             <th>TOTAL P&L (₹)</th>
+                                            <th>ACTION</th>
                                         </tr>
                                     </thead>
                                     <tbody id="zerodhaPositionsTableBody">
@@ -317,7 +322,7 @@
                     <!-- Tab 3: Zerodha Direct Holdings -->
                     <div class="tab-pane fade" id="content-zerodha-holdings" role="tabpanel">
                         <div class="d-flex justify-content-between align-items-center mb-2 px-1">
-                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Demat equity holdings directly from Zerodha Kite REST API (/portfolio/holdings)</small>
+                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Shares you actually own in your demat account, straight from Zerodha — includes today's T1 unsettled buys (not sellable until settled).</small>
                             <span class="badge bg-dark border border-secondary text-success">Demat Portfolio</span>
                         </div>
                         <div class="table-responsive-wrapper">
@@ -334,6 +339,7 @@
                                             <th>DAY CHANGE</th>
                                             <th>TOTAL P&L (₹)</th>
                                             <th>TARGET / MONITORING</th>
+                                            <th>ACTION</th>
                                         </tr>
                                     </thead>
                                     <tbody id="zerodhaHoldingsTableBody">
@@ -351,7 +357,8 @@
             <!-- Recent Orders Card -->
             <div class="card-box mt-4">
                 <div class="card-box-header">
-                    <h3 class="card-title">📜 Real Orders Book <span class="card-subtitle-inline">(Zerodha Order History)</span></h3>
+                    <h3 class="card-title">📜 Real Orders Book <span class="card-subtitle-inline">(QuantEdge's own order log)</span></h3>
+                    <small class="text-white" style="color: #ffffff !important; opacity: 0.85;">Recorded by QuantEdge as each order is placed/confirmed with Zerodha. If a status ever looks stale, use 🔄 Resync on that row to re-check it directly against the broker.</small>
                 </div>
 
                 <!-- Advance Search & Filter Bar for Orders -->
@@ -367,6 +374,7 @@
                             <select class="form-select form-select-sm qe-search-select" id="selFilterOrderStatus">
                                 <option value="">All Statuses</option>
                                 <option value="FILLED">FILLED</option>
+                                <option value="OPEN">OPEN</option>
                                 <option value="REJECTED">REJECTED</option>
                                 <option value="CANCELLED">CANCELLED</option>
                                 <option value="PENDING">PENDING</option>
@@ -398,6 +406,7 @@
                                     <th>PRICE</th>
                                     <th>STATUS</th>
                                     <th>REMARKS / REASON</th>
+                                    <th>ACTION</th>
                                 </tr>
                             </thead>
                             <tbody id="recentOrdersTableBody">
@@ -574,7 +583,7 @@
 <!-- Modal: Confirm Square Off Single Position -->
 <div class="modal fade" id="modalSquareOffPosition" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content qe-modal">
+        <div class="modal-content qe-confirm-modal">
             <div class="modal-header">
                 <h5 class="modal-title text-danger">⚠️ Confirm Real Position Square-off</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -592,10 +601,35 @@
     </div>
 </div>
 
+<!-- Modal: Confirm Manual Sell (any Zerodha Live Position / Holding, tracked or not) -->
+<div class="modal fade" id="modalManualSell" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content qe-confirm-modal">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger">⚠️ Confirm Manual SELL</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to sell <strong id="msQuantity" class="text-warning"></strong> share(s) of <strong id="msSymbol" class="text-warning"></strong> at ~₹<strong id="msPrice" class="text-warning"></strong>?</p>
+                <p class="text-muted small">This will immediately send a <strong>Real-Money Market SELL Order</strong> to Zerodha Kite OMS.</p>
+                <input type="hidden" id="msRawSymbol" />
+                <input type="hidden" id="msRawQuantity" />
+                <input type="hidden" id="msRawPrice" />
+                <input type="hidden" id="msRawProduct" />
+                <input type="hidden" id="msRawEntryPrice" />
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="btnConfirmManualSell">Yes, Execute Market Sell</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: Set Auto-Sell Target for a Zerodha Holding -->
 <div class="modal fade" id="modalSetHoldingTarget" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content qe-modal">
+        <div class="modal-content qe-confirm-modal">
             <div class="modal-header">
                 <h5 class="modal-title text-info">📦 Enable Auto-Sell Monitoring</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -621,7 +655,7 @@
 <!-- Modal: Confirm Emergency Kill Switch -->
 <div class="modal fade" id="modalEmergencyKillSwitch" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content qe-modal border-danger">
+        <div class="modal-content qe-confirm-modal border-danger">
             <div class="modal-header bg-danger text-white">
                 <h5 class="modal-title">🚨 EMERGENCY PANIC KILL SWITCH</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -646,7 +680,7 @@
 <!-- Modal: 1-Time DDPI Activation Guideline -->
 <div class="modal fade" id="modalDdpiGuideline" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content qe-modal border-info">
+        <div class="modal-content qe-confirm-modal border-info">
             <div class="modal-header bg-dark border-info">
                 <div class="d-flex align-items-center gap-2">
                     <span class="fs-4">🚀</span>

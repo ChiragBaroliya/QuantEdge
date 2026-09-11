@@ -2176,6 +2176,115 @@ END;
 $$;
 
 
+-- Function: fn_get_open_real_order_by_symbol
+-- Most recent order for this user/symbol/side still awaiting broker fill confirmation (status = 4 / Open).
+-- Used to prevent placing a duplicate exit order while a previous one is still resting at the broker.
+DROP FUNCTION IF EXISTS fn_get_open_real_order_by_symbol(INT, VARCHAR, INT);
+
+CREATE OR REPLACE FUNCTION fn_get_open_real_order_by_symbol(p_user_id INT, p_symbol VARCHAR, p_side INT)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    BrokerOrderId VARCHAR,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    OrderType INT,
+    Price NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    Status INT,
+    FilledPrice NUMERIC,
+    FilledAt TIMESTAMP WITH TIME ZONE,
+    RejectionReason VARCHAR,
+    TradeType INT,
+    Remarks VARCHAR,
+    CreatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        o.id AS Id,
+        o.user_id AS UserId,
+        o.broker_order_id AS BrokerOrderId,
+        o.symbol AS Symbol,
+        o.side AS Side,
+        o.quantity AS Quantity,
+        o.order_type AS OrderType,
+        o.price AS Price,
+        o.stop_loss AS StopLoss,
+        o.take_profit AS TakeProfit,
+        o.status AS Status,
+        o.filled_price AS FilledPrice,
+        o.filled_at AS FilledAt,
+        o.rejection_reason AS RejectionReason,
+        o.trade_type AS TradeType,
+        o.remarks AS Remarks,
+        o.created_at AS CreatedAt
+    FROM real_orders o
+    WHERE o.user_id = p_user_id AND o.symbol = p_symbol AND o.side = p_side AND o.status = 4
+    ORDER BY o.created_at DESC
+    LIMIT 1;
+END;
+$$;
+
+
+-- Function: fn_get_all_pending_real_orders
+-- Every order (across all users) still awaiting broker fill confirmation (status = 4 / Open), oldest first.
+-- Used by the position monitor's periodic reconciliation pass to poll Zerodha and finalize real fills.
+DROP FUNCTION IF EXISTS fn_get_all_pending_real_orders();
+
+CREATE OR REPLACE FUNCTION fn_get_all_pending_real_orders()
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    BrokerOrderId VARCHAR,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    OrderType INT,
+    Price NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    Status INT,
+    FilledPrice NUMERIC,
+    FilledAt TIMESTAMP WITH TIME ZONE,
+    RejectionReason VARCHAR,
+    TradeType INT,
+    Remarks VARCHAR,
+    CreatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        o.id AS Id,
+        o.user_id AS UserId,
+        o.broker_order_id AS BrokerOrderId,
+        o.symbol AS Symbol,
+        o.side AS Side,
+        o.quantity AS Quantity,
+        o.order_type AS OrderType,
+        o.price AS Price,
+        o.stop_loss AS StopLoss,
+        o.take_profit AS TakeProfit,
+        o.status AS Status,
+        o.filled_price AS FilledPrice,
+        o.filled_at AS FilledAt,
+        o.rejection_reason AS RejectionReason,
+        o.trade_type AS TradeType,
+        o.remarks AS Remarks,
+        o.created_at AS CreatedAt
+    FROM real_orders o
+    WHERE o.status = 4
+    ORDER BY o.created_at ASC;
+END;
+$$;
+
+
 -- Function: fn_upsert_real_position
 DROP FUNCTION IF EXISTS fn_upsert_real_position(INT, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, INT, INT, VARCHAR, NUMERIC);
 DROP FUNCTION IF EXISTS fn_upsert_real_position(VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, INT, INT, VARCHAR, NUMERIC);

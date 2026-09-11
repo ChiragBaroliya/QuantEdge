@@ -16,6 +16,15 @@ public class RealTradingRepository : IRealTradingRepository
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
     }
 
+    /// <summary>
+    /// Clamps free-text values (broker error messages, computed remarks/reasons) to the column's actual
+    /// VARCHAR limit before they reach the database - a Zerodha status/rejection message can run well
+    /// past 255 characters and would otherwise fail the insert with a raw Postgres 22001 error instead of
+    /// a usable one.
+    /// </summary>
+    private static string? Clamp(string? value, int maxLength)
+        => string.IsNullOrEmpty(value) || value.Length <= maxLength ? value : value.Substring(0, maxLength);
+
     public async Task<RealTradeSettings> GetSettingsAsync(int userId = 1)
     {
         using var connection = _connectionFactory.CreateConnection();
@@ -73,6 +82,11 @@ public class RealTradingRepository : IRealTradingRepository
 
     public async Task<RealOrder> CreateOrderAsync(RealOrder order)
     {
+        order.BrokerOrderId = Clamp(order.BrokerOrderId, 100);
+        order.Symbol = Clamp(order.Symbol, 50) ?? order.Symbol;
+        order.RejectionReason = Clamp(order.RejectionReason, 255);
+        order.Remarks = Clamp(order.Remarks, 255);
+
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
             SELECT * FROM fn_create_real_order(
@@ -114,6 +128,9 @@ public class RealTradingRepository : IRealTradingRepository
 
     public async Task UpdateOrderStatusAsync(int orderId, PaperOrderStatus status, decimal filledPrice, string? brokerOrderId = null, string? rejectionReason = null)
     {
+        brokerOrderId = Clamp(brokerOrderId, 100);
+        rejectionReason = Clamp(rejectionReason, 255);
+
         using var connection = _connectionFactory.CreateConnection();
         string sql = "CALL sp_update_real_order_status(@orderId, @status, @filledPrice, @brokerOrderId, @rejectionReason);";
 
@@ -128,8 +145,27 @@ public class RealTradingRepository : IRealTradingRepository
         return await connection.QueryAsync<RealOrder>(sql, new { userId, limit });
     }
 
+    public async Task<RealOrder?> GetOpenBrokerOrderAsync(int userId, string symbol, TradeSide side)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = "SELECT * FROM fn_get_open_real_order_by_symbol(@userId, @symbol, @side);";
+
+        return await connection.QueryFirstOrDefaultAsync<RealOrder>(sql, new { userId, symbol, side = (int)side });
+    }
+
+    public async Task<IEnumerable<RealOrder>> GetAllPendingBrokerOrdersAsync()
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = "SELECT * FROM fn_get_all_pending_real_orders();";
+
+        return await connection.QueryAsync<RealOrder>(sql);
+    }
+
     public async Task<RealPosition> UpsertPositionAsync(RealPosition position)
     {
+        position.Symbol = Clamp(position.Symbol, 50) ?? position.Symbol;
+        position.ExitReason = Clamp(position.ExitReason, 100);
+
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
             SELECT * FROM fn_upsert_real_position(
@@ -186,6 +222,8 @@ public class RealTradingRepository : IRealTradingRepository
 
     public async Task ClosePositionAsync(int positionId, decimal exitPrice, decimal realizedPnl, string exitReason)
     {
+        exitReason = Clamp(exitReason, 100) ?? exitReason;
+
         using var connection = _connectionFactory.CreateConnection();
         string sql = "CALL sp_close_real_position(@positionId, @exitPrice, @realizedPnl, @exitReason);";
 
@@ -202,6 +240,11 @@ public class RealTradingRepository : IRealTradingRepository
 
     public async Task<RealTradeHistory> RecordTradeHistoryAsync(RealTradeHistory history)
     {
+        history.BrokerOrderId = Clamp(history.BrokerOrderId, 100);
+        history.Symbol = Clamp(history.Symbol, 50) ?? history.Symbol;
+        history.ExitReason = Clamp(history.ExitReason, 100);
+        history.Remarks = Clamp(history.Remarks, 255);
+
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
             SELECT * FROM fn_record_real_trade_history(
@@ -252,6 +295,10 @@ public class RealTradingRepository : IRealTradingRepository
 
     public async Task LogExecutionAsync(RealTradeExecutionLog log)
     {
+        log.Symbol = Clamp(log.Symbol, 50) ?? log.Symbol;
+        log.ActionType = Clamp(log.ActionType, 50) ?? log.ActionType;
+        log.Reason = Clamp(log.Reason, 255);
+
         using var connection = _connectionFactory.CreateConnection();
         string sql = "CALL sp_log_real_trade_execution(@UserId, @Symbol, @ActionType, @Price, @Quantity, @Reason);";
 

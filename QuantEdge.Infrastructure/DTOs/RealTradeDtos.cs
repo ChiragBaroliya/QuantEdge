@@ -185,6 +185,29 @@ public class EnableHoldingMonitoringRequestDto
     public int? UserId { get; set; }
 }
 
+/// <summary>
+/// Manual SELL for any stock currently held/positioned at Zerodha - including one the bot isn't
+/// tracking as a real_positions row (e.g. a plain Zerodha Holding or Live Position). If the symbol
+/// IS a bot-tracked open position, this is routed through the normal square-off pipeline instead.
+/// </summary>
+public class ResyncOrderStatusRequestDto
+{
+    public int OrderId { get; set; }
+    public int? UserId { get; set; }
+}
+
+public class ManualSellRequestDto
+{
+    public string Symbol { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    public decimal CurrentPrice { get; set; }
+    public string? Product { get; set; }
+    /// <summary>Optional average buy price, purely to compute a Realized P&L for the audit log/trade history - not authoritative.</summary>
+    public decimal? EntryPriceHint { get; set; }
+    public string? Reason { get; set; }
+    public int? UserId { get; set; }
+}
+
 public class RealTradeLivePositionsFastDto
 {
     public bool Success { get; set; }

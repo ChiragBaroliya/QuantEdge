@@ -33,6 +33,28 @@ public interface IAutoRealTradeService
     Task<int> SquareOffAllPositionsAsync(string reason = "Emergency Panic Kill Switch Triggered", int userId = 1);
 
     /// <summary>
+    /// Polls Zerodha for every real order still recorded as Open (broker-accepted but unconfirmed) across
+    /// all users, and finalizes it once the broker confirms the real outcome (FILLED closes the position
+    /// and records realized P&amp;L; REJECTED/CANCELLED clears the order and leaves the position open for retry).
+    /// Called periodically by the position monitor worker - never assume a placed order is filled.
+    /// </summary>
+    Task ReconcilePendingRealOrdersAsync();
+
+    /// <summary>
+    /// Force re-verifies one order's status directly against Zerodha and corrects our records if they've
+    /// drifted from the broker's truth (e.g. an order recorded Filled/Rejected here that Zerodha still
+    /// shows resting OPEN). Triggerable on demand for a single order from the Real Orders Book, unlike
+    /// <see cref="ReconcilePendingRealOrdersAsync"/> which only scans currently-Open orders each cycle.
+    /// </summary>
+    Task<(bool Success, string Message)> ResyncOrderStatusAsync(int orderId, int userId = 1);
+
+    /// <summary>
+    /// Resyncs every recent order for a user against Zerodha in one pass - what "Sync Now" runs so it
+    /// actually re-verifies order status with the broker, not just re-reads QuantEdge's own records.
+    /// </summary>
+    Task<(bool Success, string Message)> ResyncRecentOrdersAsync(int userId = 1);
+
+    /// <summary>
     /// Squares off an individual real position on demand.
     /// </summary>
     Task<bool> SquareOffSinglePositionAsync(int positionId, string reason = "Manual Exit", int userId = 1);
@@ -48,4 +70,12 @@ public interface IAutoRealTradeService
     /// the target price and auto-sells through the same pipeline as any other real position.
     /// </summary>
     Task<(bool Success, string Message)> EnableHoldingMonitoringAsync(string symbol, int quantity, decimal averagePrice, decimal targetPrice, int userId = 1);
+
+    /// <summary>
+    /// Manual SELL for any stock currently held/positioned at Zerodha. If the symbol is already a
+    /// bot-tracked open position, this delegates to <see cref="SquareOffSinglePositionAsync"/> so
+    /// P&amp;L and trade history stay consistent; otherwise it sells directly against the broker
+    /// (same broker-confirmed fill semantics as every other real order - never assumes Filled).
+    /// </summary>
+    Task<(bool Success, string Message)> ManualSellAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId = 1);
 }

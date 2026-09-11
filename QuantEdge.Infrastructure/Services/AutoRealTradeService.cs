@@ -377,6 +377,18 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
+        // 7b. Duplicate Pending Order Check - a previous BUY for this symbol may still be resting,
+        // unfilled, at the broker (no position exists for it yet since it hasn't confirmed COMPLETE).
+        // Without this, the next scan pass would fire a second BUY for the same symbol before the
+        // first one resolves. ReconcilePendingRealOrdersAsync will finalize the earlier one.
+        var existingPendingBuy = await _repository.GetOpenBrokerOrderAsync(userId, symbol, TradeSide.BUY);
+        if (existingPendingBuy != null)
+        {
+            _logger.LogInformation("Skipping BUY for {Symbol} (User {UserId}): order #{OrderId} is still OPEN at the broker awaiting fill.",
+                symbol, userId, existingPendingBuy.BrokerOrderId);
+            return false;
+        }
+
         // 8. Capital & Margin Validation
         var marginResult = await _brokerService.GetEquityMarginsAsync(userId);
         decimal availableMargin = marginResult.Success ? marginResult.AvailableCash : settings.AvailableCapital;
@@ -446,8 +458,83 @@ public class AutoRealTradeService : IAutoRealTradeService
                 return false;
             }
 
-            decimal executedPrice = brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : entryPrice;
             string brokerOrderId = brokerResult.BrokerOrderId ?? $"KITE-{DateTime.UtcNow.Ticks}";
+
+            // Placing the order only means Kite accepted it for the exchange — it does NOT mean it has
+            // traded. Confirm the real fill status before ever recording/announcing "FILLED".
+            var statusCheck = await _brokerService.GetOrderStatusAsync(brokerOrderId, userId);
+            bool confirmedComplete = statusCheck.Success && string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
+            bool confirmedRejected = statusCheck.Success &&
+                (string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase));
+
+            if (confirmedRejected)
+            {
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = symbol,
+                    Side = TradeSide.BUY,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = entryPrice,
+                    StopLoss = stopLoss,
+                    TakeProfit = takeProfit,
+                    Status = PaperOrderStatus.Rejected,
+                    FilledPrice = 0m,
+                    RejectionReason = statusCheck.Message,
+                    Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                });
+
+                await LogAuditAsync(symbol, "ORDER_REJECTED", entryPrice, quantity,
+                    $"Zerodha BUY Order {statusCheck.BrokerStatus}: {statusCheck.Message} (Order #{brokerOrderId})", userId);
+                return false;
+            }
+
+            if (!confirmedComplete)
+            {
+                // Order accepted by the broker but still resting (OPEN / TRIGGER PENDING), or the status
+                // check itself couldn't confirm a fill. Record it as Open with no position created yet —
+                // ReconcilePendingRealOrdersAsync opens the position once the broker confirms the real fill.
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = symbol,
+                    Side = TradeSide.BUY,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = entryPrice,
+                    StopLoss = stopLoss,
+                    TakeProfit = takeProfit,
+                    Status = PaperOrderStatus.Open,
+                    FilledPrice = 0m,
+                    Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                });
+
+                await LogAuditAsync(symbol, "BUY_ORDER_OPEN", entryPrice, quantity,
+                    $"🕓 BUY order placed for {symbol} — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
+
+                if (_hubContext != null)
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    {
+                        symbol,
+                        side = "BUY_OPEN",
+                        quantity,
+                        price = entryPrice,
+                        brokerOrderId,
+                        userId,
+                        message = $"🕓 BUY order for {symbol} is OPEN at the broker (not yet filled) — Order #{brokerOrderId}"
+                    });
+                }
+
+                await BroadcastDashboardUpdateAsync(userId);
+                return true;
+            }
+
+            decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : (brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : entryPrice);
 
             // Insert Real Order
             var order = await _repository.CreateOrderAsync(new RealOrder
@@ -609,6 +696,210 @@ public class AutoRealTradeService : IAutoRealTradeService
         return (true, $"{symbol} is now being monitored. It will be sold automatically once it reaches ₹{targetPrice:F2}.");
     }
 
+    public async Task<(bool Success, string Message)> ManualSellAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId = 1)
+    {
+        symbol = symbol.ToUpper().Trim();
+        if (string.IsNullOrWhiteSpace(symbol) || quantity <= 0 || currentPrice <= 0m)
+        {
+            return (false, "A valid symbol, quantity, and current price are required.");
+        }
+
+        var tokenCheck = await _brokerService.ValidateSessionTokenAsync(userId);
+        if (!tokenCheck.IsValid)
+        {
+            return (false, tokenCheck.Message ?? "Zerodha session is not active.");
+        }
+
+        // If the bot is already tracking this symbol as an open position, route through the existing
+        // square-off pipeline so P&L, position closing, and trade history stay fully consistent.
+        var trackedPosition = await _repository.GetOpenPositionBySymbolAsync(userId, symbol);
+        if (trackedPosition != null)
+        {
+            bool closed = await SquareOffSinglePositionAsync(trackedPosition.Id, reason, userId);
+            return (closed, closed
+                ? $"SELL order submitted for {symbol}."
+                : $"SELL order for {symbol} was not placed — it may already have an order resting OPEN at the broker. Check the Real Orders Book.");
+        }
+
+        // Otherwise this is a plain Zerodha Holding/Position the bot isn't tracking - sell it directly.
+        var existingPendingOrder = await _repository.GetOpenBrokerOrderAsync(userId, symbol, TradeSide.SELL);
+        if (existingPendingOrder != null)
+        {
+            return (false, $"A SELL order for {symbol} is already OPEN at the broker (Order #{existingPendingOrder.BrokerOrderId}), awaiting fill.");
+        }
+
+        string cleanProduct = string.IsNullOrWhiteSpace(product) ? "CNC" : product.ToUpper().Trim();
+
+        try
+        {
+            var brokerResult = await _brokerService.PlaceLiveOrderAsync(symbol, TradeSide.SELL, quantity, PaperOrderType.Market, currentPrice, cleanProduct, userId);
+
+            if (!brokerResult.Success)
+            {
+                // Placement itself was rejected by Zerodha - no real broker order was ever created, so
+                // there is no broker order ID to record (and none should be fabricated: a made-up
+                // "KITE-SELL-..." string invites clicking Resync on it later, which just fails with
+                // "Invalid order_id" since Zerodha never issued one). Surface the real reason instead.
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    Symbol = symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = currentPrice,
+                    Status = PaperOrderStatus.Rejected,
+                    FilledPrice = 0m,
+                    RejectionReason = brokerResult.Message,
+                    TradeType = TradeType.Manual,
+                    Remarks = $"Manual SELL ({reason}) Rejected by Zerodha: {brokerResult.Message}"
+                });
+
+                await LogAuditAsync(symbol, "SELL_FAILED", currentPrice, quantity, $"Manual Sell Failed: {brokerResult.Message}", userId);
+                return (false, brokerResult.Message ?? "Zerodha rejected the sell order.");
+            }
+
+            string brokerOrderId = brokerResult.BrokerOrderId ?? $"KITE-SELL-{DateTime.UtcNow.Ticks}";
+
+            // Placing the order only means Kite accepted it for the exchange - confirm the real fill
+            // status before ever recording/announcing "FILLED".
+            var statusCheck = await _brokerService.GetOrderStatusAsync(brokerOrderId, userId);
+            bool confirmedComplete = statusCheck.Success && string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
+            bool confirmedRejected = statusCheck.Success &&
+                (string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase));
+
+            if (confirmedRejected)
+            {
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = currentPrice,
+                    Status = PaperOrderStatus.Rejected,
+                    FilledPrice = 0m,
+                    RejectionReason = statusCheck.Message,
+                    TradeType = TradeType.Manual,
+                    Remarks = $"Manual SELL ({reason}) - Broker ID: {brokerOrderId}"
+                });
+
+                await LogAuditAsync(symbol, "SELL_FAILED", currentPrice, quantity,
+                    $"Manual Sell Order {statusCheck.BrokerStatus}: {statusCheck.Message} (Order #{brokerOrderId})", userId);
+                return (false, $"Sell order {statusCheck.BrokerStatus}: {statusCheck.Message}");
+            }
+
+            if (!confirmedComplete)
+            {
+                // Order accepted by the broker but still resting (OPEN / TRIGGER PENDING). Recorded as
+                // Open - ReconcilePendingRealOrdersAsync finalizes it once the broker confirms the fill.
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = currentPrice,
+                    Status = PaperOrderStatus.Open,
+                    FilledPrice = 0m,
+                    TradeType = TradeType.Manual,
+                    Remarks = $"Manual SELL ({reason}) - Broker ID: {brokerOrderId}"
+                });
+
+                await LogAuditAsync(symbol, "SELL_ORDER_OPEN", currentPrice, quantity,
+                    $"🕓 Manual SELL order placed for {symbol} — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
+
+                if (_hubContext != null)
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    {
+                        symbol,
+                        side = "SELL_OPEN",
+                        quantity,
+                        price = currentPrice,
+                        brokerOrderId,
+                        userId,
+                        message = $"🕓 Manual SELL order for {symbol} is OPEN at the broker (not yet filled) — Order #{brokerOrderId}"
+                    });
+                }
+
+                await BroadcastDashboardUpdateAsync(userId);
+                return (true, $"SELL order placed for {symbol} — currently OPEN at the broker, awaiting execution.");
+            }
+
+            decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : (brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : currentPrice);
+            decimal? realizedPnl = entryPriceHint.HasValue && entryPriceHint.Value > 0m ? (executedPrice - entryPriceHint.Value) * quantity : (decimal?)null;
+
+            var order = await _repository.CreateOrderAsync(new RealOrder
+            {
+                UserId = userId,
+                BrokerOrderId = brokerOrderId,
+                Symbol = symbol,
+                Side = TradeSide.SELL,
+                Quantity = quantity,
+                OrderType = PaperOrderType.Market,
+                Price = executedPrice,
+                Status = PaperOrderStatus.Filled,
+                FilledPrice = executedPrice,
+                FilledAt = DateTime.UtcNow,
+                TradeType = TradeType.Manual,
+                Remarks = $"Manual SELL ({reason}) - Broker ID: {brokerOrderId}"
+            });
+
+            await _repository.RecordTradeHistoryAsync(new RealTradeHistory
+            {
+                UserId = userId,
+                OrderId = order.Id,
+                BrokerOrderId = brokerOrderId,
+                Symbol = symbol,
+                Side = TradeSide.SELL,
+                Quantity = quantity,
+                EntryPrice = entryPriceHint ?? 0m,
+                ExecutedPrice = executedPrice,
+                RealizedPnl = realizedPnl ?? 0m,
+                TradeType = TradeType.Manual,
+                ExitReason = reason,
+                Remarks = realizedPnl.HasValue
+                    ? $"Manual SELL: {reason} | Realized P&L: ₹{realizedPnl.Value:F2}"
+                    : $"Manual SELL: {reason}"
+            });
+
+            string pnlText = realizedPnl.HasValue ? $" | P&L: {(realizedPnl.Value >= 0 ? "+" : "")}₹{realizedPnl.Value:N2}" : "";
+            await LogAuditAsync(symbol, "REAL_SELL", executedPrice, quantity,
+                $"⚡ Manual Live SELL ({reason}) @ ₹{executedPrice:F2}{pnlText} (Order #{brokerOrderId})", userId);
+
+            if (_hubContext != null)
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                {
+                    symbol,
+                    side = "SELL",
+                    quantity,
+                    price = executedPrice,
+                    realizedPnl,
+                    reason,
+                    brokerOrderId,
+                    userId,
+                    message = $"⚡ MANUAL REAL SELL: {symbol} @ ₹{executedPrice:N2}{pnlText}"
+                });
+            }
+
+            await BroadcastDashboardUpdateAsync(userId);
+            return (true, $"SELL order filled for {symbol} @ ₹{executedPrice:F2}.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Manual sell failed for {Symbol} (User {UserId})", symbol, userId);
+            await LogAuditAsync(symbol, "SYSTEM_ERROR", currentPrice, quantity, $"Manual SELL execution error: {ex.Message}", userId);
+            return (false, $"Manual sell failed: {ex.Message}");
+        }
+    }
+
     public async Task<bool> EvaluateAndExecuteRealSellAsync(RealPosition position, decimal currentLtp, int userId = 1)
     {
         if (position == null || position.Status != PositionStatus.OPEN)
@@ -673,11 +964,29 @@ public class AutoRealTradeService : IAutoRealTradeService
         return false;
     }
 
+    private enum RealSellOutcome { Failed, Filled, OrderOpenPending, AlreadyPending }
+
     private async Task<bool> ExecuteRealSellOrderAsync(RealPosition position, decimal currentLtp, string exitReason, int userId)
+        => (await ExecuteRealSellOrderCoreAsync(position, currentLtp, exitReason, userId)) is RealSellOutcome.Filled or RealSellOutcome.OrderOpenPending;
+
+    private async Task<RealSellOutcome> ExecuteRealSellOrderCoreAsync(RealPosition position, decimal currentLtp, string exitReason, int userId)
     {
         var settings = await GetSettingsAsync(userId);
         try
         {
+            // A previous exit attempt for this position may still be resting, unfilled, at the broker
+            // (e.g. a limit sell whose price hasn't been touched yet). Placing another one here would
+            // double-sell the same shares once both eventually fill, so skip until it resolves —
+            // the reconciliation pass (ReconcilePendingRealOrdersAsync) will pick it up and either
+            // finalize it as Filled or clear it as Cancelled/Rejected.
+            var existingPendingOrder = await _repository.GetOpenBrokerOrderAsync(userId, position.Symbol, TradeSide.SELL);
+            if (existingPendingOrder != null)
+            {
+                _logger.LogInformation("Skipping SELL for {Symbol} (User {UserId}): order #{OrderId} is still OPEN at the broker awaiting fill.",
+                    position.Symbol, userId, existingPendingOrder.BrokerOrderId);
+                return RealSellOutcome.AlreadyPending;
+            }
+
             _logger.LogInformation("[REAL MONEY SELL TRIGGERED - User {UserId}] Position #{Id} {Symbol} Qty:{Qty} @ {Ltp}. Reason: {Reason}",
                 userId, position.Id, position.Symbol, position.Quantity, currentLtp, exitReason);
 
@@ -690,38 +999,36 @@ public class AutoRealTradeService : IAutoRealTradeService
                 settings.ProductType,
                 userId);
 
-            decimal executedPrice = brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : currentLtp;
-            string brokerOrderId = brokerResult.BrokerOrderId ?? $"KITE-SELL-{DateTime.UtcNow.Ticks}";
-
-            decimal realizedPnl = (executedPrice - position.AverageEntryPrice) * position.Quantity;
-
-            // Create Sell Order Record
-            var sellOrder = await _repository.CreateOrderAsync(new RealOrder
-            {
-                UserId = userId,
-                BrokerOrderId = brokerOrderId,
-                Symbol = position.Symbol,
-                Side = TradeSide.SELL,
-                Quantity = position.Quantity,
-                OrderType = PaperOrderType.Market,
-                Price = executedPrice,
-                Status = brokerResult.Success ? PaperOrderStatus.Filled : PaperOrderStatus.Rejected,
-                FilledPrice = executedPrice,
-                FilledAt = DateTime.UtcNow,
-                RejectionReason = brokerResult.Success ? null : brokerResult.Message,
-                Remarks = $"Real SELL ({exitReason}) - Broker ID: {brokerOrderId}"
-            });
-
             if (!brokerResult.Success)
             {
-                bool isTpinError = brokerResult.Message != null && 
+                // Placement itself was rejected by Zerodha - no real broker order was ever created, so
+                // there is no broker order ID to record (and none should be fabricated: a made-up
+                // "KITE-SELL-..." string invites clicking Resync on it later, which just fails with
+                // "Invalid order_id" since Zerodha never issued one). Surface the real reason instead.
+                decimal rejectedPrice = brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : currentLtp;
+
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    Symbol = position.Symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = position.Quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = rejectedPrice,
+                    Status = PaperOrderStatus.Rejected,
+                    FilledPrice = 0m,
+                    RejectionReason = brokerResult.Message,
+                    Remarks = $"Real SELL ({exitReason}) Rejected by Zerodha: {brokerResult.Message}"
+                });
+
+                bool isTpinError = brokerResult.Message != null &&
                     (brokerResult.Message.Contains("e-DIS", StringComparison.OrdinalIgnoreCase) ||
                      brokerResult.Message.Contains("TPIN", StringComparison.OrdinalIgnoreCase) ||
                      brokerResult.Message.Contains("authorization", StringComparison.OrdinalIgnoreCase));
 
                 string actionType = isTpinError ? "SELL_REJECTED_EDIS_REQUIRED" : "SELL_FAILED";
 
-                await LogAuditAsync(position.Symbol, actionType, executedPrice, position.Quantity,
+                await LogAuditAsync(position.Symbol, actionType, rejectedPrice, position.Quantity,
                     $"Zerodha Sell Order Failed: {brokerResult.Message}", userId);
 
                 if (_hubContext != null && isTpinError)
@@ -735,8 +1042,101 @@ public class AutoRealTradeService : IAutoRealTradeService
                         message = $"🚨 CDSL TPIN Required: Sell order for {position.Symbol} failed. Please authorize CDSL TPIN in Zerodha Kite holdings and retry."
                     });
                 }
-                return false;
+                return RealSellOutcome.Failed;
             }
+
+            string brokerOrderId = brokerResult.BrokerOrderId ?? $"KITE-SELL-{DateTime.UtcNow.Ticks}";
+
+            // Placing the order only means Kite accepted it for the exchange — it does NOT mean it has
+            // traded. Confirm the real fill status before ever recording/announcing "FILLED".
+            var statusCheck = await _brokerService.GetOrderStatusAsync(brokerOrderId, userId);
+            bool confirmedComplete = statusCheck.Success && string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
+            bool confirmedRejected = statusCheck.Success &&
+                (string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase));
+
+            if (confirmedRejected)
+            {
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = position.Symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = position.Quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = currentLtp,
+                    Status = PaperOrderStatus.Rejected,
+                    FilledPrice = 0m,
+                    RejectionReason = statusCheck.Message,
+                    Remarks = $"Real SELL ({exitReason}) - Broker ID: {brokerOrderId}"
+                });
+
+                await LogAuditAsync(position.Symbol, "SELL_FAILED", currentLtp, position.Quantity,
+                    $"Zerodha Sell Order {statusCheck.BrokerStatus}: {statusCheck.Message} (Order #{brokerOrderId})", userId);
+
+                return RealSellOutcome.Failed;
+            }
+
+            if (!confirmedComplete)
+            {
+                // Order accepted by the broker but still resting (OPEN / TRIGGER PENDING), or the status
+                // check itself couldn't confirm a fill. Record it as Open and leave the position open —
+                // ReconcilePendingRealOrdersAsync finalizes it once the broker confirms the real outcome.
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = position.Symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = position.Quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = currentLtp,
+                    Status = PaperOrderStatus.Open,
+                    FilledPrice = 0m,
+                    Remarks = $"Real SELL ({exitReason}) - Broker ID: {brokerOrderId}"
+                });
+
+                await LogAuditAsync(position.Symbol, "SELL_ORDER_OPEN", currentLtp, position.Quantity,
+                    $"🕓 SELL order placed for {position.Symbol} ({exitReason}) — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
+
+                if (_hubContext != null)
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    {
+                        symbol = position.Symbol,
+                        side = "SELL_OPEN",
+                        quantity = position.Quantity,
+                        price = currentLtp,
+                        exitReason,
+                        brokerOrderId,
+                        userId,
+                        message = $"🕓 SELL order for {position.Symbol} is OPEN at the broker (not yet filled) — Order #{brokerOrderId}"
+                    });
+                }
+
+                await BroadcastDashboardUpdateAsync(userId);
+                return RealSellOutcome.OrderOpenPending;
+            }
+
+            decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : (brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : currentLtp);
+            decimal realizedPnl = (executedPrice - position.AverageEntryPrice) * position.Quantity;
+
+            // Create Sell Order Record
+            var sellOrder = await _repository.CreateOrderAsync(new RealOrder
+            {
+                UserId = userId,
+                BrokerOrderId = brokerOrderId,
+                Symbol = position.Symbol,
+                Side = TradeSide.SELL,
+                Quantity = position.Quantity,
+                OrderType = PaperOrderType.Market,
+                Price = executedPrice,
+                Status = PaperOrderStatus.Filled,
+                FilledPrice = executedPrice,
+                FilledAt = DateTime.UtcNow,
+                Remarks = $"Real SELL ({exitReason}) - Broker ID: {brokerOrderId}"
+            });
 
             // Close Real Position in DB & RAM
             await _repository.ClosePositionAsync(position.Id, executedPrice, realizedPnl, exitReason);
@@ -793,14 +1193,323 @@ public class AutoRealTradeService : IAutoRealTradeService
             }
 
             await BroadcastDashboardUpdateAsync(userId);
-            return true;
+            return RealSellOutcome.Filled;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to execute real sell order for {Symbol} (User {UserId})", position.Symbol, userId);
             await LogAuditAsync(position.Symbol, "SYSTEM_ERROR", currentLtp, position.Quantity, $"Real SELL execution error: {ex.Message}", userId);
-            return false;
+            return RealSellOutcome.Failed;
         }
+    }
+
+    public async Task ReconcilePendingRealOrdersAsync()
+    {
+        var pendingOrders = (await _repository.GetAllPendingBrokerOrdersAsync()).ToList();
+        if (!pendingOrders.Any()) return;
+
+        foreach (var order in pendingOrders)
+        {
+            if (string.IsNullOrWhiteSpace(order.BrokerOrderId)) continue;
+
+            try
+            {
+                var statusCheck = await _brokerService.GetOrderStatusAsync(order.BrokerOrderId, order.UserId);
+                if (!statusCheck.Success || string.IsNullOrWhiteSpace(statusCheck.BrokerStatus))
+                {
+                    continue; // Broker/session unavailable this cycle - retry next pass, order stays Open.
+                }
+
+                if (string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase))
+                {
+                    decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : order.Price;
+                    await FinalizeFilledOrderAsync(order, executedPrice);
+                }
+                else if (string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+                {
+                    await FinalizeRejectedOrderAsync(order, statusCheck.BrokerStatus, statusCheck.Message);
+                }
+                // Otherwise still OPEN/TRIGGER PENDING at the broker - leave as-is, retry next cycle.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reconciling pending real order #{OrderId} ({Symbol}, User {UserId})", order.Id, order.Symbol, order.UserId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Force re-verifies one order's status directly against Zerodha and corrects our records if they've
+    /// drifted from the broker's truth - including an order that was already recorded Filled/Rejected here
+    /// but the broker still shows resting (e.g. one placed before the broker-confirmed-fill logic existed).
+    /// Unlike <see cref="ReconcilePendingRealOrdersAsync"/> (which only scans Open orders every cycle),
+    /// this can be triggered on demand for any single order from the Real Orders Book.
+    /// </summary>
+    public async Task<(bool Success, string Message)> ResyncOrderStatusAsync(int orderId, int userId = 1)
+    {
+        var order = await _repository.GetOrderByIdAsync(orderId);
+        if (order == null) return (false, "Order not found.");
+        if (order.UserId != userId) return (false, "This order does not belong to the current user.");
+
+        var (success, _, message) = await ResyncSingleOrderAsync(order);
+        return (success, message);
+    }
+
+    /// <summary>
+    /// Resyncs every recent order for a user against Zerodha in one pass - the same broker-truth check
+    /// <see cref="ResyncOrderStatusAsync"/> does for one order, applied to the whole Real Orders Book at
+    /// once. This is what "Sync Now" runs so it actually re-verifies order status with the broker instead
+    /// of just re-reading whatever QuantEdge's own records currently say.
+    /// </summary>
+    public async Task<(bool Success, string Message)> ResyncRecentOrdersAsync(int userId = 1)
+    {
+        var orders = (await _repository.GetRecentOrdersAsync(userId, 20))
+            .Where(o => !string.IsNullOrWhiteSpace(o.BrokerOrderId))
+            .ToList();
+
+        if (!orders.Any())
+        {
+            return (true, "No recent orders with a broker order ID to resync.");
+        }
+
+        int correctedCount = 0;
+        int failedCount = 0;
+
+        foreach (var order in orders)
+        {
+            try
+            {
+                var (success, corrected, _) = await ResyncSingleOrderAsync(order);
+                if (!success) failedCount++;
+                else if (corrected) correctedCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resyncing order #{OrderId} ({Symbol}) during bulk resync for User {UserId}", order.Id, order.Symbol, userId);
+                failedCount++;
+            }
+        }
+
+        string summary = correctedCount > 0
+            ? $"Resynced {orders.Count} order(s) with Zerodha — {correctedCount} corrected to match the broker's real status."
+            : $"Resynced {orders.Count} order(s) with Zerodha — all already matched the broker's real status.";
+        if (failedCount > 0)
+        {
+            summary += $" ({failedCount} could not be verified right now — check Zerodha session/connectivity.)";
+        }
+
+        return (true, summary);
+    }
+
+    /// <summary>
+    /// Force re-verifies one order's status directly against Zerodha and corrects our records if they've
+    /// drifted from the broker's truth (e.g. an order recorded Filled/Rejected here that Zerodha still
+    /// shows resting OPEN). Shared by the single-order Resync action and the bulk "Sync Now" resync.
+    /// </summary>
+    private async Task<(bool Success, bool Corrected, string Message)> ResyncSingleOrderAsync(RealOrder order)
+    {
+        if (string.IsNullOrWhiteSpace(order.BrokerOrderId))
+        {
+            return (false, false, $"{order.Symbol} order has no broker order ID to verify.");
+        }
+
+        var statusCheck = await _brokerService.GetOrderStatusAsync(order.BrokerOrderId, order.UserId);
+        if (!statusCheck.Success || string.IsNullOrWhiteSpace(statusCheck.BrokerStatus))
+        {
+            return (false, false, statusCheck.Message ?? $"Could not verify {order.Symbol} order #{order.BrokerOrderId} with the broker right now.");
+        }
+
+        bool brokerComplete = string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
+        bool brokerRejectedOrCancelled = string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
+                                         string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase);
+
+        if (brokerComplete)
+        {
+            if (order.Status == PaperOrderStatus.Filled)
+            {
+                return (true, false, $"Already in sync: {order.Symbol} order #{order.BrokerOrderId} is FILLED at the broker.");
+            }
+
+            decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : order.Price;
+            await FinalizeFilledOrderAsync(order, executedPrice);
+            return (true, true, $"Corrected: {order.Symbol} order #{order.BrokerOrderId} is FILLED @ ₹{executedPrice:F2} at the broker. Records updated.");
+        }
+
+        if (brokerRejectedOrCancelled)
+        {
+            if (order.Status == PaperOrderStatus.Rejected)
+            {
+                return (true, false, $"Already in sync: {order.Symbol} order #{order.BrokerOrderId} is {statusCheck.BrokerStatus} at the broker.");
+            }
+
+            await FinalizeRejectedOrderAsync(order, statusCheck.BrokerStatus, statusCheck.Message);
+            return (true, true, $"Corrected: {order.Symbol} order #{order.BrokerOrderId} is {statusCheck.BrokerStatus} at the broker. Records updated.");
+        }
+
+        // Broker still shows it resting (OPEN / TRIGGER PENDING).
+        if (order.Status == PaperOrderStatus.Open)
+        {
+            return (true, false, $"Already in sync: {order.Symbol} order #{order.BrokerOrderId} is still OPEN at the broker, awaiting fill.");
+        }
+
+        // Was previously recorded Filled/Rejected here but the broker actually still shows it resting.
+        // Correct the status back to Open so the periodic reconciler picks it up going forward. We
+        // deliberately do NOT try to guess-reopen/re-close a position from this historical drift - if a
+        // SELL had closed a bot position (or a BUY had opened one) based on the incorrect fill, that's
+        // flagged here for manual review instead of auto-corrected.
+        await _repository.UpdateOrderStatusAsync(order.Id, PaperOrderStatus.Open, 0m, order.BrokerOrderId);
+
+        string positionNote = order.Side == TradeSide.SELL
+            ? " This order previously showed as FILLED and may have closed a bot position that Zerodha never actually confirmed sold — check Zerodha Holdings and re-enable monitoring via 'Set Target' if the shares are still held."
+            : " This order previously showed as FILLED and may have opened a bot position for shares that were never actually bought — check Bot Positions.";
+
+        await LogAuditAsync(order.Symbol, order.Side == TradeSide.SELL ? "SELL_ORDER_OPEN" : "BUY_ORDER_OPEN", order.Price, order.Quantity,
+            $"🔄 Status corrected: Order #{order.BrokerOrderId} for {order.Symbol} was recorded as {order.Status} but Zerodha confirms it is still OPEN (unfilled).{positionNote}", order.UserId);
+
+        await BroadcastDashboardUpdateAsync(order.UserId);
+        return (true, true, $"Corrected: {order.Symbol} order #{order.BrokerOrderId} is actually still OPEN at the broker (was recorded {order.Status}).{positionNote}");
+    }
+
+    private async Task FinalizeFilledOrderAsync(RealOrder order, decimal executedPrice)
+    {
+        await _repository.UpdateOrderStatusAsync(order.Id, PaperOrderStatus.Filled, executedPrice, order.BrokerOrderId);
+
+        if (order.Side == TradeSide.SELL)
+        {
+            var position = await _repository.GetOpenPositionBySymbolAsync(order.UserId, order.Symbol);
+            if (position != null)
+            {
+                decimal realizedPnl = (executedPrice - position.AverageEntryPrice) * position.Quantity;
+                string exitReason = order.Remarks ?? "Exit";
+
+                await _repository.ClosePositionAsync(position.Id, executedPrice, realizedPnl, exitReason);
+                _realTradeCache?.RemovePosition(position.Id);
+
+                await _repository.RecordTradeHistoryAsync(new RealTradeHistory
+                {
+                    UserId = order.UserId,
+                    OrderId = order.Id,
+                    BrokerOrderId = order.BrokerOrderId,
+                    Symbol = order.Symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = order.Quantity,
+                    EntryPrice = position.AverageEntryPrice,
+                    ExecutedPrice = executedPrice,
+                    RealizedPnl = realizedPnl,
+                    TradeType = TradeType.Auto,
+                    ExitReason = exitReason,
+                    Remarks = $"Real SELL: {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
+                });
+
+                string pnlSign = realizedPnl >= 0 ? "+" : "";
+                await LogAuditAsync(order.Symbol, "REAL_SELL", executedPrice, order.Quantity,
+                    $"⚡ Live SELL confirmed FILLED @ ₹{executedPrice:F2} | P&L: {pnlSign}₹{realizedPnl:N2} (Order #{order.BrokerOrderId})", order.UserId);
+
+                if (_hubContext != null)
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    {
+                        symbol = order.Symbol,
+                        side = "SELL",
+                        quantity = order.Quantity,
+                        price = executedPrice,
+                        realizedPnl,
+                        exitReason,
+                        brokerOrderId = order.BrokerOrderId,
+                        userId = order.UserId,
+                        message = $"⚡ LIVE REAL SELL: {order.Symbol} confirmed FILLED @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}"
+                    });
+
+                    await _hubContext.Clients.Group($"user-{order.UserId}").SendAsync("ReceiveHoldingSoldEvent", new
+                    {
+                        symbol = order.Symbol,
+                        quantity = order.Quantity,
+                        price = executedPrice,
+                        realizedPnl,
+                        exitReason,
+                        brokerOrderId = order.BrokerOrderId,
+                        userId = order.UserId
+                    });
+                }
+
+                await BroadcastDashboardUpdateAsync(order.UserId);
+            }
+        }
+        else if (order.Side == TradeSide.BUY)
+        {
+            // No position exists yet for a pending BUY - create it now that the broker has
+            // confirmed the real fill, using the SL/TP calculated at signal time and stored
+            // on the order. TrailingStopLoss starts null and self-populates on the next
+            // position-monitor cycle, same as any other freshly opened position.
+            var newPosition = await _repository.UpsertPositionAsync(new RealPosition
+            {
+                UserId = order.UserId,
+                Symbol = order.Symbol,
+                Side = TradeSide.BUY,
+                Quantity = order.Quantity,
+                AverageEntryPrice = executedPrice,
+                CurrentPrice = executedPrice,
+                UnrealizedPnl = 0m,
+                StopLoss = order.StopLoss,
+                TakeProfit = order.TakeProfit,
+                TrailingStopLoss = null,
+                Status = PositionStatus.OPEN,
+                TradeType = TradeType.Auto,
+                RealizedPnl = 0m
+            });
+
+            _realTradeCache?.AddOrUpdatePosition(newPosition);
+
+            await _repository.RecordTradeHistoryAsync(new RealTradeHistory
+            {
+                UserId = order.UserId,
+                OrderId = order.Id,
+                BrokerOrderId = order.BrokerOrderId,
+                Symbol = order.Symbol,
+                Side = TradeSide.BUY,
+                Quantity = order.Quantity,
+                EntryPrice = executedPrice,
+                ExecutedPrice = executedPrice,
+                RealizedPnl = 0m,
+                TradeType = TradeType.Auto,
+                Remarks = $"Real BUY confirmed FILLED @ ₹{executedPrice:F2} (Broker ID: {order.BrokerOrderId})"
+            });
+
+            string todayKey = $"realtrade:today_count:{order.UserId}:{DateTime.UtcNow:yyyyMMdd}";
+            await _cacheService.RemoveAsync(todayKey);
+
+            await LogAuditAsync(order.Symbol, "REAL_BUY", executedPrice, order.Quantity,
+                $"⚡ Live BUY confirmed FILLED @ ₹{executedPrice:F2} (Qty: {order.Quantity}, Order #{order.BrokerOrderId})", order.UserId);
+
+            if (_hubContext != null)
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                {
+                    symbol = order.Symbol,
+                    side = "BUY",
+                    quantity = order.Quantity,
+                    price = executedPrice,
+                    target = order.TakeProfit,
+                    stopLoss = order.StopLoss,
+                    brokerOrderId = order.BrokerOrderId,
+                    userId = order.UserId,
+                    message = $"⚡ LIVE REAL BUY: {order.Quantity} shares of {order.Symbol} confirmed FILLED @ ₹{executedPrice:N2}"
+                });
+            }
+
+            await BroadcastDashboardUpdateAsync(order.UserId);
+        }
+    }
+
+    private async Task FinalizeRejectedOrderAsync(RealOrder order, string? brokerStatus, string? message)
+    {
+        await _repository.UpdateOrderStatusAsync(order.Id, PaperOrderStatus.Rejected, 0m, order.BrokerOrderId, message);
+
+        string actionType = order.Side == TradeSide.SELL ? "SELL_FAILED" : "ORDER_REJECTED";
+        string followUp = order.Side == TradeSide.SELL ? "Position remains open for retry." : "No position was opened.";
+        await LogAuditAsync(order.Symbol, actionType, order.Price, order.Quantity,
+            $"Zerodha order #{order.BrokerOrderId} for {order.Symbol} ended as {brokerStatus}: {message}. {followUp}", order.UserId);
     }
 
     public async Task<int> SquareOffAllPositionsAsync(string reason = "Emergency Panic Kill Switch Triggered", int userId = 1)
@@ -813,21 +1522,25 @@ public class AutoRealTradeService : IAutoRealTradeService
         await _cacheService.RemoveAsync(cacheKey);
 
         var openPositions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
-        int closedCount = 0;
+        int filledCount = 0;
+        int pendingCount = 0;
 
         foreach (var pos in openPositions)
         {
             decimal exitPrice = pos.CurrentPrice > 0m ? pos.CurrentPrice : pos.AverageEntryPrice;
-            bool closed = await ExecuteRealSellOrderAsync(pos, exitPrice, reason, userId);
-            if (closed) closedCount++;
+            var outcome = await ExecuteRealSellOrderCoreAsync(pos, exitPrice, reason, userId);
+            if (outcome == RealSellOutcome.Filled) filledCount++;
+            else if (outcome == RealSellOutcome.OrderOpenPending) pendingCount++;
         }
 
         string userTag = await GetUserTagAsync(userId);
-        await LogAuditAsync(userTag, "KILL_SWITCH_ACTIVE", null, closedCount,
-            $"🚨 EMERGENCY KILL SWITCH EXECUTED: Bot Stopped, {closedCount} live positions squared off.", userId);
+        string summary = pendingCount > 0
+            ? $"🚨 EMERGENCY KILL SWITCH EXECUTED: Bot Stopped, {filledCount} position(s) squared off, {pendingCount} SELL order(s) placed and still OPEN at the broker (awaiting fill)."
+            : $"🚨 EMERGENCY KILL SWITCH EXECUTED: Bot Stopped, {filledCount} live positions squared off.";
+        await LogAuditAsync(userTag, "KILL_SWITCH_ACTIVE", null, filledCount + pendingCount, summary, userId);
 
         await BroadcastDashboardUpdateAsync(userId);
-        return closedCount;
+        return filledCount;
     }
 
     public async Task<bool> SquareOffSinglePositionAsync(int positionId, string reason = "Manual Exit", int userId = 1)

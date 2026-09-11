@@ -32,6 +32,14 @@ public interface IZerodhaKiteBrokerService
     Task<(bool Success, string? Message)> CancelLiveOrderAsync(string brokerOrderId, int userId = 1);
 
     /// <summary>
+    /// Confirms the broker-side execution status of a previously placed order (GET /orders/{order_id}).
+    /// Placing an order only means Kite *accepted* it for the exchange — this call is required to know
+    /// whether it has actually traded (COMPLETE), is still resting (OPEN/TRIGGER PENDING), or was
+    /// CANCELLED/REJECTED. Never assume "placed" means "filled".
+    /// </summary>
+    Task<(bool Success, string? BrokerStatus, decimal AveragePrice, int FilledQuantity, string? Message)> GetOrderStatusAsync(string brokerOrderId, int userId = 1);
+
+    /// <summary>
     /// Squares off an open position with Zerodha broker by placing an opposing market-protected order.
     /// </summary>
     Task<(bool Success, string? BrokerOrderId, decimal ExecutedPrice, string? Message)> SquareOffLivePositionAsync(

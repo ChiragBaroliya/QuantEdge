@@ -206,4 +206,74 @@ public class RealTradeController : ControllerBase
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Manual SELL for any stock currently held/positioned at Zerodha (Live Positions or Holdings),
+    /// including one the bot isn't tracking as a real_positions row.
+    /// </summary>
+    [HttpPost("manual-sell")]
+    public async Task<IActionResult> ManualSell([FromBody] ManualSellRequestDto dto, [FromQuery] int? userId = null)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Symbol) || dto.Quantity <= 0 || dto.CurrentPrice <= 0)
+        {
+            return BadRequest(new { success = false, message = "A valid Symbol, Quantity, and CurrentPrice are required." });
+        }
+
+        try
+        {
+            int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+            var (success, message) = await _realTradeService.ManualSellAsync(
+                dto.Symbol, dto.Quantity, dto.CurrentPrice, dto.Product, dto.EntryPriceHint, dto.Reason ?? "Manual Web Sell", targetUid);
+
+            return Ok(new { success, message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Force re-verifies one order's status directly against Zerodha and corrects our records if they've
+    /// drifted from the broker's truth - e.g. an order shown FILLED here that Zerodha's own Orders page
+    /// still shows resting OPEN (unfilled).
+    /// </summary>
+    [HttpPost("resync-order")]
+    public async Task<IActionResult> ResyncOrderStatus([FromBody] ResyncOrderStatusRequestDto dto, [FromQuery] int? userId = null)
+    {
+        if (dto == null || dto.OrderId <= 0)
+        {
+            return BadRequest(new { success = false, message = "A valid OrderId is required." });
+        }
+
+        try
+        {
+            int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+            var (success, message) = await _realTradeService.ResyncOrderStatusAsync(dto.OrderId, targetUid);
+            return Ok(new { success, message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Resyncs every recent order against Zerodha in one pass - what "Sync Now" calls so it actually
+    /// re-verifies order status with the broker, the same check the per-order 🔄 Resync button runs.
+    /// </summary>
+    [HttpPost("resync-recent-orders")]
+    public async Task<IActionResult> ResyncRecentOrders([FromQuery] int? userId = null)
+    {
+        try
+        {
+            int targetUid = GetCurrentUserId(userId);
+            var (success, message) = await _realTradeService.ResyncRecentOrdersAsync(targetUid);
+            return Ok(new { success, message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
 }

@@ -5,7 +5,9 @@ public enum PaperOrderStatus
     Pending = 0,
     Filled = 1,
     Cancelled = 2,
-    Rejected = 3
+    Rejected = 3,
+    /// <summary>Order accepted by the broker but not yet confirmed executed (e.g. a limit order still resting on the book).</summary>
+    Open = 4
 }
 
 public enum PaperOrderType

@@ -55,6 +55,18 @@ public class AutoRealPositionMonitorWorker : BackgroundService
                     var marketDataCache = scope.ServiceProvider.GetService<IMarketDataCacheService>();
                     var brokerService = scope.ServiceProvider.GetRequiredService<IZerodhaKiteBrokerService>();
 
+                    // Confirm real fill status with the broker for any SELL order still recorded as Open
+                    // (e.g. a limit order placed by the kill switch that hasn't traded yet). Must run before
+                    // evaluating exits below so a freshly-confirmed close is reflected in this cycle's positions.
+                    try
+                    {
+                        await realTradeService.ReconcilePendingRealOrdersAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error reconciling pending real orders in AutoRealPositionMonitorWorker cycle.");
+                    }
+
                     // Fetch all OPEN real positions from RAM (or DB fallback)
                     var openRealPositions = realTradeCache != null && realTradeCache.IsWarmedUp
                         ? realTradeCache.GetAllOpenPositions().ToList()

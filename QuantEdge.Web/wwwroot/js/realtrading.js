@@ -9,6 +9,7 @@ let countdownInterval = null;
 let modalSquareOff = null;
 let modalKillSwitch = null;
 let modalSetHoldingTarget = null;
+let modalManualSell = null;
 
 // Smart Polling Manager
 let pollingTimer = null;
@@ -36,6 +37,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const targetModalEl = document.getElementById('modalSetHoldingTarget');
     if (targetModalEl && typeof bootstrap !== 'undefined') {
         modalSetHoldingTarget = new bootstrap.Modal(targetModalEl);
+    }
+
+    const manualSellModalEl = document.getElementById('modalManualSell');
+    if (manualSellModalEl && typeof bootstrap !== 'undefined') {
+        modalManualSell = new bootstrap.Modal(manualSellModalEl);
     }
 
     // Check URL parameters for OAuth return
@@ -352,12 +358,13 @@ function updateDashboardUI(data) {
     // 4. Populate Open Real Positions (Bot DB)
     renderOpenPositions(data.openPositions || []);
 
-    // 4b. Populate Zerodha Live Broker Positions & Holdings
+    // 4b. Populate Recent Orders first - Zerodha Positions/Holdings below cross-reference this to
+    // detect a still-resting SELL order for a symbol and show its status instead of a Sell button.
+    renderRecentOrders(data.recentOrders || []);
+
+    // 4c. Populate Zerodha Live Broker Positions & Holdings
     renderZerodhaPositions(data.brokerPositions);
     renderZerodhaHoldings(data.brokerHoldings);
-
-    // 5. Populate Recent Orders
-    renderRecentOrders(data.recentOrders || []);
 
     // 6. Populate Today's Logs
     if (data.todayLogs && data.todayLogs.length > 0) {
@@ -421,6 +428,24 @@ let cachedOpenPositions = [];
 let cachedRecentOrders = [];
 let cachedTodayLogs = [];
 
+// Finds a SELL order for this symbol that's still resting at the broker (Open=4) or not yet
+// confirmed (Pending=0) - used so Holdings/Live Positions show that order's real status instead of
+// a Sell button that would just place a second, conflicting order on top of it.
+function findPendingSellOrder(symbol) {
+    const upperSymbol = (symbol || "").toUpperCase();
+    if (!upperSymbol) return null;
+    return cachedRecentOrders.find(o =>
+        o.symbol && o.symbol.toUpperCase() === upperSymbol &&
+        o.side === 1 &&
+        (o.status === 4 || o.status === 0)
+    ) || null;
+}
+
+function pendingOrderStatusBadge(order) {
+    const label = order.status === 4 ? "OPEN" : "PENDING";
+    return `<span class="status-badge-pending" title="A SELL order for this stock is already ${label} at the broker (Order #${order.brokerOrderId || 'N/A'}) - see Real Orders Book">${label}</span>`;
+}
+
 function applyPositionsFilter() {
     const searchSymbol = (document.getElementById("inpSearchPositions")?.value || "").trim().toUpperCase();
     const filterSide = document.getElementById("selFilterPosSide")?.value || "";
@@ -466,6 +491,7 @@ function applyOrdersFilter() {
         if (filterStatus === "CANCELLED" && o.status !== 2) return false;
         if (filterStatus === "REJECTED" && o.status !== 3) return false;
         if (filterStatus === "PENDING" && o.status !== 0) return false;
+        if (filterStatus === "OPEN" && o.status !== 4) return false;
 
         if (filterDate && o.createdAt && toIstDateString(o.createdAt) !== filterDate) return false;
 
@@ -529,13 +555,19 @@ function renderZerodhaPositions(brokerPositions) {
     const badgeZerodhaCount = document.getElementById("badge-zerodha-count");
     if (!tbody) return;
 
-    const netPositions = (brokerPositions && brokerPositions.net) ? brokerPositions.net : [];
+    // Filter out CNC rows with no real remaining exposure - Zerodha's Positions API nets
+    // "sold - bought" for the day, so a CNC sale placed against existing demat holdings (not
+    // bought today) leaves a negative "net" quantity artifact here even though nothing is
+    // actually left to sell/own. That's just noise; a real MIS short (negative, intraday) is
+    // genuine exposure and stays visible.
+    const allNetPositions = (brokerPositions && brokerPositions.net) ? brokerPositions.net : [];
+    const netPositions = allNetPositions.filter(p => p.product === "MIS" || (p.quantity || 0) > 0);
     if (badgeZerodhaCount) {
         badgeZerodhaCount.innerText = netPositions.length;
     }
 
     if (!brokerPositions || netPositions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No live open positions in Zerodha account.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No live open positions in Zerodha account.</td></tr>`;
         return;
     }
 
@@ -548,9 +580,20 @@ function renderZerodhaPositions(brokerPositions) {
         const buyPrice = p.buyPrice > 0 ? `₹${p.buyPrice.toFixed(2)}` : "-";
         const sellPrice = p.sellPrice > 0 ? `₹${p.sellPrice.toFixed(2)}` : "-";
         const ltp = p.lastPrice > 0 ? `₹${p.lastPrice.toFixed(2)}` : "-";
-        const prodBadge = p.product === "MIS" 
-            ? '<span class="badge bg-warning text-dark">MIS (Intraday)</span>' 
+        const prodBadge = p.product === "MIS"
+            ? '<span class="badge bg-warning text-dark">MIS (Intraday)</span>'
             : '<span class="badge bg-info text-dark">CNC (Delivery)</span>';
+        // Rows with no genuine remaining exposure (a CNC sale netted against existing holdings) are
+        // already filtered out above. What's left is either real long exposure (offer Sell) or a real
+        // MIS short (negative, intraday) - which needs a Buy-to-cover, not this button.
+        const qty = p.quantity || 0;
+        const sellPriceRef = p.lastPrice > 0 ? p.lastPrice : (p.buyPrice > 0 ? p.buyPrice : 0);
+        const pendingSellOrder = qty > 0 ? findPendingSellOrder(p.tradingSymbol) : null;
+        const actionCell = pendingSellOrder
+            ? pendingOrderStatusBadge(pendingSellOrder)
+            : (qty > 0
+                ? `<button class="btn-square-off" onclick="openManualSellModal('${(p.tradingSymbol || '').replace(/'/g, "")}', ${qty}, ${sellPriceRef}, '${p.product || 'CNC'}', ${p.buyPrice || 0})" title="Manually sell this Zerodha position">Sell</button>`
+                : `<span class="small" style="color: #cbd5e1 !important;" title="Open intraday short - cover with a BUY order directly in Zerodha">Short (cover in Zerodha)</span>`);
 
         html += `
             <tr>
@@ -564,6 +607,7 @@ function renderZerodhaPositions(brokerPositions) {
                 <td class="text-white">${formatCurrencyWithSign(p.unrealised)}</td>
                 <td class="text-white">${formatCurrencyWithSign(p.realised)}</td>
                 <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
+                <td>${actionCell}</td>
             </tr>
         `;
     });
@@ -582,7 +626,7 @@ function renderZerodhaHoldings(holdings) {
     }
 
     if (holdingsList.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No demat equity holdings found in Zerodha.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No demat equity holdings found in Zerodha.</td></tr>`;
         return;
     }
 
@@ -608,6 +652,13 @@ function renderZerodhaHoldings(holdings) {
         const targetCell = monitoredPos
             ? `<span class="badge bg-dark border border-info text-info">● Monitoring @ ₹${(monitoredPos.takeProfit || 0).toFixed(2)}</span>`
             : `<button class="btn btn-sm btn-outline-info" onclick="openSetTargetModal('${(h.tradingSymbol || '').replace(/'/g, "")}', ${totalQty}, ${h.averagePrice})">Set Target</button>`;
+        const sellableQty = settledQty > 0 ? settledQty : 0;
+        const pendingSellOrder = findPendingSellOrder(h.tradingSymbol);
+        const actionCell = pendingSellOrder
+            ? pendingOrderStatusBadge(pendingSellOrder)
+            : (sellableQty > 0
+                ? `<button class="btn-square-off" onclick="openManualSellModal('${(h.tradingSymbol || '').replace(/'/g, "")}', ${sellableQty}, ${h.lastPrice}, 'CNC', ${h.averagePrice})" title="Manually sell this Zerodha holding">Sell</button>`
+                : `<span class="small text-warning" title="T1 unsettled shares cannot be sold yet">Unsettled</span>`);
 
         html += `
             <tr>
@@ -620,6 +671,7 @@ function renderZerodhaHoldings(holdings) {
                 <td class="${dayChangeClass}">${formatCurrencyWithSign(h.dayChange)} (${h.dayChangePercentage.toFixed(2)}%)</td>
                 <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
                 <td>${targetCell}</td>
+                <td>${actionCell}</td>
             </tr>
         `;
     });
@@ -642,6 +694,19 @@ window.openSetTargetModal = function (symbol, quantity, averagePrice) {
     if (modalSetHoldingTarget) modalSetHoldingTarget.show();
 };
 
+window.openManualSellModal = function (symbol, quantity, currentPrice, product, entryPrice) {
+    document.getElementById("msSymbol").innerText = symbol;
+    document.getElementById("msQuantity").innerText = quantity;
+    document.getElementById("msPrice").innerText = (currentPrice || 0).toFixed(2);
+    document.getElementById("msRawSymbol").value = symbol;
+    document.getElementById("msRawQuantity").value = quantity;
+    document.getElementById("msRawPrice").value = currentPrice || 0;
+    document.getElementById("msRawProduct").value = product || "CNC";
+    document.getElementById("msRawEntryPrice").value = entryPrice || 0;
+
+    if (modalManualSell) modalManualSell.show();
+};
+
 function renderRecentOrders(orders) {
     cachedRecentOrders = orders || [];
     applyOrdersFilter();
@@ -652,7 +717,7 @@ function renderFilteredRecentOrders(orders) {
     if (!tbody) return;
 
     if (!orders || orders.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No real orders matching filters.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No real orders matching filters.</td></tr>`;
         return;
     }
 
@@ -665,6 +730,11 @@ function renderFilteredRecentOrders(orders) {
         if (o.status === 1) statusBadge = '<span class="status-badge-filled">FILLED</span>';
         else if (o.status === 2) statusBadge = '<span class="status-badge-rejected">CANCELLED</span>';
         else if (o.status === 3) statusBadge = '<span class="status-badge-rejected">REJECTED</span>';
+        else if (o.status === 4) statusBadge = '<span class="status-badge-pending">OPEN</span>';
+
+        const actionCell = o.brokerOrderId
+            ? `<button class="btn btn-sm btn-outline-secondary" onclick="resyncOrderStatus(${o.id}, this)" title="Re-check this order's real status directly with Zerodha">🔄 Resync</button>`
+            : '-';
 
         html += `
             <tr>
@@ -676,12 +746,36 @@ function renderFilteredRecentOrders(orders) {
                 <td class="text-white">₹${(o.filledPrice || o.price).toFixed(2)}</td>
                 <td>${statusBadge}</td>
                 <td class="small" style="color: #cbd5e1 !important;">${o.remarks || o.rejectionReason || '-'}</td>
+                <td>${actionCell}</td>
             </tr>
         `;
     });
 
     tbody.innerHTML = html;
 }
+
+window.resyncOrderStatus = async function (orderId, btnEl) {
+    if (!orderId) return;
+    if (btnEl) { btnEl.disabled = true; btnEl.innerText = "⏳ Checking..."; }
+
+    try {
+        const response = await fetch(`${apiBaseUrl}/api/realtrade/resync-order`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ OrderId: orderId, UserId: currentUserId })
+        });
+
+        const data = await response.json();
+        alert(data.message || (data.success ? "Order status resynced." : "Could not resync this order."));
+        loadDashboardData();
+        loadLivePositionsFast();
+    } catch (err) {
+        console.error("Resync order error:", err);
+        alert("Failed to resync this order. Check the console for details.");
+    } finally {
+        if (btnEl) { btnEl.disabled = false; btnEl.innerText = "🔄 Resync"; }
+    }
+};
 
 function renderLogs(logs) {
     cachedTodayLogs = logs || [];
@@ -717,7 +811,8 @@ function appendLogEntry(log) {
     div.className = `log-entry ${log.actionType.toLowerCase()}`;
 
     let badgeClass = "badge bg-secondary";
-    if (log.actionType.includes("BUY")) badgeClass = "badge bg-success";
+    if (log.actionType.includes("OPEN")) badgeClass = "badge bg-warning text-dark";
+    else if (log.actionType.includes("BUY")) badgeClass = "badge bg-success";
     else if (log.actionType.includes("SELL")) badgeClass = "badge bg-danger";
     else if (log.actionType.includes("KILL") || log.actionType.includes("CIRCUIT")) badgeClass = "badge bg-warning text-dark";
 
@@ -987,6 +1082,46 @@ function setupEventListeners() {
         });
     }
 
+    // Manual Sell (Zerodha Live Position / Holding) Confirm
+    const btnConfirmManualSell = document.getElementById("btnConfirmManualSell");
+    if (btnConfirmManualSell) {
+        btnConfirmManualSell.addEventListener("click", async function () {
+            const symbol = document.getElementById("msRawSymbol")?.value;
+            const quantity = parseInt(document.getElementById("msRawQuantity")?.value || "0");
+            const currentPrice = parseFloat(document.getElementById("msRawPrice")?.value || "0");
+            const product = document.getElementById("msRawProduct")?.value || "CNC";
+            const entryPrice = parseFloat(document.getElementById("msRawEntryPrice")?.value || "0");
+            if (!symbol || !quantity || !currentPrice) return;
+
+            this.disabled = true;
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/realtrade/manual-sell`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        Symbol: symbol,
+                        Quantity: quantity,
+                        CurrentPrice: currentPrice,
+                        Product: product,
+                        EntryPriceHint: entryPrice > 0 ? entryPrice : null,
+                        Reason: "Manual Sell from Dashboard",
+                        UserId: currentUserId
+                    })
+                });
+
+                const data = await response.json();
+                if (modalManualSell) modalManualSell.hide();
+                alert(data.message || (data.success ? "Sell order submitted." : "Sell order failed."));
+                loadDashboardData();
+                loadLivePositionsFast();
+            } catch (err) {
+                console.error("Manual sell error:", err);
+            } finally {
+                this.disabled = false;
+            }
+        });
+    }
+
     // Clear Logs Button
     const btnClear = document.getElementById("btnClearLogs");
     if (btnClear) {
@@ -1013,6 +1148,19 @@ function setupEventListeners() {
             this.disabled = true;
             this.innerHTML = "⏳ Syncing...";
             try {
+                // Re-verify every recent order against Zerodha first (the same check the per-order
+                // 🔄 Resync button runs) so Sync Now surfaces the broker's real truth, not just
+                // whatever QuantEdge's own records currently say - then reload with corrected data.
+                try {
+                    const resyncResponse = await fetch(`${apiBaseUrl}/api/realtrade/resync-recent-orders?userId=${currentUserId}`, { method: "POST" });
+                    const resyncData = await resyncResponse.json();
+                    if (resyncData && resyncData.message) {
+                        showToastAlert(resyncData.message, "info");
+                    }
+                } catch (resyncErr) {
+                    console.warn("Resync recent orders skipped:", resyncErr);
+                }
+
                 await Promise.all([loadDashboardData(), loadLivePositionsFast()]);
             } finally {
                 this.disabled = false;

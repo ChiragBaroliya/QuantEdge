@@ -12,6 +12,18 @@
     color: #ffffff;
 }
 
+/* Small Bootstrap confirm/prompt dialogs on this page (Square-off, Manual Sell, Set Target, Kill
+   Switch, DDPI Guide). These previously reused the site-wide ".qe-modal" class, which is built for
+   the unrelated full-page guide overlay system and forces height:85vh + overflow:hidden - stretching
+   these short dialogs into mostly empty space (or, for the longer DDPI guide, silently clipping
+   content). This class gives the same dark-theme chrome without forcing a fixed height. */
+.qe-confirm-modal {
+    background: var(--bg-card, #161b2c);
+    border: 1px solid var(--theme-border, rgba(148, 163, 184, 0.25));
+    border-radius: var(--radius-lg, 14px);
+    box-shadow: var(--shadow-card, 0 20px 40px rgba(0, 0, 0, 0.5));
+}
+
 /* Prerequisite Banners */
 .prerequisite-banner {
     border-radius: 12px;

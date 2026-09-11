@@ -234,6 +234,65 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         }
     }
 
+    public async Task<(bool Success, string? BrokerStatus, decimal AveragePrice, int FilledQuantity, string? Message)> GetOrderStatusAsync(string brokerOrderId, int userId = 1)
+    {
+        var tokenValidation = await ValidateSessionTokenAsync(userId);
+        if (!tokenValidation.IsValid)
+        {
+            return (false, null, 0m, 0, tokenValidation.Message);
+        }
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
+
+            var response = await client.GetAsync($"https://api.kite.trade/orders/{brokerOrderId}");
+            var responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Zerodha GetOrderStatus failed for Order #{OrderId}, User {UserId}: Code {Status}, Body: {Body}",
+                    brokerOrderId, userId, response.StatusCode, responseJson);
+
+                string errorMsg = "Broker error";
+                try
+                {
+                    using var errDoc = JsonDocument.Parse(responseJson);
+                    if (errDoc.RootElement.TryGetProperty("message", out var errMsgElem))
+                    {
+                        errorMsg = errMsgElem.GetString() ?? errorMsg;
+                    }
+                }
+                catch { }
+
+                return (false, null, 0m, 0, $"Broker error fetching order status: {errorMsg}");
+            }
+
+            using var doc = JsonDocument.Parse(responseJson);
+            if (!doc.RootElement.TryGetProperty("data", out var dataElem) || dataElem.ValueKind != JsonValueKind.Array || dataElem.GetArrayLength() == 0)
+            {
+                return (false, null, 0m, 0, "No order history returned by broker for this order.");
+            }
+
+            // Kite returns the full status history for the order; the last entry is the current state.
+            var latest = dataElem[dataElem.GetArrayLength() - 1];
+            string? status = latest.TryGetProperty("status", out var statusElem) ? statusElem.GetString() : null;
+            decimal averagePrice = latest.TryGetProperty("average_price", out var avgElem) && avgElem.TryGetDecimal(out var avg) ? avg : 0m;
+            int filledQuantity = latest.TryGetProperty("filled_quantity", out var qtyElem) && qtyElem.TryGetInt32(out var qty) ? qty : 0;
+            string? statusMessage = latest.TryGetProperty("status_message", out var msgElem) ? msgElem.GetString() : null;
+
+            return (true, status, averagePrice, filledQuantity, statusMessage ?? status);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching order status for #{OrderId}, User {UserId}", brokerOrderId, userId);
+            return (false, null, 0m, 0, $"Network/API Exception: {ex.Message}");
+        }
+    }
+
     public async Task<(bool Success, string? BrokerOrderId, decimal ExecutedPrice, string? Message)> SquareOffLivePositionAsync(
         string symbol,
         int quantity,
