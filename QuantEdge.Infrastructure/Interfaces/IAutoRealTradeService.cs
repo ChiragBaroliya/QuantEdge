@@ -19,7 +19,8 @@ public interface IAutoRealTradeService
     /// Evaluates pre-trade risk conditions (Token, Capital, Daily Loss Limit, Trading Window, Max Trades)
     /// and fires a Real-Money Buy order with Zerodha if all conditions pass.
     /// </summary>
-    Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false);
+    Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
+        decimal? engineStopLoss = null, decimal? engineTarget = null);
 
     /// <summary>
     /// Evaluates live exit conditions (Target, Optional SL, Optional Trailing SL, Max Duration)

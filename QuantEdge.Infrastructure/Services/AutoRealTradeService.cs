@@ -30,6 +30,13 @@ public class AutoRealTradeService : IAutoRealTradeService
     private readonly ILogger<AutoRealTradeService> _logger;
     private readonly ConcurrentDictionary<int, string> _userNameCache = new();
 
+    // Safety-net defaults for optional risk controls. Stop Loss and the Daily Loss Circuit
+    // Breaker are treated as effectively mandatory for real-money positions: if a user has left
+    // them unset, these fallbacks apply instead of running the position with no downside cap.
+    private const decimal DefaultStopLossPctFallback = 3.00m;
+    private const decimal DefaultDailyLossLimitFactor = 0.10m; // 10% of AvailableCapital
+    private const int DefaultMaxConcurrentRealPositions = 10;
+
     public AutoRealTradeService(
         IRealTradingRepository repository,
         IZerodhaKiteBrokerService brokerService,
@@ -301,7 +308,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         return await _repository.GetTodayLogsAsync(userId, limit);
     }
 
-    public async Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false)
+    public async Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
+        decimal? engineStopLoss = null, decimal? engineTarget = null)
     {
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
@@ -351,21 +359,32 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
-        // 6. Optional Daily Loss Circuit Breaker Check
-        if (settings.MaxDailyLossLimit.HasValue && settings.MaxDailyLossLimit.Value > 0)
-        {
-            decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
-            var openPositions = await _repository.GetOpenPositionsAsync(userId);
-            decimal totalUnrealized = openPositions.Sum(p => p.UnrealizedPnl);
-            decimal totalLoss = todayRealizedPnl + totalUnrealized;
+        // 6. Daily Loss Circuit Breaker Check (mandatory - falls back to a conservative default
+        // percentage of available capital if the user hasn't configured an explicit limit).
+        decimal effectiveDailyLossLimit = settings.MaxDailyLossLimit.HasValue && settings.MaxDailyLossLimit.Value > 0
+            ? Math.Abs(settings.MaxDailyLossLimit.Value)
+            : Math.Max(1m, settings.AvailableCapital * DefaultDailyLossLimitFactor);
 
-            if (totalLoss <= -Math.Abs(settings.MaxDailyLossLimit.Value))
-            {
-                await LogAuditAsync(symbol, "CIRCUIT_BREAKER", entryPrice, 0,
-                    $"Daily loss limit ₹{settings.MaxDailyLossLimit.Value:N2} breached (Total Loss: ₹{totalLoss:N2}). Pausing live bot.", userId);
-                await ToggleRealTradeAsync(false, userId);
-                return false;
-            }
+        decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
+        var openPositions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
+        decimal totalUnrealized = openPositions.Sum(p => p.UnrealizedPnl);
+        decimal totalLoss = todayRealizedPnl + totalUnrealized;
+
+        if (totalLoss <= -effectiveDailyLossLimit)
+        {
+            await LogAuditAsync(symbol, "CIRCUIT_BREAKER", entryPrice, 0,
+                $"Daily loss limit ₹{effectiveDailyLossLimit:N2} breached (Total Loss: ₹{totalLoss:N2}). Pausing live bot.", userId);
+            await ToggleRealTradeAsync(false, userId);
+            return false;
+        }
+
+        // 6b. Portfolio-Level Exposure Cap - bounds the number of simultaneous open real
+        // positions across all symbols, independent of the per-symbol duplicate check below.
+        if (openPositions.Count >= DefaultMaxConcurrentRealPositions)
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Portfolio exposure cap reached ({openPositions.Count}/{DefaultMaxConcurrentRealPositions} concurrent open positions)", userId);
+            return false;
         }
 
         // 7. Duplicate Open Position Check
@@ -408,14 +427,33 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
-        // 9. Target & Optional Stop Loss & Trailing SL Setup
-        decimal tpPct = Math.Abs(settings.ProfitTargetPct) / 100m;
-        decimal takeProfit = Math.Round(entryPrice * (1m + tpPct), 2);
-
-        decimal? stopLoss = null;
-        if (settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0)
+        // 9. Target & Stop Loss - prefer the SwingDecisionEngine's own ATR-based levels (the
+        // same numbers that earned the signal its Risk/Reward score) over a flat percentage of
+        // entry price, since a flat % is disconnected from the volatility context that actually
+        // qualified the trade. Falls back to the user's flat-% settings (mandatory-with-fallback,
+        // see below) for entry paths that don't go through the scoring engine, e.g. manual buys.
+        decimal takeProfit;
+        if (engineTarget.HasValue && engineTarget.Value > entryPrice)
         {
-            stopLoss = Math.Round(entryPrice * (1m - Math.Abs(settings.StopLossPct.Value) / 100m), 2);
+            takeProfit = Math.Round(engineTarget.Value, 2);
+        }
+        else
+        {
+            decimal tpPct = Math.Abs(settings.ProfitTargetPct) / 100m;
+            takeProfit = Math.Round(entryPrice * (1m + tpPct), 2);
+        }
+
+        decimal stopLoss;
+        if (engineStopLoss.HasValue && engineStopLoss.Value > 0 && engineStopLoss.Value < entryPrice)
+        {
+            stopLoss = Math.Round(engineStopLoss.Value, 2);
+        }
+        else
+        {
+            decimal effectiveStopLossPct = settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0
+                ? Math.Abs(settings.StopLossPct.Value)
+                : DefaultStopLossPctFallback;
+            stopLoss = Math.Round(entryPrice * (1m - effectiveStopLossPct / 100m), 2);
         }
 
         decimal? trailingSl = null;
@@ -595,7 +633,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             await _cacheService.RemoveAsync(todayKey);
 
             // Log Audit
-            string slText = stopLoss.HasValue ? $"₹{stopLoss.Value:F2}" : "Disabled";
+            string slText = $"₹{stopLoss:F2}";
             string tslText = trailingSl.HasValue ? $"₹{trailingSl.Value:F2}" : "Disabled";
             await LogAuditAsync(symbol, "REAL_BUY", executedPrice, quantity,
                 $"⚡ Live BUY Executed @ ₹{executedPrice:F2} (Qty: {quantity}, Target: ₹{takeProfit:F2}, SL: {slText}, TSL: {tslText}, Order #{brokerOrderId})", userId);
@@ -650,11 +688,10 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
 
         var settings = await GetSettingsAsync(userId);
-        decimal? stopLoss = null;
-        if (settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0)
-        {
-            stopLoss = Math.Round(averagePrice * (1m - Math.Abs(settings.StopLossPct.Value) / 100m), 2);
-        }
+        decimal effectiveStopLossPct = settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0
+            ? Math.Abs(settings.StopLossPct.Value)
+            : DefaultStopLossPctFallback;
+        decimal stopLoss = Math.Round(averagePrice * (1m - effectiveStopLossPct / 100m), 2);
 
         var newPosition = await _repository.UpsertPositionAsync(new RealPosition
         {

@@ -116,7 +116,7 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
         }
 
         // Single pass: collect candidate stocks
-        var candidateStocks = new List<(Domain.Entities.StockMaster Stock, decimal EntryPrice, int MetCount, int Score, bool IsBuySignal)>();
+        var candidateStocks = new List<(Domain.Entities.StockMaster Stock, decimal EntryPrice, int MetCount, int Score, bool IsBuySignal, decimal EngineStopLoss, decimal EngineTarget)>();
 
         foreach (var stock in activeStocks)
         {
@@ -145,7 +145,7 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
                 // Threshold filter: Collect candidate if confirmed Buy or >= 6 criteria
                 if (evalResult.IsBuySignal || metCount >= 6)
                 {
-                    candidateStocks.Add((stock, evalResult.EntryPrice, metCount, evalResult.Score, evalResult.IsBuySignal));
+                    candidateStocks.Add((stock, evalResult.EntryPrice, metCount, evalResult.Score, evalResult.IsBuySignal, evalResult.StopLoss, evalResult.Target1));
                 }
             }
             catch (Exception ex)
@@ -168,7 +168,8 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
                 if (candidate.IsBuySignal || candidate.MetCount >= userSettings.MinConditionsMatch)
                 {
                     bool executed = await realTradeService.EvaluateAndExecuteRealBuyAsync(
-                        candidate.Stock.Symbol, candidate.EntryPrice, candidate.MetCount, userSettings.UserId, candidate.IsBuySignal);
+                        candidate.Stock.Symbol, candidate.EntryPrice, candidate.MetCount, userSettings.UserId, candidate.IsBuySignal,
+                        candidate.EngineStopLoss, candidate.EngineTarget);
 
                     if (executed)
                     {

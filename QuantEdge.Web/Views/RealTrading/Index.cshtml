@@ -463,10 +463,17 @@
                             <small class="form-hint">Capital deployed per buy order (e.g. ₹400).</small>
                         </div>
 
+                        <small class="form-hint text-warning d-block mb-2">
+                            ⚠ For auto-scanned signals, the bot may use a dynamic ATR-based Target/Stop Loss
+                            from the signal engine instead of the flat % values below, when the engine
+                            supplies one. These fields remain authoritative for manual buys and holdings
+                            enrolled via "Set Target".
+                        </small>
+
                         <div class="form-group mb-3">
                             <label class="form-label" for="inpProfitTarget">Profit Target (%)</label>
                             <input type="number" step="any" min="0.1" max="100" class="form-control qe-input" id="inpProfitTarget" name="ProfitTargetPct" required />
-                            <small class="form-hint">Mandatory exit target percentage (e.g. 5.0%).</small>
+                            <small class="form-hint">Mandatory exit target percentage (e.g. 5.0%). Used as-is for manual buys; auto-scanned trades may use the engine's dynamic target instead.</small>
                         </div>
 
                         <!-- Optional Stop Loss Toggle -->
@@ -474,7 +481,7 @@
                             <div class="optional-toggle-header">
                                 <label class="optional-label" for="chkEnableStopLoss">
                                     <span class="optional-title">Enable Stop Loss? (Optional)</span>
-                                    <small class="optional-desc">Fixed percentage below entry price</small>
+                                    <small class="optional-desc">Fixed percentage below entry price (fallback / manual-buy default — auto-scanned trades may use the engine's dynamic SL instead)</small>
                                 </label>
                                 <label class="qe-switch">
                                     <input type="checkbox" id="chkEnableStopLoss" />
