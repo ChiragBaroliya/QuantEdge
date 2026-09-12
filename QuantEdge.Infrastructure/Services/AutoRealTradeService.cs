@@ -36,6 +36,7 @@ public class AutoRealTradeService : IAutoRealTradeService
     private const decimal DefaultStopLossPctFallback = 3.00m;
     private const decimal DefaultDailyLossLimitFactor = 0.10m; // 10% of AvailableCapital
     private const int DefaultMaxConcurrentRealPositions = 10;
+    private const decimal DefaultTrailingSlPctFallback = 2.00m;
 
     public AutoRealTradeService(
         IRealTradingRepository repository,
@@ -93,9 +94,9 @@ public class AutoRealTradeService : IAutoRealTradeService
         existing.IsRealTradeEnabled = updateDto.IsRealTradeEnabled;
         existing.AvailableCapital = updateDto.AvailableCapital;
         existing.ProfitTargetPct = updateDto.ProfitTargetPct;
-        existing.StopLossPct = updateDto.StopLossPct; // Optional
-        existing.TrailingSlEnabled = updateDto.TrailingSlEnabled; // Optional
-        existing.TrailingSlPct = updateDto.TrailingSlPct; // Optional
+        existing.StopLossPct = updateDto.StopLossPct; // Overrides the mandatory SL fallback %, if set
+        existing.TrailingSlEnabled = updateDto.TrailingSlEnabled; // Stored for reference only - Trailing SL is always mandatory in AutoRealTradeService regardless of this flag
+        existing.TrailingSlPct = updateDto.TrailingSlPct; // Overrides the mandatory Trailing SL fallback %, if set
         existing.MaxDurationDays = updateDto.MaxDurationDays;
         existing.MaxTradesPerDay = updateDto.MaxTradesPerDay;
         existing.FixedAmountPerTrade = updateDto.FixedAmountPerTrade;
@@ -308,6 +309,11 @@ public class AutoRealTradeService : IAutoRealTradeService
         return await _repository.GetTodayLogsAsync(userId, limit);
     }
 
+    public async Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100)
+    {
+        return await _repository.GetTradeHistoryAsync(userId, limit);
+    }
+
     public async Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
         decimal? engineStopLoss = null, decimal? engineTarget = null)
     {
@@ -419,6 +425,38 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
+        // 8b. Live Quote Re-check - entryPrice above is from the 15-minute scan cycle's candle
+        // close, which can be stale by the time all the risk gates above finish evaluating.
+        // Refresh against a live LTP immediately before sizing/order placement so the trade
+        // executes against a current price rather than one that's already moved. Engine-supplied
+        // ATR-based SL/Target are shifted by the same delta to preserve their original risk
+        // distance instead of silently changing the R:R the signal was scored on.
+        decimal preLiveEntryPrice = entryPrice;
+        var ltpResult = await _brokerService.GetLtpQuotesAsync(new[] { (symbol, "NSE") }, userId);
+        if (ltpResult.Success && ltpResult.Ltps != null && ltpResult.Ltps.TryGetValue(symbol, out var liveLtp) && liveLtp > 0m)
+        {
+            decimal moveFromSignalPct = (liveLtp - preLiveEntryPrice) / preLiveEntryPrice * 100m;
+
+            // Guard against chasing a signal that's already moved away from what qualified it -
+            // a BUY signal that's dropped meaningfully since the scan is no longer the setup
+            // that was scored.
+            const decimal maxAdverseMovePct = 2.0m;
+            if (moveFromSignalPct <= -maxAdverseMovePct)
+            {
+                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", preLiveEntryPrice, 0,
+                    $"Live price ₹{liveLtp:N2} has moved {moveFromSignalPct:F2}% below the scanned entry ₹{preLiveEntryPrice:N2} - signal stale, skipping", userId);
+                return false;
+            }
+
+            decimal priceDelta = liveLtp - preLiveEntryPrice;
+            if (engineStopLoss.HasValue) engineStopLoss = engineStopLoss.Value + priceDelta;
+            if (engineTarget.HasValue) engineTarget = engineTarget.Value + priceDelta;
+            entryPrice = liveLtp;
+        }
+        // If the live quote fetch fails (network/token hiccup), proceed with the original scan-time
+        // entryPrice rather than blocking a trade that already passed every risk gate over a
+        // secondary, best-effort check.
+
         int quantity = (int)Math.Floor(settings.FixedAmountPerTrade / entryPrice);
         if (quantity < 1)
         {
@@ -456,11 +494,13 @@ public class AutoRealTradeService : IAutoRealTradeService
             stopLoss = Math.Round(entryPrice * (1m - effectiveStopLossPct / 100m), 2);
         }
 
-        decimal? trailingSl = null;
-        if (settings.TrailingSlEnabled && settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0)
-        {
-            trailingSl = Math.Round(entryPrice * (1m - Math.Abs(settings.TrailingSlPct.Value) / 100m), 2);
-        }
+        // Trailing SL is mandatory for real-money positions (like Stop Loss above) - it is always
+        // attached to a real position regardless of settings.TrailingSlEnabled, falling back to a
+        // conservative default percentage if the user hasn't configured a custom one.
+        decimal effectiveTrailingSlPct = settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0
+            ? Math.Abs(settings.TrailingSlPct.Value)
+            : DefaultTrailingSlPctFallback;
+        decimal trailingSl = Math.Round(entryPrice * (1m - effectiveTrailingSlPct / 100m), 2);
 
         try
         {
@@ -634,7 +674,7 @@ public class AutoRealTradeService : IAutoRealTradeService
 
             // Log Audit
             string slText = $"₹{stopLoss:F2}";
-            string tslText = trailingSl.HasValue ? $"₹{trailingSl.Value:F2}" : "Disabled";
+            string tslText = $"₹{trailingSl:F2}";
             await LogAuditAsync(symbol, "REAL_BUY", executedPrice, quantity,
                 $"⚡ Live BUY Executed @ ₹{executedPrice:F2} (Qty: {quantity}, Target: ₹{takeProfit:F2}, SL: {slText}, TSL: {tslText}, Order #{brokerOrderId})", userId);
 
@@ -693,6 +733,11 @@ public class AutoRealTradeService : IAutoRealTradeService
             : DefaultStopLossPctFallback;
         decimal stopLoss = Math.Round(averagePrice * (1m - effectiveStopLossPct / 100m), 2);
 
+        decimal effectiveTrailingSlPct = settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0
+            ? Math.Abs(settings.TrailingSlPct.Value)
+            : DefaultTrailingSlPctFallback;
+        decimal trailingSl = Math.Round(averagePrice * (1m - effectiveTrailingSlPct / 100m), 2);
+
         var newPosition = await _repository.UpsertPositionAsync(new RealPosition
         {
             UserId = userId,
@@ -704,7 +749,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             UnrealizedPnl = 0m,
             StopLoss = stopLoss,
             TakeProfit = targetPrice,
-            TrailingStopLoss = null,
+            TrailingStopLoss = trailingSl,
             Status = PositionStatus.OPEN,
             TradeType = TradeType.Auto,
             RealizedPnl = 0m
@@ -958,8 +1003,8 @@ public class AutoRealTradeService : IAutoRealTradeService
             shouldExit = true;
             exitReason = "Target Hit";
         }
-        // 2. Trailing Stop Loss Hit Check (Optional)
-        else if (settings.TrailingSlEnabled && position.TrailingStopLoss.HasValue && currentLtp <= position.TrailingStopLoss.Value)
+        // 2. Trailing Stop Loss Hit Check (mandatory - always attached to the position, see setup above)
+        else if (position.TrailingStopLoss.HasValue && currentLtp <= position.TrailingStopLoss.Value)
         {
             shouldExit = true;
             exitReason = $"Trailing SL Hit @ ₹{position.TrailingStopLoss.Value:F2}";
@@ -970,14 +1015,16 @@ public class AutoRealTradeService : IAutoRealTradeService
             shouldExit = true;
             exitReason = "Stop Loss Hit";
         }
-        // 4. Max Duration Check
+        // 4. Max Duration Check - counted in NSE trading days (weekends/holidays excluded), not
+        // raw calendar days, so "Max Days Hold" means what a trader actually means by it: a number
+        // of trading sessions, not a number that quietly includes weekends.
         else if (settings.MaxDurationDays > 0)
         {
-            int daysOpen = (DateTime.UtcNow - position.OpenedAt).Days;
-            if (daysOpen >= settings.MaxDurationDays)
+            int tradingDaysOpen = await _marketHoursService.CountTradingDaysElapsedAsync(position.OpenedAt, DateTime.UtcNow);
+            if (tradingDaysOpen >= settings.MaxDurationDays)
             {
                 shouldExit = true;
-                exitReason = $"Max Duration ({settings.MaxDurationDays} Days) Exit";
+                exitReason = $"Max Duration ({settings.MaxDurationDays} Trading Days) Exit";
             }
         }
 
@@ -986,10 +1033,12 @@ public class AutoRealTradeService : IAutoRealTradeService
             return await ExecuteRealSellOrderAsync(position, currentLtp, exitReason, userId);
         }
 
-        // Dynamic Trailing SL Calculation (if Trailing SL is active and price is higher)
-        if (settings.TrailingSlEnabled && settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0)
+        // Dynamic Trailing SL Calculation (mandatory - always ratchets upward as price rises)
         {
-            decimal candidateSl = Math.Round(currentLtp * (1m - Math.Abs(settings.TrailingSlPct.Value) / 100m), 2);
+            decimal effectiveTrailingSlPct = settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0
+                ? Math.Abs(settings.TrailingSlPct.Value)
+                : DefaultTrailingSlPctFallback;
+            decimal candidateSl = Math.Round(currentLtp * (1m - effectiveTrailingSlPct / 100m), 2);
             if (!position.TrailingStopLoss.HasValue || candidateSl > position.TrailingStopLoss.Value)
             {
                 await _repository.UpdateTrailingStopLossAsync(position.Id, candidateSl);

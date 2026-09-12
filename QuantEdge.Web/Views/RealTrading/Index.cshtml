@@ -419,6 +419,60 @@
                 </div>
             </div>
 
+            <!-- Trade History & Performance Card -->
+            <div class="card-box mt-4">
+                <div class="card-box-header">
+                    <h3 class="card-title">📈 Trade History & Performance <span class="card-subtitle-inline">(closed real trades)</span></h3>
+                    <button class="btn btn-sm btn-outline-secondary" id="btnRefreshTradeHistory" onclick="loadTradeHistory()">🔄 Refresh</button>
+                </div>
+
+                <div class="autotrade-stats-grid mb-3">
+                    <div class="stat-card" title="Number of closed (filled SELL) real trades on record.">
+                        <div class="stat-label">Closed Trades</div>
+                        <div class="stat-value" id="th-total-trades">0</div>
+                    </div>
+                    <div class="stat-card" title="Percentage of closed trades with a positive realized P&L.">
+                        <div class="stat-label">Win Rate</div>
+                        <div class="stat-value" id="th-win-rate">-</div>
+                    </div>
+                    <div class="stat-card" title="Sum of realized P&L across all closed trades on record.">
+                        <div class="stat-label">Total Realized P&L</div>
+                        <div class="stat-value" id="th-total-pnl">₹0.00</div>
+                    </div>
+                    <div class="stat-card" title="Average realized P&L per closed trade.">
+                        <div class="stat-label">Avg P&L / Trade</div>
+                        <div class="stat-value" id="th-avg-pnl">₹0.00</div>
+                    </div>
+                </div>
+                <small class="text-white d-block mb-2" style="color: #ffffff !important; opacity: 0.85;">
+                    Stats are computed from the most recent closed trades returned below (not necessarily your full lifetime history) - insufficient sample sizes should not be read as a validated edge.
+                </small>
+
+                <div class="table-responsive-wrapper">
+                    <div class="table-responsive">
+                        <table class="qe-table">
+                            <thead>
+                                <tr>
+                                    <th>TIME (IST)</th>
+                                    <th>SYMBOL</th>
+                                    <th>SIDE</th>
+                                    <th>ENTRY</th>
+                                    <th>EXIT / EXECUTED</th>
+                                    <th>QTY</th>
+                                    <th>REALIZED P&L (₹)</th>
+                                    <th>EXIT REASON</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tradeHistoryTableBody">
+                                <tr>
+                                    <td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">Loading trade history...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <!-- Real-time Console Log Card -->
             <div class="card-box audit-stream-card mt-4">
                 <div class="card-box-header">
@@ -480,8 +534,8 @@
                         <div class="optional-box mb-3">
                             <div class="optional-toggle-header">
                                 <label class="optional-label" for="chkEnableStopLoss">
-                                    <span class="optional-title">Enable Stop Loss? (Optional)</span>
-                                    <small class="optional-desc">Fixed percentage below entry price (fallback / manual-buy default — auto-scanned trades may use the engine's dynamic SL instead)</small>
+                                    <span class="optional-title">Stop Loss % Override <span class="text-warning">(always on — this only overrides the %)</span></span>
+                                    <small class="optional-desc">Fixed percentage below entry price. Leaving this OFF does NOT disable Stop Loss — a 3% default is still applied automatically; this toggle only lets you set a custom percentage instead.</small>
                                 </label>
                                 <label class="qe-switch">
                                     <input type="checkbox" id="chkEnableStopLoss" />
@@ -494,30 +548,18 @@
                             </div>
                         </div>
 
-                        <!-- Optional Trailing Stop Loss Toggle -->
-                        <div class="optional-box mb-3">
-                            <div class="optional-toggle-header">
-                                <label class="optional-label" for="chkEnableTrailingSl">
-                                    <span class="optional-title">Enable Trailing SL? (Optional)</span>
-                                    <small class="optional-desc">Dynamic trail that locks in profits</small>
-                                </label>
-                                <label class="qe-switch">
-                                    <input type="checkbox" id="chkEnableTrailingSl" />
-                                    <span class="qe-slider"></span>
-                                </label>
-                            </div>
-                            <div id="tslInputWrapper" class="optional-input-wrapper" style="display: none;">
-                                <label class="form-label mt-2" for="inpTrailingSl">Trailing Stop Loss (%)</label>
-                                <input type="number" step="any" min="0.1" max="50" class="form-control qe-input" id="inpTrailingSl" name="TrailingSlPct" placeholder="e.g. 2.0" />
-                            </div>
+                        <div class="form-group mb-3">
+                            <label class="form-label" for="inpTrailingSl">Trailing Stop Loss (%)</label>
+                            <input type="number" step="any" min="0.1" max="50" class="form-control qe-input" id="inpTrailingSl" name="TrailingSlPct" required />
+                            <small class="form-hint">Mandatory - dynamic trail that locks in profits as price rises. Always active; this sets the trail distance (e.g. 2.0%).</small>
                         </div>
 
                         <!-- Optional Daily Loss Circuit Breaker -->
                         <div class="optional-box mb-3">
                             <div class="optional-toggle-header">
                                 <label class="optional-label" for="chkEnableDailyLossLimit">
-                                    <span class="optional-title">Daily Loss Circuit Limit? (Optional)</span>
-                                    <small class="optional-desc">Emergency pause if daily loss breaches limit</small>
+                                    <span class="optional-title">Daily Loss Limit Override <span class="text-warning">(always on — this only overrides the ₹ amount)</span></span>
+                                    <small class="optional-desc">Emergency pause if daily loss breaches limit. Leaving this OFF does NOT disable the breaker — a default of 10% of Allocated Capital is still enforced automatically; this toggle only lets you set a custom ₹ amount instead.</small>
                                 </label>
                                 <label class="qe-switch">
                                     <input type="checkbox" id="chkEnableDailyLossLimit" />
@@ -530,14 +572,22 @@
                             </div>
                         </div>
 
+                        <small class="form-hint text-warning d-block mb-2">
+                            ⚠ The bot also enforces a fixed portfolio-wide cap of 10 concurrent open
+                            positions across all symbols (not yet configurable here), independent of
+                            Max Trades/Day below.
+                        </small>
+
                         <div class="row">
                             <div class="col-6 mb-3">
                                 <label class="form-label" for="inpMaxTrades">Max Trades/Day</label>
                                 <input type="number" min="1" max="50" class="form-control qe-input" id="inpMaxTrades" name="MaxTradesPerDay" required />
+                                <small class="form-hint">New BUY orders allowed today. Separate from the portfolio cap above.</small>
                             </div>
                             <div class="col-6 mb-3">
                                 <label class="form-label" for="inpMaxDuration">Max Days Hold</label>
                                 <input type="number" min="1" max="365" class="form-control qe-input" id="inpMaxDuration" name="MaxDurationDays" required />
+                                <small class="form-hint">Trading days (weekends & market holidays excluded), not calendar days.</small>
                             </div>
                         </div>
 

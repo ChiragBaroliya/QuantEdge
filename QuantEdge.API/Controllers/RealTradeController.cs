@@ -116,6 +116,17 @@ public class RealTradeController : ControllerBase
     }
 
     /// <summary>
+    /// Closed/filled real trade history - entry price, exit price, realized P&L, exit reason.
+    /// Recorded on every buy/sell fill but was previously never surfaced anywhere.
+    /// </summary>
+    [HttpGet("trade-history")]
+    public async Task<IActionResult> GetTradeHistory([FromQuery] int? userId = null, [FromQuery] int limit = 100)
+    {
+        var history = await _realTradeService.GetTradeHistoryAsync(GetCurrentUserId(userId), limit);
+        return Ok(history);
+    }
+
+    /// <summary>
     /// Manual one-off Real Trade BUY (e.g. triggered from the Swing Trading dashboard for a specific signal),
     /// bypassing the 15-minute auto-scan cycle. Still routed through the same risk checks as automatic
     /// execution (master switch, token validity, market hours, daily trade/loss limits, duplicate position, capital).

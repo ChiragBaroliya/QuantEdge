@@ -241,14 +241,17 @@ public static class SwingDecisionEngine
 
         // Rule 7: MULTITIMEFRAME (15 Pts Max)
         // 60m Close > 60m EMA20 AND 60m RSI >= 40
-        bool mtfPassed = true;
-        if (stockCandles60m != null && stockCandles60m.Count >= 20)
+        // Fails closed (no points) when there isn't enough 60m data to confirm - a data gap
+        // should never be scored as bullish confirmation.
+        bool hasMtfData = stockCandles60m != null && stockCandles60m.Count >= 20;
+        bool mtfPassed = false;
+        if (hasMtfData)
         {
-            var closes60m = stockCandles60m.Select(c => c.Close).ToList();
+            var closes60m = stockCandles60m!.Select(c => c.Close).ToList();
             var ema20_60m = IndicatorCalculator.CalculateEma(closes60m, 20);
             var rsi_60m = IndicatorCalculator.CalculateRsi(closes60m, 14);
 
-            int idx60m = stockCandles60m.Count - 1;
+            int idx60m = stockCandles60m!.Count - 1;
             decimal close60m = closes60m[idx60m];
             decimal ema20_60mVal = ema20_60m[idx60m];
             decimal rsi60mVal = rsi_60m[idx60m];
@@ -259,6 +262,10 @@ public static class SwingDecisionEngine
         {
             score += 15;
             passedRules.Add("MULTITIMEFRAME (+15 pts): 60m Hourly Trend Alignment (Close > EMA20)");
+        }
+        else if (!hasMtfData)
+        {
+            failedRules.Add("MULTITIMEFRAME (0/15 pts): Insufficient 60m data - confirmation withheld");
         }
         else
         {

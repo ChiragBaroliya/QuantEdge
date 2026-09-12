@@ -58,6 +58,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     renderDdpiStatus();
     loadDashboardData();
+    loadTradeHistory();
     setupEventListeners();
     setupSignalRHub();
     startSmartPolling();
@@ -402,15 +403,8 @@ function populateSettingsForm(s) {
         if (hasSL) inpSL.value = s.stopLossPct;
     }
 
-    // Optional Trailing SL
-    const chkTSL = document.getElementById("chkEnableTrailingSl");
-    const tslWrapper = document.getElementById("tslInputWrapper");
-    const inpTSL = document.getElementById("inpTrailingSl");
-    if (chkTSL && tslWrapper && inpTSL) {
-        chkTSL.checked = s.trailingSlEnabled === true;
-        tslWrapper.style.display = s.trailingSlEnabled ? "block" : "none";
-        if (s.trailingSlPct) inpTSL.value = s.trailingSlPct;
-    }
+    // Trailing SL is mandatory - always shown and populated, no enable/disable toggle
+    setVal("inpTrailingSl", s.trailingSlPct);
 
     // Optional Daily Loss Limit
     const chkLoss = document.getElementById("chkEnableDailyLossLimit");
@@ -754,6 +748,85 @@ function renderFilteredRecentOrders(orders) {
     tbody.innerHTML = html;
 }
 
+async function loadTradeHistory() {
+    try {
+        const response = await fetch(`${apiBaseUrl}/api/realtrade/trade-history?userId=${currentUserId}&limit=100`);
+        if (!response.ok) return;
+
+        const history = await response.json();
+        renderTradeHistory(history || []);
+    } catch (err) {
+        console.error("Trade history load error:", err);
+    }
+}
+
+function renderTradeHistory(history) {
+    // Realized P&L is only meaningful on the SELL leg (the BUY leg is always recorded at 0) -
+    // filtering to SELL avoids double-counting a trade and understating the average P&L per trade.
+    const closedTrades = (history || []).filter(h => h.side === 1);
+
+    const totalTradesEl = document.getElementById("th-total-trades");
+    const winRateEl = document.getElementById("th-win-rate");
+    const totalPnlEl = document.getElementById("th-total-pnl");
+    const avgPnlEl = document.getElementById("th-avg-pnl");
+
+    if (closedTrades.length === 0) {
+        if (totalTradesEl) totalTradesEl.innerText = "0";
+        if (winRateEl) winRateEl.innerText = "-";
+        if (totalPnlEl) totalPnlEl.innerText = "₹0.00";
+        if (avgPnlEl) avgPnlEl.innerText = "₹0.00";
+    } else {
+        const totalPnl = closedTrades.reduce((sum, h) => sum + (h.realizedPnl || 0), 0);
+        const wins = closedTrades.filter(h => (h.realizedPnl || 0) > 0).length;
+        const winRate = (wins / closedTrades.length) * 100;
+        const avgPnl = totalPnl / closedTrades.length;
+
+        if (totalTradesEl) totalTradesEl.innerText = closedTrades.length;
+        if (winRateEl) winRateEl.innerText = `${winRate.toFixed(1)}% (${wins}/${closedTrades.length})`;
+        if (totalPnlEl) {
+            totalPnlEl.innerText = formatCurrencyWithSign(totalPnl);
+            totalPnlEl.style.color = totalPnl >= 0 ? "#34d399" : "#f87171";
+        }
+        if (avgPnlEl) {
+            avgPnlEl.innerText = formatCurrencyWithSign(avgPnl);
+            avgPnlEl.style.color = avgPnl >= 0 ? "#34d399" : "#f87171";
+        }
+    }
+
+    const tbody = document.getElementById("tradeHistoryTableBody");
+    if (!tbody) return;
+
+    if (!history || history.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No closed trades on record yet.</td></tr>`;
+        return;
+    }
+
+    let html = "";
+    history.forEach(h => {
+        const timeStr = new Date(h.executedAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' });
+        const sideText = h.side === 0 ? '<span class="text-success fw-bold">BUY</span>' : '<span class="text-danger fw-bold">SELL</span>';
+        const pnl = h.realizedPnl || 0;
+        const pnlText = h.side === 1
+            ? `<span style="color: ${pnl >= 0 ? '#34d399' : '#f87171'};">${formatCurrencyWithSign(pnl)}</span>`
+            : '-';
+
+        html += `
+            <tr>
+                <td class="text-white">${timeStr}</td>
+                <td><strong class="text-white">${h.symbol}</strong></td>
+                <td>${sideText}</td>
+                <td class="text-white">₹${(h.entryPrice || 0).toFixed(2)}</td>
+                <td class="text-white">₹${(h.executedPrice || 0).toFixed(2)}</td>
+                <td class="text-white">${h.quantity}</td>
+                <td>${pnlText}</td>
+                <td class="small" style="color: #cbd5e1 !important;">${h.exitReason || '-'}</td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
 window.resyncOrderStatus = async function (orderId, btnEl) {
     if (!orderId) return;
     if (btnEl) { btnEl.disabled = true; btnEl.innerText = "⏳ Checking..."; }
@@ -860,15 +933,6 @@ function setupEventListeners() {
         });
     }
 
-    // Optional Trailing SL toggle
-    const chkTSL = document.getElementById("chkEnableTrailingSl");
-    const tslWrapper = document.getElementById("tslInputWrapper");
-    if (chkTSL && tslWrapper) {
-        chkTSL.addEventListener("change", function () {
-            tslWrapper.style.display = this.checked ? "block" : "none";
-        });
-    }
-
     // Optional Daily Loss toggle
     const chkLoss = document.getElementById("chkEnableDailyLossLimit");
     const lossWrapper = document.getElementById("dailyLossInputWrapper");
@@ -945,10 +1009,9 @@ function setupEventListeners() {
             const inpSL = document.getElementById("inpStopLoss");
             const stopLossVal = (chkSL && chkSL.checked && inpSL && inpSL.value) ? parseFloat(inpSL.value) : null;
 
-            const chkTSL = document.getElementById("chkEnableTrailingSl");
+            // Trailing SL is mandatory - always read directly, no enable/disable toggle
             const inpTSL = document.getElementById("inpTrailingSl");
-            const trailingSlEnabled = chkTSL ? chkTSL.checked : false;
-            const trailingSlVal = (trailingSlEnabled && inpTSL && inpTSL.value) ? parseFloat(inpTSL.value) : null;
+            const trailingSlVal = (inpTSL && inpTSL.value) ? parseFloat(inpTSL.value) : null;
 
             const chkLoss = document.getElementById("chkEnableDailyLossLimit");
             const inpLoss = document.getElementById("inpMaxDailyLoss");
@@ -960,7 +1023,7 @@ function setupEventListeners() {
                 FixedAmountPerTrade: parseFloat(document.getElementById("inpFixedAmount")?.value || "20000"),
                 ProfitTargetPct: parseFloat(document.getElementById("inpProfitTarget")?.value || "5.0"),
                 StopLossPct: stopLossVal,
-                TrailingSlEnabled: trailingSlEnabled,
+                TrailingSlEnabled: true,
                 TrailingSlPct: trailingSlVal,
                 MaxDailyLossLimit: dailyLossVal,
                 MaxTradesPerDay: parseInt(document.getElementById("inpMaxTrades")?.value || "5"),

@@ -80,6 +80,35 @@ public class MarketHoursService : IMarketHoursService
         }
     }
 
+    /// <inheritdoc />
+    public async Task<int> CountTradingDaysElapsedAsync(DateTime openedAtUtc, DateTime nowUtc)
+    {
+        var nowIst = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, _indianTimeZone);
+        var todayDate = DateOnly.FromDateTime(nowIst);
+
+        // Reuse the same daily holiday cache IsWithinMarketHoursAsync relies on, so this doesn't
+        // need its own DB round-trip on every call.
+        if (_cachedDate != todayDate)
+        {
+            await EnsureDailyCacheInitializedAsync(todayDate);
+        }
+
+        var openedIst = TimeZoneInfo.ConvertTimeFromUtc(openedAtUtc, _indianTimeZone);
+        var startDate = DateOnly.FromDateTime(openedIst);
+
+        int tradingDays = 0;
+        for (var d = startDate.AddDays(1); d <= todayDate; d = d.AddDays(1))
+        {
+            bool isWeekend = d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday;
+            if (!isWeekend && !_holidays.Contains(d))
+            {
+                tradingDays++;
+            }
+        }
+
+        return tradingDays;
+    }
+
     private async Task EnsureDailyCacheInitializedAsync(DateOnly targetDate)
     {
         await _cacheLock.WaitAsync();

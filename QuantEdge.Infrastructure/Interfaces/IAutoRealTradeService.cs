@@ -16,6 +16,12 @@ public interface IAutoRealTradeService
     Task<IEnumerable<RealTradeExecutionLog>> GetTodayLogsAsync(int userId = 1, int limit = 50);
 
     /// <summary>
+    /// Closed/filled real trade history (entry, exit, realized P&L, exit reason) - written on every
+    /// buy/sell fill but previously never read back anywhere, so live performance couldn't be measured.
+    /// </summary>
+    Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100);
+
+    /// <summary>
     /// Evaluates pre-trade risk conditions (Token, Capital, Daily Loss Limit, Trading Window, Max Trades)
     /// and fires a Real-Money Buy order with Zerodha if all conditions pass.
     /// </summary>

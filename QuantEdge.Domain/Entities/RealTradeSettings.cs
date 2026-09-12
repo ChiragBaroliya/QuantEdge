@@ -12,8 +12,12 @@ public class RealTradeSettings
     // Stop Loss % - shown as a default rather than blank because AutoRealTradeService now
     // enforces this same fallback whenever it's left null, so real positions are never unprotected.
     public decimal? StopLossPct { get; set; } = 3.00m;
-    public bool TrailingSlEnabled { get; set; } = false; // Optional Trailing SL toggle
-    public decimal? TrailingSlPct { get; set; } // Optional Trailing SL %
+    // Trailing SL is mandatory in AutoRealTradeService regardless of this flag's value - kept only
+    // for backward API/DB compatibility, not read by the service's exit/ratchet logic anymore.
+    public bool TrailingSlEnabled { get; set; } = true;
+    // Trailing Stop Loss % - shown as a default rather than blank because AutoRealTradeService now
+    // enforces this same fallback whenever it's left null, so trailing SL is always attached.
+    public decimal? TrailingSlPct { get; set; } = 2.00m;
     public int MaxDurationDays { get; set; } = 20;
     public int MaxTradesPerDay { get; set; } = 5;
     public decimal FixedAmountPerTrade { get; set; } = 400.00m;
