@@ -488,6 +488,35 @@ CREATE TABLE IF NOT EXISTS swing_strategy_settings (
 
 INSERT INTO swing_strategy_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
+-- Table: market_structure_settings (single-row global tuning for MarketStructureAnalysisService -
+-- Support/Resistance, Buyer/Seller Strength, Volume Confirmation analysis on the Signal Dashboard chart)
+CREATE TABLE IF NOT EXISTS market_structure_settings (
+    id INT PRIMARY KEY DEFAULT 1,
+    swing_left_bars INT NOT NULL DEFAULT 3,
+    swing_right_bars INT NOT NULL DEFAULT 3,
+    zone_proximity_pct NUMERIC(6, 4) NOT NULL DEFAULT 0.003,
+    min_touches INT NOT NULL DEFAULT 2,
+    near_zone_proximity_pct NUMERIC(6, 4) NOT NULL DEFAULT 0.005,
+    max_zones_per_side INT NOT NULL DEFAULT 2,
+    volume_lookback_period INT NOT NULL DEFAULT 20,
+    strong_volume_threshold NUMERIC(5, 2) NOT NULL DEFAULT 1.5,
+    very_strong_volume_threshold NUMERIC(5, 2) NOT NULL DEFAULT 2.0,
+    rejection_volume_threshold NUMERIC(5, 2) NOT NULL DEFAULT 1.3,
+    price_action_weight INT NOT NULL DEFAULT 35,
+    volume_weight INT NOT NULL DEFAULT 30,
+    candle_pattern_weight INT NOT NULL DEFAULT 15,
+    support_resistance_weight INT NOT NULL DEFAULT 20,
+    touches_weight INT NOT NULL DEFAULT 40,
+    volume_reaction_weight INT NOT NULL DEFAULT 35,
+    recency_weight INT NOT NULL DEFAULT 25,
+    strong_zone_score_threshold INT NOT NULL DEFAULT 70,
+    medium_zone_score_threshold INT NOT NULL DEFAULT 40,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_market_structure_settings_singleton CHECK (id = 1)
+);
+
+INSERT INTO market_structure_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
 
 
 -- ----------------------------------------------------------------------------

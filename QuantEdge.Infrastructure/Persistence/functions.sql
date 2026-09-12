@@ -2856,6 +2856,76 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- Function: sp_upsert_market_structure_settings
+-- Upserts the single-row market_structure_settings tuning used by MarketStructureAnalysisService
+-- (Support/Resistance, Buyer/Seller Strength, Volume Confirmation analysis on the Signal Dashboard chart).
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS sp_upsert_market_structure_settings CASCADE;
+
+CREATE OR REPLACE FUNCTION sp_upsert_market_structure_settings(
+    p_swing_left_bars INT,
+    p_swing_right_bars INT,
+    p_zone_proximity_pct NUMERIC,
+    p_min_touches INT,
+    p_near_zone_proximity_pct NUMERIC,
+    p_max_zones_per_side INT,
+    p_volume_lookback_period INT,
+    p_strong_volume_threshold NUMERIC,
+    p_very_strong_volume_threshold NUMERIC,
+    p_rejection_volume_threshold NUMERIC,
+    p_price_action_weight INT,
+    p_volume_weight INT,
+    p_candle_pattern_weight INT,
+    p_support_resistance_weight INT,
+    p_touches_weight INT,
+    p_volume_reaction_weight INT,
+    p_recency_weight INT,
+    p_strong_zone_score_threshold INT,
+    p_medium_zone_score_threshold INT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO market_structure_settings (
+        id, swing_left_bars, swing_right_bars, zone_proximity_pct, min_touches, near_zone_proximity_pct, max_zones_per_side,
+        volume_lookback_period, strong_volume_threshold, very_strong_volume_threshold, rejection_volume_threshold,
+        price_action_weight, volume_weight, candle_pattern_weight, support_resistance_weight,
+        touches_weight, volume_reaction_weight, recency_weight,
+        strong_zone_score_threshold, medium_zone_score_threshold, updated_at
+    )
+    VALUES (
+        1, p_swing_left_bars, p_swing_right_bars, p_zone_proximity_pct, p_min_touches, p_near_zone_proximity_pct, p_max_zones_per_side,
+        p_volume_lookback_period, p_strong_volume_threshold, p_very_strong_volume_threshold, p_rejection_volume_threshold,
+        p_price_action_weight, p_volume_weight, p_candle_pattern_weight, p_support_resistance_weight,
+        p_touches_weight, p_volume_reaction_weight, p_recency_weight,
+        p_strong_zone_score_threshold, p_medium_zone_score_threshold, NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        swing_left_bars = EXCLUDED.swing_left_bars,
+        swing_right_bars = EXCLUDED.swing_right_bars,
+        zone_proximity_pct = EXCLUDED.zone_proximity_pct,
+        min_touches = EXCLUDED.min_touches,
+        near_zone_proximity_pct = EXCLUDED.near_zone_proximity_pct,
+        max_zones_per_side = EXCLUDED.max_zones_per_side,
+        volume_lookback_period = EXCLUDED.volume_lookback_period,
+        strong_volume_threshold = EXCLUDED.strong_volume_threshold,
+        very_strong_volume_threshold = EXCLUDED.very_strong_volume_threshold,
+        rejection_volume_threshold = EXCLUDED.rejection_volume_threshold,
+        price_action_weight = EXCLUDED.price_action_weight,
+        volume_weight = EXCLUDED.volume_weight,
+        candle_pattern_weight = EXCLUDED.candle_pattern_weight,
+        support_resistance_weight = EXCLUDED.support_resistance_weight,
+        touches_weight = EXCLUDED.touches_weight,
+        volume_reaction_weight = EXCLUDED.volume_reaction_weight,
+        recency_weight = EXCLUDED.recency_weight,
+        strong_zone_score_threshold = EXCLUDED.strong_zone_score_threshold,
+        medium_zone_score_threshold = EXCLUDED.medium_zone_score_threshold,
+        updated_at = NOW();
+END;
+$$;
+
 
 
 
