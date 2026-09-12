@@ -82,7 +82,8 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         PaperOrderType orderType,
         decimal price,
         string product = "CNC",
-        int userId = 1)
+        int userId = 1,
+        decimal? protectionBufferPctOverride = null)
     {
         var tokenValidation = await ValidateSessionTokenAsync(userId);
         if (!tokenValidation.IsValid)
@@ -100,9 +101,14 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         // Limit order."). Zerodha's own suggested fix is used here: submit a LIMIT order with a small
         // protection band around the reference price, in the direction that still fills immediately
         // for a normal, liquid NSE equity move, instead of a bare MARKET order. Buffer is configurable
-        // via Strategy Settings (default 0.5%) so it can be tuned without a redeploy.
+        // via Strategy Settings (default 0.5%) so it can be tuned without a redeploy, or widened
+        // per-order via protectionBufferPctOverride (e.g. a gap-through exit needs more room to fill).
         decimal marketProtectionBufferPct = 0.005m;
-        if (_strategySettingsRepository != null)
+        if (protectionBufferPctOverride.HasValue)
+        {
+            marketProtectionBufferPct = protectionBufferPctOverride.Value;
+        }
+        else if (_strategySettingsRepository != null)
         {
             var strategySettings = await _strategySettingsRepository.GetSettingsAsync();
             marketProtectionBufferPct = strategySettings.MarketProtectionBufferPct;
@@ -299,10 +305,11 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         TradeSide positionSide,
         decimal currentPrice,
         string product = "CNC",
-        int userId = 1)
+        int userId = 1,
+        decimal? protectionBufferPctOverride = null)
     {
         TradeSide exitSide = positionSide == TradeSide.BUY ? TradeSide.SELL : TradeSide.BUY;
-        return await PlaceLiveOrderAsync(symbol, exitSide, quantity, PaperOrderType.Market, currentPrice, product, userId);
+        return await PlaceLiveOrderAsync(symbol, exitSide, quantity, PaperOrderType.Market, currentPrice, product, userId, protectionBufferPctOverride);
     }
 
     public async Task<(bool Success, decimal AvailableCash, decimal UsedMargin, string? Message)> GetEquityMarginsAsync(int userId = 1)

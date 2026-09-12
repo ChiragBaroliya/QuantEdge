@@ -17,14 +17,20 @@ public interface IZerodhaKiteBrokerService
     /// <summary>
     /// Places a real-money live order via Zerodha Kite Connect REST API (POST /orders/regular).
     /// </summary>
+    /// <param name="protectionBufferPctOverride">
+    /// Overrides the default market-protection band (normally read from Strategy Settings) for
+    /// this order only - e.g. a wider band for an exit that has gapped through its trigger level,
+    /// to improve the odds of an immediate fill in a fast-moving market.
+    /// </param>
     Task<(bool Success, string? BrokerOrderId, decimal ExecutedPrice, string? Message)> PlaceLiveOrderAsync(
-        string symbol, 
-        TradeSide side, 
-        int quantity, 
-        PaperOrderType orderType, 
-        decimal price, 
-        string product = "CNC", 
-        int userId = 1);
+        string symbol,
+        TradeSide side,
+        int quantity,
+        PaperOrderType orderType,
+        decimal price,
+        string product = "CNC",
+        int userId = 1,
+        decimal? protectionBufferPctOverride = null);
 
     /// <summary>
     /// Cancels an open or pending order with Zerodha broker (DELETE /orders/regular/{order_id}).
@@ -48,7 +54,8 @@ public interface IZerodhaKiteBrokerService
         TradeSide positionSide,
         decimal currentPrice,
         string product = "CNC",
-        int userId = 1);
+        int userId = 1,
+        decimal? protectionBufferPctOverride = null);
 
     /// <summary>
     /// Retrieves live available and used equity margins directly from Zerodha Kite Connect (GET /user/margins/equity).

@@ -38,6 +38,15 @@ public class AutoRealTradeService : IAutoRealTradeService
     private const int DefaultMaxConcurrentRealPositions = 10;
     private const decimal DefaultTrailingSlPctFallback = 2.00m;
 
+    // Gap-open handling for overnight CNC positions: an SL/Trailing-SL "hit" where the price has
+    // already moved well past the trigger level (a gap-down at market open, or a fast intraday
+    // move between 20s poll cycles) is not the same event as a clean touch of that level - the
+    // position is already worse off than the configured risk, so the exit order needs a wider
+    // price band to have a realistic chance of filling immediately, and the audit trail/trade
+    // history needs to say so rather than reading like an ordinary SL hit.
+    private const decimal GapBreachThresholdPct = 1.5m;
+    private const decimal GapExitProtectionBufferPct = 0.02m;
+
     public AutoRealTradeService(
         IRealTradingRepository repository,
         IZerodhaKiteBrokerService brokerService,
@@ -996,24 +1005,38 @@ public class AutoRealTradeService : IAutoRealTradeService
 
         string exitReason = string.Empty;
         bool shouldExit = false;
+        decimal? gapProtectionBufferOverride = null;
 
         // 1. Target Hit Check
         if (position.TakeProfit.HasValue && currentLtp >= position.TakeProfit.Value)
         {
             shouldExit = true;
-            exitReason = "Target Hit";
+            decimal gapPct = (currentLtp - position.TakeProfit.Value) / position.TakeProfit.Value * 100m;
+            exitReason = gapPct >= GapBreachThresholdPct
+                ? $"Target Hit (Gap - price already {gapPct:F1}% above target)"
+                : "Target Hit";
         }
         // 2. Trailing Stop Loss Hit Check (mandatory - always attached to the position, see setup above)
         else if (position.TrailingStopLoss.HasValue && currentLtp <= position.TrailingStopLoss.Value)
         {
             shouldExit = true;
-            exitReason = $"Trailing SL Hit @ ₹{position.TrailingStopLoss.Value:F2}";
+            decimal gapPct = (position.TrailingStopLoss.Value - currentLtp) / position.TrailingStopLoss.Value * 100m;
+            bool isGap = gapPct >= GapBreachThresholdPct;
+            exitReason = isGap
+                ? $"Trailing SL Hit @ ₹{position.TrailingStopLoss.Value:F2} (Gap - price already {gapPct:F1}% below trigger)"
+                : $"Trailing SL Hit @ ₹{position.TrailingStopLoss.Value:F2}";
+            if (isGap) gapProtectionBufferOverride = GapExitProtectionBufferPct;
         }
         // 3. Stop Loss Hit Check (Optional)
         else if (position.StopLoss.HasValue && position.StopLoss.Value > 0 && currentLtp <= position.StopLoss.Value)
         {
             shouldExit = true;
-            exitReason = "Stop Loss Hit";
+            decimal gapPct = (position.StopLoss.Value - currentLtp) / position.StopLoss.Value * 100m;
+            bool isGap = gapPct >= GapBreachThresholdPct;
+            exitReason = isGap
+                ? $"Stop Loss Hit (Gap - price already {gapPct:F1}% below trigger)"
+                : "Stop Loss Hit";
+            if (isGap) gapProtectionBufferOverride = GapExitProtectionBufferPct;
         }
         // 4. Max Duration Check - counted in NSE trading days (weekends/holidays excluded), not
         // raw calendar days, so "Max Days Hold" means what a trader actually means by it: a number
@@ -1030,7 +1053,7 @@ public class AutoRealTradeService : IAutoRealTradeService
 
         if (shouldExit)
         {
-            return await ExecuteRealSellOrderAsync(position, currentLtp, exitReason, userId);
+            return await ExecuteRealSellOrderAsync(position, currentLtp, exitReason, userId, gapProtectionBufferOverride);
         }
 
         // Dynamic Trailing SL Calculation (mandatory - always ratchets upward as price rises)
@@ -1052,10 +1075,10 @@ public class AutoRealTradeService : IAutoRealTradeService
 
     private enum RealSellOutcome { Failed, Filled, OrderOpenPending, AlreadyPending }
 
-    private async Task<bool> ExecuteRealSellOrderAsync(RealPosition position, decimal currentLtp, string exitReason, int userId)
-        => (await ExecuteRealSellOrderCoreAsync(position, currentLtp, exitReason, userId)) is RealSellOutcome.Filled or RealSellOutcome.OrderOpenPending;
+    private async Task<bool> ExecuteRealSellOrderAsync(RealPosition position, decimal currentLtp, string exitReason, int userId, decimal? protectionBufferPctOverride = null)
+        => (await ExecuteRealSellOrderCoreAsync(position, currentLtp, exitReason, userId, protectionBufferPctOverride)) is RealSellOutcome.Filled or RealSellOutcome.OrderOpenPending;
 
-    private async Task<RealSellOutcome> ExecuteRealSellOrderCoreAsync(RealPosition position, decimal currentLtp, string exitReason, int userId)
+    private async Task<RealSellOutcome> ExecuteRealSellOrderCoreAsync(RealPosition position, decimal currentLtp, string exitReason, int userId, decimal? protectionBufferPctOverride = null)
     {
         var settings = await GetSettingsAsync(userId);
         try
@@ -1076,14 +1099,17 @@ public class AutoRealTradeService : IAutoRealTradeService
             _logger.LogInformation("[REAL MONEY SELL TRIGGERED - User {UserId}] Position #{Id} {Symbol} Qty:{Qty} @ {Ltp}. Reason: {Reason}",
                 userId, position.Id, position.Symbol, position.Quantity, currentLtp, exitReason);
 
-            // Execute Real Market Sell via Zerodha Kite API
+            // Execute Real Market Sell via Zerodha Kite API. A wider protection band is used when
+            // this exit was flagged as a gap-through (see EvaluateAndExecuteRealSellAsync) to
+            // maximize the odds of an immediate fill during a fast-moving/gapped market.
             var brokerResult = await _brokerService.SquareOffLivePositionAsync(
                 position.Symbol,
                 position.Quantity,
                 position.Side,
                 currentLtp,
                 settings.ProductType,
-                userId);
+                userId,
+                protectionBufferPctOverride);
 
             if (!brokerResult.Success)
             {
