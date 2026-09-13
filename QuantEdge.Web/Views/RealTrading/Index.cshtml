@@ -518,40 +518,17 @@
                         </div>
 
                         <small class="form-hint text-warning d-block mb-2">
-                            ⚠ For auto-scanned signals, the bot may use a dynamic ATR-based Target/Stop Loss
-                            from the signal engine instead of the flat % values below, when the engine
-                            supplies one. These fields remain authoritative for manual buys and holdings
-                            enrolled via "Set Target".
+                            ⚠ Stop Loss % and Trailing Stop Loss % are no longer set here — they're mandatory
+                            on every real position, but are now configured trade-wise instead of globally:
+                            auto-scanned signals use the SwingDecisionEngine's own ATR-based Stop Loss, a
+                            Manual Real Trade is configured per-order from its "Place Real Trade" popup, and
+                            holdings enrolled via "Set Target" use a fixed conservative default.
                         </small>
 
                         <div class="form-group mb-3">
                             <label class="form-label" for="inpProfitTarget">Profit Target (%)</label>
                             <input type="number" step="any" min="0.1" max="100" class="form-control qe-input" id="inpProfitTarget" name="ProfitTargetPct" required />
                             <small class="form-hint">Mandatory exit target percentage (e.g. 5.0%). Used as-is for manual buys; auto-scanned trades may use the engine's dynamic target instead.</small>
-                        </div>
-
-                        <!-- Optional Stop Loss Toggle -->
-                        <div class="optional-box mb-3">
-                            <div class="optional-toggle-header">
-                                <label class="optional-label" for="chkEnableStopLoss">
-                                    <span class="optional-title">Stop Loss % Override <span class="text-warning">(always on — this only overrides the %)</span></span>
-                                    <small class="optional-desc">Fixed percentage below entry price. Leaving this OFF does NOT disable Stop Loss — a 3% default is still applied automatically; this toggle only lets you set a custom percentage instead.</small>
-                                </label>
-                                <label class="qe-switch">
-                                    <input type="checkbox" id="chkEnableStopLoss" />
-                                    <span class="qe-slider"></span>
-                                </label>
-                            </div>
-                            <div id="slInputWrapper" class="optional-input-wrapper" style="display: none;">
-                                <label class="form-label mt-2" for="inpStopLoss">Stop Loss (%)</label>
-                                <input type="number" step="any" min="0.1" max="100" class="form-control qe-input" id="inpStopLoss" name="StopLossPct" placeholder="e.g. 3.0" />
-                            </div>
-                        </div>
-
-                        <div class="form-group mb-3">
-                            <label class="form-label" for="inpTrailingSl">Trailing Stop Loss (%)</label>
-                            <input type="number" step="any" min="0.1" max="50" class="form-control qe-input" id="inpTrailingSl" name="TrailingSlPct" required />
-                            <small class="form-hint">Mandatory - dynamic trail that locks in profits as price rises. Always active; this sets the trail distance (e.g. 2.0%).</small>
                         </div>
 
                         <!-- Optional Daily Loss Circuit Breaker -->

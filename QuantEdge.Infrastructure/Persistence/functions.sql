@@ -352,6 +352,8 @@ RETURNS TABLE (
     stop_loss NUMERIC(18, 4),
     take_profit NUMERIC(18, 4),
     trailing_stop_loss NUMERIC(18, 4),
+    stop_loss_pct NUMERIC(9, 4),
+    trailing_sl_pct NUMERIC(9, 4),
     status INT,
     trade_type INT,
     exit_reason VARCHAR(255),
@@ -363,7 +365,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         p.id,
         p.user_id,
         p.symbol,
@@ -375,6 +377,8 @@ BEGIN
         p.stop_loss,
         p.take_profit,
         p.trailing_stop_loss,
+        p.stop_loss_pct,
+        p.trailing_sl_pct,
         p.status,
         p.trade_type,
         p.exit_reason,
@@ -2288,6 +2292,7 @@ $$;
 -- Function: fn_upsert_real_position
 DROP FUNCTION IF EXISTS fn_upsert_real_position(INT, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, INT, INT, VARCHAR, NUMERIC);
 DROP FUNCTION IF EXISTS fn_upsert_real_position(VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, INT, INT, VARCHAR, NUMERIC);
+DROP FUNCTION IF EXISTS fn_upsert_real_position(INT, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, INT, INT, VARCHAR, NUMERIC, NUMERIC, NUMERIC);
 
 CREATE OR REPLACE FUNCTION fn_upsert_real_position(
     p_user_id INT,
@@ -2303,7 +2308,9 @@ CREATE OR REPLACE FUNCTION fn_upsert_real_position(
     p_status INT,
     p_trade_type INT,
     p_exit_reason VARCHAR,
-    p_realized_pnl NUMERIC
+    p_realized_pnl NUMERIC,
+    p_stop_loss_pct NUMERIC DEFAULT NULL,
+    p_trailing_sl_pct NUMERIC DEFAULT NULL
 )
 RETURNS TABLE (
     Id INT,
@@ -2317,6 +2324,8 @@ RETURNS TABLE (
     StopLoss NUMERIC,
     TakeProfit NUMERIC,
     TrailingStopLoss NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
     Status INT,
     TradeType INT,
     ExitReason VARCHAR,
@@ -2331,13 +2340,13 @@ BEGIN
     INSERT INTO real_positions (
         user_id, symbol, side, quantity, average_entry_price,
         current_price, unrealized_pnl, stop_loss, take_profit,
-        trailing_stop_loss, status, trade_type, exit_reason, opened_at, realized_pnl
+        trailing_stop_loss, stop_loss_pct, trailing_sl_pct, status, trade_type, exit_reason, opened_at, realized_pnl
     ) VALUES (
         p_user_id, p_symbol, p_side, p_quantity, p_average_entry_price,
         p_current_price, p_unrealized_pnl, p_stop_loss, p_take_profit,
-        p_trailing_stop_loss, p_status, p_trade_type, p_exit_reason, NOW(), p_realized_pnl
+        p_trailing_stop_loss, p_stop_loss_pct, p_trailing_sl_pct, p_status, p_trade_type, p_exit_reason, NOW(), p_realized_pnl
     )
-    RETURNING 
+    RETURNING
         real_positions.id AS Id,
         real_positions.user_id AS UserId,
         real_positions.symbol AS Symbol,
@@ -2349,6 +2358,8 @@ BEGIN
         real_positions.stop_loss AS StopLoss,
         real_positions.take_profit AS TakeProfit,
         real_positions.trailing_stop_loss AS TrailingStopLoss,
+        real_positions.stop_loss_pct AS StopLossPct,
+        real_positions.trailing_sl_pct AS TrailingSlPct,
         real_positions.status AS Status,
         real_positions.trade_type AS TradeType,
         real_positions.exit_reason AS ExitReason,
@@ -2375,6 +2386,8 @@ RETURNS TABLE (
     StopLoss NUMERIC,
     TakeProfit NUMERIC,
     TrailingStopLoss NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
     Status INT,
     TradeType INT,
     ExitReason VARCHAR,
@@ -2386,7 +2399,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         p.id AS Id,
         p.user_id AS UserId,
         p.symbol AS Symbol,
@@ -2398,6 +2411,8 @@ BEGIN
         p.stop_loss AS StopLoss,
         p.take_profit AS TakeProfit,
         p.trailing_stop_loss AS TrailingStopLoss,
+        p.stop_loss_pct AS StopLossPct,
+        p.trailing_sl_pct AS TrailingSlPct,
         p.status AS Status,
         p.trade_type AS TradeType,
         p.exit_reason AS ExitReason,
@@ -2427,6 +2442,8 @@ RETURNS TABLE (
     StopLoss NUMERIC,
     TakeProfit NUMERIC,
     TrailingStopLoss NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
     Status INT,
     TradeType INT,
     ExitReason VARCHAR,
@@ -2438,7 +2455,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         p.id AS Id,
         p.user_id AS UserId,
         p.symbol AS Symbol,
@@ -2450,6 +2467,8 @@ BEGIN
         p.stop_loss AS StopLoss,
         p.take_profit AS TakeProfit,
         p.trailing_stop_loss AS TrailingStopLoss,
+        p.stop_loss_pct AS StopLossPct,
+        p.trailing_sl_pct AS TrailingSlPct,
         p.status AS Status,
         p.trade_type AS TradeType,
         p.exit_reason AS ExitReason,
@@ -2480,6 +2499,8 @@ RETURNS TABLE (
     StopLoss NUMERIC,
     TakeProfit NUMERIC,
     TrailingStopLoss NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
     Status INT,
     TradeType INT,
     ExitReason VARCHAR,
@@ -2491,7 +2512,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         p.id AS Id,
         p.user_id AS UserId,
         p.symbol AS Symbol,
@@ -2503,6 +2524,8 @@ BEGIN
         p.stop_loss AS StopLoss,
         p.take_profit AS TakeProfit,
         p.trailing_stop_loss AS TrailingStopLoss,
+        p.stop_loss_pct AS StopLossPct,
+        p.trailing_sl_pct AS TrailingSlPct,
         p.status AS Status,
         p.trade_type AS TradeType,
         p.exit_reason AS ExitReason,

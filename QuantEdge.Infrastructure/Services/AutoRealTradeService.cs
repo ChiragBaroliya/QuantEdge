@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
@@ -103,9 +104,10 @@ public class AutoRealTradeService : IAutoRealTradeService
         existing.IsRealTradeEnabled = updateDto.IsRealTradeEnabled;
         existing.AvailableCapital = updateDto.AvailableCapital;
         existing.ProfitTargetPct = updateDto.ProfitTargetPct;
-        existing.StopLossPct = updateDto.StopLossPct; // Overrides the mandatory SL fallback %, if set
-        existing.TrailingSlEnabled = updateDto.TrailingSlEnabled; // Stored for reference only - Trailing SL is always mandatory in AutoRealTradeService regardless of this flag
-        existing.TrailingSlPct = updateDto.TrailingSlPct; // Overrides the mandatory Trailing SL fallback %, if set
+        // StopLossPct/TrailingSlEnabled/TrailingSlPct are intentionally left untouched here - they are
+        // no longer editable from the settings UI (SL/Trailing SL are now configured trade-wise from the
+        // Manual Real Trade popup instead of as a global override; existing.StopLossPct/TrailingSlPct still
+        // returned by GetSettingsAsync purely as the popup's pre-fill defaults).
         existing.MaxDurationDays = updateDto.MaxDurationDays;
         existing.MaxTradesPerDay = updateDto.MaxTradesPerDay;
         existing.FixedAmountPerTrade = updateDto.FixedAmountPerTrade;
@@ -323,8 +325,44 @@ public class AutoRealTradeService : IAutoRealTradeService
         return await _repository.GetTradeHistoryAsync(userId, limit);
     }
 
+    // Per-(user, symbol) locks guarding the Manual Real Trade path only, so a double-click on
+    // "Place Real Trade" can't race two concurrent requests past the duplicate-position check
+    // below before either has inserted a row. Auto-scan is single-threaded per worker cycle
+    // already and is unaffected (this lock is only acquired when isManualTrade is true).
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _manualBuyLocks = new();
+
     public async Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
-        decimal? engineStopLoss = null, decimal? engineTarget = null)
+        decimal? engineStopLoss = null, decimal? engineTarget = null,
+        bool isManualTrade = false, int? manualQuantity = null, decimal? manualStopLossPct = null, decimal? manualTrailingSlPct = null)
+    {
+        if (!isManualTrade)
+        {
+            return await EvaluateAndExecuteRealBuyCoreAsync(symbol, entryPrice, metConditionsCount, userId, isBuySignal,
+                engineStopLoss, engineTarget, isManualTrade, manualQuantity, manualStopLossPct, manualTrailingSlPct);
+        }
+
+        string lockKey = $"{userId}:{symbol.ToUpper().Trim()}";
+        var manualLock = _manualBuyLocks.GetOrAdd(lockKey, _ => new SemaphoreSlim(1, 1));
+        if (!await manualLock.WaitAsync(TimeSpan.Zero))
+        {
+            _logger.LogInformation("Rejecting duplicate manual Real Trade request for {Symbol} (User {UserId}) - a previous request is still in flight.", symbol, userId);
+            return false;
+        }
+
+        try
+        {
+            return await EvaluateAndExecuteRealBuyCoreAsync(symbol, entryPrice, metConditionsCount, userId, isBuySignal,
+                engineStopLoss, engineTarget, isManualTrade, manualQuantity, manualStopLossPct, manualTrailingSlPct);
+        }
+        finally
+        {
+            manualLock.Release();
+        }
+    }
+
+    private async Task<bool> EvaluateAndExecuteRealBuyCoreAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId, bool isBuySignal,
+        decimal? engineStopLoss, decimal? engineTarget,
+        bool isManualTrade, int? manualQuantity, decimal? manualStopLossPct, decimal? manualTrailingSlPct)
     {
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
@@ -423,11 +461,13 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
-        // 8. Capital & Margin Validation
+        // 8. Capital & Margin Validation - the generic FixedAmountPerTrade check only applies to the
+        // auto-sized quantity; a manual trade's own requested spend is validated below instead, once
+        // its final quantity and re-checked live entry price are known.
         var marginResult = await _brokerService.GetEquityMarginsAsync(userId);
         decimal availableMargin = marginResult.Success ? marginResult.AvailableCash : settings.AvailableCapital;
 
-        if (availableMargin < settings.FixedAmountPerTrade)
+        if (!isManualTrade && availableMargin < settings.FixedAmountPerTrade)
         {
             await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
                 $"Insufficient Broker Capital (₹{availableMargin:N2} < Trade Amount ₹{settings.FixedAmountPerTrade:N2})", userId);
@@ -466,19 +506,62 @@ public class AutoRealTradeService : IAutoRealTradeService
         // entryPrice rather than blocking a trade that already passed every risk gate over a
         // secondary, best-effort check.
 
-        int quantity = (int)Math.Floor(settings.FixedAmountPerTrade / entryPrice);
-        if (quantity < 1)
+        int quantity;
+        if (isManualTrade)
         {
-            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
-                $"Calculated quantity 0 for entry price ₹{entryPrice:N2}", userId);
-            return false;
+            // Quantity is user-chosen from the Manual Real Trade popup - no longer auto-sized.
+            if (!manualQuantity.HasValue || manualQuantity.Value < 1)
+            {
+                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                    "Manual trade rejected: Quantity must be a positive whole number.", userId);
+                return false;
+            }
+            quantity = manualQuantity.Value;
+
+            decimal requiredCapital = quantity * entryPrice;
+            if (availableMargin < requiredCapital)
+            {
+                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                    $"Insufficient Broker Capital for requested quantity (₹{availableMargin:N2} < ₹{requiredCapital:N2} for {quantity} @ ₹{entryPrice:N2})", userId);
+                return false;
+            }
+        }
+        else
+        {
+            quantity = (int)Math.Floor(settings.FixedAmountPerTrade / entryPrice);
+            if (quantity < 1)
+            {
+                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                    $"Calculated quantity 0 for entry price ₹{entryPrice:N2}", userId);
+                return false;
+            }
+        }
+
+        // Manual trades carry their own trade-wise SL%/TSL% from the popup - both are mandatory
+        // (never optional/blank), so a human is present to correct the input rather than the bot
+        // silently falling back and running an unprotected position.
+        if (isManualTrade)
+        {
+            if (!manualStopLossPct.HasValue || manualStopLossPct.Value <= 0)
+            {
+                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                    "Manual trade rejected: Stop Loss % must be greater than zero.", userId);
+                return false;
+            }
+            if (!manualTrailingSlPct.HasValue || manualTrailingSlPct.Value <= 0)
+            {
+                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                    "Manual trade rejected: Trailing Stop Loss % must be greater than zero.", userId);
+                return false;
+            }
         }
 
         // 9. Target & Stop Loss - prefer the SwingDecisionEngine's own ATR-based levels (the
         // same numbers that earned the signal its Risk/Reward score) over a flat percentage of
         // entry price, since a flat % is disconnected from the volatility context that actually
-        // qualified the trade. Falls back to the user's flat-% settings (mandatory-with-fallback,
-        // see below) for entry paths that don't go through the scoring engine, e.g. manual buys.
+        // qualified the trade. Falls back to a fixed default % for entry paths that don't go
+        // through the scoring engine (e.g. holdings enrollment), or the user's own per-trade %
+        // for a Manual Real Trade.
         decimal takeProfit;
         if (engineTarget.HasValue && engineTarget.Value > entryPrice)
         {
@@ -490,25 +573,22 @@ public class AutoRealTradeService : IAutoRealTradeService
             takeProfit = Math.Round(entryPrice * (1m + tpPct), 2);
         }
 
+        decimal effectiveStopLossPct = isManualTrade ? Math.Abs(manualStopLossPct!.Value) : DefaultStopLossPctFallback;
+
         decimal stopLoss;
-        if (engineStopLoss.HasValue && engineStopLoss.Value > 0 && engineStopLoss.Value < entryPrice)
+        if (!isManualTrade && engineStopLoss.HasValue && engineStopLoss.Value > 0 && engineStopLoss.Value < entryPrice)
         {
             stopLoss = Math.Round(engineStopLoss.Value, 2);
         }
         else
         {
-            decimal effectiveStopLossPct = settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0
-                ? Math.Abs(settings.StopLossPct.Value)
-                : DefaultStopLossPctFallback;
             stopLoss = Math.Round(entryPrice * (1m - effectiveStopLossPct / 100m), 2);
         }
 
         // Trailing SL is mandatory for real-money positions (like Stop Loss above) - it is always
-        // attached to a real position regardless of settings.TrailingSlEnabled, falling back to a
-        // conservative default percentage if the user hasn't configured a custom one.
-        decimal effectiveTrailingSlPct = settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0
-            ? Math.Abs(settings.TrailingSlPct.Value)
-            : DefaultTrailingSlPctFallback;
+        // attached to a real position, falling back to a conservative fixed default percentage for
+        // auto/engine-driven trades, or the user's own per-trade % for a Manual Real Trade.
+        decimal effectiveTrailingSlPct = isManualTrade ? Math.Abs(manualTrailingSlPct!.Value) : DefaultTrailingSlPctFallback;
         decimal trailingSl = Math.Round(entryPrice * (1m - effectiveTrailingSlPct / 100m), 2);
 
         try
@@ -537,6 +617,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     TakeProfit = takeProfit,
                     Status = PaperOrderStatus.Rejected,
                     RejectionReason = brokerResult.Message,
+                    TradeType = isManualTrade ? TradeType.Manual : TradeType.Auto,
                     Remarks = $"Real BUY Rejected by Zerodha: {brokerResult.Message}"
                 });
 
@@ -571,6 +652,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     Status = PaperOrderStatus.Rejected,
                     FilledPrice = 0m,
                     RejectionReason = statusCheck.Message,
+                    TradeType = isManualTrade ? TradeType.Manual : TradeType.Auto,
                     Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
                 });
 
@@ -597,6 +679,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     TakeProfit = takeProfit,
                     Status = PaperOrderStatus.Open,
                     FilledPrice = 0m,
+                    TradeType = isManualTrade ? TradeType.Manual : TradeType.Auto,
                     Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
                 });
 
@@ -623,6 +706,20 @@ public class AutoRealTradeService : IAutoRealTradeService
 
             decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : (brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : entryPrice);
 
+            // For a Manual Real Trade, re-anchor SL/Target/Trailing-SL to the actual broker-confirmed
+            // fill price rather than the pre-fill live quote used to size the order above - closes the
+            // race condition where the market moved between the popup's last price check and the fill
+            // (e.g. slippage on a market order). The auto-scan path is left exactly as before.
+            if (isManualTrade && executedPrice != entryPrice)
+            {
+                decimal tpPct = Math.Abs(settings.ProfitTargetPct) / 100m;
+                takeProfit = Math.Round(executedPrice * (1m + tpPct), 2);
+                stopLoss = Math.Round(executedPrice * (1m - effectiveStopLossPct / 100m), 2);
+                trailingSl = Math.Round(executedPrice * (1m - effectiveTrailingSlPct / 100m), 2);
+            }
+
+            TradeType tradeType = isManualTrade ? TradeType.Manual : TradeType.Auto;
+
             // Insert Real Order
             var order = await _repository.CreateOrderAsync(new RealOrder
             {
@@ -638,7 +735,10 @@ public class AutoRealTradeService : IAutoRealTradeService
                 Status = PaperOrderStatus.Filled,
                 FilledPrice = executedPrice,
                 FilledAt = DateTime.UtcNow,
-                Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                TradeType = tradeType,
+                Remarks = isManualTrade
+                    ? $"[LIVE REAL MONEY - MANUAL] Zerodha Order #{brokerOrderId} (SL {effectiveStopLossPct:F2}% / TSL {effectiveTrailingSlPct:F2}%)"
+                    : $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
             });
 
             // Upsert Real Position
@@ -654,8 +754,10 @@ public class AutoRealTradeService : IAutoRealTradeService
                 StopLoss = stopLoss,
                 TakeProfit = takeProfit,
                 TrailingStopLoss = trailingSl,
+                StopLossPct = isManualTrade ? effectiveStopLossPct : (decimal?)null,
+                TrailingSlPct = isManualTrade ? effectiveTrailingSlPct : (decimal?)null,
                 Status = PositionStatus.OPEN,
-                TradeType = TradeType.Auto,
+                TradeType = tradeType,
                 RealizedPnl = 0m
             });
 
@@ -673,7 +775,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 EntryPrice = executedPrice,
                 ExecutedPrice = executedPrice,
                 RealizedPnl = 0m,
-                TradeType = TradeType.Auto,
+                TradeType = tradeType,
                 Remarks = $"Real BUY Executed @ ₹{executedPrice:F2} (Broker ID: {brokerOrderId})"
             });
 
@@ -736,16 +838,10 @@ public class AutoRealTradeService : IAutoRealTradeService
             return (false, $"{symbol} already has an OPEN monitored position (Position #{existingOpenPos.Id}).");
         }
 
-        var settings = await GetSettingsAsync(userId);
-        decimal effectiveStopLossPct = settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0
-            ? Math.Abs(settings.StopLossPct.Value)
-            : DefaultStopLossPctFallback;
-        decimal stopLoss = Math.Round(averagePrice * (1m - effectiveStopLossPct / 100m), 2);
-
-        decimal effectiveTrailingSlPct = settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0
-            ? Math.Abs(settings.TrailingSlPct.Value)
-            : DefaultTrailingSlPctFallback;
-        decimal trailingSl = Math.Round(averagePrice * (1m - effectiveTrailingSlPct / 100m), 2);
+        // SL%/Trailing SL% are no longer a configurable global setting - holdings enrollment (no
+        // per-trade popup of its own) uses the same fixed fallback % as an auto-scanned position.
+        decimal stopLoss = Math.Round(averagePrice * (1m - DefaultStopLossPctFallback / 100m), 2);
+        decimal trailingSl = Math.Round(averagePrice * (1m - DefaultTrailingSlPctFallback / 100m), 2);
 
         var newPosition = await _repository.UpsertPositionAsync(new RealPosition
         {
@@ -1056,10 +1152,12 @@ public class AutoRealTradeService : IAutoRealTradeService
             return await ExecuteRealSellOrderAsync(position, currentLtp, exitReason, userId, gapProtectionBufferOverride);
         }
 
-        // Dynamic Trailing SL Calculation (mandatory - always ratchets upward as price rises)
+        // Dynamic Trailing SL Calculation (mandatory - always ratchets upward as price rises).
+        // Uses this position's own trade-wise % when it was opened as a Manual Real Trade,
+        // otherwise the fixed default % for an Auto/engine-driven or holdings-enrolled position.
         {
-            decimal effectiveTrailingSlPct = settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0
-                ? Math.Abs(settings.TrailingSlPct.Value)
+            decimal effectiveTrailingSlPct = position.TrailingSlPct.HasValue && position.TrailingSlPct.Value > 0
+                ? Math.Abs(position.TrailingSlPct.Value)
                 : DefaultTrailingSlPctFallback;
             decimal candidateSl = Math.Round(currentLtp * (1m - effectiveTrailingSlPct / 100m), 2);
             if (!position.TrailingStopLoss.HasValue || candidateSl > position.TrailingStopLoss.Value)
@@ -1554,6 +1652,11 @@ public class AutoRealTradeService : IAutoRealTradeService
             // confirmed the real fill, using the SL/TP calculated at signal time and stored
             // on the order. TrailingStopLoss starts null and self-populates on the next
             // position-monitor cycle, same as any other freshly opened position.
+            // Note: a Manual Real Trade's per-trade StopLossPct/TrailingSlPct live only on the
+            // position row (see EvaluateAndExecuteRealBuyCoreAsync), not on RealOrder, so a manual
+            // BUY that rests OPEN instead of filling immediately (rare for a Market order) reconciles
+            // here without them - its trailing SL then falls back to the fixed default % rather than
+            // the user's originally-chosen %, same as an Auto position.
             var newPosition = await _repository.UpsertPositionAsync(new RealPosition
             {
                 UserId = order.UserId,
@@ -1567,7 +1670,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 TakeProfit = order.TakeProfit,
                 TrailingStopLoss = null,
                 Status = PositionStatus.OPEN,
-                TradeType = TradeType.Auto,
+                TradeType = order.TradeType,
                 RealizedPnl = 0m
             });
 
@@ -1584,7 +1687,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 EntryPrice = executedPrice,
                 ExecutedPrice = executedPrice,
                 RealizedPnl = 0m,
-                TradeType = TradeType.Auto,
+                TradeType = order.TradeType,
                 Remarks = $"Real BUY confirmed FILLED @ ₹{executedPrice:F2} (Broker ID: {order.BrokerOrderId})"
             });
 

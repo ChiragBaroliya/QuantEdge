@@ -182,7 +182,9 @@ public class RealTradingRepository : IRealTradingRepository
                 @Status,
                 @TradeType,
                 @ExitReason,
-                @RealizedPnl
+                @RealizedPnl,
+                @StopLossPct,
+                @TrailingSlPct
             );";
 
         return await connection.QuerySingleAsync<RealPosition>(sql, position);

@@ -15,15 +15,9 @@ public class RealTradeSettingsUpdateDto
     [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Profit Target % must be between 0.1% and 100%.")]
     public decimal ProfitTargetPct { get; set; } = 5.00m;
 
-    // Optional Stop Loss %
-    [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Stop Loss % must be between 0.1% and 100%.")]
-    public decimal? StopLossPct { get; set; }
-
-    // Optional Trailing SL
-    public bool TrailingSlEnabled { get; set; } = false;
-
-    [Range(typeof(decimal), "0.1", "50.0", ErrorMessage = "Trailing Stop Loss % must be between 0.1% and 50%.")]
-    public decimal? TrailingSlPct { get; set; }
+    // Stop Loss % and Trailing Stop Loss % are no longer configurable here - they are now set
+    // trade-wise from the Manual Real Trade popup, and auto/engine-driven trades use the fixed
+    // fallback defaults in AutoRealTradeService instead of a global override.
 
     [Range(1, 365, ErrorMessage = "Max Duration must be between 1 and 365 days.")]
     public int MaxDurationDays { get; set; } = 20;
@@ -169,6 +163,20 @@ public class ManualRealBuyRequestDto
     public decimal EntryPrice { get; set; }
     public int MetConditionsCount { get; set; }
     public int? UserId { get; set; }
+
+    /// <summary>User-chosen quantity from the Manual Real Trade popup. Required - manual trades are no
+    /// longer auto-sized from FixedAmountPerTrade.</summary>
+    [Range(1, 1000000, ErrorMessage = "Quantity must be a positive whole number.")]
+    public int Quantity { get; set; }
+
+    /// <summary>Trade-wise Stop Loss %, entered/confirmed by the user in the popup (pre-filled with the
+    /// mandatory fallback default, but applies only to this trade - never written back to global settings).</summary>
+    [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Stop Loss % must be between 0.1% and 100%.")]
+    public decimal StopLossPct { get; set; }
+
+    /// <summary>Trade-wise Trailing Stop Loss %, same semantics as StopLossPct above.</summary>
+    [Range(typeof(decimal), "0.1", "50.0", ErrorMessage = "Trailing Stop Loss % must be between 0.1% and 50%.")]
+    public decimal TrailingSlPct { get; set; }
 }
 
 /// <summary>

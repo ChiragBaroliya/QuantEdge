@@ -25,8 +25,16 @@ public interface IAutoRealTradeService
     /// Evaluates pre-trade risk conditions (Token, Capital, Daily Loss Limit, Trading Window, Max Trades)
     /// and fires a Real-Money Buy order with Zerodha if all conditions pass.
     /// </summary>
+    /// <param name="isManualTrade">
+    /// True for a Manual Real Trade placed from the trade-configuration popup: quantity and SL%/Trailing
+    /// SL% come from <paramref name="manualQuantity"/>/<paramref name="manualStopLossPct"/>/
+    /// <paramref name="manualTrailingSlPct"/> instead of being auto-sized/global-default, and the resulting
+    /// order/position are tagged <see cref="Domain.Entities.TradeType.Manual"/>. Also guards against a
+    /// double-submit (e.g. double-clicking "Place Real Trade") via a short per-(user, symbol) lock.
+    /// </param>
     Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
-        decimal? engineStopLoss = null, decimal? engineTarget = null);
+        decimal? engineStopLoss = null, decimal? engineTarget = null,
+        bool isManualTrade = false, int? manualQuantity = null, decimal? manualStopLossPct = null, decimal? manualTrailingSlPct = null);
 
     /// <summary>
     /// Evaluates live exit conditions (Target, Optional SL, Optional Trailing SL, Max Duration)

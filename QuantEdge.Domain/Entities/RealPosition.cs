@@ -15,6 +15,10 @@ public class RealPosition
     public decimal? StopLoss { get; set; } // Optional
     public decimal? TakeProfit { get; set; } // Optional
     public decimal? TrailingStopLoss { get; set; } // Optional Trailing SL value
+    // Trade-wise SL/Trailing SL % this position was opened with (Manual Real Trade only).
+    // NULL for Auto/engine-driven positions, which keep using the fixed fallback %.
+    public decimal? StopLossPct { get; set; }
+    public decimal? TrailingSlPct { get; set; }
     public PositionStatus Status { get; set; } = PositionStatus.OPEN;
     public TradeType TradeType { get; set; } = TradeType.Auto;
     public string? ExitReason { get; set; }

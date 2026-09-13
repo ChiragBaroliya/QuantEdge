@@ -749,6 +749,8 @@ CREATE TABLE IF NOT EXISTS real_positions (
     stop_loss NUMERIC(18, 4),
     take_profit NUMERIC(18, 4),
     trailing_stop_loss NUMERIC(18, 4),
+    stop_loss_pct NUMERIC(9, 4),
+    trailing_sl_pct NUMERIC(9, 4),
     status INT NOT NULL DEFAULT 0,
     trade_type INT NOT NULL DEFAULT 1,
     exit_reason VARCHAR(100),
@@ -789,6 +791,11 @@ CREATE INDEX IF NOT EXISTS ix_real_orders_user ON real_orders(user_id, status);
 CREATE INDEX IF NOT EXISTS ix_real_positions_user ON real_positions(user_id, status);
 CREATE INDEX IF NOT EXISTS ix_real_trade_history_user ON real_trade_history(user_id);
 CREATE INDEX IF NOT EXISTS ix_real_trade_logs_user ON real_trade_execution_logs(user_id, executed_at);
+
+-- Migrations for existing databases
+-- Trade-wise SL % / Trailing SL % for Manual Real Trade positions (NULL for Auto/engine-driven positions).
+ALTER TABLE real_positions ADD COLUMN IF NOT EXISTS stop_loss_pct NUMERIC(9, 4);
+ALTER TABLE real_positions ADD COLUMN IF NOT EXISTS trailing_sl_pct NUMERIC(9, 4);
 
 
 

@@ -392,19 +392,8 @@ function populateSettingsForm(s) {
     setVal("inpWindowStart", s.tradingWindowStart);
     setVal("inpWindowEnd", s.tradingWindowEnd);
 
-    // Optional Stop Loss
-    const chkSL = document.getElementById("chkEnableStopLoss");
-    const slWrapper = document.getElementById("slInputWrapper");
-    const inpSL = document.getElementById("inpStopLoss");
-    if (chkSL && slWrapper && inpSL) {
-        const hasSL = s.stopLossPct !== null && s.stopLossPct !== undefined && s.stopLossPct > 0;
-        chkSL.checked = hasSL;
-        slWrapper.style.display = hasSL ? "block" : "none";
-        if (hasSL) inpSL.value = s.stopLossPct;
-    }
-
-    // Trailing SL is mandatory - always shown and populated, no enable/disable toggle
-    setVal("inpTrailingSl", s.trailingSlPct);
+    // Stop Loss % / Trailing Stop Loss % are no longer settings-page fields - they're configured
+    // trade-wise from the Manual Real Trade popup instead (see realtrade-actions.js).
 
     // Optional Daily Loss Limit
     const chkLoss = document.getElementById("chkEnableDailyLossLimit");
@@ -924,15 +913,6 @@ function setupEventListeners() {
     // Advance Search: Logs Filter
     document.getElementById("inpSearchLogs")?.addEventListener("input", () => renderLogs(cachedTodayLogs));
 
-    // Optional SL toggle
-    const chkSL = document.getElementById("chkEnableStopLoss");
-    const slWrapper = document.getElementById("slInputWrapper");
-    if (chkSL && slWrapper) {
-        chkSL.addEventListener("change", function () {
-            slWrapper.style.display = this.checked ? "block" : "none";
-        });
-    }
-
     // Optional Daily Loss toggle
     const chkLoss = document.getElementById("chkEnableDailyLossLimit");
     const lossWrapper = document.getElementById("dailyLossInputWrapper");
@@ -1005,14 +985,6 @@ function setupEventListeners() {
             const btn = document.getElementById("btnSaveSettings");
             if (btn) btn.disabled = true;
 
-            const chkSL = document.getElementById("chkEnableStopLoss");
-            const inpSL = document.getElementById("inpStopLoss");
-            const stopLossVal = (chkSL && chkSL.checked && inpSL && inpSL.value) ? parseFloat(inpSL.value) : null;
-
-            // Trailing SL is mandatory - always read directly, no enable/disable toggle
-            const inpTSL = document.getElementById("inpTrailingSl");
-            const trailingSlVal = (inpTSL && inpTSL.value) ? parseFloat(inpTSL.value) : null;
-
             const chkLoss = document.getElementById("chkEnableDailyLossLimit");
             const inpLoss = document.getElementById("inpMaxDailyLoss");
             const dailyLossVal = (chkLoss && chkLoss.checked && inpLoss && inpLoss.value) ? parseFloat(inpLoss.value) : null;
@@ -1022,9 +994,6 @@ function setupEventListeners() {
                 AvailableCapital: parseFloat(document.getElementById("inpAvailableCapital")?.value || "100000"),
                 FixedAmountPerTrade: parseFloat(document.getElementById("inpFixedAmount")?.value || "20000"),
                 ProfitTargetPct: parseFloat(document.getElementById("inpProfitTarget")?.value || "5.0"),
-                StopLossPct: stopLossVal,
-                TrailingSlEnabled: true,
-                TrailingSlPct: trailingSlVal,
                 MaxDailyLossLimit: dailyLossVal,
                 MaxTradesPerDay: parseInt(document.getElementById("inpMaxTrades")?.value || "5"),
                 MaxDurationDays: parseInt(document.getElementById("inpMaxDuration")?.value || "20"),

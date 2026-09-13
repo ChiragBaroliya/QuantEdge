@@ -13,10 +13,12 @@ namespace QuantEdge.API.Controllers;
 public class RealTradeController : ControllerBase
 {
     private readonly IAutoRealTradeService _realTradeService;
+    private readonly IZerodhaKiteBrokerService _brokerService;
 
-    public RealTradeController(IAutoRealTradeService realTradeService)
+    public RealTradeController(IAutoRealTradeService realTradeService, IZerodhaKiteBrokerService brokerService)
     {
         _realTradeService = realTradeService ?? throw new ArgumentNullException(nameof(realTradeService));
+        _brokerService = brokerService ?? throw new ArgumentNullException(nameof(brokerService));
     }
 
     private int GetCurrentUserId(int? queryUserId = null)
@@ -33,6 +35,31 @@ public class RealTradeController : ControllerBase
         }
 
         return 1;
+    }
+
+    /// <summary>
+    /// Live single-symbol LTP quote, used by the Manual Real Trade popup to display/refresh the current
+    /// price. This is purely for the UI - the actual order placement (EvaluateAndExecuteRealBuyAsync)
+    /// re-fetches its own live quote independently right before sizing/placing the order, so a stale
+    /// value here can never make it into the executed trade.
+    /// </summary>
+    [HttpGet("quote")]
+    public async Task<IActionResult> GetQuote([FromQuery] string symbol, [FromQuery] string exchange = "NSE", [FromQuery] int? userId = null)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new { success = false, message = "Symbol is required." });
+        }
+
+        string normalizedSymbol = symbol.ToUpper().Trim();
+        var result = await _brokerService.GetLtpQuotesAsync(new[] { (normalizedSymbol, exchange) }, GetCurrentUserId(userId));
+
+        if (!result.Success || result.Ltps == null || !result.Ltps.TryGetValue(normalizedSymbol, out var ltp) || ltp <= 0m)
+        {
+            return Ok(new { success = false, symbol = normalizedSymbol, message = result.Message ?? "Live price is currently unavailable." });
+        }
+
+        return Ok(new { success = true, symbol = normalizedSymbol, ltp, asOfUtc = DateTime.UtcNow });
     }
 
     /// <summary>
@@ -127,9 +154,11 @@ public class RealTradeController : ControllerBase
     }
 
     /// <summary>
-    /// Manual one-off Real Trade BUY (e.g. triggered from the Swing Trading dashboard for a specific signal),
+    /// Manual one-off Real Trade BUY from the Manual Real Trade popup (Signal Dashboard / ETF List),
     /// bypassing the 15-minute auto-scan cycle. Still routed through the same risk checks as automatic
-    /// execution (master switch, token validity, market hours, daily trade/loss limits, duplicate position, capital).
+    /// execution (master switch, token validity, market hours, daily trade/loss limits, duplicate position,
+    /// capital) - Quantity, Stop Loss %, and Trailing Stop Loss % are the user's own per-trade choices from
+    /// the popup rather than auto-sized/global-default.
     /// </summary>
     [HttpPost("manual-buy")]
     public async Task<IActionResult> ManualBuy([FromBody] ManualRealBuyRequestDto dto, [FromQuery] int? userId = null)
@@ -139,10 +168,16 @@ public class RealTradeController : ControllerBase
             return BadRequest(new { success = false, message = "A valid Symbol and EntryPrice are required." });
         }
 
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
         int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
 
         bool executed = await _realTradeService.EvaluateAndExecuteRealBuyAsync(
-            dto.Symbol, dto.EntryPrice, dto.MetConditionsCount, targetUid, isBuySignal: true);
+            dto.Symbol, dto.EntryPrice, dto.MetConditionsCount, targetUid, isBuySignal: true,
+            isManualTrade: true, manualQuantity: dto.Quantity, manualStopLossPct: dto.StopLossPct, manualTrailingSlPct: dto.TrailingSlPct);
 
         if (executed)
         {
