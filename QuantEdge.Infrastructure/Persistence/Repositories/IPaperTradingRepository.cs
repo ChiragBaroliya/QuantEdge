@@ -18,6 +18,7 @@ public interface IPaperTradingRepository
     Task<PaperPosition?> GetOpenPositionBySymbolAsync(int accountId, string symbol);
     Task<PaperPosition> UpsertPositionAsync(PaperPosition position);
     Task<bool> ClosePositionAsync(int positionId, decimal exitPrice, decimal realizedPnl, string? exitReason = null);
+    Task UpdateTrailingStopLossAsync(int positionId, decimal newTrailingStopLoss);
 
     Task<IEnumerable<PaperPosition>> GetPositionsAsync(int accountId, bool openOnly = true);
     

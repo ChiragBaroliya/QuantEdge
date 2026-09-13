@@ -18,6 +18,9 @@ public class AutoTradeSettingsUpdateDto
     [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Stop Loss % must be between 0.1% and 100%.")]
     public decimal? StopLossPct { get; set; }
 
+    [Range(typeof(decimal), "0.1", "50.0", ErrorMessage = "Trailing Stop Loss % must be between 0.1% and 50%.")]
+    public decimal? TrailingSlPct { get; set; }
+
     [Range(1, 365, ErrorMessage = "Max Duration must be between 1 and 365 days.")]
     public int MaxDurationDays { get; set; } = 20;
 

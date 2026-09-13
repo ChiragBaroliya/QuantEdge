@@ -606,6 +606,9 @@ CREATE TABLE IF NOT EXISTS paper_positions (
     unrealized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
     stop_loss NUMERIC(18, 4),
     take_profit NUMERIC(18, 4),
+    trailing_stop_loss NUMERIC(18, 4),
+    stop_loss_pct NUMERIC(9, 4),
+    trailing_sl_pct NUMERIC(9, 4),
     status INT NOT NULL DEFAULT 0,
     trade_type INT NOT NULL DEFAULT 0,
     exit_reason VARCHAR(100),
@@ -640,6 +643,7 @@ CREATE TABLE IF NOT EXISTS auto_trade_settings (
     available_capital NUMERIC(18, 4) NOT NULL DEFAULT 100000.00,
     profit_target_pct NUMERIC(5, 2) NOT NULL DEFAULT 5.00,
     stop_loss_pct NUMERIC(5, 2) NULL DEFAULT 3.00,
+    trailing_sl_pct NUMERIC(5, 2) NULL DEFAULT 2.00,
     max_duration_days INT NOT NULL DEFAULT 20,
     max_trades_per_day INT NOT NULL DEFAULT 5,
     fixed_amount_per_trade NUMERIC(18, 4) NOT NULL DEFAULT 20000.00,
@@ -796,6 +800,13 @@ CREATE INDEX IF NOT EXISTS ix_real_trade_logs_user ON real_trade_execution_logs(
 -- Trade-wise SL % / Trailing SL % for Manual Real Trade positions (NULL for Auto/engine-driven positions).
 ALTER TABLE real_positions ADD COLUMN IF NOT EXISTS stop_loss_pct NUMERIC(9, 4);
 ALTER TABLE real_positions ADD COLUMN IF NOT EXISTS trailing_sl_pct NUMERIC(9, 4);
+
+-- Auto Paper Trade: Stop Loss % is now mandatory-with-fallback (like Real Trade) and Trailing Stop
+-- Loss % is a new mandatory global setting; the effective %s used are recorded on the position itself.
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS trailing_sl_pct NUMERIC(5, 2) DEFAULT 2.00;
+ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS trailing_stop_loss NUMERIC(18, 4);
+ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS stop_loss_pct NUMERIC(9, 4);
+ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS trailing_sl_pct NUMERIC(9, 4);
 
 
 

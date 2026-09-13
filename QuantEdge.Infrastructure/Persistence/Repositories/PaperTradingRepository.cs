@@ -211,6 +211,9 @@ public class PaperTradingRepository : IPaperTradingRepository
                 unrealized_pnl AS UnrealizedPnl,
                 stop_loss AS StopLoss,
                 take_profit AS TakeProfit,
+                trailing_stop_loss AS TrailingStopLoss,
+                stop_loss_pct AS StopLossPct,
+                trailing_sl_pct AS TrailingSlPct,
                 status AS Status,
                 trade_type AS TradeType,
                 exit_reason AS ExitReason,
@@ -232,16 +235,19 @@ public class PaperTradingRepository : IPaperTradingRepository
             string sqlInsert = @"
                 INSERT INTO paper_positions (
                     account_id, symbol, side, quantity, average_entry_price, current_price,
-                    unrealized_pnl, stop_loss, take_profit, status, trade_type, exit_reason, opened_at, realized_pnl
+                    unrealized_pnl, stop_loss, take_profit, trailing_stop_loss, stop_loss_pct, trailing_sl_pct,
+                    status, trade_type, exit_reason, opened_at, realized_pnl
                 )
                 VALUES (
                     @AccountId, @Symbol, @Side, @Quantity, @AverageEntryPrice, @CurrentPrice,
-                    @UnrealizedPnl, @StopLoss, @TakeProfit, @Status, @TradeType, @ExitReason, NOW(), @RealizedPnl
+                    @UnrealizedPnl, @StopLoss, @TakeProfit, @TrailingStopLoss, @StopLossPct, @TrailingSlPct,
+                    @Status, @TradeType, @ExitReason, NOW(), @RealizedPnl
                 )
-                RETURNING 
+                RETURNING
                     id AS Id, account_id AS AccountId, symbol AS Symbol, side AS Side,
                     quantity AS Quantity, average_entry_price AS AverageEntryPrice, current_price AS CurrentPrice,
                     unrealized_pnl AS UnrealizedPnl, stop_loss AS StopLoss, take_profit AS TakeProfit,
+                    trailing_stop_loss AS TrailingStopLoss, stop_loss_pct AS StopLossPct, trailing_sl_pct AS TrailingSlPct,
                     status AS Status, trade_type AS TradeType, exit_reason AS ExitReason, opened_at AS OpenedAt, closed_at AS ClosedAt, realized_pnl AS RealizedPnl;";
 
             return await connection.QuerySingleAsync<PaperPosition>(sqlInsert, new
@@ -255,6 +261,9 @@ public class PaperTradingRepository : IPaperTradingRepository
                 position.UnrealizedPnl,
                 position.StopLoss,
                 position.TakeProfit,
+                position.TrailingStopLoss,
+                position.StopLossPct,
+                position.TrailingSlPct,
                 Status = (int)position.Status,
                 TradeType = (int)position.TradeType,
                 position.ExitReason,
@@ -275,10 +284,11 @@ public class PaperTradingRepository : IPaperTradingRepository
                     exit_reason = COALESCE(@ExitReason, exit_reason),
                     realized_pnl = @RealizedPnl
                 WHERE id = @Id AND (status = 0 OR @Status = 1)
-                RETURNING 
+                RETURNING
                     id AS Id, account_id AS AccountId, symbol AS Symbol, side AS Side,
                     quantity AS Quantity, average_entry_price AS AverageEntryPrice, current_price AS CurrentPrice,
                     unrealized_pnl AS UnrealizedPnl, stop_loss AS StopLoss, take_profit AS TakeProfit,
+                    trailing_stop_loss AS TrailingStopLoss, stop_loss_pct AS StopLossPct, trailing_sl_pct AS TrailingSlPct,
                     status AS Status, trade_type AS TradeType, exit_reason AS ExitReason, opened_at AS OpenedAt, closed_at AS ClosedAt, realized_pnl AS RealizedPnl;";
 
             var updated = await connection.QuerySingleOrDefaultAsync<PaperPosition>(sqlUpdate, new
@@ -316,11 +326,22 @@ public class PaperTradingRepository : IPaperTradingRepository
         return rows > 0;
     }
 
+    public async Task UpdateTrailingStopLossAsync(int positionId, decimal newTrailingStopLoss)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = @"
+            UPDATE paper_positions
+            SET trailing_stop_loss = @newTrailingStopLoss
+            WHERE id = @positionId AND status = 0;";
+
+        await connection.ExecuteAsync(sql, new { positionId, newTrailingStopLoss });
+    }
+
     public async Task<IEnumerable<PaperPosition>> GetPositionsAsync(int accountId, bool openOnly = true)
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
-            SELECT 
+            SELECT
                 id AS Id,
                 account_id AS AccountId,
                 symbol AS Symbol,
@@ -331,6 +352,9 @@ public class PaperTradingRepository : IPaperTradingRepository
                 unrealized_pnl AS UnrealizedPnl,
                 stop_loss AS StopLoss,
                 take_profit AS TakeProfit,
+                trailing_stop_loss AS TrailingStopLoss,
+                stop_loss_pct AS StopLossPct,
+                trailing_sl_pct AS TrailingSlPct,
                 status AS Status,
                 trade_type AS TradeType,
                 exit_reason AS ExitReason,

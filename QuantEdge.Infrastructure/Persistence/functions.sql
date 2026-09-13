@@ -1474,7 +1474,8 @@ CREATE OR REPLACE FUNCTION fn_upsert_auto_trade_settings(
     p_fixed_amount_per_trade NUMERIC,
     p_min_conditions_match INT,
     p_trading_window_start VARCHAR,
-    p_trading_window_end VARCHAR
+    p_trading_window_end VARCHAR,
+    p_trailing_sl_pct NUMERIC DEFAULT NULL
 )
 RETURNS TABLE (
     Id INT,
@@ -1483,6 +1484,7 @@ RETURNS TABLE (
     AvailableCapital NUMERIC,
     ProfitTargetPct NUMERIC,
     StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
     MaxDurationDays INT,
     MaxTradesPerDay INT,
     FixedAmountPerTrade NUMERIC,
@@ -1498,12 +1500,12 @@ BEGIN
     INSERT INTO auto_trade_settings (
         user_id, is_auto_trade_enabled, available_capital, profit_target_pct, stop_loss_pct,
         max_duration_days, max_trades_per_day, fixed_amount_per_trade, min_conditions_match,
-        trading_window_start, trading_window_end, updated_at
+        trading_window_start, trading_window_end, trailing_sl_pct, updated_at
     )
     VALUES (
         p_user_id, p_is_auto_trade_enabled, p_available_capital, p_profit_target_pct, p_stop_loss_pct,
         p_max_duration_days, p_max_trades_per_day, p_fixed_amount_per_trade, p_min_conditions_match,
-        p_trading_window_start, p_trading_window_end, NOW()
+        p_trading_window_start, p_trading_window_end, p_trailing_sl_pct, NOW()
     )
     ON CONFLICT (user_id) DO UPDATE
     SET is_auto_trade_enabled = EXCLUDED.is_auto_trade_enabled,
@@ -1516,14 +1518,16 @@ BEGIN
         min_conditions_match = EXCLUDED.min_conditions_match,
         trading_window_start = EXCLUDED.trading_window_start,
         trading_window_end = EXCLUDED.trading_window_end,
+        trailing_sl_pct = EXCLUDED.trailing_sl_pct,
         updated_at = NOW()
-    RETURNING 
+    RETURNING
         auto_trade_settings.id AS Id,
         auto_trade_settings.user_id AS UserId,
         auto_trade_settings.is_auto_trade_enabled AS IsAutoTradeEnabled,
         auto_trade_settings.available_capital AS AvailableCapital,
         auto_trade_settings.profit_target_pct AS ProfitTargetPct,
         auto_trade_settings.stop_loss_pct AS StopLossPct,
+        auto_trade_settings.trailing_sl_pct AS TrailingSlPct,
         auto_trade_settings.max_duration_days AS MaxDurationDays,
         auto_trade_settings.max_trades_per_day AS MaxTradesPerDay,
         auto_trade_settings.fixed_amount_per_trade AS FixedAmountPerTrade,
@@ -1548,6 +1552,7 @@ RETURNS TABLE (
     AvailableCapital NUMERIC,
     ProfitTargetPct NUMERIC,
     StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
     MaxDurationDays INT,
     MaxTradesPerDay INT,
     FixedAmountPerTrade NUMERIC,
@@ -1560,13 +1565,14 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         s.id AS Id,
         s.user_id AS UserId,
         s.is_auto_trade_enabled AS IsAutoTradeEnabled,
         s.available_capital AS AvailableCapital,
         s.profit_target_pct AS ProfitTargetPct,
         s.stop_loss_pct AS StopLossPct,
+        s.trailing_sl_pct AS TrailingSlPct,
         s.max_duration_days AS MaxDurationDays,
         s.max_trades_per_day AS MaxTradesPerDay,
         s.fixed_amount_per_trade AS FixedAmountPerTrade,
@@ -1593,6 +1599,7 @@ RETURNS TABLE (
     AvailableCapital NUMERIC,
     ProfitTargetPct NUMERIC,
     StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
     MaxDurationDays INT,
     MaxTradesPerDay INT,
     FixedAmountPerTrade NUMERIC,
@@ -1605,13 +1612,14 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         s.id AS Id,
         s.user_id AS UserId,
         s.is_auto_trade_enabled AS IsAutoTradeEnabled,
         s.available_capital AS AvailableCapital,
         s.profit_target_pct AS ProfitTargetPct,
         s.stop_loss_pct AS StopLossPct,
+        s.trailing_sl_pct AS TrailingSlPct,
         s.max_duration_days AS MaxDurationDays,
         s.max_trades_per_day AS MaxTradesPerDay,
         s.fixed_amount_per_trade AS FixedAmountPerTrade,

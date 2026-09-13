@@ -9,7 +9,12 @@ public class AutoTradeSettings
     public bool IsAutoTradeEnabled { get; set; } = false;
     public decimal AvailableCapital { get; set; } = 100000.00m;
     public decimal ProfitTargetPct { get; set; } = 5.00m;
-    public decimal? StopLossPct { get; set; }
+    // Stop Loss % - shown as a default rather than blank because AutoTradeService now enforces
+    // this same fallback whenever it's left null, so auto paper positions are never unprotected.
+    public decimal? StopLossPct { get; set; } = 3.00m;
+    // Trailing Stop Loss % - mandatory like Stop Loss above; AutoTradeService applies the same
+    // fallback whenever this is left null, so trailing SL is always attached to an auto position.
+    public decimal? TrailingSlPct { get; set; } = 2.00m;
     public int MaxDurationDays { get; set; } = 20;
     public int MaxTradesPerDay { get; set; } = 5;
     public decimal FixedAmountPerTrade { get; set; } = 20000.00m;

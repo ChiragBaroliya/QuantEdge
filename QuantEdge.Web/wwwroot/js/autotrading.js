@@ -224,9 +224,22 @@ function updateDashboardUI(data) {
 
 function populateSettingsForm(s) {
     if (!s) return;
+
+    // Settings refresh here every 15s (background poll) and on every SignalR dashboard/alert/log
+    // event - if the admin currently has a settings field focused (mid-edit), skip re-populating so
+    // their in-progress change isn't silently overwritten with the still-unsaved server value. This
+    // does NOT block the post-Save refresh, since focus is on the Save button (not an input) by then.
+    const form = document.getElementById("frmAutoSettings");
+    const active = document.activeElement;
+    if (form && active && form.contains(active) &&
+        (active.tagName === "INPUT" || active.tagName === "SELECT" || active.tagName === "TEXTAREA")) {
+        return;
+    }
+
     const cap = s.availableCapital ?? s.AvailableCapital ?? 100000;
     const target = s.profitTargetPct ?? s.ProfitTargetPct ?? 5.0;
     const sl = s.stopLossPct ?? s.StopLossPct;
+    const tsl = s.trailingSlPct ?? s.TrailingSlPct ?? 2.0;
     const maxDur = s.maxDurationDays ?? s.MaxDurationDays ?? 20;
     const maxTrd = s.maxTradesPerDay ?? s.MaxTradesPerDay ?? 5;
     const fixedAmt = s.fixedAmountPerTrade ?? s.FixedAmountPerTrade ?? 20000;
@@ -242,8 +255,10 @@ function populateSettingsForm(s) {
     if (elSl) {
         elSl.disabled = !hasSL;
         elSl.value = hasSL ? sl : '';
-        elSl.placeholder = hasSL ? "e.g. 3.0" : "Disabled (No Stop Loss)";
+        elSl.placeholder = hasSL ? "e.g. 3.0" : "Default (3.0%)";
     }
+
+    const elTsl = document.getElementById("txtTrailingSlPct"); if (elTsl) elTsl.value = tsl;
 
     const elDur = document.getElementById("txtMaxDuration"); if (elDur) elDur.value = maxDur;
     const elTrd = document.getElementById("txtMaxTrades"); if (elTrd) elTrd.value = maxTrd;
@@ -667,7 +682,7 @@ function setupEventListeners() {
                 inpSL.focus();
             } else {
                 inpSL.value = "";
-                inpSL.placeholder = "Disabled (No Stop Loss)";
+                inpSL.placeholder = "Default (3.0%)";
             }
         });
     }
@@ -690,11 +705,17 @@ function setupEventListeners() {
             const rawFixed = document.getElementById("txtFixedAmount")?.value;
             const parsedFixed = (rawFixed !== "" && rawFixed !== null && !isNaN(rawFixed)) ? parseFloat(rawFixed) : 2000;
 
+            const rawTsl = document.getElementById("txtTrailingSlPct")?.value;
+            const parsedTsl = (rawTsl !== "" && rawTsl !== null && rawTsl !== undefined && !isNaN(rawTsl) && parseFloat(rawTsl) > 0)
+                ? parseFloat(rawTsl)
+                : null;
+
             const dto = {
                 isAutoTradeEnabled: document.getElementById("chkAutoTradeToggle").checked,
                 availableCapital: parsedCap,
                 profitTargetPct: parseFloat(document.getElementById("txtTargetPct").value) || 5.0,
                 stopLossPct: parsedSl,
+                trailingSlPct: parsedTsl,
                 maxDurationDays: parseInt(document.getElementById("txtMaxDuration").value) || 20,
                 maxTradesPerDay: parseInt(document.getElementById("txtMaxTrades").value) || 5,
                 fixedAmountPerTrade: parsedFixed,

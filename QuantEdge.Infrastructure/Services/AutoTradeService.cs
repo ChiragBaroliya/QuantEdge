@@ -15,6 +15,12 @@ namespace QuantEdge.Infrastructure.Services;
 
 public class AutoTradeService : IAutoTradeService
 {
+    // Safety-net defaults, mirroring AutoRealTradeService: Stop Loss and Trailing Stop Loss are
+    // effectively mandatory for auto paper positions - if left unset these fallbacks apply instead
+    // of running the position with no downside cap.
+    private const decimal DefaultStopLossPctFallback = 3.00m;
+    private const decimal DefaultTrailingSlPctFallback = 2.00m;
+
     private readonly IAutoTradeRepository _repository;
     private readonly IPaperTradingRepository _paperRepository;
     private readonly IPaperTradingService _paperService;
@@ -62,7 +68,8 @@ public class AutoTradeService : IAutoTradeService
         existing.IsAutoTradeEnabled = updateDto.IsAutoTradeEnabled;
         existing.AvailableCapital = updateDto.AvailableCapital;
         existing.ProfitTargetPct = updateDto.ProfitTargetPct;
-        existing.StopLossPct = (updateDto.StopLossPct.HasValue && updateDto.StopLossPct.Value > 0) ? updateDto.StopLossPct.Value : null;
+        existing.StopLossPct = (updateDto.StopLossPct.HasValue && updateDto.StopLossPct.Value > 0) ? updateDto.StopLossPct.Value : null; // Overrides the mandatory SL fallback %, if set
+        existing.TrailingSlPct = (updateDto.TrailingSlPct.HasValue && updateDto.TrailingSlPct.Value > 0) ? updateDto.TrailingSlPct.Value : null; // Overrides the mandatory Trailing SL fallback %, if set
         existing.MaxDurationDays = updateDto.MaxDurationDays;
         existing.MaxTradesPerDay = updateDto.MaxTradesPerDay;
         existing.FixedAmountPerTrade = updateDto.FixedAmountPerTrade;
@@ -340,12 +347,21 @@ public class AutoTradeService : IAutoTradeService
             return false;
         }
 
-        // 7. Calculate Target & Stop Loss
-        decimal? stopLoss = (settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0)
-            ? Math.Round(entryPrice * (1m - Math.Abs(settings.StopLossPct.Value) / 100m), 2)
-            : null;
+        // 7. Calculate Target, Stop Loss & Trailing Stop Loss - SL and Trailing SL are mandatory for
+        // every auto paper position (like Real Trade), falling back to a conservative default % if
+        // the user hasn't configured a custom one.
         decimal tpPct = Math.Abs(settings.ProfitTargetPct) / 100m;
         decimal takeProfit = Math.Round(entryPrice * (1m + tpPct), 2);
+
+        decimal effectiveStopLossPct = (settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0)
+            ? Math.Abs(settings.StopLossPct.Value)
+            : DefaultStopLossPctFallback;
+        decimal stopLoss = Math.Round(entryPrice * (1m - effectiveStopLossPct / 100m), 2);
+
+        decimal effectiveTrailingSlPct = (settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0)
+            ? Math.Abs(settings.TrailingSlPct.Value)
+            : DefaultTrailingSlPctFallback;
+        decimal trailingSl = Math.Round(entryPrice * (1m - effectiveTrailingSlPct / 100m), 2);
 
         try
         {
@@ -364,7 +380,7 @@ public class AutoTradeService : IAutoTradeService
                 FilledPrice = entryPrice,
                 FilledAt = DateTime.UtcNow,
                 TradeType = TradeType.Auto,
-                Remarks = $"Auto BUY (Score {metConditionsCount}/11)"
+                Remarks = $"Auto BUY (Score {metConditionsCount}/11, SL {effectiveStopLossPct:F2}% / TSL {effectiveTrailingSlPct:F2}%)"
             });
 
             // Upsert Auto Paper Position
@@ -379,6 +395,9 @@ public class AutoTradeService : IAutoTradeService
                 UnrealizedPnl = 0m,
                 StopLoss = stopLoss,
                 TakeProfit = takeProfit,
+                TrailingStopLoss = trailingSl,
+                StopLossPct = effectiveStopLossPct,
+                TrailingSlPct = effectiveTrailingSlPct,
                 Status = PositionStatus.OPEN,
                 TradeType = TradeType.Auto,
                 RealizedPnl = 0m
@@ -409,9 +428,8 @@ public class AutoTradeService : IAutoTradeService
             await _cacheService.RemoveAsync(todayKey);
 
             // Log Audit Event
-            string slLog = stopLoss.HasValue ? $"₹{stopLoss.Value:F2}" : "None";
             await LogAuditAsync(symbol, "AUTO_BUY", entryPrice, quantity,
-                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity}, Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: {slLog})", userId);
+                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity}, Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: ₹{trailingSl:F2})", userId);
 
             // Broadcast SignalR Toast Alert
             if (_hubContext != null)
@@ -424,6 +442,7 @@ public class AutoTradeService : IAutoTradeService
                     price = entryPrice,
                     target = takeProfit,
                     stopLoss,
+                    trailingSl,
                     message = $"🤖 Auto BUY: {quantity} shares of {symbol} @ ₹{entryPrice:N2} (Met {metConditionsCount}/11)"
                 });
             }
@@ -467,13 +486,21 @@ public class AutoTradeService : IAutoTradeService
             shouldExit = true;
             exitReason = "Target Hit";
         }
-        // 2. Stop Loss Hit Check (Only evaluate if Stop Loss is enabled in Settings AND position has Stop Loss)
-        else if (settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0 && position.StopLoss.HasValue && position.StopLoss.Value > 0 && currentLtp <= position.StopLoss.Value)
+        // 2. Trailing Stop Loss Hit Check (mandatory - always attached to the position, see setup above;
+        // may still be null on a position opened before this column existed)
+        else if (position.TrailingStopLoss.HasValue && currentLtp <= position.TrailingStopLoss.Value)
+        {
+            shouldExit = true;
+            exitReason = $"Trailing SL Hit @ ₹{position.TrailingStopLoss.Value:F2}";
+        }
+        // 3. Stop Loss Hit Check (mandatory - always attached to a position opened after this change;
+        // still guarded here for a pre-existing position that was opened before SL was mandatory)
+        else if (position.StopLoss.HasValue && position.StopLoss.Value > 0 && currentLtp <= position.StopLoss.Value)
         {
             shouldExit = true;
             exitReason = "Stop Loss Hit";
         }
-        // 3. Max Duration Check (20 Trading Days default)
+        // 4. Max Duration Check (20 Trading Days default)
         else
         {
             int daysOpen = (DateTime.UtcNow - position.OpenedAt).Days;
@@ -484,7 +511,23 @@ public class AutoTradeService : IAutoTradeService
             }
         }
 
-        if (!shouldExit) return false;
+        if (!shouldExit)
+        {
+            // Dynamic Trailing SL Calculation (mandatory - always ratchets upward as price rises).
+            // Uses this position's own % from when it was opened, falling back to the current global
+            // setting (or the fixed default) only for a position that predates this column.
+            decimal effectiveTrailingSlPct = position.TrailingSlPct.HasValue && position.TrailingSlPct.Value > 0
+                ? Math.Abs(position.TrailingSlPct.Value)
+                : (settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0 ? Math.Abs(settings.TrailingSlPct.Value) : DefaultTrailingSlPctFallback);
+            decimal candidateSl = Math.Round(currentLtp * (1m - effectiveTrailingSlPct / 100m), 2);
+            if (!position.TrailingStopLoss.HasValue || candidateSl > position.TrailingStopLoss.Value)
+            {
+                await _paperRepository.UpdateTrailingStopLossAsync(position.Id, candidateSl);
+                position.TrailingStopLoss = candidateSl;
+            }
+
+            return false;
+        }
 
         try
         {

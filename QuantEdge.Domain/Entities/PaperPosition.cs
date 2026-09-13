@@ -14,6 +14,11 @@ public class PaperPosition
     public decimal UnrealizedPnl { get; set; }
     public decimal? StopLoss { get; set; }
     public decimal? TakeProfit { get; set; }
+    public decimal? TrailingStopLoss { get; set; }
+    // Effective SL%/Trailing SL% this position was opened with (Auto Paper Trade), so later edits to
+    // the global settings don't silently change the risk parameters of an already-open position.
+    public decimal? StopLossPct { get; set; }
+    public decimal? TrailingSlPct { get; set; }
     public PositionStatus Status { get; set; } = PositionStatus.OPEN;
     public TradeType TradeType { get; set; } = TradeType.Manual;
     public string? ExitReason { get; set; }
