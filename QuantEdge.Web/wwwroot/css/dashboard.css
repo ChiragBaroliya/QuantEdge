@@ -621,67 +621,6 @@ input:checked + .slider:before {
     color: var(--text-primary);
 }
 
-.chart-indicators {
-    display: flex;
-    gap: 10px;
-}
-
-.indicator-tag {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 12px;
-    border-radius: 30px;
-    cursor: pointer;
-    transition: all var(--transition);
-}
-
-.indicator-tag:hover { transform: scale(1.05); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
-.indicator-tag.ema20 { background: var(--theme-glow); color: var(--theme-accent); border: 1px solid var(--theme-border); }
-.indicator-tag.ema50 { background: rgba(167,139,250,0.1); color: var(--accent-purple); border: 1px solid rgba(167,139,250,0.25); }
-.indicator-tag.vwap  { background: rgba(251,191,36,0.1); color: var(--accent-amber); border: 1px solid rgba(251,191,36,0.25); }
-.hdr-live-price-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 3px 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--border-subtle);
-    border-radius: 20px;
-    margin-left: 12px;
-}
-
-.hdr-price-val {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-.hdr-change-val {
-    font-size: 11px;
-    font-weight: 700;
-    padding: 1px 8px;
-    border-radius: 12px;
-    transition: all var(--transition);
-}
-
-.hdr-change-val.bullish {
-    background: rgba(52, 211, 153, 0.15);
-    color: var(--accent-green);
-    border: 1px solid rgba(52, 211, 153, 0.3);
-}
-
-.hdr-change-val.bearish {
-    background: rgba(248, 113, 113, 0.15);
-    color: var(--accent-red);
-    border: 1px solid rgba(248, 113, 113, 0.3);
-}
-
-.hdr-change-val.neutral {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-muted);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
 .chart-panel-body {
     padding: 14px;
     display: flex;
@@ -696,26 +635,181 @@ input:checked + .slider:before {
     position: relative;
 }
 
-.chart-container-pane.indicator-pane {
-    height: 130px;
-    border-top: 1px solid var(--border-subtle);
-    padding-top: 6px;
+/* ---- Trading Indicators (compact per-indicator cards) ---- */
+.indicators-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-subtle);
 }
 
-.pane-label {
-    position: absolute;
-    top: 6px;
-    left: 10px;
-    font-size: 10px;
+.overall-signal-summary {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+}
+
+.overall-signal-block {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.overall-signal-label {
+    font-size: 10.5px;
     font-weight: 600;
-    color: var(--text-muted);
     text-transform: uppercase;
-    z-index: 10;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+}
+
+.confirmation-count-badge {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.indicators-confirmation-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.confirmation-chip {
     display: flex;
     align-items: center;
     gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-subtle);
 }
+
+.chip-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.chip-value {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 10px;
+}
+
+.chip-value.bullish { color: var(--accent-green); background: rgba(52, 211, 153, 0.15); }
+.chip-value.bearish { color: var(--accent-red); background: rgba(248, 113, 113, 0.15); }
+.chip-value.amber   { color: var(--accent-amber); background: rgba(251, 191, 36, 0.15); }
+.chip-value.neutral { color: var(--text-secondary); background: rgba(255, 255, 255, 0.06); }
+
+.indicator-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    padding: 18px 24px 24px;
+}
+
+.indicator-mini-card {
+    display: flex;
+    flex-direction: column;
+    height: 220px;
+    background: #0a0e1c;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md, 10px);
+    overflow: hidden;
+    transition: border-color var(--transition);
+}
+
+.indicator-mini-card:hover {
+    border-color: var(--theme-border);
+}
+
+.indicator-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+
+.indicator-card-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.2px;
+}
+
+.mini-signal-badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    padding: 2px 9px;
+    border-radius: 12px;
+    white-space: nowrap;
+}
+
+.mini-signal-badge.bullish { background: rgba(52, 211, 153, 0.15); color: var(--accent-green); border: 1px solid rgba(52, 211, 153, 0.3); }
+.mini-signal-badge.bearish { background: rgba(248, 113, 113, 0.15); color: var(--accent-red); border: 1px solid rgba(248, 113, 113, 0.3); }
+.mini-signal-badge.amber   { background: rgba(251, 191, 36, 0.15); color: var(--accent-amber); border: 1px solid rgba(251, 191, 36, 0.3); }
+.mini-signal-badge.neutral { background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); border: 1px solid rgba(255, 255, 255, 0.1); }
+
+.mini-chart-container {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+}
+
+.indicator-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 14px 10px;
+    border-top: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+
+.indicator-card-values {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 10.5px;
+    color: var(--text-muted);
+}
+
+.indicator-card-values b {
+    color: var(--text-primary);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin-left: 3px;
+}
+
+.indicator-card-status {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.indicator-card-status.bullish { color: var(--accent-green); }
+.indicator-card-status.bearish { color: var(--accent-red); }
+.indicator-card-status.amber   { color: var(--accent-amber); }
+.indicator-card-status.neutral { color: var(--text-muted); }
 
 /* ---- Current Week P/L % Chart ---- */
 .weekly-pnl-panel {
@@ -919,9 +1013,10 @@ input:checked + .slider:before {
     }
 
     .chart-container-pane { height: 380px; }
-    .chart-container-pane.indicator-pane { height: 110px; }
 
     .asset-spec-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+
+    .indicator-cards-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Mobile (<768px) */
@@ -1004,13 +1099,16 @@ input:checked + .slider:before {
     .spec-value { font-size: 12.5px; }
 
     .chart-container-pane { height: 280px; }
-    .chart-container-pane.indicator-pane { height: 90px; }
 
     .chart-panel-header { flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 16px; }
-    .chart-indicators { width: 100%; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
-    .indicator-tag { flex-shrink: 0; }
 
     .ohlcv-grid { grid-template-columns: repeat(2, 1fr); }
+
+    .indicators-panel-header { flex-direction: column; align-items: flex-start; padding: 14px 16px; }
+    .indicators-confirmation-row { overflow-x: auto; flex-wrap: nowrap; padding: 10px 16px; }
+    .confirmation-chip { flex-shrink: 0; }
+    .indicator-cards-grid { grid-template-columns: 1fr; padding: 14px 16px 18px; }
+    .indicator-mini-card { height: 200px; }
 }
 
 @media (max-width: 480px) {
@@ -1026,7 +1124,6 @@ input:checked + .slider:before {
     }
 
     .asset-spec-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    .hdr-live-price-pill { margin-left: 0; margin-top: 4px; }
 }
 
 @media (max-width: 360px) {
@@ -1036,5 +1133,4 @@ input:checked + .slider:before {
 /* Landscape mode optimization for mobile devices */
 @media (max-height: 500px) and (orientation: landscape) {
     .chart-container-pane { height: 220px; }
-    .chart-container-pane.indicator-pane { height: 75px; }
 }

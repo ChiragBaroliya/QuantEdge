@@ -7,26 +7,26 @@ let activeSymbol = "";
 let activeTimeframe = "1m";
 
 // Chart definitions
-let priceChart = null;
-let rsiChart = null;
-let macdChart = null;
 let weeklyPnlChart = null;
 let weeklyPnlOffset = 0; // 0 = current week, -1 = previous week, etc.
 
-// Series definitions
-let candleSeries = null;
-let ema20Series = null;
-let ema50Series = null;
-let vwapSeries = null;
-let rsiSeries = null;
-let macdLineSeries = null;
-let macdSignalSeries = null;
-let macdHistSeries = null;
+// Trading Indicators mini-charts (compact cards - see initIndicatorMiniCharts)
+let emaMiniChart = null, emaMiniPriceSeries = null, emaMiniEma9Series = null, emaMiniEma20Series = null;
+let rsiMiniChart = null, rsiMiniSeries = null;
+let macdMiniChart = null, macdMiniLineSeries = null, macdMiniSignalSeries = null, macdMiniHistSeries = null;
+let vwapMiniChart = null, vwapMiniPriceSeries = null, vwapMiniVwapSeries = null;
+let volumeMiniChart = null, volumeMiniSeries = null;
+const MINI_CHART_VISIBLE_CANDLES = 60; // Compact cards only need a short recent window, not full history
+
+// Overall Signal (from the backend strategy engine) + last computed per-indicator signals,
+// tracked so the Trading Indicators confirmation summary can be recomputed from either side
+// (whichever arrives second: the historical/live-candle indicator recompute, or the backend
+// signal evaluation) without the two code paths needing to know about each other.
+let lastOverallSignalType = "HOLD";
+let lastIndicatorSignals = { ema: "NEUTRAL", rsi: "NEUTRAL", macd: "NEUTRAL", vwap: "NEUTRAL", volume: "NO CONFIRMATION" };
 
 // Keep local cache of data for real-time appends
 let chartDataCache = [];
-let isLoadingOlderData = false;
-let noMoreHistoryAvailable = false;
 
 // Real-time stock price (LTP) & active timeframe candle open price tracking
 let currentLivePrice = null;
@@ -68,7 +68,6 @@ $(document).ready(async function () {
 
     await loadStocksDropdown();
     initCharts();
-    updateAutoTradeDashboardBadge();
 
     // Set up timeframe button click events
     $(".tab-btn").click(function() {
@@ -173,124 +172,11 @@ async function triggerDashboardRefresh(isManual = true) {
     }
 }
 
-// Update AutoTrade Status Badge on Main Dashboard
-async function updateAutoTradeDashboardBadge() {
-    const badge = $("#autoTradeDashboardBadge");
-    const textEl = $("#autoTradeDashboardText");
-    if (!badge.length || !textEl.length) return;
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/papertrading/settings`);
-        if (response.ok) {
-            const settings = await response.json();
-            const mode = settings.tradingMode || "Paper";
-            const tf = settings.autoTradeTimeframe || "1m";
-            
-            if (settings.isAutoTradeEnabled) {
-                if (mode === "Live") {
-                    badge.removeClass("bg-secondary bg-primary text-light text-info").addClass("bg-danger bg-opacity-25 text-danger border-danger");
-                    textEl.text(`🚀 Auto-Trade: LIVE (${tf})`);
-                } else {
-                    badge.removeClass("bg-secondary bg-danger text-light text-danger").addClass("bg-primary bg-opacity-25 text-info border-info");
-                    textEl.text(`⚡ Auto-Trade: PAPER (${tf})`);
-                }
-            } else {
-                badge.removeClass("bg-primary bg-danger text-info text-danger").addClass("bg-secondary bg-opacity-25 text-light border-secondary");
-                textEl.text("Auto-Trade: OFF");
-            }
-        }
-    } catch (ex) {
-        console.error("Failed to load AutoTrade dashboard badge status:", ex);
-    }
-}
-
-// Initialize Lightweight Charts (Dark Theme)
+// Initialize the 5 compact Trading Indicator mini-charts (Lightweight Charts, dark theme).
+// These are intentionally minimal (no time axis, no scroll/zoom) - they exist purely for
+// at-a-glance shape recognition next to each indicator's signal badge, not for analysis.
 function initCharts() {
-    const priceEl = document.getElementById('priceChartContainer');
-    if (!priceEl) return;
-    const chartOptions = {
-        layout: {
-            background: { color: '#0d111e' },
-            textColor: '#8892a4',
-        },
-        grid: {
-            vertLines: { color: 'rgba(255, 255, 255, 0.03)' },
-            horzLines: { color: 'rgba(255, 255, 255, 0.03)' },
-        },
-        timeScale: {
-            timeVisible: true,
-            secondsVisible: false,
-            borderColor: 'rgba(255, 255, 255, 0.06)',
-            tickMarkFormatter: (time, tickMarkType, locale) => {
-                if (typeof time === 'number') {
-                    const date = new Date(time * 1000);
-                    const options = { timeZone: 'Asia/Kolkata' };
-                    switch (tickMarkType) {
-                        case 0: // Year
-                            return date.toLocaleDateString('en-IN', { ...options, year: 'numeric' });
-                        case 1: // Month
-                            return date.toLocaleDateString('en-IN', { ...options, month: 'short' });
-                        case 2: // DayOfMonth
-                            return date.toLocaleDateString('en-IN', { ...options, day: '2-digit', month: 'short' });
-                        case 3: // Time
-                            return date.toLocaleTimeString('en-IN', { ...options, hour: '2-digit', minute: '2-digit', hour12: false });
-                        case 4: // TimeWithSeconds
-                            return date.toLocaleTimeString('en-IN', { ...options, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-                        default:
-                            return date.toLocaleTimeString('en-IN', { ...options, hour: '2-digit', minute: '2-digit', hour12: false });
-                    }
-                }
-                return null;
-            }
-        },
-        localization: {
-            locale: 'en-IN',
-            dateFormat: 'dd MMM yyyy',
-            timeFormatter: (time) => {
-                if (typeof time === 'number') {
-                    const date = new Date(time * 1000);
-                    if (activeTimeframe === '1d') {
-                        return date.toLocaleDateString('en-IN', {
-                            timeZone: 'Asia/Kolkata',
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric'
-                        }) + ' (IST)';
-                    }
-                    return date.toLocaleString('en-IN', {
-                        timeZone: 'Asia/Kolkata',
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: false
-                    }) + ' IST';
-                }
-                return String(time);
-            }
-        },
-        crosshair: {
-            mode: LightweightCharts.CrosshairMode.Normal,
-        },
-    };
-
-    // 1. Price Chart Container
-    priceChart = LightweightCharts.createChart(document.getElementById('priceChartContainer'), {
-        ...chartOptions,
-        rightPriceScale: {
-            borderColor: 'rgba(255, 255, 255, 0.06)',
-        }
-    });
-
-    candleSeries = priceChart.addCandlestickSeries({
-        upColor: '#34d399',
-        downColor: '#f87171',
-        borderVisible: false,
-        wickUpColor: '#34d399',
-        wickDownColor: '#f87171',
-    });
+    if (typeof LightweightCharts === 'undefined') return;
 
     const currentTheme = localStorage.getItem("theme-color") || "blue";
     const themeColors = {
@@ -302,73 +188,75 @@ function initCharts() {
     };
     const activeThemeColor = themeColors[currentTheme] || themeColors.blue;
 
-    ema20Series = priceChart.addLineSeries({ color: activeThemeColor, lineWidth: 1.5 });
-    ema50Series = priceChart.addLineSeries({ color: '#a78bfa', lineWidth: 1.5 });
-    vwapSeries = priceChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.2 });
+    const miniChartBaseOptions = {
+        layout: { background: { color: '#0d111e' }, textColor: '#8892a4', fontSize: 10 },
+        grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(255, 255, 255, 0.04)' } },
+        timeScale: { visible: false },
+        rightPriceScale: { borderVisible: false, textColor: '#8892a4' },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Magnet },
+        handleScroll: false,
+        handleScale: false,
+    };
 
-    // 2. RSI Chart Container
-    rsiChart = LightweightCharts.createChart(document.getElementById('rsiChartContainer'), {
-        ...chartOptions,
-        rightPriceScale: {
-            borderColor: 'rgba(255, 255, 255, 0.06)',
-            visible: true
-        }
-    });
-    rsiSeries = rsiChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.5 });
+    function createMiniChart(containerId) {
+        const el = document.getElementById(containerId);
+        if (!el) return null;
+        return LightweightCharts.createChart(el, {
+            ...miniChartBaseOptions,
+            width: el.clientWidth,
+            height: el.clientHeight || 120
+        });
+    }
 
-    // Add RSI bounds
-    const rsiScale = rsiChart.priceScale('right');
-    rsiSeries.createPriceLine({ price: 70, color: 'rgba(248, 113, 113, 0.25)', lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Overbought' });
-    rsiSeries.createPriceLine({ price: 30, color: 'rgba(52, 211, 153, 0.25)', lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Oversold' });
+    // 1. EMA 9/20 mini chart: dim price line for context + EMA9/EMA20 crossover lines
+    emaMiniChart = createMiniChart('emaMiniChartContainer');
+    if (emaMiniChart) {
+        emaMiniPriceSeries = emaMiniChart.addLineSeries({ color: 'rgba(136, 146, 164, 0.45)', lineWidth: 1 });
+        emaMiniEma9Series = emaMiniChart.addLineSeries({ color: activeThemeColor, lineWidth: 1.5 });
+        emaMiniEma20Series = emaMiniChart.addLineSeries({ color: '#a78bfa', lineWidth: 1.5 });
+    }
 
-    // 3. MACD Chart Container
-    macdChart = LightweightCharts.createChart(document.getElementById('macdChartContainer'), {
-        ...chartOptions,
-        rightPriceScale: {
-            borderColor: 'rgba(255, 255, 255, 0.06)',
-            visible: true
-        }
-    });
-    macdLineSeries = macdChart.addLineSeries({ color: activeThemeColor, lineWidth: 1.5 });
-    macdSignalSeries = macdChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.2 });
-    macdHistSeries = macdChart.addHistogramSeries({
-        upColor: 'rgba(52, 211, 153, 0.4)',
-        downColor: 'rgba(248, 113, 113, 0.4)',
-    });
+    // 2. RSI mini chart: RSI line with 70/30 reference levels
+    rsiMiniChart = createMiniChart('rsiMiniChartContainer');
+    if (rsiMiniChart) {
+        rsiMiniSeries = rsiMiniChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.5 });
+        rsiMiniSeries.createPriceLine({ price: 70, color: 'rgba(248, 113, 113, 0.35)', lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '70' });
+        rsiMiniSeries.createPriceLine({ price: 30, color: 'rgba(52, 211, 153, 0.35)', lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '30' });
+    }
 
-    // Synchronize crosshairs & scaling across all three charts and lazy-load older history on scroll
-    priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        rsiChart.timeScale().setVisibleLogicalRange(range);
-        macdChart.timeScale().setVisibleLogicalRange(range);
+    // 3. MACD mini chart: MACD line + Signal line + histogram
+    macdMiniChart = createMiniChart('macdMiniChartContainer');
+    if (macdMiniChart) {
+        macdMiniHistSeries = macdMiniChart.addHistogramSeries({ upColor: 'rgba(52, 211, 153, 0.5)', downColor: 'rgba(248, 113, 113, 0.5)' });
+        macdMiniLineSeries = macdMiniChart.addLineSeries({ color: activeThemeColor, lineWidth: 1.3 });
+        macdMiniSignalSeries = macdMiniChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.1 });
+    }
 
-        if (range && range.from !== null && range.from < 15 && !isLoadingOlderData && !noMoreHistoryAvailable && chartDataCache.length > 0) {
-            fetchOlderChartHistory();
-        }
-    });
-    rsiChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        priceChart.timeScale().setVisibleLogicalRange(range);
-        macdChart.timeScale().setVisibleLogicalRange(range);
-    });
-    macdChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        priceChart.timeScale().setVisibleLogicalRange(range);
-        rsiChart.timeScale().setVisibleLogicalRange(range);
-    });
-    
-    // Adjust resizing
+    // 4. VWAP mini chart: dim price line + VWAP line
+    vwapMiniChart = createMiniChart('vwapMiniChartContainer');
+    if (vwapMiniChart) {
+        vwapMiniPriceSeries = vwapMiniChart.addLineSeries({ color: 'rgba(136, 146, 164, 0.45)', lineWidth: 1 });
+        vwapMiniVwapSeries = vwapMiniChart.addLineSeries({ color: '#fbbf24', lineWidth: 1.5 });
+    }
+
+    // 5. Volume mini chart: recent volume bars
+    volumeMiniChart = createMiniChart('volumeMiniChartContainer');
+    if (volumeMiniChart) {
+        volumeMiniSeries = volumeMiniChart.addHistogramSeries({ color: activeThemeColor });
+    }
+
+    // Resize all mini charts on window resize
     window.addEventListener('resize', () => {
-        const priceEl = document.getElementById('priceChartContainer');
-        const rsiEl = document.getElementById('rsiChartContainer');
-        const macdEl = document.getElementById('macdChartContainer');
-
-        if (priceEl && priceChart) {
-            priceChart.resize(priceEl.clientWidth, priceEl.clientHeight || 320);
-        }
-        if (rsiEl && rsiChart) {
-            rsiChart.resize(rsiEl.clientWidth, rsiEl.clientHeight || 110);
-        }
-        if (macdEl && macdChart) {
-            macdChart.resize(macdEl.clientWidth, macdEl.clientHeight || 110);
-        }
+        [
+            ['emaMiniChartContainer', emaMiniChart],
+            ['rsiMiniChartContainer', rsiMiniChart],
+            ['macdMiniChartContainer', macdMiniChart],
+            ['vwapMiniChartContainer', vwapMiniChart],
+            ['volumeMiniChartContainer', volumeMiniChart]
+        ].forEach(([id, chart]) => {
+            const el = document.getElementById(id);
+            if (el && chart) chart.resize(el.clientWidth, el.clientHeight || 120);
+        });
     });
 }
 
@@ -620,7 +508,6 @@ async function switchSymbol(symbol) {
         updateAutoRefreshBadge(autoRefreshRemainingSeconds);
     }
 
-    $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe} - IST)`);
     await fetchChartHistory();
     await fetchStockMasterDetails(symbol);
     fetchWeeklyPnl(symbol, 0); // reset to the current week whenever a different stock is selected
@@ -645,7 +532,6 @@ async function switchTimeframe(timeframe) {
         updateAutoRefreshBadge(autoRefreshRemainingSeconds);
     }
 
-    $("#chartTitle").text(`${activeSymbol} Candlestick Chart (${activeTimeframe} - IST)`);
     await fetchChartHistory();
 
     // Re-subscribe to SignalR groups
@@ -656,12 +542,10 @@ async function switchTimeframe(timeframe) {
     }
 }
 
-// Load historical chart data
+// Load historical chart data (500 candles - the Trading Indicators mini-charts only render the
+// most recent window, but the full history is kept so EMA/RSI/MACD have a proper warm-up period).
 async function fetchChartHistory() {
     if (!activeSymbol) return;
-
-    isLoadingOlderData = false;
-    noMoreHistoryAvailable = false;
 
     try {
         const response = await fetch(`${API_BASE_URL}/api/marketdata/chart-data?symbol=${activeSymbol}&timeframe=${activeTimeframe}&limit=500`);
@@ -673,65 +557,10 @@ async function fetchChartHistory() {
         // Bind series data
         bindChartData(chartDataCache);
 
-        // Fit time scale to display the new dataset
-        if (priceChart) {
-            priceChart.timeScale().fitContent();
-        }
-
         // Fetch live signal evaluation to get correct score & justification details
         fetchLiveSignalEvaluation();
     } catch (ex) {
         console.error("History fetch error:", ex);
-    }
-}
-
-// Fetch older historical chart data when panning/scrolling left
-async function fetchOlderChartHistory() {
-    if (isLoadingOlderData || noMoreHistoryAvailable || chartDataCache.length === 0 || !activeSymbol) return;
-
-    isLoadingOlderData = true;
-    const oldestCandle = chartDataCache[0];
-    const beforeTime = oldestCandle.time;
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/marketdata/chart-data?symbol=${activeSymbol}&timeframe=${activeTimeframe}&limit=500&before=${beforeTime}`);
-        if (!response.ok) throw new Error("Failed to load older chart history.");
-        const olderData = await response.json();
-
-        if (!olderData || olderData.length === 0) {
-            noMoreHistoryAvailable = true;
-            return;
-        }
-
-        const existingTimeMap = new Set(chartDataCache.map(d => d.time));
-        const filteredOlderData = olderData.filter(d => !existingTimeMap.has(d.time));
-
-        if (filteredOlderData.length === 0) {
-            noMoreHistoryAvailable = true;
-            return;
-        }
-
-        const addedCount = filteredOlderData.length;
-
-        // Save current visible logical range before updating data
-        const currentRange = priceChart ? priceChart.timeScale().getVisibleLogicalRange() : null;
-
-        chartDataCache = [...filteredOlderData, ...chartDataCache];
-        chartDataCache.sort((a, b) => a.time - b.time);
-
-        bindChartData(chartDataCache);
-
-        // Adjust visible logical range so user view position stays perfectly stationary
-        if (priceChart && currentRange) {
-            priceChart.timeScale().setVisibleLogicalRange({
-                from: currentRange.from + addedCount,
-                to: currentRange.to + addedCount
-            });
-        }
-    } catch (ex) {
-        console.error("Error loading older history:", ex);
-    } finally {
-        isLoadingOlderData = false;
     }
 }
 
@@ -752,7 +581,6 @@ function refreshLivePriceHeader() {
     if (currentLivePrice === null || currentLivePrice === undefined || isNaN(currentLivePrice) || currentLivePrice === 0) return;
 
     // Real-time stock price (LTP) - independent of timeframe
-    $("#hdrLivePrice").text("₹" + parseFloat(currentLivePrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     $("#widgetLTP").text(parseFloat(currentLivePrice).toFixed(2));
 
     // Percentage change - calculated based on selected timeframe's open price
@@ -760,12 +588,6 @@ function refreshLivePriceHeader() {
         const changePct = ((currentLivePrice - currentCandleOpenPrice) / currentCandleOpenPrice) * 100;
         const changeStr = (changePct >= 0 ? "+" : "") + changePct.toFixed(2) + "%";
         const badgeClass = changePct >= 0 ? "bullish" : "bearish";
-
-        const changeEl = $("#hdrLiveChange");
-        if (changeEl.length) {
-            changeEl.text(changeStr);
-            changeEl.attr("class", `hdr-change-val ${badgeClass}`);
-        }
 
         const widgetChangeEl = $("#widgetChange");
         if (widgetChangeEl.length) {
@@ -776,56 +598,218 @@ function refreshLivePriceHeader() {
 }
 
 function bindChartData(dataList) {
-    if (!candleSeries) return;
-    const priceData = [];
-    const ema20Data = [];
-    const ema50Data = [];
-    const vwapData = [];
+    if (!dataList || dataList.length === 0) return;
+
+    const latest = dataList[dataList.length - 1];
+    currentCandleOpenPrice = latest.open;
+    if (currentLivePrice === null || currentLivePrice === undefined || currentLivePrice === 0) {
+        currentLivePrice = latest.close;
+    }
+    refreshLivePriceHeader();
+
+    updateIndicatorPanel(dataList);
+}
+
+// ---- Trading Indicators panel: mini-charts + per-indicator signal badges ----
+
+// Standard EMA (SMA-seeded). Backend doesn't compute EMA9 (only EMA20/50 for its own strategy
+// scoring), so it's derived here from the same close-price series already loaded for the chart.
+function calculateEma(values, period) {
+    const result = new Array(values.length).fill(null);
+    if (values.length < period) return result;
+
+    let sum = 0;
+    for (let i = 0; i < period; i++) sum += values[i];
+    let emaPrev = sum / period;
+    result[period - 1] = emaPrev;
+
+    const k = 2 / (period + 1);
+    for (let i = period; i < values.length; i++) {
+        emaPrev = values[i] * k + emaPrev * (1 - k);
+        result[i] = emaPrev;
+    }
+    return result;
+}
+
+function fmtPrice(v) {
+    return (v === null || v === undefined || isNaN(v)) ? "-" : parseFloat(v).toFixed(2);
+}
+
+function fmtVolume(v) {
+    if (v === null || v === undefined || isNaN(v)) return "-";
+    if (v >= 10000000) return (v / 10000000).toFixed(2) + "Cr";
+    if (v >= 100000) return (v / 100000).toFixed(2) + "L";
+    if (v >= 1000) return (v / 1000).toFixed(1) + "K";
+    return String(v);
+}
+
+function setBadge(el, signal, labelOverride) {
+    const cls = signal === "BUY" || signal === "CONFIRMED" ? "bullish"
+        : signal === "SELL" ? "bearish"
+        : signal === "WEAK" ? "amber"
+        : "neutral";
+    el.attr("class", `mini-signal-badge ${cls}`).text(labelOverride || signal);
+}
+
+function updateIndicatorPanel(dataList) {
+    if (!dataList || dataList.length === 0) return;
+
+    const closes = dataList.map(d => d.close);
+    const ema9Full = calculateEma(closes, 9);
+    const visible = dataList.slice(-MINI_CHART_VISIBLE_CANDLES);
+    const visibleOffset = dataList.length - visible.length;
+
+    const emaPriceData = [], ema9Data = [], ema20Data = [];
     const rsiData = [];
-    const macdData = [];
-    const macdSignalData = [];
-    const macdHistData = [];
+    const macdLineData = [], macdSignalData = [], macdHistData = [];
+    const vwapPriceData = [], vwapData = [];
+    const volumeData = [];
 
-    dataList.forEach(item => {
+    visible.forEach((item, idx) => {
         const timeSec = item.time / 1000;
+        const globalIdx = visibleOffset + idx;
 
-        priceData.push({ time: timeSec, open: item.open, high: item.high, low: item.low, close: item.close });
-        
-        if (item.ema20 !== null) ema20Data.push({ time: timeSec, value: item.ema20 });
-        if (item.ema50 !== null) ema50Data.push({ time: timeSec, value: item.ema50 });
-        if (item.vwap !== null) vwapData.push({ time: timeSec, value: item.vwap });
-        if (item.rsi !== null) rsiData.push({ time: timeSec, value: item.rsi });
-        if (item.macd !== null) macdData.push({ time: timeSec, value: item.macd });
-        if (item.signalLine !== null) macdSignalData.push({ time: timeSec, value: item.signalLine });
-        
-        if (item.macd !== null && item.signalLine !== null) {
+        emaPriceData.push({ time: timeSec, value: item.close });
+        if (ema9Full[globalIdx] !== null) ema9Data.push({ time: timeSec, value: ema9Full[globalIdx] });
+        if (item.ema20 !== null && item.ema20 !== undefined) ema20Data.push({ time: timeSec, value: item.ema20 });
+
+        if (item.rsi !== null && item.rsi !== undefined) rsiData.push({ time: timeSec, value: item.rsi });
+
+        if (item.macd !== null && item.macd !== undefined) macdLineData.push({ time: timeSec, value: item.macd });
+        if (item.signalLine !== null && item.signalLine !== undefined) macdSignalData.push({ time: timeSec, value: item.signalLine });
+        if (item.macd !== null && item.macd !== undefined && item.signalLine !== null && item.signalLine !== undefined) {
             const hist = item.macd - item.signalLine;
-            macdHistData.push({
-                time: timeSec,
-                value: hist,
-                color: hist >= 0 ? 'rgba(52, 211, 153, 0.4)' : 'rgba(248, 113, 113, 0.4)'
-            });
+            macdHistData.push({ time: timeSec, value: hist, color: hist >= 0 ? 'rgba(52, 211, 153, 0.5)' : 'rgba(248, 113, 113, 0.5)' });
+        }
+
+        vwapPriceData.push({ time: timeSec, value: item.close });
+        if (item.vwap !== null && item.vwap !== undefined) vwapData.push({ time: timeSec, value: item.vwap });
+
+        if (item.volume !== null && item.volume !== undefined) {
+            volumeData.push({ time: timeSec, value: item.volume, color: item.close >= item.open ? 'rgba(52, 211, 153, 0.6)' : 'rgba(248, 113, 113, 0.6)' });
         }
     });
 
-    candleSeries.setData(priceData);
-    candleSeries.setMarkers([]);
-    ema20Series.setData(ema20Data);
-    ema50Series.setData(ema50Data);
-    vwapSeries.setData(vwapData);
-    rsiSeries.setData(rsiData);
-    macdLineSeries.setData(macdData);
-    macdSignalSeries.setData(macdSignalData);
-    macdHistSeries.setData(macdHistData);
+    if (emaMiniChart) { emaMiniPriceSeries.setData(emaPriceData); emaMiniEma9Series.setData(ema9Data); emaMiniEma20Series.setData(ema20Data); emaMiniChart.timeScale().fitContent(); }
+    if (rsiMiniChart) { rsiMiniSeries.setData(rsiData); rsiMiniChart.timeScale().fitContent(); }
+    if (macdMiniChart) { macdMiniLineSeries.setData(macdLineData); macdMiniSignalSeries.setData(macdSignalData); macdMiniHistSeries.setData(macdHistData); macdMiniChart.timeScale().fitContent(); }
+    if (vwapMiniChart) { vwapMiniPriceSeries.setData(vwapPriceData); vwapMiniVwapSeries.setData(vwapData); vwapMiniChart.timeScale().fitContent(); }
+    if (volumeMiniChart) { volumeMiniSeries.setData(volumeData); volumeMiniChart.timeScale().fitContent(); }
 
-    if (priceData.length > 0) {
-        const latest = priceData[priceData.length - 1];
-        currentCandleOpenPrice = latest.open;
-        if (currentLivePrice === null || currentLivePrice === undefined || currentLivePrice === 0) {
-            currentLivePrice = latest.close;
-        }
-        refreshLivePriceHeader();
+    // ---- Per-indicator signal, from the latest completed candle ----
+    const n = dataList.length;
+    const latest = dataList[n - 1];
+    const prev = n > 1 ? dataList[n - 2] : null;
+
+    // 1. EMA 9/20
+    const ema9Latest = ema9Full[n - 1];
+    const ema20Latest = latest.ema20;
+    let emaSignal = "NEUTRAL", emaStatus = "Flat";
+    if (ema9Latest !== null && ema20Latest !== null && ema20Latest !== undefined) {
+        if (ema9Latest > ema20Latest) { emaSignal = "BUY"; emaStatus = "Bullish"; }
+        else if (ema9Latest < ema20Latest) { emaSignal = "SELL"; emaStatus = "Bearish"; }
     }
+    $("#valEma9").text(fmtPrice(ema9Latest));
+    $("#valEma20").text(fmtPrice(ema20Latest));
+    setBadge($("#badgeEma"), emaSignal);
+    $("#statusEma").text(emaStatus).attr("class", `indicator-card-status ${emaSignal === "BUY" ? "bullish" : emaSignal === "SELL" ? "bearish" : "neutral"}`);
+
+    // 2. RSI (14): oversold = potential BUY, overbought = potential SELL
+    const rsiLatest = (latest.rsi !== null && latest.rsi !== undefined) ? parseFloat(latest.rsi) : null;
+    let rsiSignal = "NEUTRAL", rsiStatus = "Neutral";
+    if (rsiLatest !== null) {
+        if (rsiLatest >= 70) { rsiSignal = "SELL"; rsiStatus = "Overbought"; }
+        else if (rsiLatest <= 30) { rsiSignal = "BUY"; rsiStatus = "Oversold"; }
+    }
+    $("#valRsi").text(rsiLatest !== null ? rsiLatest.toFixed(2) : "-");
+    setBadge($("#badgeRsi"), rsiSignal);
+    $("#statusRsi").text(rsiStatus).attr("class", `indicator-card-status ${rsiSignal === "BUY" ? "bullish" : rsiSignal === "SELL" ? "bearish" : "neutral"}`);
+
+    // 3. MACD (12,26,9): crossover against the Signal line
+    const macdLatest = (latest.macd !== null && latest.macd !== undefined) ? latest.macd : null;
+    const sigLatest = (latest.signalLine !== null && latest.signalLine !== undefined) ? latest.signalLine : null;
+    const macdPrev = prev && prev.macd !== null && prev.macd !== undefined ? prev.macd : null;
+    const sigPrev = prev && prev.signalLine !== null && prev.signalLine !== undefined ? prev.signalLine : null;
+    let macdSignal = "NEUTRAL", macdStatus = "Flat";
+    if (macdLatest !== null && sigLatest !== null) {
+        const crossUp = macdPrev !== null && sigPrev !== null && macdPrev <= sigPrev && macdLatest > sigLatest;
+        const crossDown = macdPrev !== null && sigPrev !== null && macdPrev >= sigPrev && macdLatest < sigLatest;
+        if (crossUp) { macdSignal = "BUY"; macdStatus = "Bullish Crossover"; }
+        else if (crossDown) { macdSignal = "SELL"; macdStatus = "Bearish Crossover"; }
+        else if (macdLatest > sigLatest) { macdSignal = "BUY"; macdStatus = "Bullish"; }
+        else if (macdLatest < sigLatest) { macdSignal = "SELL"; macdStatus = "Bearish"; }
+    }
+    $("#valMacd").text(macdLatest !== null ? macdLatest.toFixed(2) : "-");
+    setBadge($("#badgeMacd"), macdSignal);
+    $("#statusMacd").text(macdStatus).attr("class", `indicator-card-status ${macdSignal === "BUY" ? "bullish" : macdSignal === "SELL" ? "bearish" : "neutral"}`);
+
+    // 4. VWAP
+    const vwapLatest = (latest.vwap !== null && latest.vwap !== undefined && latest.vwap > 0) ? latest.vwap : null;
+    let vwapSignal = "NEUTRAL", vwapStatus = "-";
+    if (vwapLatest !== null) {
+        const diffPct = ((latest.close - vwapLatest) / vwapLatest) * 100;
+        if (latest.close > vwapLatest) { vwapSignal = "BUY"; vwapStatus = `Price > VWAP (${diffPct >= 0 ? "+" : ""}${diffPct.toFixed(2)}%)`; }
+        else if (latest.close < vwapLatest) { vwapSignal = "SELL"; vwapStatus = `Price < VWAP (${diffPct.toFixed(2)}%)`; }
+        else { vwapStatus = "Price = VWAP"; }
+    }
+    $("#valVwapPrice").text(fmtPrice(latest.close));
+    $("#valVwap").text(fmtPrice(vwapLatest));
+    setBadge($("#badgeVwap"), vwapSignal);
+    $("#statusVwap").text(vwapStatus).attr("class", `indicator-card-status ${vwapSignal === "BUY" ? "bullish" : vwapSignal === "SELL" ? "bearish" : "neutral"}`);
+
+    // 5. Volume - confirms strength of the existing move, never generates BUY/SELL on its own
+    const volumeWindow = dataList.slice(Math.max(0, n - 21), n - 1); // last 20 candles, excluding current
+    const avgVolume = volumeWindow.length > 0 ? volumeWindow.reduce((s, d) => s + (d.volume || 0), 0) / volumeWindow.length : null;
+    const latestVolume = latest.volume || 0;
+    const relativeVolume = (avgVolume && avgVolume > 0) ? latestVolume / avgVolume : null;
+    let volumeSignal = "NO CONFIRMATION", volumeStatus = "Low Volume";
+    if (relativeVolume !== null) {
+        if (relativeVolume >= 1.5) { volumeSignal = "CONFIRMED"; volumeStatus = "High Volume"; }
+        else if (relativeVolume >= 0.8) { volumeSignal = "WEAK"; volumeStatus = "Average Volume"; }
+    }
+    $("#valVolume").text(fmtVolume(latestVolume));
+    $("#valRelVolume").text(relativeVolume !== null ? relativeVolume.toFixed(2) + "x" : "-");
+    setBadge($("#badgeVolume"), volumeSignal);
+    $("#statusVolume").text(volumeStatus).attr("class", `indicator-card-status ${volumeSignal === "CONFIRMED" ? "bullish" : volumeSignal === "WEAK" ? "amber" : "neutral"}`);
+
+    lastIndicatorSignals = { ema: emaSignal, rsi: rsiSignal, macd: macdSignal, vwap: vwapSignal, volume: volumeSignal };
+    updateOverallSignalSummary();
+}
+
+// The Overall Signal itself is the actual configured-strategy recommendation (same backend
+// scoring engine that drives the AI Recommendation card above - see updateSignalUi/lastOverallSignalType),
+// never a naive re-count here. The 5 chips below it just show how many of the mini-indicators
+// currently agree with that real signal, for a quick "is this move broadly confirmed?" read.
+function updateOverallSignalSummary() {
+    const type = (lastOverallSignalType || "HOLD").toUpperCase();
+    const badge = $("#overallSignalBadge");
+    badge.attr("class", `recommendation-badge ${type.toLowerCase()}`).text(type);
+
+    const chips = [
+        { id: "#chipEma", signal: lastIndicatorSignals.ema },
+        { id: "#chipRsi", signal: lastIndicatorSignals.rsi },
+        { id: "#chipMacd", signal: lastIndicatorSignals.macd },
+        { id: "#chipVwap", signal: lastIndicatorSignals.vwap },
+        { id: "#chipVolume", signal: lastIndicatorSignals.volume }
+    ];
+
+    let confirmations = 0;
+    chips.forEach(c => {
+        let agrees, cls;
+        if (c.signal === "CONFIRMED" || c.signal === "WEAK" || c.signal === "NO CONFIRMATION") {
+            // Volume never drives direction - it "agrees" with a live BUY/SELL move when it CONFIRMS,
+            // and with a HOLD stance when there simply isn't a strong move to confirm.
+            agrees = type === "HOLD" ? c.signal !== "CONFIRMED" : c.signal === "CONFIRMED";
+            cls = c.signal === "CONFIRMED" ? "bullish" : c.signal === "WEAK" ? "amber" : "neutral";
+        } else {
+            agrees = (type === "BUY" || type === "SELL") ? c.signal === type : c.signal === "NEUTRAL";
+            cls = c.signal === "BUY" ? "bullish" : c.signal === "SELL" ? "bearish" : "neutral";
+        }
+        if (agrees) confirmations++;
+        $(c.id).attr("class", `chip-value ${cls}`).text(c.signal);
+    });
+
+    $("#overallConfirmationCount").text(`${confirmations} / 5`);
 }
 
 // SignalR Connection
@@ -839,20 +823,9 @@ function connectSignalR() {
         // Ignore ticks from other symbols/timeframes
         if (!activeSymbol) return;
 
-        const timeSec = candleUpdate.time / 1000;
-
-        // Live price updates current active candle bar on the chart
-        if (candleSeries) {
-            candleSeries.update({
-                time: timeSec,
-                open: candleUpdate.open,
-                high: candleUpdate.high,
-                low: candleUpdate.low,
-                close: candleUpdate.close
-            });
-        }
-
-        // Real-time stock price is the latest live tick price; timeframe candle open is for timeframe % change
+        // Real-time stock price is the latest live tick price; timeframe candle open is for timeframe % change.
+        // The Trading Indicators mini-charts/signals only update on candle close (ReceiveClosedCandle) -
+        // they're meant to reflect the latest COMPLETED candle, not every intra-candle tick.
         currentLivePrice = candleUpdate.close;
         currentCandleOpenPrice = candleUpdate.open;
         refreshLivePriceHeader();
@@ -957,9 +930,13 @@ function updateSignalUi(data) {
     const card = $("#signalCard");
     const badge = $("#signalBadge");
     const scoreCircle = $("#scoreCircle");
-    
+
     if (card.length) card.attr("class", `card signal-card ${type.toLowerCase()}`);
     if (badge.length) badge.attr("class", `recommendation-badge ${type.toLowerCase()}`).text(type);
+
+    // Keep the Trading Indicators "Overall Signal" in sync with the same strategy-engine result
+    lastOverallSignalType = type;
+    updateOverallSignalSummary();
 
     // 2. Radial Progress Circle & Score
     $("#scoreValue").text(score);
@@ -1102,23 +1079,5 @@ function updateSignalUi(data) {
     }
 }
 
-// Chart Line Highlighting on Indicator Tag Hover
-$(document).on('mouseenter', '.indicator-tag.ema20', function () {
-    if (ema20Series) ema20Series.applyOptions({ lineWidth: 3.5 });
-}).on('mouseleave', '.indicator-tag.ema20', function () {
-    if (ema20Series) ema20Series.applyOptions({ lineWidth: 1.5 });
-});
-
-$(document).on('mouseenter', '.indicator-tag.ema50', function () {
-    if (ema50Series) ema50Series.applyOptions({ lineWidth: 3.5 });
-}).on('mouseleave', '.indicator-tag.ema50', function () {
-    if (ema50Series) ema50Series.applyOptions({ lineWidth: 1.5 });
-});
-
-$(document).on('mouseenter', '.indicator-tag.vwap', function () {
-    if (vwapSeries) vwapSeries.applyOptions({ lineWidth: 3.5 });
-}).on('mouseleave', '.indicator-tag.vwap', function () {
-    if (vwapSeries) vwapSeries.applyOptions({ lineWidth: 1.2 });
-});
 
 

@@ -58,10 +58,6 @@
                     <span id="autoRefreshBadge" class="refresh-timer-badge">60s</span>
                 </div>
             </div>
-             <a asp-controller="PaperTrading" asp-action="Index" id="autoTradeDashboardBadge" class="connection-badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25 text-decoration-none ms-1" data-tooltip="⚡ **Auto-Trade Engine**: Shows whether automated signal trading is ACTIVE (Paper/Live) or OFF. Click to configure.">
-                <span class="status-dot"></span>
-                <span id="autoTradeDashboardText" class="status-text fw-semibold">Auto-Trade: OFF</span>
-            </a>
             <button id="btnOpenReference" class="btn-trigger" data-tooltip="📖 **Rules & Formulas**: View algorithm scoring weights and strategy rules.">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
@@ -300,55 +296,120 @@
         </div>
     </div>
 
-    <!-- Chart Row -->
-    <div class="chart-panel card">
-        <div class="chart-panel-header">
+    <!-- Trading Indicators -->
+    <div class="card indicators-panel">
+        <div class="indicators-panel-header">
             <div class="panel-title-wrapper">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="20" x2="18" y2="10"></line>
                     <line x1="12" y1="20" x2="12" y2="4"></line>
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                 </svg>
-                <span class="panel-title" id="chartTitle">Technical Candlestick Chart</span>
-                <div class="hdr-live-price-pill" id="hdrLivePriceContainer" data-tooltip="Live real-time stock price and percentage change.">
-                    <span id="hdrLivePrice" class="hdr-price-val monospace">₹0.00</span>
-                    <span id="hdrLiveChange" class="hdr-change-val neutral">0.00%</span>
-                </div>
+                <span class="panel-title">TRADING INDICATORS</span>
+                <span class="info-tooltip-trigger" data-tooltip="🎯 **At a glance**: Each card shows what one indicator is currently saying. Overall Signal is the actual strategy recommendation (same engine as AI Recommendation above) - the confirmation count shows how many indicators currently agree with it.">
+                    <svg class="info-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                </span>
             </div>
-            <div class="chart-indicators">
-                <span class="indicator-tag ema20" data-tooltip="Exponential Moving Average (20 periods). A line showing the average price over the last 20 bars, focusing on recent price action.">EMA (20)</span>
-                <span class="indicator-tag ema50" data-tooltip="Exponential Moving Average (50 periods). A line showing the average price over the last 50 bars. Useful for identifying the broader trend.">EMA (50)</span>
-                <span class="indicator-tag vwap" data-tooltip="Volume Weighted Average Price. A key line used by institutional traders showing the average price adjusted for trading volume.">VWAP</span>
+            <div class="overall-signal-summary">
+                <div class="overall-signal-block">
+                    <span class="overall-signal-label">Overall Signal</span>
+                    <span id="overallSignalBadge" class="recommendation-badge hold">HOLD</span>
+                </div>
+                <div class="overall-signal-block">
+                    <span class="overall-signal-label">Confirmation</span>
+                    <span id="overallConfirmationCount" class="confirmation-count-badge">0 / 5</span>
+                </div>
             </div>
         </div>
-        
-        <div class="chart-panel-body">
-            <!-- Candlestick chart pane -->
-            <div id="priceChartContainer" class="chart-container-pane"></div>
-            <!-- RSI pane -->
-            <div id="rsiChartContainer" class="chart-container-pane indicator-pane">
-                <div class="pane-label">
-                    Relative Strength Index (RSI)
-                    <span class="info-tooltip-trigger" data-tooltip="Relative Strength Index chart. The yellow line shows the momentum. It helps identify if a stock is over-purchased (above 70) or over-sold (below 30).">
-                        <svg class="info-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                        </svg>
-                    </span>
+
+        <div class="indicators-confirmation-row" id="indicatorsConfirmationRow">
+            <div class="confirmation-chip"><span class="chip-label">EMA</span><span id="chipEma" class="chip-value neutral">-</span></div>
+            <div class="confirmation-chip"><span class="chip-label">RSI</span><span id="chipRsi" class="chip-value neutral">-</span></div>
+            <div class="confirmation-chip"><span class="chip-label">MACD</span><span id="chipMacd" class="chip-value neutral">-</span></div>
+            <div class="confirmation-chip"><span class="chip-label">VWAP</span><span id="chipVwap" class="chip-value neutral">-</span></div>
+            <div class="confirmation-chip"><span class="chip-label">Volume</span><span id="chipVolume" class="chip-value neutral">-</span></div>
+        </div>
+
+        <div class="indicator-cards-grid">
+            <!-- EMA 9/20 Card -->
+            <div class="indicator-mini-card" data-tooltip="Exponential Moving Average crossover (9 vs 20 period). EMA9 above EMA20 is bullish momentum, below is bearish.">
+                <div class="indicator-card-header">
+                    <span class="indicator-card-title">EMA 9 / 20</span>
+                    <span id="badgeEma" class="mini-signal-badge neutral">NEUTRAL</span>
+                </div>
+                <div id="emaMiniChartContainer" class="mini-chart-container"></div>
+                <div class="indicator-card-footer">
+                    <div class="indicator-card-values">
+                        <span>EMA9 <b id="valEma9">-</b></span>
+                        <span>EMA20 <b id="valEma20">-</b></span>
+                    </div>
+                    <span id="statusEma" class="indicator-card-status neutral">-</span>
                 </div>
             </div>
-            <!-- MACD pane -->
-            <div id="macdChartContainer" class="chart-container-pane indicator-pane">
-                <div class="pane-label">
-                    MACD (12, 26, 9)
-                    <span class="info-tooltip-trigger" data-tooltip="MACD momentum chart. When the blue line crosses above the orange line, it's a buy signal. The height of the bars shows how strong the trend is.">
-                        <svg class="info-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                        </svg>
-                    </span>
+
+            <!-- RSI Card -->
+            <div class="indicator-mini-card" data-tooltip="Relative Strength Index (14 period). Above 70 is overbought, below 30 is oversold.">
+                <div class="indicator-card-header">
+                    <span class="indicator-card-title">RSI (14)</span>
+                    <span id="badgeRsi" class="mini-signal-badge neutral">NEUTRAL</span>
+                </div>
+                <div id="rsiMiniChartContainer" class="mini-chart-container"></div>
+                <div class="indicator-card-footer">
+                    <div class="indicator-card-values">
+                        <span>RSI <b id="valRsi">-</b></span>
+                    </div>
+                    <span id="statusRsi" class="indicator-card-status neutral">-</span>
+                </div>
+            </div>
+
+            <!-- MACD Card -->
+            <div class="indicator-mini-card" data-tooltip="MACD (12, 26, 9). A MACD-line crossover above/below the Signal line marks a trend change.">
+                <div class="indicator-card-header">
+                    <span class="indicator-card-title">MACD</span>
+                    <span id="badgeMacd" class="mini-signal-badge neutral">NEUTRAL</span>
+                </div>
+                <div id="macdMiniChartContainer" class="mini-chart-container"></div>
+                <div class="indicator-card-footer">
+                    <div class="indicator-card-values">
+                        <span>MACD <b id="valMacd">-</b></span>
+                    </div>
+                    <span id="statusMacd" class="indicator-card-status neutral">-</span>
+                </div>
+            </div>
+
+            <!-- VWAP Card -->
+            <div class="indicator-mini-card" data-tooltip="Volume Weighted Average Price. Price above VWAP is bullish, below is bearish.">
+                <div class="indicator-card-header">
+                    <span class="indicator-card-title">VWAP</span>
+                    <span id="badgeVwap" class="mini-signal-badge neutral">NEUTRAL</span>
+                </div>
+                <div id="vwapMiniChartContainer" class="mini-chart-container"></div>
+                <div class="indicator-card-footer">
+                    <div class="indicator-card-values">
+                        <span>Price <b id="valVwapPrice">-</b></span>
+                        <span>VWAP <b id="valVwap">-</b></span>
+                    </div>
+                    <span id="statusVwap" class="indicator-card-status neutral">-</span>
+                </div>
+            </div>
+
+            <!-- Volume Card -->
+            <div class="indicator-mini-card" data-tooltip="Trading volume relative to its recent average. Confirms the strength of an existing BUY/SELL signal rather than generating its own.">
+                <div class="indicator-card-header">
+                    <span class="indicator-card-title">Volume</span>
+                    <span id="badgeVolume" class="mini-signal-badge neutral">NO CONFIRMATION</span>
+                </div>
+                <div id="volumeMiniChartContainer" class="mini-chart-container"></div>
+                <div class="indicator-card-footer">
+                    <div class="indicator-card-values">
+                        <span>Vol <b id="valVolume">-</b></span>
+                        <span>Rel <b id="valRelVolume">-</b></span>
+                    </div>
+                    <span id="statusVolume" class="indicator-card-status neutral">-</span>
                 </div>
             </div>
         </div>
