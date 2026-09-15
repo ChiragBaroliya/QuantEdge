@@ -62,10 +62,16 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
             return (false, null, null, $"No active Zerodha session token found for user {userId}. Please click 'Connect Zerodha' on Auto Real Trade page.");
         }
 
-        // Validate token was created after 6:00 AM IST on the current trading day
+        // Validate token was created after 6:00 AM IST on the current trading day.
+        // Everything here is kept as DateTimeOffset (with an explicit IST offset) rather than
+        // DateTime - comparing a DateTimeOffset against a Kind-Unspecified DateTime relies on the
+        // implicit DateTime->DateTimeOffset conversion, which stamps the DateTime with the host
+        // machine's LOCAL timezone offset, not IST. On a UTC-hosted server that silently shifted
+        // the 6:00 AM IST cutoff to 6:00 AM UTC (11:30 AM IST), rejecting every token created
+        // between 6:00 AM and 11:30 AM IST as "stale" even though it was valid.
         var indianTime = TimeZoneInfo.ConvertTime(session.CreatedAt, TimeZoneHelper.IndianTimeZone);
-        var nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneHelper.IndianTimeZone);
-        var cutoff = nowIst.Date.AddHours(6);
+        var nowIst = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneHelper.IndianTimeZone);
+        var cutoff = new DateTimeOffset(nowIst.Date, nowIst.Offset).AddHours(6);
 
         if (indianTime.Date != nowIst.Date || indianTime < cutoff)
         {

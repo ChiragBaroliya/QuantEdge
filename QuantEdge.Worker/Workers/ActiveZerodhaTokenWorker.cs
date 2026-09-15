@@ -156,8 +156,13 @@ public class ActiveZerodhaTokenWorker : BackgroundService
         var activeSession = await _sessionRepository.GetActiveSessionAsync();
         if (activeSession is not null)
         {
+            // Compare as DateTimeOffset throughout: activeSession.CreatedAt carries a real IST
+            // offset via ConvertTime, but comparing it against a Kind-Unspecified DateTime cutoff
+            // implicitly stamps that DateTime with the host machine's LOCAL timezone offset (not
+            // IST), which silently shifts the cutoff on a UTC-hosted server.
+            var nowIstOffset = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, indianTimeZone);
             var sessionCreatedAtIst = TimeZoneInfo.ConvertTime(activeSession.CreatedAt, indianTimeZone);
-            var cutoff = nowIst.Date.AddHours(6);
+            var cutoff = new DateTimeOffset(nowIstOffset.Date, nowIstOffset.Offset).AddHours(6);
 
             // If the active token was created today after 6:00 AM IST, we are fully activated!
             if (sessionCreatedAtIst.Date == nowIst.Date && sessionCreatedAtIst >= cutoff)

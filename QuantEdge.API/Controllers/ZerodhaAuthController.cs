@@ -79,14 +79,18 @@ public class ZerodhaAuthController : ControllerBase
                 indianTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
             }
 
-            var nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, indianTimeZone);
+            var nowIst = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, indianTimeZone);
 
-            // Cutoff logic: 6:00 AM IST today (or yesterday 6:00 AM if before 6:00 AM IST)
-            DateTime todayCutoffIst = nowIst.TimeOfDay < TimeSpan.FromHours(6)
-                ? nowIst.Date.AddDays(-1).AddHours(6)
-                : nowIst.Date.AddHours(6);
+            // Cutoff logic: 6:00 AM IST today (or yesterday 6:00 AM if before 6:00 AM IST).
+            // Kept as DateTimeOffset (with an explicit IST offset) throughout - comparing it
+            // against a Kind-Unspecified DateTime relies on the implicit DateTime->DateTimeOffset
+            // conversion, which stamps the DateTime with the host machine's LOCAL timezone offset
+            // rather than IST, silently shifting the cutoff on a UTC-hosted server.
+            DateTimeOffset todayCutoffIst = nowIst.TimeOfDay < TimeSpan.FromHours(6)
+                ? new DateTimeOffset(nowIst.Date, nowIst.Offset).AddDays(-1).AddHours(6)
+                : new DateTimeOffset(nowIst.Date, nowIst.Offset).AddHours(6);
 
-            DateTime nextExpiryIst = todayCutoffIst.AddDays(1);
+            DateTimeOffset nextExpiryIst = todayCutoffIst.AddDays(1);
 
             if (activeSession != null)
             {
