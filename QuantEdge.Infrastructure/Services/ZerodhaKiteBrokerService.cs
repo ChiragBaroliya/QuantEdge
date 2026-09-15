@@ -19,6 +19,9 @@ namespace QuantEdge.Infrastructure.Services;
 /// </summary>
 public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBrokerService
 {
+    /// <summary>Named HttpClient forced to connect over IPv4 so calls stay on the IP whitelisted with Kite Connect.</summary>
+    public const string HttpClientName = "ZerodhaKite";
+
     private readonly IZerodhaSessionRepository _sessionRepository;
     private readonly IRealTradeCacheService? _cacheService;
     private readonly ISwingStrategySettingsRepository? _strategySettingsRepository;
@@ -147,7 +150,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient(HttpClientName);
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
@@ -228,7 +231,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient(HttpClientName);
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
@@ -256,7 +259,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient(HttpClientName);
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
@@ -328,7 +331,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient(HttpClientName);
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
@@ -383,7 +386,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient(HttpClientName);
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
@@ -452,7 +455,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient(HttpClientName);
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
@@ -531,7 +534,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient(HttpClientName);
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");

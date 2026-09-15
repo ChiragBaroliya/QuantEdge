@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using QuantEdge.Infrastructure.Configurations;
@@ -105,6 +108,37 @@ public static class ServiceCollectionExtensions
         services.AddTransient<PaperOrderValidator>();
         services.AddSingleton<PaperMatchingEngine>();
         services.AddHttpClient();
+
+        // Zerodha's Kite Connect API rejects requests from IPs outside the app's whitelist.
+        // On dual-stack Linux hosts, the default HttpClient can resolve api.kite.trade to an
+        // IPv6 address and connect over the server's (unwhitelisted) IPv6 address instead of
+        // its whitelisted IPv4 one, causing real orders to be silently rejected. Forcing this
+        // client's connections to IPv4 keeps every Kite Connect call on the whitelisted IP.
+        services.AddHttpClient(ZerodhaKiteBrokerService.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                ConnectCallback = async (context, cancellationToken) =>
+                {
+                    var addresses = await Dns.GetHostAddressesAsync(
+                        context.DnsEndPoint.Host, AddressFamily.InterNetwork, cancellationToken);
+                    if (addresses.Length == 0)
+                    {
+                        throw new SocketException((int)SocketError.HostNotFound);
+                    }
+
+                    var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                    try
+                    {
+                        await socket.ConnectAsync(addresses[0], context.DnsEndPoint.Port, cancellationToken);
+                        return new NetworkStream(socket, ownsSocket: true);
+                    }
+                    catch
+                    {
+                        socket.Dispose();
+                        throw;
+                    }
+                }
+            });
         services.AddSingleton<IZerodhaKiteBrokerService, ZerodhaKiteBrokerService>();
         services.AddSingleton<ITradingBrokerService, ZerodhaKiteBrokerService>();
         services.AddSingleton<IPaperTradingService, PaperTradingService>();
