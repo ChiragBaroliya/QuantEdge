@@ -50,7 +50,7 @@ try
     });
 
     // Register QuantEdge.MarketData Clean Architecture services
-    builder.Services.AddMarketDataServices(builder.Configuration);
+    builder.Services.AddMarketDataServices(builder.Configuration, isApiHost: true);
 
     var app = builder.Build();
 

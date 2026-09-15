@@ -3,12 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Helpers;
-using QuantEdge.Infrastructure.Hubs;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 
@@ -26,7 +24,7 @@ public class AutoRealTradeService : IAutoRealTradeService
     private readonly IMarketHoursService _marketHoursService;
     private readonly ICacheService _cacheService;
     private readonly IRealTradeCacheService? _realTradeCache;
-    private readonly IHubContext<MarketDataHub>? _hubContext;
+    private readonly IHubBroadcastService? _hubBroadcast;
     private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ILogger<AutoRealTradeService> _logger;
     private readonly ConcurrentDictionary<int, string> _userNameCache = new();
@@ -57,7 +55,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         ICacheService cacheService,
         ILogger<AutoRealTradeService> logger,
         IRealTradeCacheService? realTradeCache = null,
-        IHubContext<MarketDataHub>? hubContext = null,
+        IHubBroadcastService? hubBroadcast = null,
         IServiceScopeFactory? scopeFactory = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
@@ -68,7 +66,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _realTradeCache = realTradeCache;
-        _hubContext = hubContext;
+        _hubBroadcast = hubBroadcast;
         _scopeFactory = scopeFactory;
     }
 
@@ -309,9 +307,9 @@ public class AutoRealTradeService : IAutoRealTradeService
         };
         await _repository.LogExecutionAsync(log);
 
-        if (_hubContext != null)
+        if (_hubBroadcast != null)
         {
-            await _hubContext.Clients.All.SendAsync("ReceiveRealTradeLogEvent", log);
+            await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeLogEvent", log);
         }
     }
 
@@ -686,9 +684,9 @@ public class AutoRealTradeService : IAutoRealTradeService
                 await LogAuditAsync(symbol, "BUY_ORDER_OPEN", entryPrice, quantity,
                     $"🕓 BUY order placed for {symbol} — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
 
-                if (_hubContext != null)
+                if (_hubBroadcast != null)
                 {
-                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                     {
                         symbol,
                         side = "BUY_OPEN",
@@ -790,9 +788,9 @@ public class AutoRealTradeService : IAutoRealTradeService
                 $"⚡ Live BUY Executed @ ₹{executedPrice:F2} (Qty: {quantity}, Target: ₹{takeProfit:F2}, SL: {slText}, TSL: {tslText}, Order #{brokerOrderId})", userId);
 
             // Broadcast SignalR Toast
-            if (_hubContext != null)
+            if (_hubBroadcast != null)
             {
-                await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                 {
                     symbol,
                     side = "BUY",
@@ -865,9 +863,9 @@ public class AutoRealTradeService : IAutoRealTradeService
         await LogAuditAsync(symbol, "HOLDING_MONITOR_ENABLED", targetPrice, quantity,
             $"📦 Zerodha Holding enrolled for auto-sell monitoring (Qty: {quantity}, Avg: ₹{averagePrice:F2}, Target: ₹{targetPrice:F2})", userId);
 
-        if (_hubContext != null)
+        if (_hubBroadcast != null)
         {
-            await _hubContext.Clients.Group($"user-{userId}").SendAsync("ReceiveHoldingMonitorUpdate", new
+            await _hubBroadcast.BroadcastGroupAsync($"user-{userId}", "ReceiveHoldingMonitorUpdate", new
             {
                 symbol,
                 quantity,
@@ -1001,9 +999,9 @@ public class AutoRealTradeService : IAutoRealTradeService
                 await LogAuditAsync(symbol, "SELL_ORDER_OPEN", currentPrice, quantity,
                     $"🕓 Manual SELL order placed for {symbol} — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
 
-                if (_hubContext != null)
+                if (_hubBroadcast != null)
                 {
-                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                     {
                         symbol,
                         side = "SELL_OPEN",
@@ -1060,9 +1058,9 @@ public class AutoRealTradeService : IAutoRealTradeService
             await LogAuditAsync(symbol, "REAL_SELL", executedPrice, quantity,
                 $"⚡ Manual Live SELL ({reason}) @ ₹{executedPrice:F2}{pnlText} (Order #{brokerOrderId})", userId);
 
-            if (_hubContext != null)
+            if (_hubBroadcast != null)
             {
-                await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                 {
                     symbol,
                     side = "SELL",
@@ -1241,9 +1239,9 @@ public class AutoRealTradeService : IAutoRealTradeService
                 await LogAuditAsync(position.Symbol, actionType, rejectedPrice, position.Quantity,
                     $"Zerodha Sell Order Failed: {brokerResult.Message}", userId);
 
-                if (_hubContext != null && isTpinError)
+                if (_hubBroadcast != null && isTpinError)
                 {
-                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                     {
                         symbol = position.Symbol,
                         side = "SELL_REJECTED",
@@ -1310,9 +1308,9 @@ public class AutoRealTradeService : IAutoRealTradeService
                 await LogAuditAsync(position.Symbol, "SELL_ORDER_OPEN", currentLtp, position.Quantity,
                     $"🕓 SELL order placed for {position.Symbol} ({exitReason}) — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
 
-                if (_hubContext != null)
+                if (_hubBroadcast != null)
                 {
-                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                     {
                         symbol = position.Symbol,
                         side = "SELL_OPEN",
@@ -1375,9 +1373,9 @@ public class AutoRealTradeService : IAutoRealTradeService
                 $"⚡ Live SELL ({exitReason}) @ ₹{executedPrice:F2} | P&L: {pnlSign}₹{realizedPnl:N2} (Order #{brokerOrderId})", userId);
 
             // Broadcast SignalR Toast
-            if (_hubContext != null)
+            if (_hubBroadcast != null)
             {
-                await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                 {
                     symbol = position.Symbol,
                     side = "SELL",
@@ -1390,7 +1388,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     message = $"⚡ LIVE REAL SELL: {position.Symbol} ({exitReason}) @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}"
                 });
 
-                await _hubContext.Clients.Group($"user-{userId}").SendAsync("ReceiveHoldingSoldEvent", new
+                await _hubBroadcast.BroadcastGroupAsync($"user-{userId}", "ReceiveHoldingSoldEvent", new
                 {
                     symbol = position.Symbol,
                     quantity = position.Quantity,
@@ -1616,9 +1614,9 @@ public class AutoRealTradeService : IAutoRealTradeService
                 await LogAuditAsync(order.Symbol, "REAL_SELL", executedPrice, order.Quantity,
                     $"⚡ Live SELL confirmed FILLED @ ₹{executedPrice:F2} | P&L: {pnlSign}₹{realizedPnl:N2} (Order #{order.BrokerOrderId})", order.UserId);
 
-                if (_hubContext != null)
+                if (_hubBroadcast != null)
                 {
-                    await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                    await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                     {
                         symbol = order.Symbol,
                         side = "SELL",
@@ -1631,7 +1629,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                         message = $"⚡ LIVE REAL SELL: {order.Symbol} confirmed FILLED @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}"
                     });
 
-                    await _hubContext.Clients.Group($"user-{order.UserId}").SendAsync("ReceiveHoldingSoldEvent", new
+                    await _hubBroadcast.BroadcastGroupAsync($"user-{order.UserId}", "ReceiveHoldingSoldEvent", new
                     {
                         symbol = order.Symbol,
                         quantity = order.Quantity,
@@ -1697,9 +1695,9 @@ public class AutoRealTradeService : IAutoRealTradeService
             await LogAuditAsync(order.Symbol, "REAL_BUY", executedPrice, order.Quantity,
                 $"⚡ Live BUY confirmed FILLED @ ₹{executedPrice:F2} (Qty: {order.Quantity}, Order #{order.BrokerOrderId})", order.UserId);
 
-            if (_hubContext != null)
+            if (_hubBroadcast != null)
             {
-                await _hubContext.Clients.All.SendAsync("ReceiveRealTradeAlert", new
+                await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                 {
                     symbol = order.Symbol,
                     side = "BUY",
@@ -1817,12 +1815,12 @@ public class AutoRealTradeService : IAutoRealTradeService
 
     private async Task BroadcastDashboardUpdateAsync(int userId)
     {
-        if (_hubContext != null)
+        if (_hubBroadcast != null)
         {
             try
             {
                 var dashboard = await GetDashboardDataAsync(userId);
-                await _hubContext.Clients.All.SendAsync("ReceiveRealTradeDashboardUpdate", dashboard);
+                await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeDashboardUpdate", dashboard);
             }
             catch (Exception ex)
             {

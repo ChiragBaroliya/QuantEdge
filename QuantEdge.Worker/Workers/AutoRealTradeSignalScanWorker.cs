@@ -118,6 +118,12 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
         // Single pass: collect candidate stocks
         var candidateStocks = new List<(Domain.Entities.StockMaster Stock, decimal EntryPrice, int MetCount, int Score, bool IsBuySignal, decimal EngineStopLoss, decimal EngineTarget)>();
 
+        // The per-user filter below only re-checks candidates already collected here, so this
+        // pre-filter must never be stricter than the most lenient active user's MinConditionsMatch
+        // - otherwise a user with an aggressive (low) threshold would silently lose signals that
+        // never made it into the candidate list in the first place.
+        int candidateMetCountThreshold = activeUserSettings.Min(u => u.MinConditionsMatch);
+
         foreach (var stock in activeStocks)
         {
             if (stoppingToken.IsCancellationRequested) break;
@@ -142,8 +148,8 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
 
                 int metCount = evalResult.Checklist.MetCount;
 
-                // Threshold filter: Collect candidate if confirmed Buy or >= 6 criteria
-                if (evalResult.IsBuySignal || metCount >= 6)
+                // Threshold filter: Collect candidate if confirmed Buy or meets the most lenient active user's threshold
+                if (evalResult.IsBuySignal || metCount >= candidateMetCountThreshold)
                 {
                     candidateStocks.Add((stock, evalResult.EntryPrice, metCount, evalResult.Score, evalResult.IsBuySignal, evalResult.StopLoss, evalResult.Target1));
                 }

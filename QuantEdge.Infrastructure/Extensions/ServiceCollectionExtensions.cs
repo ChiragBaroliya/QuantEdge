@@ -22,9 +22,10 @@ public static class ServiceCollectionExtensions
     /// persistence repositories, and background hosted workers to the service collection container.
     /// </summary>
     public static IServiceCollection AddMarketDataServices(
-        this IServiceCollection services, 
+        this IServiceCollection services,
         IConfiguration configuration,
-        string? jobType = null)
+        string? jobType = null,
+        bool isApiHost = false)
     {
         string? actualJobType = jobType;
         string? specifiedTimeframe = null;
@@ -67,6 +68,20 @@ public static class ServiceCollectionExtensions
 
         // Register SignalR infrastructure
         services.AddSignalR();
+
+        // IHubBroadcastService: QuantEdge.API hosts the actual MarketDataHub clients connect to,
+        // so it can broadcast locally. QuantEdge.Worker is a headless process with no clients of
+        // its own connected to any hub, so it must relay broadcasts over HTTP to the API instead
+        // - otherwise SignalR sends from Worker-run jobs (e.g. Auto Real Trade) silently go nowhere.
+        if (isApiHost)
+        {
+            services.AddSingleton<IHubBroadcastService, LocalHubBroadcastService>();
+        }
+        else
+        {
+            services.AddHttpClient(RemoteHubBroadcastService.HttpClientName);
+            services.AddSingleton<IHubBroadcastService, RemoteHubBroadcastService>();
+        }
 
         // Register caching infrastructure
         services.AddMemoryCache();
