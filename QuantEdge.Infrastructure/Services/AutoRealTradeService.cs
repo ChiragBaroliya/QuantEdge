@@ -135,6 +135,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         existing.MinConditionsMatch = updateDto.MinConditionsMatch;
         existing.TradingWindowStart = updateDto.TradingWindowStart ?? "09:15";
         existing.TradingWindowEnd = updateDto.TradingWindowEnd ?? "15:30";
+        existing.EntryDelayMinutes = updateDto.EntryDelayMinutes;
 
         var updated = await _repository.UpsertSettingsAsync(existing);
 
@@ -411,6 +412,17 @@ public class AutoRealTradeService : IAutoRealTradeService
         {
             await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
                 $"Outside trading window ({settings.TradingWindowStart} - {settings.TradingWindowEnd})", userId);
+            return false;
+        }
+
+        // 3b. Opening Entry Delay - new BUY signals are held back for a configurable number of
+        // minutes after the window opens, so the opening auction's gap/volatility can resolve
+        // before capital is committed. Deliberately NOT applied to exits (EvaluateAndExecuteRealSellAsync)
+        // - an existing position must always be able to stop out immediately, even during this delay.
+        if (!IsPastEntryDelay(settings.TradingWindowStart, settings.EntryDelayMinutes))
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Opening entry delay active - new BUY signals held back for {settings.EntryDelayMinutes} min after {settings.TradingWindowStart}", userId);
             return false;
         }
 
@@ -1837,6 +1849,19 @@ public class AutoRealTradeService : IAutoRealTradeService
 
         var timeOfDay = nowIst.TimeOfDay;
         return timeOfDay >= start && timeOfDay <= end;
+    }
+
+    // Entry-only gate: true once "now" (IST) is at or past windowStartTime + entryDelayMinutes.
+    // Never applied to exits - see call site in EvaluateAndExecuteRealBuyCoreAsync.
+    private static bool IsPastEntryDelay(string windowStartTime, int entryDelayMinutes)
+    {
+        if (entryDelayMinutes <= 0) return true;
+
+        var nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneHelper.IndianTimeZone);
+        if (!TimeSpan.TryParse(windowStartTime, out var start)) start = new TimeSpan(9, 15, 0);
+
+        var effectiveEntryStart = start + TimeSpan.FromMinutes(entryDelayMinutes);
+        return nowIst.TimeOfDay >= effectiveEntryStart;
     }
 
     private async Task BroadcastDashboardUpdateAsync(int userId)

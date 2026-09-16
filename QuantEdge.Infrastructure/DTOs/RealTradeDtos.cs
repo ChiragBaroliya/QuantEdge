@@ -39,6 +39,9 @@ public class RealTradeSettingsUpdateDto
 
     public string TradingWindowStart { get; set; } = "09:15";
     public string TradingWindowEnd { get; set; } = "15:30";
+
+    [Range(0, 120, ErrorMessage = "Entry Delay must be between 0 and 120 minutes.")]
+    public int EntryDelayMinutes { get; set; } = 15;
 }
 
 public class RealTradeDashboardDto

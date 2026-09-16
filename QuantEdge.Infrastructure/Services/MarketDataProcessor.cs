@@ -268,6 +268,7 @@ public class MarketDataProcessor : IMarketDataProcessor
                     macd = indicators?.MACD,
                     signalLine = indicators?.SignalLine,
                     vwap = indicators?.VWAP,
+                    adx = indicators?.ADX,
                     signalType = signal?.SignalType,
                     signalScore = signal?.Score,
                     signalStrength = signal?.Strength,

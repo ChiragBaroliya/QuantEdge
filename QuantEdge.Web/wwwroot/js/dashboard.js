@@ -23,7 +23,7 @@ const MINI_CHART_VISIBLE_CANDLES = 60; // Compact cards only need a short recent
 // (whichever arrives second: the historical/live-candle indicator recompute, or the backend
 // signal evaluation) without the two code paths needing to know about each other.
 let lastOverallSignalType = "HOLD";
-let lastIndicatorSignals = { ema: "NEUTRAL", rsi: "NEUTRAL", macd: "NEUTRAL", vwap: "NEUTRAL", volume: "NO CONFIRMATION" };
+let lastIndicatorSignals = { ema: "NEUTRAL", rsi: "NEUTRAL", macd: "NEUTRAL", vwap: "NEUTRAL", volume: "NO CONFIRMATION", adx: "NO CONFIRMATION" };
 
 // Keep local cache of data for real-time appends
 let chartDataCache = [];
@@ -651,6 +651,24 @@ function setBadge(el, signal, labelOverride) {
     el.attr("class", `mini-signal-badge ${cls}`).text(labelOverride || signal);
 }
 
+// ADX gauge needle: points the SVG needle at the current ADX value on a fixed 0-60 scale
+// (ADX rarely runs past the high 50s; values above are just clamped to full-scale).
+const ADX_GAUGE_MAX_SCALE = 60;
+function updateAdxGauge(adxValue) {
+    const needle = document.getElementById("adxGaugeNeedle");
+    if (!needle) return;
+
+    const clamped = Math.max(0, Math.min(adxValue ?? 0, ADX_GAUGE_MAX_SCALE));
+    const fraction = clamped / ADX_GAUGE_MAX_SCALE;
+    const thetaRad = (180 - fraction * 180) * (Math.PI / 180); // 180deg (left, value=0) -> 0deg (right, value=max)
+    const needleLength = 68; // slightly inside the 80-radius track
+
+    const x2 = 100 + needleLength * Math.cos(thetaRad);
+    const y2 = 100 - needleLength * Math.sin(thetaRad);
+    needle.setAttribute("x2", x2.toFixed(2));
+    needle.setAttribute("y2", y2.toFixed(2));
+}
+
 function updateIndicatorPanel(dataList) {
     if (!dataList || dataList.length === 0) return;
 
@@ -772,7 +790,28 @@ function updateIndicatorPanel(dataList) {
     setBadge($("#badgeVolume"), volumeSignal);
     $("#statusVolume").text(volumeStatus).attr("class", `indicator-card-status ${volumeSignal === "CONFIRMED" ? "bullish" : volumeSignal === "WEAK" ? "amber" : "neutral"}`);
 
-    lastIndicatorSignals = { ema: emaSignal, rsi: rsiSignal, macd: macdSignal, vwap: vwapSignal, volume: volumeSignal };
+    // 6. ADX (14) - trend STRENGTH only, never direction, so (like Volume) it never drives its
+    // own BUY/SELL and instead "confirms" whatever move is already happening. Thresholds reuse the
+    // same two cutoffs already coded for the Swing Trading strategy rather than inventing new ones:
+    // SwingDecisionEngine requires ADX >= 20 before it will trade at all (below that it logs the
+    // signal as "Weak/Choppy"), and the legacy swing service's own "Strong Trend" bar is ADX > 25.
+    const adxLatest = (latest.adx !== null && latest.adx !== undefined) ? parseFloat(latest.adx) : null;
+    const adxPrev = (prev && prev.adx !== null && prev.adx !== undefined) ? parseFloat(prev.adx) : null;
+    let adxSignal = "NO CONFIRMATION", adxLabel = "WEAK", adxStatus = "Weak / Choppy Trend";
+    if (adxLatest !== null) {
+        if (adxLatest >= 25) { adxSignal = "CONFIRMED"; adxLabel = "STRONG"; adxStatus = "Strong Trend"; }
+        else if (adxLatest >= 20) { adxSignal = "WEAK"; adxLabel = "AVERAGE"; adxStatus = "Average Trend"; }
+    }
+    const adxStatusCls = adxSignal === "CONFIRMED" ? "bullish" : adxSignal === "WEAK" ? "amber" : "neutral";
+    $("#valAdx").text(adxLatest !== null ? `ADX ${adxLatest.toFixed(1)}` : "ADX -");
+    $("#valAdxCurrent").text(adxLatest !== null ? adxLatest.toFixed(1) : "-");
+    $("#valAdxPrev").text(adxPrev !== null ? adxPrev.toFixed(1) : "-");
+    $("#lblAdxStrength").text(adxLabel).attr("class", `adx-gauge-strength ${adxStatusCls}`);
+    setBadge($("#badgeAdx"), adxSignal, adxLabel);
+    $("#statusAdx").text(adxStatus).attr("class", `indicator-card-status ${adxStatusCls}`);
+    updateAdxGauge(adxLatest);
+
+    lastIndicatorSignals = { ema: emaSignal, rsi: rsiSignal, macd: macdSignal, vwap: vwapSignal, volume: volumeSignal, adx: adxSignal };
     updateOverallSignalSummary();
 }
 
@@ -790,7 +829,8 @@ function updateOverallSignalSummary() {
         { id: "#chipRsi", signal: lastIndicatorSignals.rsi },
         { id: "#chipMacd", signal: lastIndicatorSignals.macd },
         { id: "#chipVwap", signal: lastIndicatorSignals.vwap },
-        { id: "#chipVolume", signal: lastIndicatorSignals.volume }
+        { id: "#chipVolume", signal: lastIndicatorSignals.volume },
+        { id: "#chipAdx", signal: lastIndicatorSignals.adx }
     ];
 
     let confirmations = 0;
@@ -809,7 +849,7 @@ function updateOverallSignalSummary() {
         $(c.id).attr("class", `chip-value ${cls}`).text(c.signal);
     });
 
-    $("#overallConfirmationCount").text(`${confirmations} / 5`);
+    $("#overallConfirmationCount").text(`${confirmations} / 6`);
 }
 
 // SignalR Connection

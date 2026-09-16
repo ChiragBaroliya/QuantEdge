@@ -391,6 +391,7 @@ function populateSettingsForm(s) {
     setVal("inpMinConditions", s.minConditionsMatch);
     setVal("inpWindowStart", s.tradingWindowStart);
     setVal("inpWindowEnd", s.tradingWindowEnd);
+    setVal("inpEntryDelay", s.entryDelayMinutes);
 
     // Stop Loss % / Trailing Stop Loss % are no longer settings-page fields - they're configured
     // trade-wise from the Manual Real Trade popup instead (see realtrade-actions.js).
@@ -1011,7 +1012,8 @@ function setupEventListeners() {
                 ProductType: document.getElementById("selProductType")?.value || "CNC",
                 MinConditionsMatch: parseInt(document.getElementById("inpMinConditions")?.value || "10"),
                 TradingWindowStart: document.getElementById("inpWindowStart")?.value || "09:15",
-                TradingWindowEnd: document.getElementById("inpWindowEnd")?.value || "15:30"
+                TradingWindowEnd: document.getElementById("inpWindowEnd")?.value || "15:30",
+                EntryDelayMinutes: parseInt(document.getElementById("inpEntryDelay")?.value || "15")
             };
 
             try {

@@ -1764,13 +1764,14 @@ RETURNS TABLE (
     MinConditionsMatch INT,
     TradingWindowStart VARCHAR,
     TradingWindowEnd VARCHAR,
+    EntryDelayMinutes INT,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         s.id AS Id,
         s.user_id AS UserId,
         s.is_real_trade_enabled AS IsRealTradeEnabled,
@@ -1787,6 +1788,7 @@ BEGIN
         s.min_conditions_match AS MinConditionsMatch,
         s.trading_window_start AS TradingWindowStart,
         s.trading_window_end AS TradingWindowEnd,
+        s.entry_delay_minutes AS EntryDelayMinutes,
         s.updated_at AS UpdatedAt
     FROM real_trade_settings s
     WHERE s.user_id = p_user_id;
@@ -1815,13 +1817,14 @@ RETURNS TABLE (
     MinConditionsMatch INT,
     TradingWindowStart VARCHAR,
     TradingWindowEnd VARCHAR,
+    EntryDelayMinutes INT,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         s.id AS Id,
         s.user_id AS UserId,
         s.is_real_trade_enabled AS IsRealTradeEnabled,
@@ -1838,6 +1841,7 @@ BEGIN
         s.min_conditions_match AS MinConditionsMatch,
         s.trading_window_start AS TradingWindowStart,
         s.trading_window_end AS TradingWindowEnd,
+        s.entry_delay_minutes AS EntryDelayMinutes,
         s.updated_at AS UpdatedAt
     FROM real_trade_settings s
     WHERE s.is_real_trade_enabled = TRUE;
@@ -1864,7 +1868,8 @@ CREATE OR REPLACE FUNCTION fn_upsert_real_trade_settings(
     p_product_type VARCHAR,
     p_min_conditions_match INT,
     p_trading_window_start VARCHAR,
-    p_trading_window_end VARCHAR
+    p_trading_window_end VARCHAR,
+    p_entry_delay_minutes INT
 )
 RETURNS TABLE (
     Id INT,
@@ -1883,6 +1888,7 @@ RETURNS TABLE (
     MinConditionsMatch INT,
     TradingWindowStart VARCHAR,
     TradingWindowEnd VARCHAR,
+    EntryDelayMinutes INT,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1893,13 +1899,13 @@ BEGIN
         user_id, is_real_trade_enabled, available_capital, profit_target_pct,
         stop_loss_pct, trailing_sl_enabled, trailing_sl_pct, max_duration_days,
         max_trades_per_day, fixed_amount_per_trade, max_daily_loss_limit, product_type,
-        min_conditions_match, trading_window_start, trading_window_end, updated_at
+        min_conditions_match, trading_window_start, trading_window_end, entry_delay_minutes, updated_at
     )
     VALUES (
         p_user_id, p_is_real_trade_enabled, p_available_capital, p_profit_target_pct,
         p_stop_loss_pct, p_trailing_sl_enabled, p_trailing_sl_pct, p_max_duration_days,
         p_max_trades_per_day, p_fixed_amount_per_trade, p_max_daily_loss_limit, p_product_type,
-        p_min_conditions_match, p_trading_window_start, p_trading_window_end, NOW()
+        p_min_conditions_match, p_trading_window_start, p_trading_window_end, p_entry_delay_minutes, NOW()
     )
     ON CONFLICT (user_id) DO UPDATE SET
         is_real_trade_enabled = EXCLUDED.is_real_trade_enabled,
@@ -1916,8 +1922,9 @@ BEGIN
         min_conditions_match = EXCLUDED.min_conditions_match,
         trading_window_start = EXCLUDED.trading_window_start,
         trading_window_end = EXCLUDED.trading_window_end,
+        entry_delay_minutes = EXCLUDED.entry_delay_minutes,
         updated_at = NOW()
-    RETURNING 
+    RETURNING
         real_trade_settings.id AS Id,
         real_trade_settings.user_id AS UserId,
         real_trade_settings.is_real_trade_enabled AS IsRealTradeEnabled,
@@ -1934,6 +1941,7 @@ BEGIN
         real_trade_settings.min_conditions_match AS MinConditionsMatch,
         real_trade_settings.trading_window_start AS TradingWindowStart,
         real_trade_settings.trading_window_end AS TradingWindowEnd,
+        real_trade_settings.entry_delay_minutes AS EntryDelayMinutes,
         real_trade_settings.updated_at AS UpdatedAt;
 END;
 $$;

@@ -321,7 +321,7 @@
                 </div>
                 <div class="overall-signal-block">
                     <span class="overall-signal-label">Confirmation</span>
-                    <span id="overallConfirmationCount" class="confirmation-count-badge">0 / 5</span>
+                    <span id="overallConfirmationCount" class="confirmation-count-badge">0 / 6</span>
                 </div>
             </div>
         </div>
@@ -332,6 +332,7 @@
             <div class="confirmation-chip"><span class="chip-label">MACD</span><span id="chipMacd" class="chip-value neutral">-</span></div>
             <div class="confirmation-chip"><span class="chip-label">VWAP</span><span id="chipVwap" class="chip-value neutral">-</span></div>
             <div class="confirmation-chip"><span class="chip-label">Volume</span><span id="chipVolume" class="chip-value neutral">-</span></div>
+            <div class="confirmation-chip"><span class="chip-label">ADX</span><span id="chipAdx" class="chip-value neutral">-</span></div>
         </div>
 
         <div class="indicator-cards-grid">
@@ -410,6 +411,34 @@
                         <span>Rel <b id="valRelVolume">-</b></span>
                     </div>
                     <span id="statusVolume" class="indicator-card-status neutral">-</span>
+                </div>
+            </div>
+
+            <!-- ADX Card -->
+            <div class="indicator-mini-card" data-tooltip="Average Directional Index (14 period) - measures trend STRENGTH, not direction. Below 20 is a weak/choppy trend (the Swing Trading engine requires ADX ≥ 20 before trading at all), 20-25 is average, 25+ is a strong trend.">
+                <div class="indicator-card-header">
+                    <span class="indicator-card-title">ADX (14)</span>
+                    <span id="badgeAdx" class="mini-signal-badge neutral">WEAK</span>
+                </div>
+                <div id="adxMiniChartContainer" class="mini-chart-container adx-gauge-container">
+                    <svg id="adxGaugeSvg" class="adx-gauge-svg" viewBox="0 0 200 116" preserveAspectRatio="xMidYMid meet">
+                        <path class="adx-gauge-track adx-zone-weak" d="M20,100 A80,80 0 0,1 60,30.72"></path>
+                        <path class="adx-gauge-track adx-zone-average" d="M60,30.72 A80,80 0 0,1 79.29,22.73"></path>
+                        <path class="adx-gauge-track adx-zone-strong" d="M79.29,22.73 A80,80 0 0,1 180,100"></path>
+                        <line id="adxGaugeNeedle" class="adx-gauge-needle" x1="100" y1="100" x2="100" y2="32"></line>
+                        <circle class="adx-gauge-pivot" cx="100" cy="100" r="4.5"></circle>
+                    </svg>
+                    <div class="adx-gauge-readout">
+                        <span id="valAdx" class="adx-gauge-value">ADX -</span>
+                        <span id="lblAdxStrength" class="adx-gauge-strength neutral">-</span>
+                    </div>
+                </div>
+                <div class="indicator-card-footer">
+                    <div class="indicator-card-values">
+                        <span>Current <b id="valAdxCurrent">-</b></span>
+                        <span>Prior <b id="valAdxPrev">-</b></span>
+                    </div>
+                    <span id="statusAdx" class="indicator-card-status neutral">-</span>
                 </div>
             </div>
         </div>

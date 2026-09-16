@@ -216,6 +216,7 @@ public class MarketDataController : ControllerBase
                     macd = ind?.MACD,
                     signalLine = ind?.SignalLine,
                     vwap = ind?.VWAP,
+                    adx = ind?.ADX,
                     signalType = sig?.SignalType,
                     signalScore = sig?.SignalStrength,
                     signalReason = sig?.Reason

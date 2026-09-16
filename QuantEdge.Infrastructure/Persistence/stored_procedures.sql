@@ -77,6 +77,7 @@ $$;
 -- ----------------------------------------------------------------------------
 DROP PROCEDURE IF EXISTS sp_insert_market_indicator CASCADE;
 DROP PROCEDURE IF EXISTS sp_insert_market_indicator(INT, VARCHAR, VARCHAR, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE) CASCADE;
+DROP PROCEDURE IF EXISTS sp_insert_market_indicator(INT, VARCHAR, VARCHAR, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE) CASCADE;
 
 CREATE OR REPLACE PROCEDURE sp_insert_market_indicator(
     p_id INT,
@@ -88,6 +89,7 @@ CREATE OR REPLACE PROCEDURE sp_insert_market_indicator(
     p_macd NUMERIC(18, 6),
     p_signal_line NUMERIC(18, 6),
     p_vwap NUMERIC(18, 6),
+    p_adx NUMERIC(18, 6),
     p_candle_time TIMESTAMP WITH TIME ZONE,
     p_created_at TIMESTAMP WITH TIME ZONE
 )
@@ -97,10 +99,10 @@ DECLARE
     v_table_name TEXT;
 BEGIN
     v_table_name := 'market_indicators_' || LOWER(p_timeframe);
-    
+
     -- Check and create table dynamically if it doesn't exist
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.tables 
+        SELECT 1 FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name = v_table_name
     ) THEN
         EXECUTE format('
@@ -115,30 +117,32 @@ BEGIN
                 macd NUMERIC(18, 6) NOT NULL,
                 signal_line NUMERIC(18, 6) NOT NULL,
                 vwap NUMERIC(18, 6) NOT NULL,
+                adx NUMERIC(18, 6) NOT NULL DEFAULT 0,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                 CONSTRAINT %I PRIMARY KEY (id, candle_time)
             );
             CREATE INDEX IF NOT EXISTS %I ON %I (symbol, candle_time DESC);
-        ', 
-        v_table_name, 
-        'pk_' || v_table_name, 
-        'ix_' || v_table_name || '_symbol_candle_time', 
+        ',
+        v_table_name,
+        'pk_' || v_table_name,
+        'ix_' || v_table_name || '_symbol_candle_time',
         v_table_name);
-        
+
         RAISE NOTICE 'Created dynamic table %', v_table_name;
     END IF;
 
     EXECUTE format('
-        INSERT INTO %I (id, symbol, timeframe, rsi, ema20, ema50, macd, signal_line, vwap, candle_time, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        INSERT INTO %I (id, symbol, timeframe, rsi, ema20, ema50, macd, signal_line, vwap, adx, candle_time, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (id, candle_time) DO UPDATE
         SET rsi = EXCLUDED.rsi,
             ema20 = EXCLUDED.ema20,
             ema50 = EXCLUDED.ema50,
             macd = EXCLUDED.macd,
             signal_line = EXCLUDED.signal_line,
-            vwap = EXCLUDED.vwap;', v_table_name)
-    USING p_id, p_symbol, p_timeframe, p_rsi, p_ema20, p_ema50, p_macd, p_signal_line, p_vwap, p_candle_time, p_created_at;
+            vwap = EXCLUDED.vwap,
+            adx = EXCLUDED.adx;', v_table_name)
+    USING p_id, p_symbol, p_timeframe, p_rsi, p_ema20, p_ema50, p_macd, p_signal_line, p_vwap, p_adx, p_candle_time, p_created_at;
 END;
 $$;
 

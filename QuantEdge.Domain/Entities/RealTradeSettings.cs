@@ -28,5 +28,9 @@ public class RealTradeSettings
     public int MinConditionsMatch { get; set; } = 10;
     public string TradingWindowStart { get; set; } = "09:15";
     public string TradingWindowEnd { get; set; } = "15:30";
+    // Minutes after TradingWindowStart during which new BUY signals are held back, to let the
+    // opening auction's gap/volatility resolve before committing capital. Exits are NOT gated by
+    // this - only new entries (see AutoRealTradeService.EvaluateAndExecuteRealBuyCoreAsync).
+    public int EntryDelayMinutes { get; set; } = 15;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

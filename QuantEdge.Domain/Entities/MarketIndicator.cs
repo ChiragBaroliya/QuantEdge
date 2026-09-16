@@ -16,6 +16,7 @@ public class MarketIndicator
     public decimal MACD { get; set; }
     public decimal SignalLine { get; set; }
     public decimal VWAP { get; set; }
+    public decimal ADX { get; set; }
     public DateTime CandleTime { get; set; }
     public DateTime CreatedAt { get; set; }
 }

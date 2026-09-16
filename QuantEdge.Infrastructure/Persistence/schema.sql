@@ -718,6 +718,7 @@ CREATE TABLE IF NOT EXISTS real_trade_settings (
     min_conditions_match INT NOT NULL DEFAULT 10,
     trading_window_start VARCHAR(10) NOT NULL DEFAULT '09:15',
     trading_window_end VARCHAR(10) NOT NULL DEFAULT '15:30',
+    entry_delay_minutes INT NOT NULL DEFAULT 15,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -808,5 +809,18 @@ ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS trailing_stop_loss NUMERIC(
 ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS stop_loss_pct NUMERIC(9, 4);
 ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS trailing_sl_pct NUMERIC(9, 4);
 
+-- Real Trade: opening entry delay - new BUY signals are held back this many minutes after
+-- trading_window_start to let the opening auction's gap/volatility resolve. Exits are unaffected.
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS entry_delay_minutes INT NOT NULL DEFAULT 15;
+
+-- Signal Dashboard: ADX (14) trend-strength indicator, added alongside RSI/EMA/MACD/VWAP.
+-- market_indicators_* tables are created dynamically per-timeframe by sp_insert_market_indicator
+-- (see stored_procedures.sql), so any of these may not exist yet on a given database - ALTER
+-- TABLE IF EXISTS ... ADD COLUMN IF NOT EXISTS is a no-op for the ones that don't.
+ALTER TABLE IF EXISTS market_indicators_1m ADD COLUMN IF NOT EXISTS adx NUMERIC(18, 6) NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS market_indicators_5m ADD COLUMN IF NOT EXISTS adx NUMERIC(18, 6) NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS market_indicators_15m ADD COLUMN IF NOT EXISTS adx NUMERIC(18, 6) NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS market_indicators_60m ADD COLUMN IF NOT EXISTS adx NUMERIC(18, 6) NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS market_indicators_1d ADD COLUMN IF NOT EXISTS adx NUMERIC(18, 6) NOT NULL DEFAULT 0;
 
 

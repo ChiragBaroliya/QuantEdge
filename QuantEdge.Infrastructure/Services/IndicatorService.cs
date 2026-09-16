@@ -52,10 +52,13 @@ public class IndicatorService : IIndicatorService
 
             // 1. Calculate indicator lists
             var closes = recentCandles.Select(c => c.Close).ToList();
+            var highs = recentCandles.Select(c => c.High).ToList();
+            var lows = recentCandles.Select(c => c.Low).ToList();
             var ema20List = IndicatorCalculator.CalculateEma(closes, 20);
             var ema50List = IndicatorCalculator.CalculateEma(closes, 50);
             var rsiList = IndicatorCalculator.CalculateRsi(closes, 14);
             var (macdList, signalList) = IndicatorCalculator.CalculateMacd(closes);
+            var adxList = IndicatorCalculator.CalculateAdx(highs, lows, closes, 14);
 
             // 2. Calculate daily VWAP for the latest candle
             // Get all candles on the same local calendar date as the latest candle
@@ -78,6 +81,7 @@ public class IndicatorService : IIndicatorService
                 MACD = macdList[lastIndex],
                 SignalLine = signalList[lastIndex],
                 VWAP = vwap,
+                ADX = adxList[lastIndex],
                 CandleTime = latestCandle.CandleTime.ToUniversalTime(),
                 CreatedAt = DateTime.UtcNow
             };
@@ -146,10 +150,13 @@ public class IndicatorService : IIndicatorService
             }
 
             var closes = historyCandles.Select(c => c.Close).ToList();
+            var highs = historyCandles.Select(c => c.High).ToList();
+            var lows = historyCandles.Select(c => c.Low).ToList();
             var ema20List = IndicatorCalculator.CalculateEma(closes, 20);
             var ema50List = IndicatorCalculator.CalculateEma(closes, 50);
             var rsiList = IndicatorCalculator.CalculateRsi(closes, 14);
             var (macdList, signalList) = IndicatorCalculator.CalculateMacd(closes);
+            var adxList = IndicatorCalculator.CalculateAdx(highs, lows, closes, 14);
 
             var batchIndicators = new List<MarketIndicator>();
             DateTime? currentDay = null;
@@ -206,6 +213,7 @@ public class IndicatorService : IIndicatorService
                     MACD = macdList[i],
                     SignalLine = signalList[i],
                     VWAP = vwap,
+                    ADX = adxList[i],
                     CandleTime = candle.CandleTime.ToUniversalTime(),
                     CreatedAt = DateTime.UtcNow
                 });

@@ -36,6 +36,7 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
         parameters.Add("p_macd", indicator.MACD);
         parameters.Add("p_signal_line", indicator.SignalLine);
         parameters.Add("p_vwap", indicator.VWAP);
+        parameters.Add("p_adx", indicator.ADX);
         parameters.Add("p_candle_time", indicator.CandleTime);
         parameters.Add("p_created_at", indicator.CreatedAt);
 
@@ -76,15 +77,16 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
             string tableName = $"market_indicators_{safeTimeframe}";
 
             string sql = $@"
-                INSERT INTO {tableName} (id, symbol, timeframe, rsi, ema20, ema50, macd, signal_line, vwap, candle_time, created_at)
-                VALUES (@Id, @Symbol, @Timeframe, @RSI, @EMA20, @EMA50, @MACD, @SignalLine, @VWAP, @CandleTime, @CreatedAt)
+                INSERT INTO {tableName} (id, symbol, timeframe, rsi, ema20, ema50, macd, signal_line, vwap, adx, candle_time, created_at)
+                VALUES (@Id, @Symbol, @Timeframe, @RSI, @EMA20, @EMA50, @MACD, @SignalLine, @VWAP, @ADX, @CandleTime, @CreatedAt)
                 ON CONFLICT (id, candle_time) DO UPDATE
                 SET rsi = EXCLUDED.rsi,
                     ema20 = EXCLUDED.ema20,
                     ema50 = EXCLUDED.ema50,
                     macd = EXCLUDED.macd,
                     signal_line = EXCLUDED.signal_line,
-                    vwap = EXCLUDED.vwap;";
+                    vwap = EXCLUDED.vwap,
+                    adx = EXCLUDED.adx;";
 
             const int chunkSize = 1000;
             var list = group.ToList();
@@ -117,12 +119,12 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
             string limitClause = (limit.HasValue && limit.Value > 0) ? " LIMIT @Limit" : "";
             if (beforeTime.HasValue)
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol AND candle_time < @BeforeTime ORDER BY candle_time DESC{limitClause};";
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, adx, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol AND candle_time < @BeforeTime ORDER BY candle_time DESC{limitClause};";
                 return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = upperSymbol, BeforeTime = beforeTime.Value, Limit = limit ?? 0 });
             }
             else
             {
-                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol ORDER BY candle_time DESC{limitClause};";
+                string sql = $"SELECT id, candle_time AS CandleTime, symbol, timeframe, rsi, ema20, ema50, macd, signal_line AS SignalLine, vwap, adx, created_at AS CreatedAt FROM {tableName} WHERE symbol = @Symbol ORDER BY candle_time DESC{limitClause};";
                 return await connection.QueryAsync<MarketIndicator>(sql, new { Symbol = upperSymbol, Limit = limit ?? 0 });
             }
         }
