@@ -26,6 +26,7 @@ public class AutoRealTradeService : IAutoRealTradeService
     private readonly IRealTradeCacheService? _realTradeCache;
     private readonly IHubBroadcastService? _hubBroadcast;
     private readonly IServiceScopeFactory? _scopeFactory;
+    private readonly IWebSocketMarketDataService? _webSocketService;
     private readonly ILogger<AutoRealTradeService> _logger;
     private readonly ConcurrentDictionary<int, string> _userNameCache = new();
 
@@ -56,7 +57,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         ILogger<AutoRealTradeService> logger,
         IRealTradeCacheService? realTradeCache = null,
         IHubBroadcastService? hubBroadcast = null,
-        IServiceScopeFactory? scopeFactory = null)
+        IServiceScopeFactory? scopeFactory = null,
+        IWebSocketMarketDataService? webSocketService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _brokerService = brokerService ?? throw new ArgumentNullException(nameof(brokerService));
@@ -68,6 +70,25 @@ public class AutoRealTradeService : IAutoRealTradeService
         _realTradeCache = realTradeCache;
         _hubBroadcast = hubBroadcast;
         _scopeFactory = scopeFactory;
+        _webSocketService = webSocketService;
+    }
+
+    // Ensures a real position's symbol is receiving live WebSocket ticks the moment it's opened,
+    // regardless of whether it's part of the auto-scanner's subscribed universe (e.g. a manually
+    // traded or holdings-enrolled symbol). Subscription is idempotent at the WebSocket service level,
+    // so this is safe to call even if the symbol is already subscribed. Best-effort: a failure here
+    // must not fail the buy - the position-monitor's LTP_UNAVAILABLE skip already covers this gap.
+    private async Task EnsureSubscribedForExitMonitoringAsync(string symbol)
+    {
+        if (_webSocketService == null) return;
+        try
+        {
+            await _webSocketService.SubscribeAsync(symbol, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to subscribe {Symbol} to the WebSocket feed for real-position exit monitoring.", symbol);
+        }
     }
 
     public async Task<RealTradeSettings> GetSettingsAsync(int userId = 1)
@@ -760,6 +781,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             });
 
             _realTradeCache?.AddOrUpdatePosition(newPosition);
+            await EnsureSubscribedForExitMonitoringAsync(symbol);
 
             // Record Real Trade History
             await _repository.RecordTradeHistoryAsync(new RealTradeHistory
@@ -859,6 +881,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         });
 
         _realTradeCache?.AddOrUpdatePosition(newPosition);
+        await EnsureSubscribedForExitMonitoringAsync(symbol);
 
         await LogAuditAsync(symbol, "HOLDING_MONITOR_ENABLED", targetPrice, quantity,
             $"📦 Zerodha Holding enrolled for auto-sell monitoring (Qty: {quantity}, Avg: ₹{averagePrice:F2}, Target: ₹{targetPrice:F2})", userId);
@@ -1349,6 +1372,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             // Close Real Position in DB & RAM
             await _repository.ClosePositionAsync(position.Id, executedPrice, realizedPnl, exitReason);
             _realTradeCache?.RemovePosition(position.Id);
+            _realTradeCache?.RemoveLiveLtp(position.Symbol);
 
             // Record Trade History
             await _repository.RecordTradeHistoryAsync(new RealTradeHistory
@@ -1593,6 +1617,7 @@ public class AutoRealTradeService : IAutoRealTradeService
 
                 await _repository.ClosePositionAsync(position.Id, executedPrice, realizedPnl, exitReason);
                 _realTradeCache?.RemovePosition(position.Id);
+                _realTradeCache?.RemoveLiveLtp(position.Symbol);
 
                 await _repository.RecordTradeHistoryAsync(new RealTradeHistory
                 {
@@ -1673,6 +1698,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             });
 
             _realTradeCache?.AddOrUpdatePosition(newPosition);
+            await EnsureSubscribedForExitMonitoringAsync(order.Symbol);
 
             await _repository.RecordTradeHistoryAsync(new RealTradeHistory
             {

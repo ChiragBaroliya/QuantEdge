@@ -71,4 +71,25 @@ public interface IRealTradeCacheService
     /// Sets a user's Zerodha session token in RAM.
     /// </summary>
     void SetUserSession(ZerodhaSession session);
+
+    /// <summary>
+    /// Records the latest live tick price for a symbol, received from the Zerodha WebSocket feed.
+    /// This is the single source of truth for real-money SL/Trailing-SL exit checks - never a REST
+    /// poll or a value frozen on the RealPosition row.
+    /// </summary>
+    void UpdateLiveLtp(string symbol, decimal ltp);
+
+    /// <summary>
+    /// Attempts to retrieve a symbol's live LTP if a WebSocket tick was received within <paramref name="maxAge"/>.
+    /// Returns false (with ltp = 0) if no tick was ever received, or the last one is older than maxAge -
+    /// callers must treat that as "unavailable" and skip the exit check for that cycle rather than
+    /// substituting a stale/derived price.
+    /// </summary>
+    bool TryGetFreshLtp(string symbol, TimeSpan maxAge, out decimal ltp);
+
+    /// <summary>
+    /// Removes a symbol's cached live LTP, e.g. after its position is squared off, so a stale price
+    /// can't leak into a future re-buy of the same symbol.
+    /// </summary>
+    void RemoveLiveLtp(string symbol);
 }

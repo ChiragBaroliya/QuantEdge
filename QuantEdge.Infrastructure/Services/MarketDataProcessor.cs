@@ -31,6 +31,7 @@ public class MarketDataProcessor : IMarketDataProcessor
     private readonly ISignalEngineService _signalEngine;
     private readonly IMarketHoursService _marketHoursService;
     private readonly IPaperTradingService? _paperTradingService;
+    private readonly IRealTradeCacheService? _realTradeCacheService;
     private readonly IMarketDataCacheService? _cacheService;
     private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly BrokerConfig _config;
@@ -53,7 +54,8 @@ public class MarketDataProcessor : IMarketDataProcessor
         ILogger<MarketDataProcessor> logger,
         IHubContext<MarketDataHub>? hubContext = null,
         IMarketDataCacheService? cacheService = null,
-        IPaperTradingService? paperTradingService = null)
+        IPaperTradingService? paperTradingService = null,
+        IRealTradeCacheService? realTradeCacheService = null)
     {
         _webSocketService = webSocketService ?? throw new ArgumentNullException(nameof(webSocketService));
         _candleBuilder = candleBuilder ?? throw new ArgumentNullException(nameof(candleBuilder));
@@ -68,6 +70,7 @@ public class MarketDataProcessor : IMarketDataProcessor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cacheService = cacheService;
         _paperTradingService = paperTradingService;
+        _realTradeCacheService = realTradeCacheService;
     }
 
     /// <summary>
@@ -133,6 +136,11 @@ public class MarketDataProcessor : IMarketDataProcessor
             {
                 await _paperTradingService.ProcessTickForPaperMatchingAsync(tick.Symbol, tick.LTP);
             }
+
+            // Feed the live LTP cache used by AutoRealPositionMonitorWorker for real-money SL/Trailing-SL
+            // exits - this is the ONLY writer of that cache, so a real position's exit check is only ever
+            // as fresh as this tick stream (never a REST poll or a value frozen on the RealPosition row).
+            _realTradeCacheService?.UpdateLiveLtp(tick.Symbol, tick.LTP);
         }
         catch (Exception ex)
         {

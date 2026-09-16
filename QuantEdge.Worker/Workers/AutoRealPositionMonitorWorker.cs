@@ -20,6 +20,12 @@ public class AutoRealPositionMonitorWorker : BackgroundService
     private readonly ILogger<AutoRealPositionMonitorWorker> _logger;
     private readonly TimeSpan _fallbackInterval = TimeSpan.FromSeconds(20);
 
+    // A live position's SL/TSL check trusts only a WebSocket tick received within this window - never
+    // a REST poll, and never RealPosition.CurrentPrice (which is written once at buy time and frozen
+    // forever after). If no tick this fresh is cached for the symbol, the cycle is skipped rather than
+    // risking a decision on a stale/wrong price.
+    private static readonly TimeSpan LtpFreshnessWindow = TimeSpan.FromSeconds(60);
+
     public AutoRealPositionMonitorWorker(
         IServiceProvider serviceProvider,
         ILogger<AutoRealPositionMonitorWorker> logger)
@@ -52,8 +58,7 @@ public class AutoRealPositionMonitorWorker : BackgroundService
                     }
 
                     var realTradeService = scope.ServiceProvider.GetRequiredService<IAutoRealTradeService>();
-                    var marketDataCache = scope.ServiceProvider.GetService<IMarketDataCacheService>();
-                    var brokerService = scope.ServiceProvider.GetRequiredService<IZerodhaKiteBrokerService>();
+                    var webSocketService = scope.ServiceProvider.GetService<IWebSocketMarketDataService>();
 
                     // Confirm real fill status with the broker for any SELL order still recorded as Open
                     // (e.g. a limit order placed by the kill switch that hasn't traded yet). Must run before
@@ -74,10 +79,7 @@ public class AutoRealPositionMonitorWorker : BackgroundService
 
                     if (openRealPositions.Any())
                     {
-                        // Cache each user's live Zerodha holdings once per cycle (not once per position) — used
-                        // as a fallback LTP source for symbols not in the bot's WebSocket-fed 1m candle universe
-                        // (e.g. a demat holding enrolled for monitoring that isn't part of the scan universe).
-                        var holdingsByUser = new Dictionary<int, List<ZerodhaHoldingDto>>();
+                        bool wsConnected = webSocketService != null && webSocketService.IsConnected;
 
                         foreach (var position in openRealPositions)
                         {
@@ -85,44 +87,17 @@ public class AutoRealPositionMonitorWorker : BackgroundService
 
                             try
                             {
-                                decimal ltp = 0m;
-                                if (marketDataCache != null)
+                                if (realTradeCache == null || !wsConnected ||
+                                    !realTradeCache.TryGetFreshLtp(position.Symbol, LtpFreshnessWindow, out var ltp))
                                 {
-                                    var recentCandles = await marketDataCache.GetRecentCandlesAsync(position.Symbol, "1m", 1);
-                                    if (recentCandles != null && recentCandles.Any())
-                                    {
-                                        ltp = recentCandles.First().Close;
-                                    }
+                                    _logger.LogWarning(
+                                        "LTP_UNAVAILABLE for {Symbol} (Position #{PositionId}, User {UserId}) - no fresh WebSocket tick within {Window}s (WebSocket connected: {Connected}). Skipping SL/TSL check this cycle.",
+                                        position.Symbol, position.Id, position.UserId, LtpFreshnessWindow.TotalSeconds, wsConnected);
+                                    continue;
                                 }
 
-                                if (ltp <= 0m)
-                                {
-                                    if (!holdingsByUser.TryGetValue(position.UserId, out var userHoldings))
-                                    {
-                                        var holdingsResult = await brokerService.GetLiveHoldingsAsync(position.UserId);
-                                        userHoldings = holdingsResult.Success && holdingsResult.Holdings != null
-                                            ? holdingsResult.Holdings
-                                            : new List<ZerodhaHoldingDto>();
-                                        holdingsByUser[position.UserId] = userHoldings;
-                                    }
-
-                                    var matchingHolding = userHoldings.FirstOrDefault(h =>
-                                        string.Equals(h.TradingSymbol, position.Symbol, StringComparison.OrdinalIgnoreCase));
-                                    if (matchingHolding != null && matchingHolding.LastPrice > 0m)
-                                    {
-                                        ltp = matchingHolding.LastPrice;
-                                    }
-                                }
-
-                                if (ltp <= 0m)
-                                {
-                                    ltp = position.CurrentPrice > 0m ? position.CurrentPrice : position.AverageEntryPrice;
-                                }
-
-                                if (ltp > 0m)
-                                {
-                                    await realTradeService.EvaluateAndExecuteRealSellAsync(position, ltp, position.UserId);
-                                }
+                                _logger.LogDebug("LTP source=WebSocket for {Symbol}: {Ltp}", position.Symbol, ltp);
+                                await realTradeService.EvaluateAndExecuteRealSellAsync(position, ltp, position.UserId);
                             }
                             catch (Exception ex)
                             {

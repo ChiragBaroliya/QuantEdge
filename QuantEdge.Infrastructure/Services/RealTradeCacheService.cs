@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,10 @@ public class RealTradeCacheService : IRealTradeCacheService
     private readonly ConcurrentDictionary<int, RealPosition> _openPositionsCache = new();
     private readonly ConcurrentDictionary<int, ZerodhaSession> _userSessionsCache = new();
 
+    // Live LTP fed exclusively by the Zerodha WebSocket tick stream (see MarketDataProcessor).
+    // Keyed by plain uppercased symbol, same convention as RealPosition.Symbol.
+    private readonly ConcurrentDictionary<string, (decimal Ltp, DateTime ReceivedAtUtc)> _liveLtpCache = new(StringComparer.OrdinalIgnoreCase);
+
     private bool _isWarmedUp = false;
     public bool IsWarmedUp => _isWarmedUp;
 
@@ -45,6 +50,7 @@ public class RealTradeCacheService : IRealTradeCacheService
             using var scope = _serviceProvider.CreateScope();
             var realRepo = scope.ServiceProvider.GetRequiredService<IRealTradingRepository>();
             var sessionRepo = scope.ServiceProvider.GetRequiredService<IZerodhaSessionRepository>();
+            var webSocketService = scope.ServiceProvider.GetService<IWebSocketMarketDataService>();
 
             // 1. Load active user settings
             var activeSettings = await realRepo.GetActiveSettingsAsync();
@@ -57,9 +63,26 @@ public class RealTradeCacheService : IRealTradeCacheService
             // 2. Load open real positions across all users
             var openPositions = await realRepo.GetAllOpenPositionsAsync();
             _openPositionsCache.Clear();
+            _liveLtpCache.Clear();
             foreach (var pos in openPositions)
             {
                 _openPositionsCache[pos.Id] = pos;
+
+                // Ensure every already-open position gets live ticks even if it isn't part of the
+                // auto-scanner's subscribed universe (e.g. a manually-traded or holdings-enrolled
+                // symbol) and even after an app restart mid-day - subscription state doesn't survive
+                // a process restart, only a WebSocket reconnect within the same process.
+                if (webSocketService != null)
+                {
+                    try
+                    {
+                        await webSocketService.SubscribeAsync(pos.Symbol, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to subscribe {Symbol} to the WebSocket feed during warmup.", pos.Symbol);
+                    }
+                }
             }
 
             // 3. Load active Zerodha sessions
@@ -86,6 +109,7 @@ public class RealTradeCacheService : IRealTradeCacheService
         _userSettingsCache.Clear();
         _openPositionsCache.Clear();
         _userSessionsCache.Clear();
+        _liveLtpCache.Clear();
         _isWarmedUp = false;
         _logger.LogInformation("✅ In-Memory Auto Real Trading Cache released successfully.");
         return Task.CompletedTask;
@@ -164,5 +188,30 @@ public class RealTradeCacheService : IRealTradeCacheService
         {
             _userSessionsCache[session.UserId] = session;
         }
+    }
+
+    public void UpdateLiveLtp(string symbol, decimal ltp)
+    {
+        if (string.IsNullOrWhiteSpace(symbol) || ltp <= 0m) return;
+        _liveLtpCache[symbol.Trim()] = (ltp, DateTime.UtcNow);
+    }
+
+    public bool TryGetFreshLtp(string symbol, TimeSpan maxAge, out decimal ltp)
+    {
+        ltp = 0m;
+        if (string.IsNullOrWhiteSpace(symbol)) return false;
+
+        if (_liveLtpCache.TryGetValue(symbol.Trim(), out var entry) && (DateTime.UtcNow - entry.ReceivedAtUtc) <= maxAge)
+        {
+            ltp = entry.Ltp;
+            return true;
+        }
+        return false;
+    }
+
+    public void RemoveLiveLtp(string symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return;
+        _liveLtpCache.TryRemove(symbol.Trim(), out _);
     }
 }
