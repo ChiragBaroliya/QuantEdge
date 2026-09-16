@@ -550,9 +550,15 @@ function renderZerodhaPositions(brokerPositions) {
     }
 
     if (!brokerPositions || netPositions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No live open positions in Zerodha account.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No live open positions in Zerodha account.</td></tr>`;
         return;
     }
+
+    // QuantEdge only tracks SL/Trailing-SL for positions it opened/is monitoring (cachedOpenPositions,
+    // i.e. RealPosition rows) - a Zerodha row with no match here is a broker position QuantEdge isn't managing.
+    const monitoredBySymbol = new Map(
+        cachedOpenPositions.map(mp => [(mp.symbol || "").toUpperCase(), mp])
+    );
 
     let html = "";
     netPositions.forEach(p => {
@@ -563,6 +569,9 @@ function renderZerodhaPositions(brokerPositions) {
         const buyPrice = p.buyPrice > 0 ? `₹${p.buyPrice.toFixed(2)}` : "-";
         const sellPrice = p.sellPrice > 0 ? `₹${p.sellPrice.toFixed(2)}` : "-";
         const ltp = p.lastPrice > 0 ? `₹${p.lastPrice.toFixed(2)}` : "-";
+        const monitoredPos = monitoredBySymbol.get((p.tradingSymbol || "").toUpperCase());
+        const slText = monitoredPos && monitoredPos.stopLoss ? `₹${monitoredPos.stopLoss.toFixed(2)}` : "-";
+        const tslText = monitoredPos && monitoredPos.trailingStopLoss ? `₹${monitoredPos.trailingStopLoss.toFixed(2)}` : "-";
         const prodBadge = p.product === "MIS"
             ? '<span class="badge bg-warning text-dark">MIS (Intraday)</span>'
             : '<span class="badge bg-info text-dark">CNC (Delivery)</span>';
@@ -586,6 +595,8 @@ function renderZerodhaPositions(brokerPositions) {
                 <td class="text-white">${buyPrice}</td>
                 <td class="text-white">${sellPrice}</td>
                 <td><strong class="text-white">${ltp}</strong></td>
+                <td class="text-white">${slText}</td>
+                <td class="text-white">${tslText}</td>
                 <td class="${m2mClass}">${formatCurrencyWithSign(m2m)}</td>
                 <td class="text-white">${formatCurrencyWithSign(p.unrealised)}</td>
                 <td class="text-white">${formatCurrencyWithSign(p.realised)}</td>
