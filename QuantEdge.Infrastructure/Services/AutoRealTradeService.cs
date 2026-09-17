@@ -528,6 +528,17 @@ public class AutoRealTradeService : IAutoRealTradeService
                 return false;
             }
 
+            // Symmetric guard against chasing a signal that's already run up since the scan - without
+            // this, a candle that closed favorably but then spiked further before the order reached
+            // the broker would still be bought at the spiked price, entering right at a local high.
+            const decimal maxChaseMovePct = 2.0m;
+            if (moveFromSignalPct >= maxChaseMovePct)
+            {
+                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", preLiveEntryPrice, 0,
+                    $"Live price ₹{liveLtp:N2} has already moved {moveFromSignalPct:F2}% above the scanned entry ₹{preLiveEntryPrice:N2} - too extended to chase, skipping", userId);
+                return false;
+            }
+
             decimal priceDelta = liveLtp - preLiveEntryPrice;
             if (engineStopLoss.HasValue) engineStopLoss = engineStopLoss.Value + priceDelta;
             if (engineTarget.HasValue) engineTarget = engineTarget.Value + priceDelta;
