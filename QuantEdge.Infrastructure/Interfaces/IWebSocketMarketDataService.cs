@@ -39,4 +39,10 @@ public interface IWebSocketMarketDataService
     /// Subscribes to a specific market symbol feed asynchronously.
     /// </summary>
     Task SubscribeAsync(string symbol, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Whether a symbol has been registered for subscription (does not guarantee ticks are still
+    /// flowing for it - only that a subscribe request was issued and cached for reconnection).
+    /// </summary>
+    bool IsSubscribed(string symbol);
 }

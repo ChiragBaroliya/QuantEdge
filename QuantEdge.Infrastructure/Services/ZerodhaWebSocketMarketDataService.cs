@@ -34,13 +34,30 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
     private readonly ICacheService _cacheService;
 
     private Ticker? _ticker;
-    private readonly ConcurrentDictionary<string, bool> _subscribedSymbols = new();
+    // Value = when the symbol was (re)subscribed - used by the tick-silence watchdog below as the
+    // reference point until the first tick for it ever arrives.
+    private readonly ConcurrentDictionary<string, DateTime> _subscribedSymbols = new(StringComparer.OrdinalIgnoreCase);
 
     // Dynamic instrument maps populated from the database
     private readonly ConcurrentDictionary<string, uint> _symbolToTokenMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<uint, string> _tokenToSymbolMap = new();
 
+    // Last time a tick was actually received for each instrument token - the only reliable signal
+    // Kite's ticker protocol gives us for "is this specific subscription still alive" (there is no
+    // per-token subscribe ack/nack from Kite).
+    private readonly ConcurrentDictionary<uint, DateTime> _lastTickUtc = new();
+
+    private static readonly TimeSpan InstrumentMappingRefreshInterval = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan TickWatchdogInterval = TimeSpan.FromSeconds(30);
+    // Deliberately above AutoRealPositionMonitorWorker's 60s freshness window, so this internal
+    // watchdog and the worker's own REST fallback don't fight over the same stale symbol at once.
+    private static readonly TimeSpan TickSilenceThreshold = TimeSpan.FromSeconds(90);
+
+    private CancellationTokenSource? _backgroundLoopsCts;
+
     public bool IsConnected => _ticker != null && _ticker.IsConnected;
+
+    public bool IsSubscribed(string symbol) => !string.IsNullOrWhiteSpace(symbol) && _subscribedSymbols.ContainsKey(symbol);
 
     public ZerodhaWebSocketMarketDataService(
         IOptions<BrokerConfig> config,
@@ -118,13 +135,105 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
 
             // Connect in background to avoid blocking
             _ticker.Connect();
-            
+
             _logger.LogInformation("Zerodha Ticker connection initiated successfully.");
+
+            // (Re)start the background maintenance loops for this connection lifetime.
+            _backgroundLoopsCts?.Cancel();
+            _backgroundLoopsCts = new CancellationTokenSource();
+            var loopToken = _backgroundLoopsCts.Token;
+            _ = Task.Run(() => RunInstrumentMappingRefreshLoopAsync(loopToken), loopToken);
+            _ = Task.Run(() => RunTickSilenceWatchdogLoopAsync(loopToken), loopToken);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to initialize and connect Zerodha Kite Ticker.");
             throw;
+        }
+    }
+
+    // Refreshes the symbol->instrument-token map from stock_master periodically, not just once at
+    // startup - so a symbol added to (or re-activated in) the active-stock universe mid-day gets a
+    // resolvable token without requiring a service restart.
+    private async Task RunInstrumentMappingRefreshLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(InstrumentMappingRefreshInterval, cancellationToken);
+                try
+                {
+                    await LoadInstrumentMappingsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Periodic instrument mapping refresh failed; will retry next cycle.");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on disconnect/reconnect.
+        }
+    }
+
+    // Kite gives no per-token subscribe ack/nack, so the only way to detect a subscription that
+    // silently stopped streaming is to notice the absence of ticks over time, then re-issue Subscribe
+    // for just that token. This protects every consumer of ticks (dashboard prices, the scanner, real
+    // position exits), not only the real-trade exit monitor's own REST fallback.
+    private async Task RunTickSilenceWatchdogLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TickWatchdogInterval, cancellationToken);
+
+                if (_ticker == null || !IsConnected) continue;
+
+                var now = DateTime.UtcNow;
+                var staleTokens = new List<uint>();
+
+                foreach (var (symbol, subscribedAtUtc) in _subscribedSymbols)
+                {
+                    if (!_symbolToTokenMap.TryGetValue(symbol, out var token))
+                    {
+                        // Not resolvable yet - the mapping refresh loop above is what fixes this.
+                        continue;
+                    }
+
+                    bool hasTicked = _lastTickUtc.TryGetValue(token, out var lastTickUtc);
+                    var referenceTime = hasTicked ? lastTickUtc : subscribedAtUtc;
+
+                    if (now - referenceTime > TickSilenceThreshold)
+                    {
+                        staleTokens.Add(token);
+                    }
+                }
+
+                if (staleTokens.Count > 0)
+                {
+                    _logger.LogWarning(
+                        "Tick-silence watchdog: {Count} subscribed instrument token(s) have had no tick for over {Seconds}s - re-subscribing: {Tokens}",
+                        staleTokens.Count, TickSilenceThreshold.TotalSeconds, string.Join(", ", staleTokens));
+
+                    try
+                    {
+                        var tokenArray = staleTokens.ToArray();
+                        _ticker.Subscribe(tokenArray);
+                        _ticker.SetMode(tokenArray, "quote");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to re-subscribe stale instrument tokens from the tick-silence watchdog.");
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on disconnect/reconnect.
         }
     }
 
@@ -161,6 +270,7 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
     public Task DisconnectAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Disconnecting Zerodha Kite Ticker connection...");
+        _backgroundLoopsCts?.Cancel();
         if (_ticker != null)
         {
             _ticker.Close();
@@ -180,7 +290,7 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
             throw new ArgumentException("Market symbol cannot be null or empty.", nameof(symbol));
         }
 
-        _subscribedSymbols[symbol] = true;
+        _subscribedSymbols[symbol] = DateTime.UtcNow;
 
         if (IsConnected && _ticker != null)
         {
@@ -219,6 +329,7 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
     private void OnKiteTick(Tick tick)
     {
         _logger.LogDebug("Received Zerodha Kite tick for token: {Token} | LTP: {Ltp}", tick.InstrumentToken, tick.LastPrice);
+        _lastTickUtc[tick.InstrumentToken] = DateTime.UtcNow;
 
         if (OnTickReceived != null)
         {
@@ -324,6 +435,8 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
 
     public void Dispose()
     {
+        _backgroundLoopsCts?.Cancel();
+        _backgroundLoopsCts?.Dispose();
         if (_ticker != null)
         {
             _ticker.Close();

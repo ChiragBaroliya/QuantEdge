@@ -38,6 +38,8 @@ public class WebSocketMarketDataService : IWebSocketMarketDataService, IDisposab
     /// </summary>
     public bool IsConnected => _connectionManager.IsOpen;
 
+    public bool IsSubscribed(string symbol) => !string.IsNullOrWhiteSpace(symbol) && _subscribedSymbols.ContainsKey(symbol);
+
     public WebSocketMarketDataService(
         WebSocketConnectionManager connectionManager,
         IReconnectPolicyService reconnectPolicy,
