@@ -2624,8 +2624,17 @@ $$;
 -- Function: fn_get_real_trade_history
 DROP FUNCTION IF EXISTS fn_get_real_trade_history(INT, INT);
 DROP FUNCTION IF EXISTS fn_get_real_trade_history(VARCHAR, INT);
+DROP FUNCTION IF EXISTS fn_get_real_trade_history(INT, INT, DATE, VARCHAR, INT);
 
-CREATE OR REPLACE FUNCTION fn_get_real_trade_history(p_user_id INT, p_limit INT)
+-- p_date/p_symbol/p_side are optional server-side filters for the Trade History table (date filter is
+-- evaluated in IST since that's the trading day the UI/user reasons in, not the UTC storage timezone).
+CREATE OR REPLACE FUNCTION fn_get_real_trade_history(
+    p_user_id INT,
+    p_limit INT,
+    p_date DATE DEFAULT NULL,
+    p_symbol VARCHAR DEFAULT NULL,
+    p_side INT DEFAULT NULL
+)
 RETURNS TABLE (
     Id INT,
     UserId INT,
@@ -2646,7 +2655,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         h.id AS Id,
         h.user_id AS UserId,
         h.order_id AS OrderId,
@@ -2663,6 +2672,9 @@ BEGIN
         h.remarks AS Remarks
     FROM real_trade_history h
     WHERE h.user_id = p_user_id
+      AND (p_date IS NULL OR (h.executed_at AT TIME ZONE 'Asia/Kolkata')::date = p_date)
+      AND (p_symbol IS NULL OR h.symbol ILIKE '%' || p_symbol || '%')
+      AND (p_side IS NULL OR h.side = p_side)
     ORDER BY h.executed_at DESC
     LIMIT p_limit;
 END;

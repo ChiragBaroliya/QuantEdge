@@ -18,8 +18,10 @@ public interface IAutoRealTradeService
     /// <summary>
     /// Closed/filled real trade history (entry, exit, realized P&L, exit reason) - written on every
     /// buy/sell fill but previously never read back anywhere, so live performance couldn't be measured.
+    /// <paramref name="date"/>/<paramref name="symbol"/>/<paramref name="side"/> apply server-side filtering
+    /// (date filter is evaluated against the IST calendar day, not UTC).
     /// </summary>
-    Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100);
+    Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100, DateTime? date = null, string? symbol = null, int? side = null);
 
     /// <summary>
     /// Evaluates pre-trade risk conditions (Token, Capital, Daily Loss Limit, Trading Window, Max Trades)

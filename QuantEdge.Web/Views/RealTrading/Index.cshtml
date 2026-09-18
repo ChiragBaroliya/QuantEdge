@@ -300,7 +300,7 @@
                                             <th>PRODUCT</th>
                                             <th>QTY</th>
                                             <th>BUY PRICE</th>
-                                            <th>SELL PRICE</th>
+                                            <th>TARGET PRICE</th>
                                             <th>LTP</th>
                                             <th>SL</th>
                                             <th>TRAILING SL</th>
@@ -449,6 +449,33 @@
                 <small class="text-white d-block mb-2" style="color: #ffffff !important; opacity: 0.85;">
                     Stats are computed from the most recent closed trades returned below (not necessarily your full lifetime history) - insufficient sample sizes should not be read as a validated edge.
                 </small>
+
+                <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+                    <div>
+                        <label class="form-label mb-1 small text-white-50" for="thFilterDate">Date</label>
+                        <input type="date" class="form-control form-control-sm qe-input" id="thFilterDate" style="min-width: 150px;" />
+                    </div>
+                    <div>
+                        <label class="form-label mb-1 small text-white-50" for="thFilterSymbol">Symbol</label>
+                        <input type="text" class="form-control form-control-sm qe-input" id="thFilterSymbol" placeholder="e.g. INFY" style="min-width: 140px; text-transform: uppercase;" />
+                    </div>
+                    <div>
+                        <label class="form-label mb-1 small text-white-50" for="thFilterSide">Side</label>
+                        <select class="form-select form-select-sm qe-input" id="thFilterSide" style="min-width: 110px;">
+                            <option value="">All</option>
+                            <option value="0">BUY</option>
+                            <option value="1">SELL</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearTradeHistoryFilters">Clear</button>
+                    </div>
+                    <div class="d-flex align-items-center gap-3 ms-auto small" style="color: #cbd5e1 !important;">
+                        <span><span class="th-legend-dot" style="background: rgba(52, 211, 153, 0.7);"></span> Target Hit</span>
+                        <span><span class="th-legend-dot" style="background: rgba(251, 191, 36, 0.7);"></span> Trailing SL Hit</span>
+                        <span><span class="th-legend-dot" style="background: rgba(248, 113, 113, 0.7);"></span> Stop Loss Hit</span>
+                    </div>
+                </div>
 
                 <div class="table-responsive-wrapper">
                     <div class="table-responsive">

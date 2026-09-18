@@ -268,12 +268,12 @@ public class RealTradingRepository : IRealTradingRepository
         return await connection.QuerySingleAsync<RealTradeHistory>(sql, history);
     }
 
-    public async Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100)
+    public async Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100, DateTime? date = null, string? symbol = null, int? side = null)
     {
         using var connection = _connectionFactory.CreateConnection();
-        string sql = "SELECT * FROM fn_get_real_trade_history(@userId, @limit);";
+        string sql = "SELECT * FROM fn_get_real_trade_history(@userId, @limit, @date::date, @symbol, @side);";
 
-        return await connection.QueryAsync<RealTradeHistory>(sql, new { userId, limit });
+        return await connection.QueryAsync<RealTradeHistory>(sql, new { userId, limit, date, symbol, side });
     }
 
     public async Task<int> GetTodayRealTradeCountAsync(int userId = 1)

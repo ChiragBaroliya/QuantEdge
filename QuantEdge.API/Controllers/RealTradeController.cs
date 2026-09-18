@@ -146,10 +146,14 @@ public class RealTradeController : ControllerBase
     /// Closed/filled real trade history - entry price, exit price, realized P&L, exit reason.
     /// Recorded on every buy/sell fill but was previously never surfaced anywhere.
     /// </summary>
+    /// <param name="date">Optional IST calendar day to filter to (e.g. 2026-09-18).</param>
+    /// <param name="symbol">Optional case-insensitive partial symbol match.</param>
+    /// <param name="side">Optional side filter: 0 = BUY, 1 = SELL.</param>
     [HttpGet("trade-history")]
-    public async Task<IActionResult> GetTradeHistory([FromQuery] int? userId = null, [FromQuery] int limit = 100)
+    public async Task<IActionResult> GetTradeHistory([FromQuery] int? userId = null, [FromQuery] int limit = 100,
+        [FromQuery] DateTime? date = null, [FromQuery] string? symbol = null, [FromQuery] int? side = null)
     {
-        var history = await _realTradeService.GetTradeHistoryAsync(GetCurrentUserId(userId), limit);
+        var history = await _realTradeService.GetTradeHistoryAsync(GetCurrentUserId(userId), limit, date, symbol, side);
         return Ok(history);
     }
 

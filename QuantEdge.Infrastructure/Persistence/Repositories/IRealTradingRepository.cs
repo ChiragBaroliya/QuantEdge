@@ -42,7 +42,12 @@ public interface IRealTradingRepository
 
     // Trade History & Logs
     Task<RealTradeHistory> RecordTradeHistoryAsync(RealTradeHistory history);
-    Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100);
+
+    /// <summary>
+    /// Closed/filled real trade history, optionally filtered server-side by IST calendar day, a
+    /// case-insensitive partial symbol match, and/or side (0 = BUY, 1 = SELL).
+    /// </summary>
+    Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100, DateTime? date = null, string? symbol = null, int? side = null);
     Task<int> GetTodayRealTradeCountAsync(int userId = 1);
     Task<decimal> GetTodayRealizedPnlAsync(int userId = 1);
     Task LogExecutionAsync(RealTradeExecutionLog log);

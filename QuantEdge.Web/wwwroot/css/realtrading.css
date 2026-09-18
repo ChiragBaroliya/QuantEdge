@@ -781,6 +781,40 @@ input:checked + .real-slider {
     background: rgba(255, 255, 255, 0.04);
 }
 
+.th-legend-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+/* Trade History row highlighting by exit reason */
+.qe-table tr.th-row-target td {
+    background: rgba(52, 211, 153, 0.14);
+}
+
+.qe-table tr.th-row-sl td {
+    background: rgba(248, 113, 113, 0.14);
+}
+
+.qe-table tr.th-row-trailing td {
+    background: rgba(251, 191, 36, 0.14);
+}
+
+.qe-table tr.th-row-target:hover td {
+    background: rgba(52, 211, 153, 0.22);
+}
+
+.qe-table tr.th-row-sl:hover td {
+    background: rgba(248, 113, 113, 0.22);
+}
+
+.qe-table tr.th-row-trailing:hover td {
+    background: rgba(251, 191, 36, 0.22);
+}
+
 /* Square Off Button */
 .btn-square-off {
     background: rgba(239, 68, 68, 0.18);

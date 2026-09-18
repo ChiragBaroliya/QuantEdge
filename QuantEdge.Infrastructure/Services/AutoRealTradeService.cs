@@ -340,9 +340,9 @@ public class AutoRealTradeService : IAutoRealTradeService
         return await _repository.GetTodayLogsAsync(userId, limit);
     }
 
-    public async Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100)
+    public async Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100, DateTime? date = null, string? symbol = null, int? side = null)
     {
-        return await _repository.GetTradeHistoryAsync(userId, limit);
+        return await _repository.GetTradeHistoryAsync(userId, limit, date, symbol, side);
     }
 
     // Per-(user, symbol) locks guarding the Manual Real Trade path only, so a double-click on

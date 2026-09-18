@@ -58,6 +58,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     renderDdpiStatus();
     loadDashboardData();
+    initTradeHistoryFilters();
     loadTradeHistory();
     setupEventListeners();
     setupSignalRHub();
@@ -568,9 +569,9 @@ function renderZerodhaPositions(brokerPositions) {
         const pnlClass = pnl >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
         const m2mClass = m2m >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
         const buyPrice = p.buyPrice > 0 ? `₹${p.buyPrice.toFixed(2)}` : "-";
-        const sellPrice = p.sellPrice > 0 ? `₹${p.sellPrice.toFixed(2)}` : "-";
         const ltp = p.lastPrice > 0 ? `₹${p.lastPrice.toFixed(2)}` : "-";
         const monitoredPos = monitoredBySymbol.get((p.tradingSymbol || "").toUpperCase());
+        const targetText = monitoredPos && monitoredPos.takeProfit ? `₹${monitoredPos.takeProfit.toFixed(2)}` : "-";
         const slText = monitoredPos && monitoredPos.stopLoss ? `₹${monitoredPos.stopLoss.toFixed(2)}` : "-";
         const tslText = monitoredPos && monitoredPos.trailingStopLoss ? `₹${monitoredPos.trailingStopLoss.toFixed(2)}` : "-";
         const prodBadge = p.product === "MIS"
@@ -594,7 +595,7 @@ function renderZerodhaPositions(brokerPositions) {
                 <td>${prodBadge}</td>
                 <td><strong class="text-white">${p.quantity}</strong></td>
                 <td class="text-white">${buyPrice}</td>
-                <td class="text-white">${sellPrice}</td>
+                <td class="text-info fw-semibold">${targetText}</td>
                 <td><strong class="text-white">${ltp}</strong></td>
                 <td class="text-white">${slText}</td>
                 <td class="text-white">${tslText}</td>
@@ -749,9 +750,22 @@ function renderFilteredRecentOrders(orders) {
     tbody.innerHTML = html;
 }
 
+let tradeHistoryFilterDebounce = null;
+
 async function loadTradeHistory() {
     try {
-        const response = await fetch(`${apiBaseUrl}/api/realtrade/trade-history?userId=${currentUserId}&limit=100`);
+        const params = new URLSearchParams({ userId: currentUserId, limit: 100 });
+
+        const dateVal = document.getElementById("thFilterDate")?.value;
+        if (dateVal) params.set("date", dateVal);
+
+        const symbolVal = (document.getElementById("thFilterSymbol")?.value || "").trim();
+        if (symbolVal) params.set("symbol", symbolVal);
+
+        const sideVal = document.getElementById("thFilterSide")?.value;
+        if (sideVal) params.set("side", sideVal);
+
+        const response = await fetch(`${apiBaseUrl}/api/realtrade/trade-history?${params.toString()}`);
         if (!response.ok) return;
 
         const history = await response.json();
@@ -759,6 +773,42 @@ async function loadTradeHistory() {
     } catch (err) {
         console.error("Trade history load error:", err);
     }
+}
+
+// en-CA formats as YYYY-MM-DD, which matches the <input type="date"> value format.
+function toISTDateStr(dateInput) {
+    return new Date(dateInput).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+function initTradeHistoryFilters() {
+    const dateInput = document.getElementById("thFilterDate");
+    if (dateInput && !dateInput.value) {
+        dateInput.value = toISTDateStr(new Date());
+    }
+
+    dateInput?.addEventListener("change", loadTradeHistory);
+    document.getElementById("thFilterSide")?.addEventListener("change", loadTradeHistory);
+    document.getElementById("thFilterSymbol")?.addEventListener("input", () => {
+        clearTimeout(tradeHistoryFilterDebounce);
+        tradeHistoryFilterDebounce = setTimeout(loadTradeHistory, 350);
+    });
+    document.getElementById("btnClearTradeHistoryFilters")?.addEventListener("click", () => {
+        if (dateInput) dateInput.value = "";
+        const symbolInput = document.getElementById("thFilterSymbol");
+        if (symbolInput) symbolInput.value = "";
+        const sideInput = document.getElementById("thFilterSide");
+        if (sideInput) sideInput.value = "";
+        loadTradeHistory();
+    });
+}
+
+// Classifies a SELL exit reason so the row can be tinted to match how the trade closed.
+function getExitReasonRowClass(exitReason) {
+    const reason = (exitReason || "").toLowerCase();
+    if (reason.includes("trailing")) return "th-row-trailing";
+    if (reason.includes("target")) return "th-row-target";
+    if (reason.includes("stop loss")) return "th-row-sl";
+    return "";
 }
 
 function renderTradeHistory(history) {
@@ -798,7 +848,7 @@ function renderTradeHistory(history) {
     if (!tbody) return;
 
     if (!history || history.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No closed trades on record yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No closed trades match the selected filters.</td></tr>`;
         return;
     }
 
@@ -810,9 +860,10 @@ function renderTradeHistory(history) {
         const pnlText = h.side === 1
             ? `<span style="color: ${pnl >= 0 ? '#34d399' : '#f87171'};">${formatCurrencyWithSign(pnl)}</span>`
             : '-';
+        const rowClass = h.side === 1 ? getExitReasonRowClass(h.exitReason) : "";
 
         html += `
-            <tr>
+            <tr class="${rowClass}">
                 <td class="text-white">${timeStr}</td>
                 <td><strong class="text-white">${h.symbol}</strong></td>
                 <td>${sideText}</td>
