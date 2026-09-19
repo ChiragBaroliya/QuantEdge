@@ -216,7 +216,9 @@ public class InstrumentSyncService : IInstrumentSyncService
                     upperSymbol.EndsWith("-RE") ||
                     upperSymbol.EndsWith("-RT") ||
                     upperSymbol.EndsWith("-W") ||
-                    upperSymbol.EndsWith("-W1"))
+                    upperSymbol.EndsWith("-W1") ||
+                    upperSymbol.EndsWith("-BE") ||
+                    upperSymbol.EndsWith("NAV"))
                 {
                     continue;
                 }
