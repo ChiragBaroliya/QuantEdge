@@ -36,10 +36,11 @@ public interface IAutoRealTradeService
     /// </param>
     Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
         decimal? engineStopLoss = null, decimal? engineTarget = null,
-        bool isManualTrade = false, int? manualQuantity = null, decimal? manualStopLossPct = null, decimal? manualTrailingSlPct = null);
+        bool isManualTrade = false, int? manualQuantity = null, decimal? manualStopLossPct = null, decimal? manualTrailingSlPct = null,
+        decimal? dailyAtr = null);
 
     /// <summary>
-    /// Evaluates live exit conditions (Target, Optional SL, Optional Trailing SL, Max Duration)
+    /// Evaluates exit conditions via the shared swing exit policy (<see cref="Services.SwingTradeRules"/>)
     /// and executes a Real-Money Market Sell order with Zerodha when triggered.
     /// </summary>
     Task<bool> EvaluateAndExecuteRealSellAsync(RealPosition position, decimal currentLtp, int userId = 1);

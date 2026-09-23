@@ -67,7 +67,12 @@ public class RealTradingRepository : IRealTradingRepository
                 @MinConditionsMatch,
                 @TradingWindowStart,
                 @TradingWindowEnd,
-                @EntryDelayMinutes
+                @EntryDelayMinutes,
+                @ExitMode,
+                @CloseCheckTime,
+                @StopLossAtrMult,
+                @TrailAtrMult,
+                @TargetAtrMult
             );";
 
         return await connection.QuerySingleAsync<RealTradeSettings>(sql, settings);

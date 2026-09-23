@@ -650,6 +650,13 @@ CREATE TABLE IF NOT EXISTS auto_trade_settings (
     min_conditions_match INT NOT NULL DEFAULT 12,
     trading_window_start VARCHAR(10) NOT NULL DEFAULT '09:15',
     trading_window_end VARCHAR(10) NOT NULL DEFAULT '15:30',
+    entry_delay_minutes INT NOT NULL DEFAULT 15,
+    max_daily_loss_limit NUMERIC(18, 4) NULL,
+    exit_mode VARCHAR(20) NOT NULL DEFAULT 'SWING_CLOSE',
+    close_check_time VARCHAR(10) NOT NULL DEFAULT '15:15',
+    stop_loss_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.50,
+    trail_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00,
+    target_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -719,6 +726,11 @@ CREATE TABLE IF NOT EXISTS real_trade_settings (
     trading_window_start VARCHAR(10) NOT NULL DEFAULT '09:15',
     trading_window_end VARCHAR(10) NOT NULL DEFAULT '15:30',
     entry_delay_minutes INT NOT NULL DEFAULT 15,
+    exit_mode VARCHAR(20) NOT NULL DEFAULT 'SWING_CLOSE',
+    close_check_time VARCHAR(10) NOT NULL DEFAULT '15:15',
+    stop_loss_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.50,
+    trail_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00,
+    target_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -812,6 +824,22 @@ ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS trailing_sl_pct NUMERIC(9, 
 -- Real Trade: opening entry delay - new BUY signals are held back this many minutes after
 -- trading_window_start to let the opening auction's gap/volatility resolve. Exits are unaffected.
 ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS entry_delay_minutes INT NOT NULL DEFAULT 15;
+
+-- Swing exit policy (SwingTradeRules) - shared by Auto Paper and Auto Real Trading so both run the
+-- same buy/sell rules: stops judged on a closing basis, emergency stop live, trailing SL activated
+-- only after +1 ATR. exit_mode 'INTRADAY' restores the previous every-tick behavior.
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS exit_mode VARCHAR(20) NOT NULL DEFAULT 'SWING_CLOSE';
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS close_check_time VARCHAR(10) NOT NULL DEFAULT '15:15';
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS stop_loss_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.50;
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS trail_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00;
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS target_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00;
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS entry_delay_minutes INT NOT NULL DEFAULT 15;
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS max_daily_loss_limit NUMERIC(18, 4) NULL;
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS exit_mode VARCHAR(20) NOT NULL DEFAULT 'SWING_CLOSE';
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS close_check_time VARCHAR(10) NOT NULL DEFAULT '15:15';
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS stop_loss_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.50;
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS trail_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00;
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS target_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00;
 
 -- Signal Dashboard: ADX (14) trend-strength indicator, added alongside RSI/EMA/MACD/VWAP.
 -- market_indicators_* tables are created dynamically per-timeframe by sp_insert_market_indicator

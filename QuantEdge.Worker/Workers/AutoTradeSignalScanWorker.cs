@@ -165,7 +165,8 @@ public class AutoTradeSignalScanWorker : BackgroundService
                         stock.Symbol, settings.UserId, evalResult.Score, metCount, evalResult.Checklist.TotalCount, evalResult.EntryPrice);
 
                     bool executed = await autoTradeService.EvaluateAndExecuteAutoBuyAsync(
-                        stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId, evalResult.IsBuySignal);
+                        stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId, evalResult.IsBuySignal,
+                        evalResult.StopLoss, evalResult.Target1, evalResult.DailyAtr);
 
                     if (executed)
                     {

@@ -15,11 +15,30 @@ public class AutoTradeSettingsUpdateDto
     [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Profit Target % must be between 0.1% and 100%.")]
     public decimal ProfitTargetPct { get; set; } = 5.00m;
 
-    [Range(typeof(decimal), "0.1", "100.0", ErrorMessage = "Stop Loss % must be between 0.1% and 100%.")]
-    public decimal? StopLossPct { get; set; }
+    // Stop Loss % / Trailing SL % are no longer global settings (same as Real Trade) - SL, Target and
+    // Trailing SL come from the shared swing exit policy below (SwingTradeRules).
 
-    [Range(typeof(decimal), "0.1", "50.0", ErrorMessage = "Trailing Stop Loss % must be between 0.1% and 50%.")]
-    public decimal? TrailingSlPct { get; set; }
+    // Optional Daily Loss Circuit Breaker override (defaults to 10% of Available Capital)
+    [Range(typeof(decimal), "10", "10000000", ErrorMessage = "Daily Loss Limit must be between ₹10 and ₹1,00,00,000.")]
+    public decimal? MaxDailyLossLimit { get; set; }
+
+    [Range(0, 120, ErrorMessage = "Entry Delay must be between 0 and 120 minutes.")]
+    public int EntryDelayMinutes { get; set; } = 15;
+
+    [RegularExpression("^(SWING_CLOSE|INTRADAY)$", ErrorMessage = "Exit Mode must be SWING_CLOSE or INTRADAY.")]
+    public string ExitMode { get; set; } = "SWING_CLOSE";
+
+    [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Close Check Time must be HH:mm.")]
+    public string CloseCheckTime { get; set; } = "15:15";
+
+    [Range(typeof(decimal), "0.5", "5.0", ErrorMessage = "Stop Loss ATR multiple must be between 0.5 and 5.")]
+    public decimal StopLossAtrMult { get; set; } = 1.5m;
+
+    [Range(typeof(decimal), "0.5", "10.0", ErrorMessage = "Trailing ATR multiple must be between 0.5 and 10.")]
+    public decimal TrailAtrMult { get; set; } = 3.0m;
+
+    [Range(typeof(decimal), "0.5", "20.0", ErrorMessage = "Target ATR multiple must be between 0.5 and 20.")]
+    public decimal TargetAtrMult { get; set; } = 3.0m;
 
     [Range(1, 365, ErrorMessage = "Max Duration must be between 1 and 365 days.")]
     public int MaxDurationDays { get; set; } = 20;

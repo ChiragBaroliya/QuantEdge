@@ -4,6 +4,7 @@
 
 let apiBaseUrl = "";
 let countdownInterval = null;
+let currentExitMode = "SWING_CLOSE"; // from settings - drives how the Trailing SL column is shown
 
 function getTodayDateString() {
     const d = new Date();
@@ -236,34 +237,37 @@ function populateSettingsForm(s) {
         return;
     }
 
-    const cap = s.availableCapital ?? s.AvailableCapital ?? 100000;
-    const target = s.profitTargetPct ?? s.ProfitTargetPct ?? 5.0;
-    const sl = s.stopLossPct ?? s.StopLossPct;
-    const tsl = s.trailingSlPct ?? s.TrailingSlPct ?? 2.0;
-    const maxDur = s.maxDurationDays ?? s.MaxDurationDays ?? 20;
-    const maxTrd = s.maxTradesPerDay ?? s.MaxTradesPerDay ?? 5;
-    const fixedAmt = s.fixedAmountPerTrade ?? s.FixedAmountPerTrade ?? 20000;
-    const minCond = s.minConditionsMatch ?? s.MinConditionsMatch ?? 10;
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el && val !== undefined && val !== null) el.value = val;
+    };
 
-    const elCap = document.getElementById("txtCapital"); if (elCap) elCap.value = cap;
-    const elTarget = document.getElementById("txtTargetPct"); if (elTarget) elTarget.value = target;
+    setVal("txtCapital", s.availableCapital ?? s.AvailableCapital ?? 100000);
+    setVal("txtFixedAmount", s.fixedAmountPerTrade ?? s.FixedAmountPerTrade ?? 20000);
+    setVal("txtTargetPct", s.profitTargetPct ?? s.ProfitTargetPct ?? 5.0);
+    setVal("txtMaxTrades", s.maxTradesPerDay ?? s.MaxTradesPerDay ?? 5);
+    setVal("txtMaxDuration", s.maxDurationDays ?? s.MaxDurationDays ?? 20);
+    setVal("txtMinConditions", s.minConditionsMatch ?? s.MinConditionsMatch ?? 10);
+    setVal("txtEntryDelay", s.entryDelayMinutes ?? s.EntryDelayMinutes ?? 15);
+    setVal("txtWindowStart", s.tradingWindowStart ?? s.TradingWindowStart ?? "09:15");
+    setVal("txtWindowEnd", s.tradingWindowEnd ?? s.TradingWindowEnd ?? "15:30");
+    setVal("selExitMode", s.exitMode ?? s.ExitMode ?? "SWING_CLOSE");
+    setVal("txtCloseCheckTime", s.closeCheckTime ?? s.CloseCheckTime ?? "15:15");
+    setVal("txtSlAtrMult", s.stopLossAtrMult ?? s.StopLossAtrMult ?? 1.5);
+    setVal("txtTrailAtrMult", s.trailAtrMult ?? s.TrailAtrMult ?? 3);
+    setVal("txtTargetAtrMult", s.targetAtrMult ?? s.TargetAtrMult ?? 3);
+    currentExitMode = s.exitMode ?? s.ExitMode ?? "SWING_CLOSE";
 
-    const hasSL = sl !== null && sl !== undefined && Number(sl) > 0;
-    const chkSL = document.getElementById("chkEnableStopLoss");
-    const elSl = document.getElementById("txtStopLossPct");
-    if (chkSL) chkSL.checked = hasSL;
-    if (elSl) {
-        elSl.disabled = !hasSL;
-        elSl.value = hasSL ? sl : '';
-        elSl.placeholder = hasSL ? "e.g. 3.0" : "Default (3.0%)";
+    // Optional Daily Loss Limit override (the breaker itself is always on - 10% of capital by default)
+    const loss = s.maxDailyLossLimit ?? s.MaxDailyLossLimit;
+    const hasLoss = loss !== null && loss !== undefined && Number(loss) > 0;
+    const chkLoss = document.getElementById("chkEnableDailyLossLimit");
+    const elLoss = document.getElementById("txtMaxDailyLoss");
+    if (chkLoss) chkLoss.checked = hasLoss;
+    if (elLoss) {
+        elLoss.disabled = !hasLoss || (chkLoss && chkLoss.disabled);
+        elLoss.value = hasLoss ? loss : '';
     }
-
-    const elTsl = document.getElementById("txtTrailingSlPct"); if (elTsl) elTsl.value = tsl;
-
-    const elDur = document.getElementById("txtMaxDuration"); if (elDur) elDur.value = maxDur;
-    const elTrd = document.getElementById("txtMaxTrades"); if (elTrd) elTrd.value = maxTrd;
-    const elFixed = document.getElementById("txtFixedAmount"); if (elFixed) elFixed.value = fixedAmt;
-    const elCond = document.getElementById("txtMinConditions"); if (elCond) elCond.value = minCond;
 }
 
 function renderOpenPositionsTable(positions) {
@@ -271,7 +275,7 @@ function renderOpenPositionsTable(positions) {
     if (!tbody) return;
 
     if (!positions || positions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center" style="padding:24px; text-align:center; color:#ffffff; font-weight:500;">No active OPEN auto positions right now. Scanner will place paper BUY orders when criteria match.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center" style="padding:24px; text-align:center; color:#ffffff; font-weight:500;">No active OPEN auto positions right now. Scanner will place paper BUY orders when criteria match.</td></tr>`;
         return;
     }
 
@@ -294,6 +298,14 @@ function renderOpenPositionsTable(positions) {
         const slPctText = sl && avgPrice > 0 ? ((avgPrice - sl) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '';
         const tpText = tp && tp > 0 ? `₹${formatNumber(tp)}${tpPctText ? ' (+' + tpPctText + '%)' : ''}` : '-';
         const slText = sl && sl > 0 ? `₹${formatNumber(sl)}${slPctText ? ' (-' + slPctText + '%)' : ''}` : '-';
+        // Swing exit mode: the trailing SL only exists once the trade has moved +1 ATR in our favor
+        // (a value below entry is an ignored leftover from INTRADAY mode) - same display as Real Trade.
+        const tsl = p.trailingStopLoss ?? p.TrailingStopLoss;
+        const isSwingClose = currentExitMode === "SWING_CLOSE";
+        const tslActive = tsl && (!isSwingClose || tsl >= avgPrice);
+        const tslText = tslActive
+            ? `₹${formatNumber(tsl)}`
+            : (isSwingClose ? '<span style="color:#94a3b8; font-size:12px;" title="Activates once price reaches entry + 1 ATR (never on the entry day)">Not active yet</span>' : '-');
 
         html += `
             <tr>
@@ -303,6 +315,7 @@ function renderOpenPositionsTable(positions) {
                 <td>${qty} (₹${formatNumber(entryVal)})</td>
                 <td>${tpText}</td>
                 <td>${slText}</td>
+                <td>${tslText}</td>
                 <td class="${pnlClass} font-weight-bold">${unPnlSign}₹${formatNumber(Math.abs(unPnl))} (${unPnlPctSign}${unPnlPct}%)</td>
             </tr>
         `;
@@ -670,58 +683,54 @@ function setupEventListeners() {
         });
     }
 
-    // Enable/Disable Stop Loss Toggle Handler
-    const chkSL = document.getElementById("chkEnableStopLoss");
-    const inpSL = document.getElementById("txtStopLossPct");
-    if (chkSL && inpSL) {
-        chkSL.addEventListener("change", function () {
-            inpSL.disabled = !this.checked;
+    // Enable/Disable Daily Loss Limit override (the breaker itself is always on)
+    const chkLoss = document.getElementById("chkEnableDailyLossLimit");
+    const inpLoss = document.getElementById("txtMaxDailyLoss");
+    if (chkLoss && inpLoss) {
+        chkLoss.addEventListener("change", function () {
+            inpLoss.disabled = !this.checked;
             if (this.checked) {
-                inpSL.placeholder = "e.g. 3.0";
-                if (!inpSL.value) inpSL.value = "3.0";
-                inpSL.focus();
+                inpLoss.focus();
             } else {
-                inpSL.value = "";
-                inpSL.placeholder = "Default (3.0%)";
+                inpLoss.value = "";
             }
         });
     }
 
-    // Save Settings Form Handler
+    // Save Settings Form Handler - same fields as the Auto Real Trade settings form
     const btnSave = document.getElementById("btnSaveSettings");
     if (btnSave) {
         btnSave.addEventListener("click", async function (e) {
             e.preventDefault();
 
-            const chkSLElem = document.getElementById("chkEnableStopLoss");
-            const rawSl = document.getElementById("txtStopLossPct")?.value;
-            const parsedSl = (chkSLElem && chkSLElem.checked && rawSl !== "" && rawSl !== null && rawSl !== undefined && !isNaN(rawSl) && parseFloat(rawSl) > 0)
-                ? parseFloat(rawSl)
-                : null;
+            const num = (id, fallback) => {
+                const raw = document.getElementById(id)?.value;
+                return (raw !== "" && raw !== null && raw !== undefined && !isNaN(raw)) ? parseFloat(raw) : fallback;
+            };
 
-            const rawCap = document.getElementById("txtCapital")?.value;
-            const parsedCap = (rawCap !== "" && rawCap !== null && !isNaN(rawCap)) ? parseFloat(rawCap) : 2000;
-
-            const rawFixed = document.getElementById("txtFixedAmount")?.value;
-            const parsedFixed = (rawFixed !== "" && rawFixed !== null && !isNaN(rawFixed)) ? parseFloat(rawFixed) : 2000;
-
-            const rawTsl = document.getElementById("txtTrailingSlPct")?.value;
-            const parsedTsl = (rawTsl !== "" && rawTsl !== null && rawTsl !== undefined && !isNaN(rawTsl) && parseFloat(rawTsl) > 0)
-                ? parseFloat(rawTsl)
+            const chkLossElem = document.getElementById("chkEnableDailyLossLimit");
+            const rawLoss = document.getElementById("txtMaxDailyLoss")?.value;
+            const parsedLoss = (chkLossElem && chkLossElem.checked && rawLoss !== "" && !isNaN(rawLoss) && parseFloat(rawLoss) > 0)
+                ? parseFloat(rawLoss)
                 : null;
 
             const dto = {
                 isAutoTradeEnabled: document.getElementById("chkAutoTradeToggle").checked,
-                availableCapital: parsedCap,
-                profitTargetPct: parseFloat(document.getElementById("txtTargetPct").value) || 5.0,
-                stopLossPct: parsedSl,
-                trailingSlPct: parsedTsl,
-                maxDurationDays: parseInt(document.getElementById("txtMaxDuration").value) || 20,
-                maxTradesPerDay: parseInt(document.getElementById("txtMaxTrades").value) || 5,
-                fixedAmountPerTrade: parsedFixed,
-                minConditionsMatch: parseInt(document.getElementById("txtMinConditions").value) || 10,
-                tradingWindowStart: "09:15",
-                tradingWindowEnd: "15:30"
+                availableCapital: num("txtCapital", 100000),
+                profitTargetPct: num("txtTargetPct", 5.0),
+                maxDailyLossLimit: parsedLoss,
+                maxDurationDays: parseInt(num("txtMaxDuration", 20)),
+                maxTradesPerDay: parseInt(num("txtMaxTrades", 5)),
+                fixedAmountPerTrade: num("txtFixedAmount", 20000),
+                minConditionsMatch: parseInt(num("txtMinConditions", 10)),
+                tradingWindowStart: document.getElementById("txtWindowStart")?.value || "09:15",
+                tradingWindowEnd: document.getElementById("txtWindowEnd")?.value || "15:30",
+                entryDelayMinutes: parseInt(num("txtEntryDelay", 15)),
+                exitMode: document.getElementById("selExitMode")?.value || "SWING_CLOSE",
+                closeCheckTime: document.getElementById("txtCloseCheckTime")?.value || "15:15",
+                stopLossAtrMult: num("txtSlAtrMult", 1.5),
+                trailAtrMult: num("txtTrailAtrMult", 3),
+                targetAtrMult: num("txtTargetAtrMult", 3)
             };
 
             try {

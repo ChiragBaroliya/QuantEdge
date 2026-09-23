@@ -16,7 +16,8 @@ public class AutoTradePositionMonitorWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AutoTradePositionMonitorWorker> _logger;
-    private readonly TimeSpan _fallbackInterval = TimeSpan.FromSeconds(30);
+    // Same cycle as AutoRealPositionMonitorWorker, so Paper and Real evaluate exits on the same cadence.
+    private readonly TimeSpan _fallbackInterval = TimeSpan.FromSeconds(20);
 
     public AutoTradePositionMonitorWorker(
         IServiceProvider serviceProvider,

@@ -547,17 +547,16 @@
                         </div>
 
                         <small class="form-hint text-warning d-block mb-2">
-                            ⚠ Stop Loss % and Trailing Stop Loss % are no longer set here — they're mandatory
-                            on every real position, but are now configured trade-wise instead of globally:
-                            auto-scanned signals use the SwingDecisionEngine's own ATR-based Stop Loss, a
-                            Manual Real Trade is configured per-order from its "Place Real Trade" popup, and
-                            holdings enrolled via "Set Target" use a fixed conservative default.
+                            ⚠ Stop Loss, Target and Trailing SL for auto-scanned trades come from the
+                            Swing Exit Policy below (same rules as Auto Paper Trading). A Manual Real Trade
+                            uses its own SL % / TSL % from the "Place Real Trade" popup, and holdings
+                            enrolled via "Set Target" use a fixed 3% Stop Loss.
                         </small>
 
                         <div class="form-group mb-3">
                             <label class="form-label" for="inpProfitTarget">Profit Target (%)</label>
                             <input type="number" step="any" min="0.1" max="100" class="form-control qe-input" id="inpProfitTarget" name="ProfitTargetPct" required />
-                            <small class="form-hint">Mandatory exit target percentage (e.g. 5.0%). Used as-is for manual buys; auto-scanned trades may use the engine's dynamic target instead.</small>
+                            <small class="form-hint">Used for manual buys, and as the fallback when no daily ATR is available. Auto-scanned trades use Target (× ATR) below.</small>
                         </div>
 
                         <!-- Optional Daily Loss Circuit Breaker -->
@@ -628,6 +627,50 @@
                                 <input type="number" min="0" max="120" class="form-control qe-input" id="inpEntryDelay" name="EntryDelayMinutes" required />
                                 <small class="form-hint">New BUY signals are held back this many minutes after Window Start, to skip the opening auction's volatility. Exits are never delayed.</small>
                             </div>
+                        </div>
+
+                        <!-- Swing Exit Policy (shared with Auto Paper Trading - SwingTradeRules) -->
+                        <div class="optional-box mb-3">
+                            <div class="optional-toggle-header">
+                                <label class="optional-label">
+                                    <span class="optional-title">Swing Exit Policy <span class="text-info">(same rules as Paper Trading)</span></span>
+                                    <small class="optional-desc">
+                                        Swing (Closing Basis): Stop Loss & Trailing SL are only checked from the Close Check Time,
+                                        so an intraday dip that recovers by the close won't sell. Only the Emergency Stop
+                                        (SL + 1 ATR, max 12% loss) and the Target act during the day. The Trailing SL never starts on
+                                        the entry day; it activates at entry + 1 ATR, starting at breakeven.
+                                        Intraday: the previous behavior, with every stop checked live and a 2% trail from entry.
+                                    </small>
+                                </label>
+                            </div>
+                            <div class="row mt-2">
+                                <div class="col-6 mb-3">
+                                    <label class="form-label" for="selExitMode">Exit Mode</label>
+                                    <select class="form-select qe-input" id="selExitMode" name="ExitMode">
+                                        <option value="SWING_CLOSE">Swing (Closing Basis)</option>
+                                        <option value="INTRADAY">Intraday (Old)</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 mb-3">
+                                    <label class="form-label" for="inpCloseCheckTime">Close Check Time</label>
+                                    <input type="time" class="form-control qe-input" id="inpCloseCheckTime" name="CloseCheckTime" />
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpSlAtrMult">SL (× ATR)</label>
+                                    <input type="number" step="0.1" min="0.5" max="5" class="form-control qe-input" id="inpSlAtrMult" name="StopLossAtrMult" />
+                                </div>
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpTrailAtrMult">Trail (× ATR)</label>
+                                    <input type="number" step="0.1" min="0.5" max="10" class="form-control qe-input" id="inpTrailAtrMult" name="TrailAtrMult" />
+                                </div>
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpTargetAtrMult">Target (× ATR)</label>
+                                    <input type="number" step="0.1" min="0.5" max="20" class="form-control qe-input" id="inpTargetAtrMult" name="TargetAtrMult" />
+                                </div>
+                            </div>
+                            <small class="form-hint">ATR = the stock's daily Average True Range (14). Defaults: SL 1.5, Trail 3, Target 3. The Stop Loss is capped at 8% below entry.</small>
                         </div>
 
                         <div class="settings-actions mt-3">

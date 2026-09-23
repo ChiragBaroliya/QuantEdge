@@ -88,9 +88,14 @@ public class PaperMatchingEngine
                 continue;
             }
 
+            // Auto positions are exited only by AutoTradeService via the shared SwingTradeRules policy
+            // (closing-basis stops, emergency stop, trailing SL) - the same rules as Auto Real Trading.
+            // A raw tick-level SL/TP trigger here would bypass that, so only their price is updated.
+            bool isAutoManaged = pos.TradeType == TradeType.Auto;
+
             // Check Stop-Loss Trigger
             bool slTriggered = false;
-            if (pos.StopLoss.HasValue && pos.StopLoss.Value > 0m)
+            if (!isAutoManaged && pos.StopLoss.HasValue && pos.StopLoss.Value > 0m)
             {
                 if (pos.Side == TradeSide.BUY && ltp <= pos.StopLoss.Value) slTriggered = true;
                 if (pos.Side == TradeSide.SELL && ltp >= pos.StopLoss.Value) slTriggered = true;
@@ -98,7 +103,7 @@ public class PaperMatchingEngine
 
             // Check Take-Profit Trigger
             bool tpTriggered = false;
-            if (pos.TakeProfit.HasValue && pos.TakeProfit.Value > 0m)
+            if (!isAutoManaged && pos.TakeProfit.HasValue && pos.TakeProfit.Value > 0m)
             {
                 if (pos.Side == TradeSide.BUY && ltp >= pos.TakeProfit.Value) tpTriggered = true;
                 if (pos.Side == TradeSide.SELL && ltp <= pos.TakeProfit.Value) tpTriggered = true;

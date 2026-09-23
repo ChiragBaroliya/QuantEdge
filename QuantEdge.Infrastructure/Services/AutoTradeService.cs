@@ -15,12 +15,8 @@ namespace QuantEdge.Infrastructure.Services;
 
 public class AutoTradeService : IAutoTradeService
 {
-    // Safety-net defaults, mirroring AutoRealTradeService: Stop Loss and Trailing Stop Loss are
-    // effectively mandatory for auto paper positions - if left unset these fallbacks apply instead
-    // of running the position with no downside cap.
-    private const decimal DefaultStopLossPctFallback = 3.00m;
-    private const decimal DefaultTrailingSlPctFallback = 2.00m;
-
+    // Buy/sell rules live in SwingTradeRules, shared with AutoRealTradeService - this service only
+    // simulates execution around them.
     private readonly IAutoTradeRepository _repository;
     private readonly IPaperTradingRepository _paperRepository;
     private readonly IPaperTradingService _paperService;
@@ -28,6 +24,7 @@ public class AutoTradeService : IAutoTradeService
     private readonly IMarketHoursService _marketHoursService;
     private readonly ICacheService _cacheService;
     private readonly IHubContext<MarketDataHub>? _hubContext;
+    private readonly PaperMatchingEngine? _matchingEngine;
     private readonly ILogger<AutoTradeService> _logger;
 
     public AutoTradeService(
@@ -38,8 +35,10 @@ public class AutoTradeService : IAutoTradeService
         IMarketHoursService marketHoursService,
         ICacheService cacheService,
         ILogger<AutoTradeService> logger,
-        IHubContext<MarketDataHub>? hubContext = null)
+        IHubContext<MarketDataHub>? hubContext = null,
+        PaperMatchingEngine? matchingEngine = null)
     {
+        _matchingEngine = matchingEngine;
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _paperRepository = paperRepository ?? throw new ArgumentNullException(nameof(paperRepository));
         _paperService = paperService ?? throw new ArgumentNullException(nameof(paperService));
@@ -68,8 +67,15 @@ public class AutoTradeService : IAutoTradeService
         existing.IsAutoTradeEnabled = updateDto.IsAutoTradeEnabled;
         existing.AvailableCapital = updateDto.AvailableCapital;
         existing.ProfitTargetPct = updateDto.ProfitTargetPct;
-        existing.StopLossPct = (updateDto.StopLossPct.HasValue && updateDto.StopLossPct.Value > 0) ? updateDto.StopLossPct.Value : null; // Overrides the mandatory SL fallback %, if set
-        existing.TrailingSlPct = (updateDto.TrailingSlPct.HasValue && updateDto.TrailingSlPct.Value > 0) ? updateDto.TrailingSlPct.Value : null; // Overrides the mandatory Trailing SL fallback %, if set
+        // StopLossPct/TrailingSlPct are intentionally left untouched - no longer global settings
+        // (same as Real Trade); SL/Target/Trailing SL come from the swing exit policy below.
+        existing.MaxDailyLossLimit = updateDto.MaxDailyLossLimit;
+        existing.EntryDelayMinutes = updateDto.EntryDelayMinutes;
+        existing.ExitMode = string.IsNullOrWhiteSpace(updateDto.ExitMode) ? SwingTradeRules.ExitModeSwingClose : updateDto.ExitMode.ToUpperInvariant();
+        existing.CloseCheckTime = string.IsNullOrWhiteSpace(updateDto.CloseCheckTime) ? "15:15" : updateDto.CloseCheckTime;
+        existing.StopLossAtrMult = updateDto.StopLossAtrMult;
+        existing.TrailAtrMult = updateDto.TrailAtrMult;
+        existing.TargetAtrMult = updateDto.TargetAtrMult;
         existing.MaxDurationDays = updateDto.MaxDurationDays;
         existing.MaxTradesPerDay = updateDto.MaxTradesPerDay;
         existing.FixedAmountPerTrade = updateDto.FixedAmountPerTrade;
@@ -276,10 +282,15 @@ public class AutoTradeService : IAutoTradeService
         return await _repository.GetTodayLogsAsync(userId, limit);
     }
 
-    public async Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false)
+    // Entry gates run in the same order, with the same rules, as AutoRealTradeService's
+    // EvaluateAndExecuteRealBuyCoreAsync - only broker-specific steps (token check, pending broker
+    // orders, broker margin) are replaced by their paper-account equivalents.
+    public async Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null)
     {
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
+        var nowIst = SwingTradeRules.NowIst();
 
         // 1. Master Switch Validation
         if (!settings.IsAutoTradeEnabled)
@@ -287,22 +298,29 @@ public class AutoTradeService : IAutoTradeService
             return false;
         }
 
-        // 2. Trading Window & Market Holiday Check (Using Memory-Cached MarketHoursService)
+        // 2. Market Hours & Trading Window Check
         if (!await _marketHoursService.IsWithinMarketHoursAsync())
         {
             await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0, "Outside Market Hours or Holiday", userId);
             return false;
         }
 
-        if (!IsWithinTradingWindow(settings.TradingWindowStart, settings.TradingWindowEnd))
+        if (!SwingTradeRules.IsWithinTradingWindow(settings.TradingWindowStart, settings.TradingWindowEnd, nowIst))
         {
             await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
                 $"Outside trading window ({settings.TradingWindowStart} - {settings.TradingWindowEnd})", userId);
             return false;
         }
 
+        // 2b. Opening Entry Delay - entries only, exits are never delayed.
+        if (!SwingTradeRules.IsPastEntryDelay(settings.TradingWindowStart, settings.EntryDelayMinutes, nowIst))
+        {
+            await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
+                $"Opening entry delay active - new BUY signals held back for {settings.EntryDelayMinutes} min after {settings.TradingWindowStart}", userId);
+            return false;
+        }
 
-        // 3. Condition Match Count Check (Executes if BUY Signal is confirmed or metConditionsCount >= user's MinConditionsMatch)
+        // 3. Condition Match Check
         if (!isBuySignal && metConditionsCount < settings.MinConditionsMatch)
         {
             await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
@@ -310,7 +328,7 @@ public class AutoTradeService : IAutoTradeService
             return false;
         }
 
-        // 4. Daily Trade Limit Check (Default 5)
+        // 4. Daily Trade Limit Check
         int todayCount = await GetTodayAutoTradeCountAsync(userId);
         if (todayCount >= settings.MaxTradesPerDay)
         {
@@ -319,10 +337,34 @@ public class AutoTradeService : IAutoTradeService
             return false;
         }
 
-        // 5. Duplicate Open Position Check (Re-entry allowed ONLY if previous same-day position is closed)
         var paperAccount = await _paperRepository.GetAccountAsync(userId);
         if (paperAccount == null) return false;
 
+        // 5. Daily Loss Circuit Breaker (defaults to 10% of Available Capital when not overridden)
+        decimal effectiveDailyLossLimit = SwingTradeRules.EffectiveDailyLossLimit(settings.MaxDailyLossLimit, settings.AvailableCapital);
+        var openAutoPositions = (await _paperService.GetOpenPositionsAsync(userId))
+            .Where(p => p.TradeType == TradeType.Auto)
+            .ToList();
+        decimal todayRealizedPnl = await GetTodayAutoRealizedPnlAsync(paperAccount.Id);
+        decimal totalLoss = todayRealizedPnl + openAutoPositions.Sum(p => p.UnrealizedPnl);
+
+        if (totalLoss <= -effectiveDailyLossLimit)
+        {
+            await LogAuditAsync(symbol, "CIRCUIT_BREAKER", entryPrice, 0,
+                $"Daily loss limit ₹{effectiveDailyLossLimit:N2} breached (Total Loss: ₹{totalLoss:N2}). Pausing auto paper bot.", userId);
+            await ToggleAutoTradeAsync(false, userId);
+            return false;
+        }
+
+        // 5b. Portfolio-Level Exposure Cap
+        if (openAutoPositions.Count >= SwingTradeRules.MaxConcurrentPositions)
+        {
+            await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
+                $"Portfolio exposure cap reached ({openAutoPositions.Count}/{SwingTradeRules.MaxConcurrentPositions} concurrent open positions)", userId);
+            return false;
+        }
+
+        // 6. Duplicate Open Position Check
         var existingOpenPos = await _paperRepository.GetOpenPositionBySymbolAsync(paperAccount.Id, symbol);
         if (existingOpenPos != null)
         {
@@ -331,12 +373,32 @@ public class AutoTradeService : IAutoTradeService
             return false;
         }
 
-        // 6. Available Capital & Position Sizing Calculation
-        if (settings.AvailableCapital < settings.FixedAmountPerTrade)
+        // 7. Capital Validation (paper account margin stands in for the broker margin)
+        decimal availableMargin = paperAccount.AvailableMargin;
+        if (availableMargin < settings.FixedAmountPerTrade)
         {
             await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
-                $"Insufficient Available Capital (₹{settings.AvailableCapital:N2} < Fixed Amount ₹{settings.FixedAmountPerTrade:N2})", userId);
+                $"Insufficient Available Capital (₹{availableMargin:N2} < Trade Amount ₹{settings.FixedAmountPerTrade:N2})", userId);
             return false;
+        }
+
+        // 7b. Live Quote Re-check against the latest tick, same drift guard as Real Trade. If no tick
+        // has arrived for the symbol yet, proceed with the scan-time price (Real does the same when
+        // its live quote fetch fails).
+        decimal liveLtp = _matchingEngine?.GetLtp(symbol) ?? 0m;
+        if (liveLtp > 0m)
+        {
+            string? driftReason = SwingTradeRules.CheckSignalDrift(entryPrice, liveLtp);
+            if (driftReason != null)
+            {
+                await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0, driftReason, userId);
+                return false;
+            }
+
+            decimal priceDelta = liveLtp - entryPrice;
+            if (engineStopLoss.HasValue) engineStopLoss = engineStopLoss.Value + priceDelta;
+            if (engineTarget.HasValue) engineTarget = engineTarget.Value + priceDelta;
+            entryPrice = liveLtp;
         }
 
         int quantity = (int)Math.Floor(settings.FixedAmountPerTrade / entryPrice);
@@ -347,21 +409,12 @@ public class AutoTradeService : IAutoTradeService
             return false;
         }
 
-        // 7. Calculate Target, Stop Loss & Trailing Stop Loss - SL and Trailing SL are mandatory for
-        // every auto paper position (like Real Trade), falling back to a conservative default % if
-        // the user hasn't configured a custom one.
-        decimal tpPct = Math.Abs(settings.ProfitTargetPct) / 100m;
-        decimal takeProfit = Math.Round(entryPrice * (1m + tpPct), 2);
-
-        decimal effectiveStopLossPct = (settings.StopLossPct.HasValue && settings.StopLossPct.Value > 0)
-            ? Math.Abs(settings.StopLossPct.Value)
-            : DefaultStopLossPctFallback;
-        decimal stopLoss = Math.Round(entryPrice * (1m - effectiveStopLossPct / 100m), 2);
-
-        decimal effectiveTrailingSlPct = (settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0)
-            ? Math.Abs(settings.TrailingSlPct.Value)
-            : DefaultTrailingSlPctFallback;
-        decimal trailingSl = Math.Round(entryPrice * (1m - effectiveTrailingSlPct / 100m), 2);
+        // 8. Target, Stop Loss & initial Trailing SL - shared SwingTradeRules levels.
+        var levels = SwingTradeRules.ComputeEntryLevels(entryPrice, dailyAtr, engineStopLoss, engineTarget, null, null, SwingTradeParams.From(settings));
+        decimal takeProfit = levels.TakeProfit;
+        decimal stopLoss = levels.StopLoss;
+        decimal? trailingSl = levels.TrailingStopLoss;
+        string tslText = trailingSl.HasValue ? $"₹{trailingSl.Value:F2}" : "activates after +1 ATR";
 
         try
         {
@@ -380,7 +433,7 @@ public class AutoTradeService : IAutoTradeService
                 FilledPrice = entryPrice,
                 FilledAt = DateTime.UtcNow,
                 TradeType = TradeType.Auto,
-                Remarks = $"Auto BUY (Score {metConditionsCount}/11, SL {effectiveStopLossPct:F2}% / TSL {effectiveTrailingSlPct:F2}%)"
+                Remarks = $"Auto BUY (Score {metConditionsCount}/11, SL ₹{stopLoss:F2} / Target ₹{takeProfit:F2})"
             });
 
             // Upsert Auto Paper Position
@@ -396,8 +449,8 @@ public class AutoTradeService : IAutoTradeService
                 StopLoss = stopLoss,
                 TakeProfit = takeProfit,
                 TrailingStopLoss = trailingSl,
-                StopLossPct = effectiveStopLossPct,
-                TrailingSlPct = effectiveTrailingSlPct,
+                StopLossPct = null,
+                TrailingSlPct = null,
                 Status = PositionStatus.OPEN,
                 TradeType = TradeType.Auto,
                 RealizedPnl = 0m
@@ -429,7 +482,7 @@ public class AutoTradeService : IAutoTradeService
 
             // Log Audit Event
             await LogAuditAsync(symbol, "AUTO_BUY", entryPrice, quantity,
-                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity}, Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: ₹{trailingSl:F2})", userId);
+                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity}, Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {tslText})", userId);
 
             // Broadcast SignalR Toast Alert
             if (_hubContext != null)
@@ -469,7 +522,8 @@ public class AutoTradeService : IAutoTradeService
         }
 
         var settings = await GetSettingsAsync(userId);
-        if (!IsWithinTradingWindow(settings.TradingWindowStart, settings.TradingWindowEnd))
+        var nowIst = SwingTradeRules.NowIst();
+        if (!SwingTradeRules.IsWithinTradingWindow(settings.TradingWindowStart, settings.TradingWindowEnd, nowIst))
         {
             return false;
         }
@@ -477,57 +531,33 @@ public class AutoTradeService : IAutoTradeService
         var paperAccount = await _paperRepository.GetAccountAsync(userId);
         if (paperAccount == null) return false;
 
-        string exitReason = string.Empty;
-        bool shouldExit = false;
+        // Same exit policy as Auto Real Trading - Max Days Hold counted in NSE trading days.
+        int tradingDaysOpen = settings.MaxDurationDays > 0
+            ? await _marketHoursService.CountTradingDaysElapsedAsync(position.OpenedAt, DateTime.UtcNow)
+            : 0;
+        var tradeParams = SwingTradeParams.From(settings);
+        var decision = SwingTradeRules.EvaluateExit(ExitPositionView.From(position), currentLtp, nowIst,
+            tradingDaysOpen, settings.MaxDurationDays, tradeParams);
 
-        // 1. Target Hit Check
-        if (position.TakeProfit.HasValue && currentLtp >= position.TakeProfit.Value)
+        if (!decision.ShouldExit)
         {
-            shouldExit = true;
-            exitReason = "Target Hit";
-        }
-        // 2. Trailing Stop Loss Hit Check (mandatory - always attached to the position, see setup above;
-        // may still be null on a position opened before this column existed)
-        else if (position.TrailingStopLoss.HasValue && currentLtp <= position.TrailingStopLoss.Value)
-        {
-            shouldExit = true;
-            exitReason = $"Trailing SL Hit @ ₹{position.TrailingStopLoss.Value:F2}";
-        }
-        // 3. Stop Loss Hit Check (mandatory - always attached to a position opened after this change;
-        // still guarded here for a pre-existing position that was opened before SL was mandatory)
-        else if (position.StopLoss.HasValue && position.StopLoss.Value > 0 && currentLtp <= position.StopLoss.Value)
-        {
-            shouldExit = true;
-            exitReason = "Stop Loss Hit";
-        }
-        // 4. Max Duration Check (20 Trading Days default)
-        else
-        {
-            int daysOpen = (DateTime.UtcNow - position.OpenedAt).Days;
-            if (daysOpen >= settings.MaxDurationDays)
+            if (decision.NewTrailingStopLoss.HasValue)
             {
-                shouldExit = true;
-                exitReason = "Max Duration Exit";
-            }
-        }
+                bool activated = !position.TrailingStopLoss.HasValue || position.TrailingStopLoss.Value < position.AverageEntryPrice;
+                await _paperRepository.UpdateTrailingStopLossAsync(position.Id, decision.NewTrailingStopLoss.Value);
+                position.TrailingStopLoss = decision.NewTrailingStopLoss.Value;
 
-        if (!shouldExit)
-        {
-            // Dynamic Trailing SL Calculation (mandatory - always ratchets upward as price rises).
-            // Uses this position's own % from when it was opened, falling back to the current global
-            // setting (or the fixed default) only for a position that predates this column.
-            decimal effectiveTrailingSlPct = position.TrailingSlPct.HasValue && position.TrailingSlPct.Value > 0
-                ? Math.Abs(position.TrailingSlPct.Value)
-                : (settings.TrailingSlPct.HasValue && settings.TrailingSlPct.Value > 0 ? Math.Abs(settings.TrailingSlPct.Value) : DefaultTrailingSlPctFallback);
-            decimal candidateSl = Math.Round(currentLtp * (1m - effectiveTrailingSlPct / 100m), 2);
-            if (!position.TrailingStopLoss.HasValue || candidateSl > position.TrailingStopLoss.Value)
-            {
-                await _paperRepository.UpdateTrailingStopLossAsync(position.Id, candidateSl);
-                position.TrailingStopLoss = candidateSl;
+                if (activated && tradeParams.IsSwingClose)
+                {
+                    await LogAuditAsync(position.Symbol, "TRAILING_SL_ACTIVATED", currentLtp, position.Quantity,
+                        $"Trailing SL activated @ ₹{decision.NewTrailingStopLoss.Value:F2} (entry ₹{position.AverageEntryPrice:F2}) - now checked on closing basis", userId);
+                }
             }
 
             return false;
         }
+
+        string exitReason = decision.Reason;
 
         try
         {
@@ -624,28 +654,20 @@ public class AutoTradeService : IAutoTradeService
         await BroadcastDashboardUpdateAsync(userId);
     }
 
-    private bool IsWithinTradingWindow(string startStr, string endStr)
+    // Today's realized P&L from closed Auto paper trades - the paper counterpart of
+    // IRealTradingRepository.GetTodayRealizedPnlAsync used by the daily loss circuit breaker.
+    private async Task<decimal> GetTodayAutoRealizedPnlAsync(int accountId)
     {
-        try
+        DateTime todayStartIst = SwingTradeRules.NowIst().Date;
+        DateTime todayStartUtc = TimeZoneInfo.ConvertTimeToUtc(todayStartIst, TimeZoneHelper.IndianTimeZone);
+        var (items, _) = await _paperRepository.GetTradeHistoryPagedAsync(accountId, new PaperTradeHistoryFilterDto
         {
-            // IST is UTC + 05:30
-            var istNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneHelper.IndianTimeZone);
-            if (istNow.DayOfWeek == DayOfWeek.Saturday || istNow.DayOfWeek == DayOfWeek.Sunday)
-            {
-                return false;
-            }
-
-            TimeSpan nowTime = istNow.TimeOfDay;
-            TimeSpan start = TimeSpan.TryParse(startStr, out var s) ? s : new TimeSpan(9, 15, 0);
-            TimeSpan end = TimeSpan.TryParse(endStr, out var e) ? e : new TimeSpan(15, 30, 0);
-
-            return nowTime >= start && nowTime <= end;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error validating trading window in AutoTradeService.");
-            return false; // Fail safe CLOSED to prevent off-hours order placement
-        }
+            Page = 1,
+            PageSize = 1000,
+            FromDate = todayStartUtc,
+            ToDate = null
+        });
+        return items.Where(t => t.TradeType == TradeType.Auto).Sum(t => t.RealizedPnl);
     }
 
     private async Task BroadcastDashboardUpdateAsync(string userId)

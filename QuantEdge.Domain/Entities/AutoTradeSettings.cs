@@ -21,5 +21,14 @@ public class AutoTradeSettings
     public int MinConditionsMatch { get; set; } = 10;
     public string TradingWindowStart { get; set; } = "09:15";
     public string TradingWindowEnd { get; set; } = "15:30";
+    // Same buy/sell rule set as RealTradeSettings (see SwingTradeRules) - Paper must behave like Real.
+    public int EntryDelayMinutes { get; set; } = 15;
+    // Daily Loss Circuit Breaker - SwingTradeRules falls back to 10% of AvailableCapital when null.
+    public decimal? MaxDailyLossLimit { get; set; }
+    public string ExitMode { get; set; } = "SWING_CLOSE";
+    public string CloseCheckTime { get; set; } = "15:15";
+    public decimal StopLossAtrMult { get; set; } = 1.5m;
+    public decimal TrailAtrMult { get; set; } = 3.0m;
+    public decimal TargetAtrMult { get; set; } = 3.0m;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

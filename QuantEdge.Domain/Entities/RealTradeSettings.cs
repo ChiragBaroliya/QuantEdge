@@ -32,5 +32,13 @@ public class RealTradeSettings
     // opening auction's gap/volatility resolve before committing capital. Exits are NOT gated by
     // this - only new entries (see AutoRealTradeService.EvaluateAndExecuteRealBuyCoreAsync).
     public int EntryDelayMinutes { get; set; } = 15;
+    // Swing exit policy - shared with AutoTradeSettings and applied by SwingTradeRules, so Paper and
+    // Real always run the same buy/sell rules. "SWING_CLOSE" (stops judged near the close) or
+    // "INTRADAY" (previous behavior: every stop checked live).
+    public string ExitMode { get; set; } = "SWING_CLOSE";
+    public string CloseCheckTime { get; set; } = "15:15";
+    public decimal StopLossAtrMult { get; set; } = 1.5m;
+    public decimal TrailAtrMult { get; set; } = 3.0m;
+    public decimal TargetAtrMult { get; set; } = 3.0m;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -149,7 +149,7 @@
                             <div class="guide-step-body">
                                 <div class="guide-step-title">Automatic Target Exit or Stop Loss</div>
                                 <p class="guide-step-desc">
-                                    The bot continuously watches the stock price tick-by-tick. When the stock gains <strong>+5% profit</strong>, the bot automatically sells and books your virtual profit. If the stock falls by <strong>-3%</strong>, it cuts the position to protect your remaining capital.
+                                    The bot sells automatically at the <strong>Target</strong> (3 × the stock's daily ATR). The <strong>Stop Loss</strong> (1.5 × ATR) is checked only near the close (from 3:15 PM), so a dip during the day that recovers by the close does not sell your stock. Only a large fall (the <strong>Emergency Stop</strong>) sells during the day. After the stock rises by 1 ATR, a <strong>Trailing SL</strong> starts at your buy price and moves up with the price at each close. These are the same rules as Auto Real Trading.
                                 </p>
                             </div>
                         </div>
@@ -359,11 +359,11 @@
                             <!-- Scenario B: Stop Loss -->
                             <div class="guide-scenario-card loss">
                                 <div class="guide-scenario-title" style="color: #f87171;">
-                                    🛡️ Outcome B: Market Drops (Stop Loss -3% Protection)
+                                    🛡️ Outcome B: Market Drops (Stop Loss Protection)
                                 </div>
                                 <p class="guide-scenario-desc">
-                                    Suppose bad global news breaks and Reliance drops to <strong>₹2,425 (-3.0%)</strong>.<br />
-                                    • The bot immediately sells to prevent a larger loss. Total sale amount = <strong>₹19,400</strong>.<br />
+                                    Suppose Reliance falls and is still at <strong>₹2,425 (-3.0%)</strong> below its Stop Loss near the close.<br />
+                                    • The bot sells at the close to prevent a larger loss (a bigger crash during the day triggers the Emergency Stop at once). Total sale amount = <strong>₹19,400</strong>.<br />
                                     • Your loss is strictly capped at <strong style="color: #f87171;">-₹600</strong>.<br />
                                     • Your remaining balance stays protected at <strong style="color: #f87171;">₹99,400</strong>.
                                 </p>

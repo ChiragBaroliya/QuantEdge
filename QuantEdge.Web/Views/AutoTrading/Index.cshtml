@@ -139,13 +139,14 @@
                                     <th title="Current live market price from Zerodha">Live LTP</th>
                                     <th title="Number of shares bought and total value">Quantity (Value)</th>
                                     <th title="Target price to auto sell with profit">Target</th>
-                                    <th title="Optional stop loss price to auto sell and limit loss">Stop Loss</th>
+                                    <th title="Stop loss price (checked on closing basis in Swing mode)">Stop Loss</th>
+                                    <th title="Trailing stop loss - in Swing mode it activates once price reaches entry + 1 ATR">Trailing SL</th>
                                     <th title="Live profit or loss for this position">Unrealized P&L</th>
                                 </tr>
                             </thead>
                             <tbody id="tbl-open-positions-body">
                                 <tr>
-                                    <td colspan="7" class="text-center" style="padding:24px; text-align:center; color:#ffffff; font-weight:500;">No active OPEN auto positions right now. Scanner will place paper BUY orders when criteria match.</td>
+                                    <td colspan="8"class="text-center" style="padding:24px; text-align:center; color:#ffffff; font-weight:500;">No active OPEN auto positions right now. Scanner will place paper BUY orders when criteria match.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -247,56 +248,113 @@
                         <span class="badge bg-secondary text-white" style="font-size:11px; padding:4px 8px;" title="Only System Admin can edit settings">🔒 Read-Only (Admin Only)</span>
                     }
                 </div>
+                @{
+                    // Same fields as the Auto Real Trade settings panel - Paper and Real run the same
+                    // buy/sell rules (SwingTradeRules). Non-admins see the same form read-only.
+                    bool readOnly = !User.IsInRole("Admin");
+                }
                 <form id="frmAutoSettings" class="settings-form-grid">
-                    @if (User.IsInRole("Admin"))
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Budget limit allocated for auto trading.">Available Capital (₹)</label>
+                        <input type="number" id="txtCapital" class="form-input" value="100000" min="100" step="100" disabled="@readOnly" title="Budget limit allocated for auto trading." />
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Maximum money spent per auto trade.">Trade Amount (₹)</label>
+                        <input type="number" id="txtFixedAmount" class="form-input" value="20000" min="100" step="100" disabled="@readOnly" title="Maximum money spent per auto trade." />
+                        <small class="form-help-text">Trade qty up to this amount.</small>
+                    </div>
+
+                    <div class="form-group col-full">
+                        <label class="form-label" title="Fallback target % - auto trades use Target (× ATR) below when a daily ATR is available.">Profit Target % (fallback)</label>
+                        <input type="number" id="txtTargetPct" class="form-input" value="5.0" min="0.1" max="100" step="0.01" disabled="@readOnly" />
+                        <small class="form-help-text">Only used when no daily ATR is available. Auto trades use Target (× ATR) below.</small>
+                    </div>
+
+                    <div class="form-group col-full">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <label class="form-label mb-0" style="margin-bottom: 0;" title="Emergency pause if today's loss breaches the limit. Always on - defaults to 10% of Available Capital.">Daily Loss Limit (₹) <span style="color:#f59e0b;">(always on)</span></label>
+                            <label class="optional-toggle-label" style="font-size: 11px; cursor: pointer; color: #94a3b8; margin-bottom: 0; display: flex; align-items: center; gap: 4px;">
+                                <input type="checkbox" id="chkEnableDailyLossLimit" style="cursor: pointer; width: 14px; height: 14px;" disabled="@readOnly" /> Custom ₹
+                            </label>
+                        </div>
+                        <input type="number" id="txtMaxDailyLoss" class="form-input" placeholder="Default (10% of capital)" min="10" step="any" disabled />
+                        <small class="form-help-text">Pauses the bot when today's loss reaches this. Leaving it off still applies 10% of capital.</small>
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Maximum number of auto trades allowed per day.">Max Trades / Day</label>
+                        <input type="number" id="txtMaxTrades" class="form-input" value="5" min="1" max="50" disabled="@readOnly" />
+                        <small class="form-help-text">Plus a fixed cap of 10 open positions.</small>
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Trading days (weekends & market holidays excluded) before a position is closed.">Max Days Hold</label>
+                        <input type="number" id="txtMaxDuration" class="form-input" value="20" min="1" max="365" disabled="@readOnly" />
+                        <small class="form-help-text">Trading days, not calendar days.</small>
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Minimum strategy criteria required to trigger an auto buy signal.">Min Criteria (Score)</label>
+                        <input type="number" id="txtMinConditions" class="form-input" value="10" min="1" max="13" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="New BUY signals are held back this many minutes after Window Start. Exits are never delayed.">Entry Delay (min)</label>
+                        <input type="number" id="txtEntryDelay" class="form-input" value="15" min="0" max="120" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label">Window Start</label>
+                        <input type="time" id="txtWindowStart" class="form-input" value="09:15" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label">Window End</label>
+                        <input type="time" id="txtWindowEnd" class="form-input" value="15:30" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-full" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px; margin-top: 4px;">
+                        <label class="form-label" style="color:#38bdf8;">Swing Exit Policy <span style="color:#94a3b8; font-weight:400;">(same rules as Real Trading)</span></label>
+                        <small class="form-help-text">
+                            Swing (Closing Basis): Stop Loss & Trailing SL are only checked from the Close Check Time, so an
+                            intraday dip that recovers by the close won't sell. Only the Emergency Stop (SL + 1 ATR, max 12%
+                            loss) and the Target act during the day. The Trailing SL never starts on the entry day; it activates
+                            at entry + 1 ATR, starting at breakeven. Intraday: the previous behavior, with every stop checked live.
+                        </small>
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label">Exit Mode</label>
+                        <select id="selExitMode" class="form-input" disabled="@readOnly">
+                            <option value="SWING_CLOSE">Swing (Closing Basis)</option>
+                            <option value="INTRADAY">Intraday (Old)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label">Close Check Time</label>
+                        <input type="time" id="txtCloseCheckTime" class="form-input" value="15:15" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Stop Loss distance below entry, in daily ATRs (capped at 8%).">SL (× ATR)</label>
+                        <input type="number" id="txtSlAtrMult" class="form-input" value="1.5" min="0.5" max="5" step="0.1" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Trailing SL distance below the price at the close, in daily ATRs.">Trail (× ATR)</label>
+                        <input type="number" id="txtTrailAtrMult" class="form-input" value="3" min="0.5" max="10" step="0.1" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-full">
+                        <label class="form-label" title="Target distance above entry, in daily ATRs.">Target (× ATR)</label>
+                        <input type="number" id="txtTargetAtrMult" class="form-input" value="3" min="0.5" max="20" step="0.1" disabled="@readOnly" />
+                        <small class="form-help-text">ATR = the stock's daily Average True Range (14). Defaults: SL 1.5, Trail 3, Target 3.</small>
+                    </div>
+
+                    @if (!readOnly)
                     {
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Budget limit allocated for auto trading.">Available Capital (₹)</label>
-                            <input type="number" id="txtCapital" class="form-input" value="100000" min="100" step="100" title="Budget limit allocated for auto trading." />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Maximum money spent per auto trade.">Trade Amount (₹)</label>
-                            <input type="number" id="txtFixedAmount" class="form-input" value="2000" min="100" step="100" title="Maximum money spent per auto trade." />
-                            <small class="form-help-text">Trade qty up to this amount.</small>
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Target percentage gain to auto sell and book profit.">Profit Target %</label>
-                            <input type="number" id="txtTargetPct" class="form-input" value="5.0" min="0.1" max="100" step="0.01" title="Target percentage gain to auto sell and book profit." />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <label class="form-label mb-0" style="margin-bottom: 0;" title="Maximum loss percentage before auto selling to protect capital. Always on - a 3% default applies automatically if left off.">SL % <span style="color:#f59e0b;">(always on)</span></label>
-                                <label class="optional-toggle-label" style="font-size: 11px; cursor: pointer; color: #94a3b8; margin-bottom: 0; display: flex; align-items: center; gap: 4px;">
-                                    <input type="checkbox" id="chkEnableStopLoss" style="cursor: pointer; width: 14px; height: 14px;" /> Custom %
-                                </label>
-                            </div>
-                            <input type="number" id="txtStopLossPct" class="form-input" placeholder="Default (3.0%)" step="0.01" min="0.1" max="100" title="Fixed percentage below entry price. Leaving this off does NOT disable Stop Loss - a 3% default is still applied automatically; this only lets you set a custom percentage instead." disabled />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Dynamic trail that locks in profits as price rises. Always active - this sets the trail distance.">Trailing SL %</label>
-                            <input type="number" id="txtTrailingSlPct" class="form-input" value="2.0" step="0.01" min="0.1" max="50" title="Mandatory - dynamic trail that locks in profits as price rises. Always active; this sets the trail distance (e.g. 2.0%)." />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Maximum holding days before automatically closing a position.">Max Duration (Days)</label>
-                            <input type="number" id="txtMaxDuration" class="form-input" value="20" min="1" max="100" title="Maximum holding days before automatically closing a position." />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Maximum number of auto trades allowed per day.">Max Trades / Day</label>
-                            <input type="number" id="txtMaxTrades" class="form-input" value="5" min="1" max="20" title="Maximum number of auto trades allowed per day." />
-                        </div>
-
-                        <div class="form-group col-full">
-                            <label class="form-label" title="Minimum strategy criteria out of 11 required to trigger an auto buy signal.">Min Condition Match (Out of 11)</label>
-                            <input type="number" id="txtMinConditions" class="form-input" value="10" min="1" max="11" title="Minimum strategy criteria out of 11 required to trigger an auto buy signal." />
-                            <small class="form-help-text">Minimum criteria required to trigger auto BUY.</small>
-                        </div>
-
                         <button type="button" class="btn-save-settings col-full" id="btnSaveSettings">💾 Save Auto Settings</button>
                         <button type="button" class="btn btn-outline-danger col-full mt-2 fw-semibold" id="btnResetPaperTradingSettings" style="border-radius: 8px; font-size: 13px; padding: 9px; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.08);" title="Clear all paper positions and trade logs">
                             🗑️ Reset & Clear Paper Trading Data
@@ -304,48 +362,6 @@
                     }
                     else
                     {
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Budget limit allocated for auto trading.">Available Capital (₹)</label>
-                            <input type="number" id="txtCapital" class="form-input" value="100000" disabled title="Budget limit allocated for auto trading." />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Maximum money spent per auto trade.">Trade Amount (₹)</label>
-                            <input type="number" id="txtFixedAmount" class="form-input" value="20000" disabled title="Maximum money spent per auto trade." />
-                            <small class="form-help-text">Trade qty up to this amount.</small>
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Target percentage gain to auto sell and book profit.">Profit Target %</label>
-                            <input type="number" id="txtTargetPct" class="form-input" value="5.0" disabled step="0.01" title="Target percentage gain to auto sell and book profit." />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Maximum loss percentage before auto selling to protect capital. Always on.">SL % (always on)</label>
-                            <input type="number" id="txtStopLossPct" class="form-input" placeholder="Default (3.0%)" disabled step="0.01" title="Maximum loss percentage before auto selling to protect capital. Always on." />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Dynamic trail that locks in profits as price rises. Always active.">Trailing SL %</label>
-                            <input type="number" id="txtTrailingSlPct" class="form-input" value="2.0" disabled step="0.01" title="Dynamic trail that locks in profits as price rises. Always active." />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Maximum holding days before automatically closing a position.">Max Duration (Days)</label>
-                            <input type="number" id="txtMaxDuration" class="form-input" value="20" disabled title="Maximum holding days before automatically closing a position." />
-                        </div>
-
-                        <div class="form-group col-half">
-                            <label class="form-label" title="Maximum number of auto trades allowed per day.">Max Trades / Day</label>
-                            <input type="number" id="txtMaxTrades" class="form-input" value="5" disabled title="Maximum number of auto trades allowed per day." />
-                        </div>
-
-                        <div class="form-group col-full">
-                            <label class="form-label" title="Minimum strategy criteria out of 11 required to trigger an auto buy signal.">Min Condition Match (Out of 11)</label>
-                            <input type="number" id="txtMinConditions" class="form-input" value="10" disabled title="Minimum strategy criteria out of 11 required to trigger an auto buy signal." />
-                            <small class="form-help-text">Minimum criteria required to trigger auto BUY.</small>
-                        </div>
-
                         <div class="alert alert-dark text-center col-full mt-2 style-readonly-msg" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; font-size: 12px; padding: 10px; border-radius: 6px;">
                             Auto Trade parameters are configured by System Administrator.
                         </div>

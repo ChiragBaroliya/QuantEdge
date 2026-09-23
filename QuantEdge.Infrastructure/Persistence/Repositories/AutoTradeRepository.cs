@@ -52,7 +52,15 @@ public class AutoTradeRepository : IAutoTradeRepository
                 @FixedAmountPerTrade,
                 @MinConditionsMatch,
                 @TradingWindowStart,
-                @TradingWindowEnd
+                @TradingWindowEnd,
+                @TrailingSlPct,
+                @EntryDelayMinutes,
+                @MaxDailyLossLimit,
+                @ExitMode,
+                @CloseCheckTime,
+                @StopLossAtrMult,
+                @TrailAtrMult,
+                @TargetAtrMult
             );";
 
         return await connection.QuerySingleAsync<AutoTradeSettings>(sql, settings);

@@ -20,6 +20,9 @@ public class SwingEvaluationResult
     public decimal Target1 { get; set; }
     public decimal Target2 { get; set; }
     public decimal RiskRewardRatio { get; set; }
+    // Daily ATR(14) - the volatility unit the swing exit policy (SwingTradeRules) sizes SL/Target/Trail
+    // with. StopLoss/Target1 above stay on the scoring timeframe (15m) for the signal R:R rule.
+    public decimal DailyAtr { get; set; }
     public string Reason { get; set; } = string.Empty;
     public List<string> PassedRules { get; set; } = new();
     public List<string> FailedRules { get; set; } = new();
@@ -93,6 +96,7 @@ public static class SwingDecisionEngine
         decimal curEma50_1d = ema50_1d[idx1d];
         decimal curEma200_1d = ema200_1d[idx1d];
         decimal curAdx_1d = adx14_1d[idx1d];
+        result.DailyAtr = Math.Round(IndicatorCalculator.CalculateAtr(highs1d, lows1d, closes1d, 14)[idx1d], 4);
 
         // --------------------------------------------------------------------
         // STAGE A: MARKET CONTEXT (non-blocking) + STOCK-LEVEL HARD FILTERS

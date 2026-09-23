@@ -42,6 +42,22 @@ public class RealTradeSettingsUpdateDto
 
     [Range(0, 120, ErrorMessage = "Entry Delay must be between 0 and 120 minutes.")]
     public int EntryDelayMinutes { get; set; } = 15;
+
+    // Swing exit policy - same fields and validation as AutoTradeSettingsUpdateDto (SwingTradeRules).
+    [RegularExpression("^(SWING_CLOSE|INTRADAY)$", ErrorMessage = "Exit Mode must be SWING_CLOSE or INTRADAY.")]
+    public string ExitMode { get; set; } = "SWING_CLOSE";
+
+    [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Close Check Time must be HH:mm.")]
+    public string CloseCheckTime { get; set; } = "15:15";
+
+    [Range(typeof(decimal), "0.5", "5.0", ErrorMessage = "Stop Loss ATR multiple must be between 0.5 and 5.")]
+    public decimal StopLossAtrMult { get; set; } = 1.5m;
+
+    [Range(typeof(decimal), "0.5", "10.0", ErrorMessage = "Trailing ATR multiple must be between 0.5 and 10.")]
+    public decimal TrailAtrMult { get; set; } = 3.0m;
+
+    [Range(typeof(decimal), "0.5", "20.0", ErrorMessage = "Target ATR multiple must be between 0.5 and 20.")]
+    public decimal TargetAtrMult { get; set; } = 3.0m;
 }
 
 public class RealTradeDashboardDto

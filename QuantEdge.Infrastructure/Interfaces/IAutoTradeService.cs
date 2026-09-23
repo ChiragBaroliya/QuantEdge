@@ -16,12 +16,15 @@ public interface IAutoTradeService
     Task<IEnumerable<AutoTradeExecutionLog>> GetTodayLogsAsync(string userId = "default_user", int limit = 50);
 
     /// <summary>
-    /// Evaluates candidate signal from scan job and places auto paper buy order if all 8 validation checks pass.
+    /// Evaluates candidate signal from scan job and places an auto paper buy order if every entry gate
+    /// passes - the same gates and entry levels as Auto Real Trading (<see cref="Services.SwingTradeRules"/>).
     /// </summary>
-    Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false);
+    Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null);
 
     /// <summary>
-    /// Evaluates real-time price against position Target %, Stop Loss %, or Max Duration and executes auto sell order if hit.
+    /// Evaluates exit conditions via the shared swing exit policy (<see cref="Services.SwingTradeRules"/>)
+    /// and executes the auto paper sell when triggered.
     /// </summary>
     Task<bool> EvaluateAndExecuteAutoSellAsync(PaperPosition position, decimal currentLtp, string userId = "default_user");
 

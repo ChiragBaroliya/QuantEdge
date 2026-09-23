@@ -10,6 +10,7 @@ let modalSquareOff = null;
 let modalKillSwitch = null;
 let modalSetHoldingTarget = null;
 let modalManualSell = null;
+let currentExitMode = "SWING_CLOSE"; // from settings - drives how the Trailing SL column is shown
 
 // Smart Polling Manager
 let pollingTimer = null;
@@ -393,6 +394,12 @@ function populateSettingsForm(s) {
     setVal("inpWindowStart", s.tradingWindowStart);
     setVal("inpWindowEnd", s.tradingWindowEnd);
     setVal("inpEntryDelay", s.entryDelayMinutes);
+    setVal("selExitMode", s.exitMode || "SWING_CLOSE");
+    setVal("inpCloseCheckTime", s.closeCheckTime || "15:15");
+    setVal("inpSlAtrMult", s.stopLossAtrMult);
+    setVal("inpTrailAtrMult", s.trailAtrMult);
+    setVal("inpTargetAtrMult", s.targetAtrMult);
+    currentExitMode = s.exitMode || "SWING_CLOSE";
 
     // Stop Loss % / Trailing Stop Loss % are no longer settings-page fields - they're configured
     // trade-wise from the Manual Real Trade popup instead (see realtrade-actions.js).
@@ -510,7 +517,13 @@ function renderFilteredOpenPositions(positions) {
         const sideText = p.side === 0 ? '<span class="text-success fw-bold">BUY</span>' : '<span class="text-danger fw-bold">SELL</span>';
         const targetText = p.takeProfit ? `₹${p.takeProfit.toFixed(2)}` : '-';
         const slText = p.stopLoss ? `₹${p.stopLoss.toFixed(2)}` : '-';
-        const tslText = p.trailingStopLoss ? `₹${p.trailingStopLoss.toFixed(2)}` : '-';
+        // Swing exit mode: the trailing SL only exists once the trade has moved +1 ATR in our favor
+        // (and a value below entry is an ignored leftover from INTRADAY mode).
+        const isSwingClose = (currentExitMode || "SWING_CLOSE") === "SWING_CLOSE";
+        const tslActive = p.trailingStopLoss && (!isSwingClose || p.trailingStopLoss >= p.averageEntryPrice);
+        const tslText = tslActive
+            ? `₹${p.trailingStopLoss.toFixed(2)}`
+            : (isSwingClose ? '<span class="text-muted small" title="Activates once price reaches entry + 1 ATR (never on the entry day)">Not active yet</span>' : '-');
 
         html += `
             <tr>
@@ -1064,7 +1077,12 @@ function setupEventListeners() {
                 MinConditionsMatch: parseInt(document.getElementById("inpMinConditions")?.value || "10"),
                 TradingWindowStart: document.getElementById("inpWindowStart")?.value || "09:15",
                 TradingWindowEnd: document.getElementById("inpWindowEnd")?.value || "15:30",
-                EntryDelayMinutes: parseInt(document.getElementById("inpEntryDelay")?.value || "15")
+                EntryDelayMinutes: parseInt(document.getElementById("inpEntryDelay")?.value || "15"),
+                ExitMode: document.getElementById("selExitMode")?.value || "SWING_CLOSE",
+                CloseCheckTime: document.getElementById("inpCloseCheckTime")?.value || "15:15",
+                StopLossAtrMult: parseFloat(document.getElementById("inpSlAtrMult")?.value || "1.5"),
+                TrailAtrMult: parseFloat(document.getElementById("inpTrailAtrMult")?.value || "3"),
+                TargetAtrMult: parseFloat(document.getElementById("inpTargetAtrMult")?.value || "3")
             };
 
             try {

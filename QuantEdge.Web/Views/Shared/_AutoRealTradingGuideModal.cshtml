@@ -316,7 +316,7 @@
 
                             <div class="guide-def-card" style="border-left: 3px solid #f87171;">
                                 <div class="guide-def-term">🛡️ Automated Stop Loss Protection</div>
-                                <p class="guide-def-text">Every position is watched constantly. If a stock falls by <strong>-3%</strong>, the bot automatically cuts the trade so you never suffer a catastrophic loss.</p>
+                                <p class="guide-def-text">Every position has a Stop Loss (1.5 × daily ATR, max 8%). In Swing mode it is checked near the close (from 3:15 PM), so normal intraday dips do not shake you out. The Emergency Stop (SL + 1 ATR, max 12%) acts at any time, so a crash can never run unchecked. The Trailing SL starts at breakeven once the stock is up 1 ATR. Auto Paper Trading uses the same rules.</p>
                             </div>
 
                             <div class="guide-def-card" style="border-left: 3px solid #ef4444; background: rgba(239, 68, 68, 0.08);">
@@ -382,11 +382,11 @@
                             <!-- Scenario B: Stop Loss Hit -->
                             <div class="guide-scenario-card loss">
                                 <div class="guide-scenario-title" style="color: #f87171;">
-                                    🛡️ Outcome B: Market Turnaround (-3% Stop Loss)
+                                    🛡️ Outcome B: Market Turnaround (Stop Loss)
                                 </div>
                                 <p class="guide-scenario-desc">
-                                    Market turns weak and Tata Motors falls to <strong>₹970 (-3.0%)</strong>.<br />
-                                    • The bot automatically sells to protect you from bigger drops. Total sale proceeds: <strong>₹19,400</strong>.<br />
+                                    Market turns weak and Tata Motors is still at <strong>₹970 (-3.0%)</strong>, below its Stop Loss, near the close.<br />
+                                    • The bot sells at the close to protect you from bigger drops (a crash during the day triggers the Emergency Stop at once). Total sale proceeds: <strong>₹19,400</strong>.<br />
                                     • Real loss strictly limited to <strong style="color: #f87171;">-₹600</strong>.<br />
                                     • Your Zerodha balance is safely preserved at <strong style="color: #f87171;">₹49,400</strong>.
                                 </p>

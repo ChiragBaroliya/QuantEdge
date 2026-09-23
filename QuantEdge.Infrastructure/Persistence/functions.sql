@@ -1475,7 +1475,14 @@ CREATE OR REPLACE FUNCTION fn_upsert_auto_trade_settings(
     p_min_conditions_match INT,
     p_trading_window_start VARCHAR,
     p_trading_window_end VARCHAR,
-    p_trailing_sl_pct NUMERIC DEFAULT NULL
+    p_trailing_sl_pct NUMERIC DEFAULT NULL,
+    p_entry_delay_minutes INT DEFAULT 15,
+    p_max_daily_loss_limit NUMERIC DEFAULT NULL,
+    p_exit_mode VARCHAR DEFAULT 'SWING_CLOSE',
+    p_close_check_time VARCHAR DEFAULT '15:15',
+    p_stop_loss_atr_mult NUMERIC DEFAULT 1.50,
+    p_trail_atr_mult NUMERIC DEFAULT 3.00,
+    p_target_atr_mult NUMERIC DEFAULT 3.00
 )
 RETURNS TABLE (
     Id INT,
@@ -1491,6 +1498,13 @@ RETURNS TABLE (
     MinConditionsMatch INT,
     TradingWindowStart VARCHAR,
     TradingWindowEnd VARCHAR,
+    EntryDelayMinutes INT,
+    MaxDailyLossLimit NUMERIC,
+    ExitMode VARCHAR,
+    CloseCheckTime VARCHAR,
+    StopLossAtrMult NUMERIC,
+    TrailAtrMult NUMERIC,
+    TargetAtrMult NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1500,12 +1514,16 @@ BEGIN
     INSERT INTO auto_trade_settings (
         user_id, is_auto_trade_enabled, available_capital, profit_target_pct, stop_loss_pct,
         max_duration_days, max_trades_per_day, fixed_amount_per_trade, min_conditions_match,
-        trading_window_start, trading_window_end, trailing_sl_pct, updated_at
+        trading_window_start, trading_window_end, trailing_sl_pct,
+        entry_delay_minutes, max_daily_loss_limit, exit_mode, close_check_time,
+        stop_loss_atr_mult, trail_atr_mult, target_atr_mult, updated_at
     )
     VALUES (
         p_user_id, p_is_auto_trade_enabled, p_available_capital, p_profit_target_pct, p_stop_loss_pct,
         p_max_duration_days, p_max_trades_per_day, p_fixed_amount_per_trade, p_min_conditions_match,
-        p_trading_window_start, p_trading_window_end, p_trailing_sl_pct, NOW()
+        p_trading_window_start, p_trading_window_end, p_trailing_sl_pct,
+        p_entry_delay_minutes, p_max_daily_loss_limit, p_exit_mode, p_close_check_time,
+        p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult, NOW()
     )
     ON CONFLICT (user_id) DO UPDATE
     SET is_auto_trade_enabled = EXCLUDED.is_auto_trade_enabled,
@@ -1519,6 +1537,13 @@ BEGIN
         trading_window_start = EXCLUDED.trading_window_start,
         trading_window_end = EXCLUDED.trading_window_end,
         trailing_sl_pct = EXCLUDED.trailing_sl_pct,
+        entry_delay_minutes = EXCLUDED.entry_delay_minutes,
+        max_daily_loss_limit = EXCLUDED.max_daily_loss_limit,
+        exit_mode = EXCLUDED.exit_mode,
+        close_check_time = EXCLUDED.close_check_time,
+        stop_loss_atr_mult = EXCLUDED.stop_loss_atr_mult,
+        trail_atr_mult = EXCLUDED.trail_atr_mult,
+        target_atr_mult = EXCLUDED.target_atr_mult,
         updated_at = NOW()
     RETURNING
         auto_trade_settings.id AS Id,
@@ -1534,6 +1559,13 @@ BEGIN
         auto_trade_settings.min_conditions_match AS MinConditionsMatch,
         auto_trade_settings.trading_window_start AS TradingWindowStart,
         auto_trade_settings.trading_window_end AS TradingWindowEnd,
+        auto_trade_settings.entry_delay_minutes AS EntryDelayMinutes,
+        auto_trade_settings.max_daily_loss_limit AS MaxDailyLossLimit,
+        auto_trade_settings.exit_mode AS ExitMode,
+        auto_trade_settings.close_check_time AS CloseCheckTime,
+        auto_trade_settings.stop_loss_atr_mult AS StopLossAtrMult,
+        auto_trade_settings.trail_atr_mult AS TrailAtrMult,
+        auto_trade_settings.target_atr_mult AS TargetAtrMult,
         auto_trade_settings.updated_at AS UpdatedAt;
 END;
 $$;
@@ -1559,6 +1591,13 @@ RETURNS TABLE (
     MinConditionsMatch INT,
     TradingWindowStart VARCHAR,
     TradingWindowEnd VARCHAR,
+    EntryDelayMinutes INT,
+    MaxDailyLossLimit NUMERIC,
+    ExitMode VARCHAR,
+    CloseCheckTime VARCHAR,
+    StopLossAtrMult NUMERIC,
+    TrailAtrMult NUMERIC,
+    TargetAtrMult NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1579,6 +1618,13 @@ BEGIN
         s.min_conditions_match AS MinConditionsMatch,
         s.trading_window_start AS TradingWindowStart,
         s.trading_window_end AS TradingWindowEnd,
+        s.entry_delay_minutes AS EntryDelayMinutes,
+        s.max_daily_loss_limit AS MaxDailyLossLimit,
+        s.exit_mode AS ExitMode,
+        s.close_check_time AS CloseCheckTime,
+        s.stop_loss_atr_mult AS StopLossAtrMult,
+        s.trail_atr_mult AS TrailAtrMult,
+        s.target_atr_mult AS TargetAtrMult,
         s.updated_at AS UpdatedAt
     FROM auto_trade_settings s
     WHERE s.user_id = p_user_id;
@@ -1606,6 +1652,13 @@ RETURNS TABLE (
     MinConditionsMatch INT,
     TradingWindowStart VARCHAR,
     TradingWindowEnd VARCHAR,
+    EntryDelayMinutes INT,
+    MaxDailyLossLimit NUMERIC,
+    ExitMode VARCHAR,
+    CloseCheckTime VARCHAR,
+    StopLossAtrMult NUMERIC,
+    TrailAtrMult NUMERIC,
+    TargetAtrMult NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1626,6 +1679,13 @@ BEGIN
         s.min_conditions_match AS MinConditionsMatch,
         s.trading_window_start AS TradingWindowStart,
         s.trading_window_end AS TradingWindowEnd,
+        s.entry_delay_minutes AS EntryDelayMinutes,
+        s.max_daily_loss_limit AS MaxDailyLossLimit,
+        s.exit_mode AS ExitMode,
+        s.close_check_time AS CloseCheckTime,
+        s.stop_loss_atr_mult AS StopLossAtrMult,
+        s.trail_atr_mult AS TrailAtrMult,
+        s.target_atr_mult AS TargetAtrMult,
         s.updated_at AS UpdatedAt
     FROM auto_trade_settings s
     WHERE s.is_auto_trade_enabled = TRUE;
@@ -1765,6 +1825,11 @@ RETURNS TABLE (
     TradingWindowStart VARCHAR,
     TradingWindowEnd VARCHAR,
     EntryDelayMinutes INT,
+    ExitMode VARCHAR,
+    CloseCheckTime VARCHAR,
+    StopLossAtrMult NUMERIC,
+    TrailAtrMult NUMERIC,
+    TargetAtrMult NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1789,6 +1854,11 @@ BEGIN
         s.trading_window_start AS TradingWindowStart,
         s.trading_window_end AS TradingWindowEnd,
         s.entry_delay_minutes AS EntryDelayMinutes,
+        s.exit_mode AS ExitMode,
+        s.close_check_time AS CloseCheckTime,
+        s.stop_loss_atr_mult AS StopLossAtrMult,
+        s.trail_atr_mult AS TrailAtrMult,
+        s.target_atr_mult AS TargetAtrMult,
         s.updated_at AS UpdatedAt
     FROM real_trade_settings s
     WHERE s.user_id = p_user_id;
@@ -1818,6 +1888,11 @@ RETURNS TABLE (
     TradingWindowStart VARCHAR,
     TradingWindowEnd VARCHAR,
     EntryDelayMinutes INT,
+    ExitMode VARCHAR,
+    CloseCheckTime VARCHAR,
+    StopLossAtrMult NUMERIC,
+    TrailAtrMult NUMERIC,
+    TargetAtrMult NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1842,6 +1917,11 @@ BEGIN
         s.trading_window_start AS TradingWindowStart,
         s.trading_window_end AS TradingWindowEnd,
         s.entry_delay_minutes AS EntryDelayMinutes,
+        s.exit_mode AS ExitMode,
+        s.close_check_time AS CloseCheckTime,
+        s.stop_loss_atr_mult AS StopLossAtrMult,
+        s.trail_atr_mult AS TrailAtrMult,
+        s.target_atr_mult AS TargetAtrMult,
         s.updated_at AS UpdatedAt
     FROM real_trade_settings s
     WHERE s.is_real_trade_enabled = TRUE;
@@ -1852,6 +1932,8 @@ $$;
 -- Function: fn_upsert_real_trade_settings
 DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(INT, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR);
 DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(VARCHAR, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR);
+DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(INT, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR, INT);
+DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(INT, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR, INT, VARCHAR, VARCHAR, NUMERIC, NUMERIC, NUMERIC);
 
 CREATE OR REPLACE FUNCTION fn_upsert_real_trade_settings(
     p_user_id INT,
@@ -1869,7 +1951,12 @@ CREATE OR REPLACE FUNCTION fn_upsert_real_trade_settings(
     p_min_conditions_match INT,
     p_trading_window_start VARCHAR,
     p_trading_window_end VARCHAR,
-    p_entry_delay_minutes INT
+    p_entry_delay_minutes INT,
+    p_exit_mode VARCHAR,
+    p_close_check_time VARCHAR,
+    p_stop_loss_atr_mult NUMERIC,
+    p_trail_atr_mult NUMERIC,
+    p_target_atr_mult NUMERIC
 )
 RETURNS TABLE (
     Id INT,
@@ -1889,6 +1976,11 @@ RETURNS TABLE (
     TradingWindowStart VARCHAR,
     TradingWindowEnd VARCHAR,
     EntryDelayMinutes INT,
+    ExitMode VARCHAR,
+    CloseCheckTime VARCHAR,
+    StopLossAtrMult NUMERIC,
+    TrailAtrMult NUMERIC,
+    TargetAtrMult NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1899,13 +1991,15 @@ BEGIN
         user_id, is_real_trade_enabled, available_capital, profit_target_pct,
         stop_loss_pct, trailing_sl_enabled, trailing_sl_pct, max_duration_days,
         max_trades_per_day, fixed_amount_per_trade, max_daily_loss_limit, product_type,
-        min_conditions_match, trading_window_start, trading_window_end, entry_delay_minutes, updated_at
+        min_conditions_match, trading_window_start, trading_window_end, entry_delay_minutes,
+        exit_mode, close_check_time, stop_loss_atr_mult, trail_atr_mult, target_atr_mult, updated_at
     )
     VALUES (
         p_user_id, p_is_real_trade_enabled, p_available_capital, p_profit_target_pct,
         p_stop_loss_pct, p_trailing_sl_enabled, p_trailing_sl_pct, p_max_duration_days,
         p_max_trades_per_day, p_fixed_amount_per_trade, p_max_daily_loss_limit, p_product_type,
-        p_min_conditions_match, p_trading_window_start, p_trading_window_end, p_entry_delay_minutes, NOW()
+        p_min_conditions_match, p_trading_window_start, p_trading_window_end, p_entry_delay_minutes,
+        p_exit_mode, p_close_check_time, p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult, NOW()
     )
     ON CONFLICT (user_id) DO UPDATE SET
         is_real_trade_enabled = EXCLUDED.is_real_trade_enabled,
@@ -1923,6 +2017,11 @@ BEGIN
         trading_window_start = EXCLUDED.trading_window_start,
         trading_window_end = EXCLUDED.trading_window_end,
         entry_delay_minutes = EXCLUDED.entry_delay_minutes,
+        exit_mode = EXCLUDED.exit_mode,
+        close_check_time = EXCLUDED.close_check_time,
+        stop_loss_atr_mult = EXCLUDED.stop_loss_atr_mult,
+        trail_atr_mult = EXCLUDED.trail_atr_mult,
+        target_atr_mult = EXCLUDED.target_atr_mult,
         updated_at = NOW()
     RETURNING
         real_trade_settings.id AS Id,
@@ -1942,6 +2041,11 @@ BEGIN
         real_trade_settings.trading_window_start AS TradingWindowStart,
         real_trade_settings.trading_window_end AS TradingWindowEnd,
         real_trade_settings.entry_delay_minutes AS EntryDelayMinutes,
+        real_trade_settings.exit_mode AS ExitMode,
+        real_trade_settings.close_check_time AS CloseCheckTime,
+        real_trade_settings.stop_loss_atr_mult AS StopLossAtrMult,
+        real_trade_settings.trail_atr_mult AS TrailAtrMult,
+        real_trade_settings.target_atr_mult AS TargetAtrMult,
         real_trade_settings.updated_at AS UpdatedAt;
 END;
 $$;
