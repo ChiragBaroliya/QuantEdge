@@ -250,3 +250,81 @@ public class RealTradeLivePositionsFastDto
     public List<ZerodhaHoldingDto>? BrokerHoldings { get; set; }
     public IEnumerable<RealPosition> OpenPositions { get; set; } = new List<RealPosition>();
 }
+
+/// <summary>
+/// One stock's end-to-end journey for the Auto Real Trade "Flow" popup: how it entered (or why it was
+/// skipped), its live price, every exit level from SwingTradeRules and the rupee result of each exit.
+/// </summary>
+public class SymbolJourneyDto
+{
+    public string Symbol { get; set; } = string.Empty;
+    /// <summary>OPEN (bot-managed), NOT_MANAGED (only in the Zerodha account), SKIPPED (skipped today) or NONE.</summary>
+    public string Status { get; set; } = "NONE";
+    public DateTime AsOfUtc { get; set; } = DateTime.UtcNow;
+
+    // Settings context
+    public string ExitMode { get; set; } = "SWING_CLOSE";
+    public bool IsSwingClose { get; set; } = true;
+    public string ProductType { get; set; } = "CNC";
+    public bool IsMarketOpen { get; set; }
+    public bool IsClosingWindow { get; set; }
+    public string CloseCheckTime { get; set; } = "15:15";
+    public int MaxDurationDays { get; set; }
+    public decimal FixedAmountPerTrade { get; set; }
+    public int MonitorIntervalSeconds { get; set; }
+
+    // Live price: WS = fresh WebSocket tick, REST = Zerodha quote, ZERODHA = positions/holdings last_price
+    public decimal? Ltp { get; set; }
+    public string LtpSource { get; set; } = "NONE";
+
+    // Bot-managed position
+    public RealPosition? Position { get; set; }
+    /// <summary>AUTO_SIGNAL, MANUAL or HOLDING (enrolled from Zerodha Holdings via Set Target).</summary>
+    public string? EntrySource { get; set; }
+    public RealOrder? EntryOrder { get; set; }
+    public int TradingDaysHeld { get; set; }
+    public bool IsEntryDay { get; set; }
+    public SymbolJourneyLevelsDto? Levels { get; set; }
+    public bool WouldSellNow { get; set; }
+    public string? DecisionReason { get; set; }
+
+    // Zerodha account rows for this symbol
+    public ZerodhaPositionItemDto? BrokerPosition { get; set; }
+    public ZerodhaHoldingDto? BrokerHolding { get; set; }
+
+    // Latest skipped BUY today
+    public SymbolJourneySkipDto? LastSkip { get; set; }
+    public decimal? AvailableMargin { get; set; }
+
+    public IEnumerable<RealOrder> Orders { get; set; } = new List<RealOrder>();
+    public IEnumerable<RealTradeExecutionLog> Logs { get; set; } = new List<RealTradeExecutionLog>();
+}
+
+public class SymbolJourneyLevelsDto
+{
+    public decimal Invested { get; set; }
+    public decimal? UnrealizedPnl { get; set; }
+    public decimal? StopLoss { get; set; }
+    public decimal? TakeProfit { get; set; }
+    public decimal? TrailingStopLoss { get; set; }
+    public bool IsTrailActive { get; set; }
+    /// <summary>SWING_CLOSE only - null in INTRADAY mode, which has no emergency stop or trail activation.</summary>
+    public decimal? EmergencyStop { get; set; }
+    public decimal? TrailActivationPrice { get; set; }
+    public decimal Atr { get; set; }
+    public decimal? PnlAtTarget { get; set; }
+    public decimal? PnlAtStopLoss { get; set; }
+    public decimal? PnlAtEmergencyStop { get; set; }
+    public decimal? PnlAtTrailingStopLoss { get; set; }
+}
+
+public class SymbolJourneySkipDto
+{
+    public DateTime AtUtc { get; set; }
+    public string ActionType { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public decimal? Price { get; set; }
+    public int? GuardNumber { get; set; }
+    public string? GuardName { get; set; }
+    public int TotalGuards { get; set; } = 13;
+}

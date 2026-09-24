@@ -1,0 +1,209 @@
+/* ==========================================================================
+   Real Trade Flow (admin) - flow diagrams of the Auto Real Trade background jobs
+   ========================================================================== */
+
+.tl-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.tl-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: linear-gradient(135deg, #1a2238 0%, #141929 100%);
+    border: 1px solid var(--theme-border, var(--border-subtle));
+    border-radius: var(--card-radius, 16px);
+    padding: var(--card-padding, 24px);
+}
+
+.tl-eyebrow {
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--theme-accent, #a78bfa);
+}
+
+.tl-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 6px 0 4px;
+    color: var(--text-primary);
+}
+
+.tl-subtitle {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    max-width: 72ch;
+}
+
+.tl-header-pills {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tl-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.tl-pill-accent { background: rgba(167, 139, 250, .14); color: var(--theme-accent, #a78bfa); }
+.tl-pill-on { background: rgba(52, 211, 153, .13); color: var(--accent-green, #34d399); }
+.tl-pill-warn { background: rgba(251, 191, 36, .13); color: var(--accent-amber, #fbbf24); }
+.tl-pill-muted { background: var(--bg-input, #151e30); color: var(--text-secondary); border: 1px solid var(--border-subtle); }
+
+/* Tabs */
+.tl-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border-subtle);
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.tl-tab {
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.tl-tab .tl-tab-no {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-right: 6px;
+    font-variant-numeric: tabular-nums;
+}
+
+.tl-tab:hover { color: var(--text-primary); }
+.tl-tab[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--theme-accent, #a78bfa); }
+.tl-tab[aria-selected="true"] .tl-tab-no { color: var(--theme-accent, #a78bfa); }
+
+.tl-container button:focus-visible,
+.tl-container [tabindex]:focus-visible {
+    outline: 2px solid var(--theme-accent, #a78bfa);
+    outline-offset: 2px;
+}
+
+/* Diagram header + scenarios */
+.tl-diagram-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.tl-diagram-head h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    color: var(--text-primary);
+}
+
+.tl-diagram-head p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    max-width: 78ch;
+}
+
+.tl-play {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.tl-play-label {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.tl-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-muted, #34425f);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 12.5px;
+    padding: 5px 12px 5px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.tl-chip svg { width: 10px; height: 10px; fill: var(--theme-accent, #a78bfa); }
+.tl-chip:hover { border-color: var(--theme-accent, #a78bfa); }
+.tl-chip[aria-pressed="true"] { background: rgba(167, 139, 250, .14); border-color: var(--theme-accent, #a78bfa); }
+.tl-chip-clear { color: var(--text-secondary); }
+
+/* Diagram canvas styles: flow-diagram.css (.qe-flow-canvas) */
+
+/* Node detail panel */
+.tl-detail {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 14px;
+    align-items: start;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    padding: 14px 16px;
+}
+
+.tl-detail-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: 1.5px solid;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.tl-detail h4 { font-size: 15px; font-weight: 600; margin: 0 0 3px; color: var(--text-primary); }
+.tl-detail p { margin: 0; font-size: 13px; color: var(--text-secondary); max-width: 80ch; }
+.tl-detail-step { font-size: 11px; color: var(--theme-accent, #a78bfa); font-weight: 600; margin-bottom: 2px; }
+.tl-detail-meta { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; text-align: right; }
+.tl-detail-value { font-size: 13px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.tl-detail-src { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--text-muted); }
+
+/* Legend */
+.tl-legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.tl-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.tl-legend svg { width: 26px; height: 16px; }
+
+@media (max-width: 620px) {
+    .tl-header { padding: 18px; }
+    .tl-detail { grid-template-columns: 1fr; }
+    .tl-detail-icon { display: none; }
+    .tl-detail-meta { align-items: flex-start; text-align: left; }
+}

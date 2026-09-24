@@ -322,7 +322,7 @@ public static class SwingTradeRules
 
         if (!trailActive)
         {
-            decimal activationPrice = entry + TrailActivationAtrMult * atr;
+            decimal activationPrice = GetTrailActivationPrice(pos, p);
             return ltp >= activationPrice
                 ? new ExitDecision(false, string.Empty, false, candidate)
                 : ExitDecision.Hold;
@@ -376,13 +376,20 @@ public static class SwingTradeRules
             : ExitDecision.Hold;
     }
 
-    public static bool IsInClosingWindow(DateTime nowIst, SwingTradeParams p)
+    public static bool IsInClosingWindow(DateTime nowIst, SwingTradeParams p) =>
+        nowIst.TimeOfDay >= GetClosingWindowStart(p);
+
+    /// <summary>When the closing-basis checks start: CloseCheckTime, but never later than window end - 10 min.</summary>
+    public static TimeSpan GetClosingWindowStart(SwingTradeParams p)
     {
         TimeSpan start = p.CloseCheckTime;
         TimeSpan latestStart = p.TradingWindowEnd - MinCloseWindow;
-        if (start > latestStart) start = latestStart;
-        return nowIst.TimeOfDay >= start;
+        return start > latestStart ? latestStart : start;
     }
+
+    /// <summary>Price at which a SWING_CLOSE trailing SL may first be set (entry + 1 x ATR).</summary>
+    public static decimal GetTrailActivationPrice(ExitPositionView pos, SwingTradeParams p) =>
+        pos.EntryPrice + TrailActivationAtrMult * InferAtr(pos, p);
 
     /// <summary>
     /// The position's volatility unit. The Stop Loss was placed StopLossAtrMult x ATR below entry, so

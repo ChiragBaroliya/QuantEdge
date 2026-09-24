@@ -51,6 +51,12 @@ public interface IAutoRealTradeService
     Task<int> SquareOffAllPositionsAsync(string reason = "Emergency Panic Kill Switch Triggered", int userId = 1);
 
     /// <summary>
+    /// One stock's journey for the Auto Real Trade "Flow" popup: entry path or latest skip reason, live
+    /// price, SwingTradeRules exit levels with their rupee outcomes, and today's orders/audit events.
+    /// </summary>
+    Task<SymbolJourneyDto> GetSymbolJourneyAsync(string symbol, int userId = 1);
+
+    /// <summary>
     /// Polls Zerodha for every real order still recorded as Open (broker-accepted but unconfirmed) across
     /// all users, and finalizes it once the broker confirms the real outcome (FILLED closes the position
     /// and records realized P&amp;L; REJECTED/CANCELLED clears the order and leaves the position open for retry).

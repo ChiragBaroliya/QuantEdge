@@ -9,6 +9,8 @@
 
 <link rel="stylesheet" href="~/css/autotrading.css" asp-append-version="true" />
 <link rel="stylesheet" href="~/css/realtrading.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/flow-diagram.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/realtrade-journey.css" asp-append-version="true" />
 <div id="realtrade-config" 
      data-api-base-url="@apiBaseUrl" 
      data-user-id="@currentUserId"
@@ -885,8 +887,11 @@
 </div>
 
 <partial name="_AutoRealTradingGuideModal" />
+<partial name="_StockJourneyModal" />
 
 @section Scripts {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
     <script src="~/js/realtrading.js" asp-append-version="true"></script>
+    <script src="~/js/flow-diagram.js" asp-append-version="true"></script>
+    <script src="~/js/realtrade-journey.js" asp-append-version="true"></script>
 }

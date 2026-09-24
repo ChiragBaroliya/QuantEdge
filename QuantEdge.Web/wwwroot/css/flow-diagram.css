@@ -1,0 +1,55 @@
+/* ==========================================================================
+   Shared flow-diagram canvas (flow-diagram.js) - Real Trade Flow + Stock Journey
+   ========================================================================== */
+
+.qe-flow-canvas {
+    background-color: #172033;
+    background-image: radial-gradient(circle, #223049 1px, transparent 1px);
+    background-size: 22px 22px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    padding: 10px;
+    overflow-x: auto;
+}
+
+.qe-flow-canvas svg {
+    display: block;
+    width: 100%;
+    min-width: 780px;
+    height: auto;
+}
+
+.qe-flow-canvas .n { cursor: pointer; transition: opacity .25s; }
+.qe-flow-canvas .n:hover .shape { stroke-width: 2.2; }
+.qe-flow-canvas .n:focus { outline: none; }
+.qe-flow-canvas .n.sel .shape,
+.qe-flow-canvas .n:focus-visible .shape { stroke: var(--theme-accent, #a78bfa); stroke-width: 2.6; }
+.qe-flow-canvas .n.on .shape,
+.qe-flow-canvas .n.now .shape { filter: drop-shadow(0 0 8px rgba(167, 139, 250, .5)); }
+.qe-flow-canvas .qf-amount { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; }
+.qe-flow-canvas .e { transition: opacity .25s; }
+
+/* Scenario playback dims everything off the played path */
+.qe-flow-canvas svg.dim .n:not(.on),
+.qe-flow-canvas svg.dim .e:not(.on),
+.qe-flow-canvas svg.dim .deco { opacity: .2; }
+
+/* Played path (Real Trade Flow) and the current rule path (Stock Journey) */
+.qe-flow-canvas .e.on path,
+.qe-flow-canvas .e.cur path {
+    stroke: var(--theme-accent, #a78bfa);
+    stroke-opacity: 1;
+    stroke-width: 2.3;
+    stroke-dasharray: 7 5;
+    animation: qe-flow-dash .9s linear infinite;
+}
+
+.qe-flow-canvas .qf-active-fill { fill: var(--theme-accent, #a78bfa); }
+
+@keyframes qe-flow-dash { to { stroke-dashoffset: -24; } }
+
+@media (prefers-reduced-motion: reduce) {
+    .qe-flow-canvas .e.on path,
+    .qe-flow-canvas .e.cur path { animation: none; }
+    .qe-flow-canvas .n, .qe-flow-canvas .e { transition: none; }
+}

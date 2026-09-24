@@ -1,0 +1,64 @@
+@using System.Text.Json
+@model QuantEdge.Infrastructure.DTOs.TradeLogicRulesDto
+@{
+    ViewData["Title"] = "Real Trade Flow";
+    ViewData["PageTitle"] = "Real Trade Flow";
+}
+
+<link rel="stylesheet" href="~/css/flow-diagram.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/tradelogic.css" asp-append-version="true" />
+
+@* Rules snapshot for tradelogic.js. System.Text.Json escapes <, > and &, so this can't break out of the script tag. *@
+<script type="application/json" id="tradelogic-rules">@Html.Raw(JsonSerializer.Serialize(Model, new JsonSerializerOptions(JsonSerializerDefaults.Web)))</script>
+
+<div class="tl-container">
+    <div class="tl-header">
+        <div>
+            <div class="tl-eyebrow">System Administration</div>
+            <h2 class="tl-title">Real Trade Flow</h2>
+            <p class="tl-subtitle">How the Auto Real Trade bot works in the background, one diagram at a time. Click any box for details, or play a scenario to watch one case move through the flow.</p>
+        </div>
+        <div class="tl-header-pills">
+            @if (!Model.IsLive)
+            {
+                <span class="tl-pill tl-pill-warn" data-tooltip="The API could not be reached, so the diagrams show the default settings instead of your saved ones.">Showing defaults</span>
+            }
+            <span class="tl-pill @(Model.IsRealTradeEnabled ? "tl-pill-on" : "tl-pill-muted")">Bot @(Model.IsRealTradeEnabled ? "ON" : "OFF")</span>
+            <span class="tl-pill tl-pill-accent">@Model.ExitMode · @Model.ProductType</span>
+        </div>
+    </div>
+
+    <div class="tl-tabs" role="tablist" aria-label="Flow diagrams" id="tlTabs"></div>
+
+    <div class="tl-diagram-head">
+        <div>
+            <h3 id="tlDiagramTitle"></h3>
+            <p id="tlDiagramDesc"></p>
+        </div>
+        <span class="tl-pill tl-pill-muted" id="tlDiagramRuns"></span>
+    </div>
+
+    <div class="tl-play" id="tlPlay"></div>
+
+    <div class="qe-flow-canvas">
+        <svg id="tlSvg" xmlns="http://www.w3.org/2000/svg" role="img"></svg>
+    </div>
+
+    <div class="tl-detail" id="tlDetail" aria-live="polite"></div>
+
+    <div class="tl-legend" aria-label="Legend">
+        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#1e293b" stroke="#a78bfa" /></svg>Job start</span>
+        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#1e293b" stroke="#34425f" /></svg>Step</span>
+        <span><svg viewBox="0 0 26 16"><polygon points="6,1 20,1 25,8 20,15 6,15 1,8" fill="#172033" stroke="#7c8db5" /></svg>Decision</span>
+        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#10302a" stroke="#34d399" /></svg>Success</span>
+        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#3a1d24" stroke="#f87171" /></svg>Stop / reject</span>
+        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#33290f" stroke="#fbbf24" /></svg>Waiting</span>
+        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#132a4a" stroke="#4f9cf9" /></svg>Data / notify</span>
+        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#0d1221" stroke="#94a3b8" stroke-dasharray="3 2" /></svg>Zerodha</span>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/flow-diagram.js" asp-append-version="true"></script>
+    <script src="~/js/tradelogic.js" asp-append-version="true"></script>
+}

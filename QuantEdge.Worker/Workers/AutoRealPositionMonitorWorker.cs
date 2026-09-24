@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.Constants;
 using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Interfaces;
@@ -19,23 +20,23 @@ public class AutoRealPositionMonitorWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AutoRealPositionMonitorWorker> _logger;
-    private readonly TimeSpan _fallbackInterval = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan _fallbackInterval = RealTradeSchedule.MonitorInterval;
 
     // A live position's SL/TSL check trusts only a WebSocket tick received within this window - never
     // a REST poll, and never RealPosition.CurrentPrice (which is written once at buy time and frozen
     // forever after). If no tick this fresh is cached for the symbol, the cycle is skipped rather than
     // risking a decision on a stale/wrong price.
-    private static readonly TimeSpan LtpFreshnessWindow = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan LtpFreshnessWindow = RealTradeSchedule.LtpFreshnessWindow;
 
     // A single missed tick within the freshness window is often just quiet trading, not a dead
     // subscription - only fall back to a REST quote once a symbol has been stale for this many
     // consecutive cycles (~40s), so a brief WS gap never triggers an extra API call.
-    private const int RestFallbackMissThreshold = 2;
+    private const int RestFallbackMissThreshold = RealTradeSchedule.RestFallbackMissThreshold;
 
     // How often the same symbol is allowed to write an LTP_UNAVAILABLE / LTP_REST_FALLBACK /
     // WS_RESUBSCRIBED audit entry, so a stuck symbol doesn't spam the Live Real Trade Audit Stream
     // once per 20s cycle for as long as it stays broken.
-    private static readonly TimeSpan AuditLogDebounceWindow = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan AuditLogDebounceWindow = RealTradeSchedule.AuditLogDebounceWindow;
 
     private readonly ConcurrentDictionary<string, int> _consecutiveStaleMisses = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTime> _lastAuditLogUtc = new(StringComparer.OrdinalIgnoreCase);

@@ -158,6 +158,22 @@ public class RealTradeController : ControllerBase
     }
 
     /// <summary>
+    /// One stock's journey for the "Flow" popup on the Auto Real Trade page: how it entered (or why it
+    /// was skipped today), its live price, every exit level and the rupee result of each exit.
+    /// </summary>
+    [HttpGet("symbol-journey")]
+    public async Task<IActionResult> GetSymbolJourney([FromQuery] string symbol, [FromQuery] int? userId = null)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new { success = false, message = "Symbol is required." });
+        }
+
+        var journey = await _realTradeService.GetSymbolJourneyAsync(symbol, GetCurrentUserId(userId));
+        return Ok(journey);
+    }
+
+    /// <summary>
     /// Manual one-off Real Trade BUY from the Manual Real Trade popup (Signal Dashboard / ETF List),
     /// bypassing the 15-minute auto-scan cycle. Still routed through the same risk checks as automatic
     /// execution (master switch, token validity, market hours, daily trade/loss limits, duplicate position,

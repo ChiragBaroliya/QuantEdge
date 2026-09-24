@@ -435,6 +435,17 @@
                     </svg>
                     <span class="nav-label">User Management</span>
                 </a>
+                <a asp-controller="TradeLogic" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "TradeLogic" ? "active" : "")"
+                   data-tooltip="🧭 **Real Trade Flow**: Flow diagrams showing how the Auto Real Trade background jobs buy, guard and sell.">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="6" height="6" rx="1"></rect>
+                        <rect x="15" y="15" width="6" height="6" rx="1"></rect>
+                        <path d="M9 6h4a2 2 0 0 1 2 2v7"></path>
+                        <polyline points="12 12 15 15 18 12"></polyline>
+                    </svg>
+                    <span class="nav-label">Real Trade Flow</span>
+                </a>
 
                 <!-- Main Menu Log with Sub Items -->
                 bool isLogActive = ViewContext.RouteData.Values["controller"]?.ToString() == "Log";

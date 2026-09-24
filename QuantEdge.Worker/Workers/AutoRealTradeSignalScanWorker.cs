@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.Constants;
 using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
@@ -18,7 +19,6 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AutoRealTradeSignalScanWorker> _logger;
-    private readonly TimeSpan _scanInterval = TimeSpan.FromMinutes(15);
 
     public AutoRealTradeSignalScanWorker(
         IServiceProvider serviceProvider,
@@ -82,7 +82,7 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
                 _logger.LogError(ex, "Error occurred in AutoRealTradeSignalScanWorker cycle.");
             }
 
-            await Task.Delay(_scanInterval, stoppingToken);
+            await Task.Delay(RealTradeSchedule.ScanInterval, stoppingToken);
         }
     }
 
@@ -131,17 +131,17 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
 
             try
             {
-                var stockCandles1d = (await candleRepo.GetHistoryAsync(stock.Symbol, "1d", 100))
+                var stockCandles1d = (await candleRepo.GetHistoryAsync(stock.Symbol, "1d", RealTradeSchedule.CandleHistoryCount))
                     .OrderBy(c => c.CandleTime)
                     .ToList();
-                var stockCandles15m = (await candleRepo.GetHistoryAsync(stock.Symbol, "15m", 100))
+                var stockCandles15m = (await candleRepo.GetHistoryAsync(stock.Symbol, "15m", RealTradeSchedule.CandleHistoryCount))
                     .OrderBy(c => c.CandleTime)
                     .ToList();
-                var stockCandles60m = (await candleRepo.GetHistoryAsync(stock.Symbol, "60m", 100))
+                var stockCandles60m = (await candleRepo.GetHistoryAsync(stock.Symbol, "60m", RealTradeSchedule.CandleHistoryCount))
                     .OrderBy(c => c.CandleTime)
                     .ToList();
 
-                if (stockCandles1d.Count < 50) continue;
+                if (stockCandles1d.Count < RealTradeSchedule.MinDailyCandles) continue;
 
                 var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, strategySettings);
                 if (evalResult == null || evalResult.Checklist == null) continue;

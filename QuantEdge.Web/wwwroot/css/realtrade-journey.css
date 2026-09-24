@@ -1,0 +1,122 @@
+/* ==========================================================================
+   Stock Journey popup (Auto Real Trade page) - realtrade-journey.js
+   ========================================================================== */
+
+/* Row button that opens the popup */
+.btn-journey {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--theme-accent, #a78bfa);
+    background: rgba(167, 139, 250, .12);
+    border: 1px solid rgba(167, 139, 250, .5);
+    border-radius: 6px;
+    padding: 4px 9px;
+    margin-right: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-journey:hover { background: rgba(167, 139, 250, .24); }
+.btn-journey svg { width: 13px; height: 13px; }
+.log-entry .btn-journey { margin: 0 0 0 8px; padding: 1px 7px; font-size: 10.5px; font-family: var(--font-sans, inherit); }
+
+/* Modal */
+.sj-modal {
+    background: var(--bg-surface, #0d1221);
+    border: 1px solid rgba(167, 139, 250, .45);
+    border-radius: 18px;
+    color: var(--text-primary);
+}
+
+.sj-head {
+    align-items: flex-start;
+    gap: 14px;
+    background: linear-gradient(135deg, #1a2238 0%, #141929 100%);
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: 18px 18px 0 0;
+}
+
+.sj-title { font-size: 20px; font-weight: 700; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.sj-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--text-secondary); }
+.sj-head-right { display: flex; gap: 12px; align-items: center; margin-left: auto; }
+
+.sj-live { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.sj-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-green, #34d399); box-shadow: 0 0 0 3px rgba(52, 211, 153, .2); animation: sj-beat 1.6s ease-in-out infinite; }
+.sj-live i.stale { background: var(--accent-amber, #fbbf24); box-shadow: 0 0 0 3px rgba(251, 191, 36, .2); }
+@keyframes sj-beat { 50% { opacity: .35; } }
+
+.sj-pill { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.sj-pill-open { background: rgba(52, 211, 153, .13); color: var(--accent-green, #34d399); }
+.sj-pill-skip { background: rgba(248, 113, 113, .13); color: var(--accent-red, #f87171); }
+.sj-pill-warn { background: rgba(251, 191, 36, .13); color: var(--accent-amber, #fbbf24); }
+.sj-pill-accent { background: rgba(167, 139, 250, .14); color: var(--theme-accent, #a78bfa); }
+.sj-pill-muted { background: var(--bg-input, #151e30); color: var(--text-secondary); border: 1px solid var(--border-subtle); }
+
+.sj-body { display: flex; flex-direction: column; gap: 16px; padding: 18px 20px; }
+.sj-content { display: flex; flex-direction: column; gap: 16px; }
+.sj-message { font-size: 13.5px; color: var(--text-secondary); padding: 24px 4px; text-align: center; }
+.sj-message.error { color: var(--accent-red, #f87171); }
+
+.sj-heading { font-size: 14px; font-weight: 600; margin: 0; color: var(--text-primary); }
+.sj-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sj-decision { font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 8px; background: var(--bg-input, #151e30); color: var(--text-secondary); border: 1px solid var(--border-subtle); }
+.sj-decision.sell { background: rgba(248, 113, 113, .13); color: var(--accent-red, #f87171); border-color: rgba(248, 113, 113, .35); }
+.sj-decision.hold { background: rgba(79, 156, 249, .12); color: var(--accent-blue, #4f9cf9); border-color: rgba(79, 156, 249, .3); }
+
+/* Rupee summary */
+.sj-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    gap: 1px;
+    background: var(--border-subtle);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.sj-stat { background: #172033; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sj-stat span { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+.sj-stat b { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.sj-stat small { font-size: 11px; color: var(--text-secondary); }
+.sj-pos { color: var(--accent-green, #34d399); }
+.sj-neg { color: var(--accent-red, #f87171); }
+
+/* Price strip: levels on a rail, live price dot above */
+.sj-strip { position: relative; height: 122px; margin: 4px 10px 0; }
+.sj-rail { position: absolute; left: 0; right: 0; top: 72px; height: 8px; border-radius: 5px; }
+.sj-mk { position: absolute; top: 66px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 3; }
+.sj-mk .tk { width: 2px; height: 20px; background: var(--c); }
+.sj-mk .lb { position: absolute; white-space: nowrap; font-size: 11px; text-align: center; line-height: 1.25; color: var(--c); background: var(--bg-surface, #0d1221); padding: 0 4px; border-radius: 4px; }
+.sj-mk .lb b { display: block; color: var(--text-primary); font-weight: 600; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.sj-mk.up .lb { bottom: 26px; }
+.sj-mk.dn .lb { top: 24px; }
+.sj-ltp { position: absolute; top: 0; height: 84px; transform: translateX(-50%); z-index: 2; display: flex; flex-direction: column; align-items: center; transition: left .6s; }
+.sj-ltp .lb { background: var(--text-primary); color: var(--bg-base, #080d1a); font-size: 11.5px; font-weight: 700; padding: 2px 7px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sj-ltp .ln { width: 2px; flex: 1; background: var(--text-primary); opacity: .45; }
+.sj-ltp .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--text-primary); border: 3px solid var(--bg-surface, #0d1221); box-shadow: 0 0 0 2px var(--text-primary); flex: none; }
+
+/* Node detail */
+.sj-detail { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: start; background: #172033; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 12px 14px; }
+.sj-detail-icon { width: 34px; height: 34px; border-radius: 9px; border: 1.5px solid; display: grid; place-items: center; font-weight: 700; }
+.sj-detail h6 { font-size: 14.5px; font-weight: 600; margin: 0 0 2px; color: var(--text-primary); }
+.sj-detail p { margin: 0; font-size: 12.5px; color: var(--text-secondary); max-width: 90ch; }
+.sj-detail-value { font-size: 13px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.sj-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
+.sj-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sj-legend svg { width: 26px; height: 16px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .sj-live i { animation: none; }
+    .sj-ltp { transition: none; }
+}
+
+@media (max-width: 620px) {
+    .sj-body { padding: 14px; }
+    .sj-detail { grid-template-columns: 1fr; }
+    .sj-detail-icon { display: none; }
+    .sj-detail-value { text-align: left; }
+}

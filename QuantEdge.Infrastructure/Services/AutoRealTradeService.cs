@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.Constants;
 using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Interfaces;
@@ -36,7 +37,7 @@ public class AutoRealTradeService : IAutoRealTradeService
     // Gap-open handling for overnight CNC positions: a stop "hit" where the price has already moved
     // well past the trigger level (SwingTradeRules flags it as a gap) needs a wider exit price band
     // to have a realistic chance of filling immediately.
-    private const decimal GapExitProtectionBufferPct = 0.02m;
+    public const decimal GapExitProtectionBufferPct = 0.02m;
 
     public AutoRealTradeService(
         IRealTradingRepository repository,
@@ -194,7 +195,6 @@ public class AutoRealTradeService : IAutoRealTradeService
         var todayLogs = await GetTodayLogsAsync(userId, 50);
         int todayCount = await GetTodayRealTradeCountAsync(userId);
 
-        decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
         decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
 
         decimal todayTradeAmount = recentOrders
@@ -258,6 +258,9 @@ public class AutoRealTradeService : IAutoRealTradeService
                 brokerHoldings = holdRes.Holdings;
             }
         }
+
+        ApplyLivePrices(positions, brokerPositions, brokerHoldings);
+        decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
 
         var nextRunInfo = AutoTradeService.Calculate15MinNextRunInfo();
 
@@ -1705,12 +1708,13 @@ public class AutoRealTradeService : IAutoRealTradeService
         await _cacheService.RemoveAsync(cacheKey);
 
         var openPositions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
+        var livePrices = await GetLiveLtpsAsync(openPositions.Select(p => p.Symbol), userId);
         int filledCount = 0;
         int pendingCount = 0;
 
         foreach (var pos in openPositions)
         {
-            decimal exitPrice = pos.CurrentPrice > 0m ? pos.CurrentPrice : pos.AverageEntryPrice;
+            decimal exitPrice = GetExitReferencePrice(pos, livePrices);
             var outcome = await ExecuteRealSellOrderCoreAsync(pos, exitPrice, reason, userId);
             if (outcome == RealSellOutcome.Filled) filledCount++;
             else if (outcome == RealSellOutcome.OrderOpenPending) pendingCount++;
@@ -1731,8 +1735,264 @@ public class AutoRealTradeService : IAutoRealTradeService
         var position = await _repository.GetOpenPositionByIdAsync(positionId);
         if (position == null) return false;
 
-        decimal exitPrice = position.CurrentPrice > 0m ? position.CurrentPrice : position.AverageEntryPrice;
+        var livePrices = await GetLiveLtpsAsync(new[] { position.Symbol }, userId);
+        decimal exitPrice = GetExitReferencePrice(position, livePrices);
         return await ExecuteRealSellOrderAsync(position, exitPrice, reason, userId);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Live prices for open positions
+    // ------------------------------------------------------------------------------------------
+
+    // RealPosition.CurrentPrice/UnrealizedPnl are written once at entry and never persisted again, so
+    // every read path overlays the live price here: a fresh WebSocket tick first, else Zerodha's own
+    // last_price from the positions/holdings snapshot the caller already fetched (no extra API call).
+    private void ApplyLivePrices(IEnumerable<RealPosition> positions, ZerodhaPositionsDto? brokerPositions, List<ZerodhaHoldingDto>? brokerHoldings)
+    {
+        foreach (var position in positions)
+        {
+            decimal ltp = 0m;
+            if (_realTradeCache == null || !_realTradeCache.TryGetFreshLtp(position.Symbol, RealTradeSchedule.LtpFreshnessWindow, out ltp))
+                ltp = FindBrokerLastPrice(position.Symbol, brokerPositions, brokerHoldings) ?? 0m;
+
+            if (ltp <= 0m) continue;
+            position.CurrentPrice = ltp;
+            position.UnrealizedPnl = CalculateUnrealizedPnl(position, ltp);
+        }
+    }
+
+    private static decimal CalculateUnrealizedPnl(RealPosition position, decimal ltp) =>
+        Math.Round((position.Side == TradeSide.SELL ? position.AverageEntryPrice - ltp : ltp - position.AverageEntryPrice) * position.Quantity, 2);
+
+    private static decimal? FindBrokerLastPrice(string symbol, ZerodhaPositionsDto? brokerPositions, List<ZerodhaHoldingDto>? brokerHoldings)
+    {
+        var brokerPosition = brokerPositions?.Net?.FirstOrDefault(x =>
+            string.Equals(x.TradingSymbol, symbol, StringComparison.OrdinalIgnoreCase) && x.LastPrice > 0m);
+        if (brokerPosition != null) return brokerPosition.LastPrice;
+
+        var holding = brokerHoldings?.FirstOrDefault(x =>
+            string.Equals(x.TradingSymbol, symbol, StringComparison.OrdinalIgnoreCase) && x.LastPrice > 0m);
+        return holding?.LastPrice;
+    }
+
+    // Live prices for an exit (or a display) that must not use the frozen RealPosition.CurrentPrice:
+    // fresh WebSocket tick first, then one batched Zerodha REST quote for the remaining symbols.
+    private async Task<Dictionary<string, (decimal Ltp, string Source)>> GetLiveLtpsAsync(IEnumerable<string> symbols, int userId)
+    {
+        var result = new Dictionary<string, (decimal Ltp, string Source)>(StringComparer.OrdinalIgnoreCase);
+        var stale = new List<string>();
+
+        foreach (var symbol in symbols.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (_realTradeCache != null && _realTradeCache.TryGetFreshLtp(symbol, RealTradeSchedule.LtpFreshnessWindow, out var ltp) && ltp > 0m)
+                result[symbol] = (ltp, "WS");
+            else
+                stale.Add(symbol);
+        }
+
+        if (stale.Count == 0) return result;
+
+        try
+        {
+            var quote = await _brokerService.GetLtpQuotesAsync(stale.Select(s => (s, "NSE")), userId);
+            if (quote.Success && quote.Ltps != null)
+            {
+                foreach (var symbol in stale)
+                {
+                    if (quote.Ltps.TryGetValue(symbol, out var ltp) && ltp > 0m)
+                        result[symbol] = (ltp, "REST");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "REST LTP quote failed for {Symbols} (User {UserId})", string.Join(",", stale), userId);
+        }
+
+        return result;
+    }
+
+    private static decimal GetExitReferencePrice(RealPosition position, Dictionary<string, (decimal Ltp, string Source)> livePrices) =>
+        livePrices.TryGetValue(position.Symbol, out var live) ? live.Ltp
+        : position.CurrentPrice > 0m ? position.CurrentPrice
+        : position.AverageEntryPrice;
+
+    // ------------------------------------------------------------------------------------------
+    // Stock journey (Auto Real Trade "Flow" popup)
+    // ------------------------------------------------------------------------------------------
+
+    public async Task<SymbolJourneyDto> GetSymbolJourneyAsync(string symbol, int userId = 1)
+    {
+        symbol = symbol.ToUpper().Trim();
+        var settings = await GetSettingsAsync(userId);
+        var tradeParams = SwingTradeParams.From(settings);
+        var nowIst = SwingTradeRules.NowIst();
+
+        var dto = new SymbolJourneyDto
+        {
+            Symbol = symbol,
+            AsOfUtc = DateTime.UtcNow,
+            ExitMode = tradeParams.ExitMode,
+            IsSwingClose = tradeParams.IsSwingClose,
+            ProductType = settings.ProductType,
+            IsMarketOpen = await _marketHoursService.IsWithinMarketHoursAsync(),
+            IsClosingWindow = SwingTradeRules.IsInClosingWindow(nowIst, tradeParams),
+            CloseCheckTime = SwingTradeRules.GetClosingWindowStart(tradeParams).ToString(@"hh\:mm"),
+            MaxDurationDays = settings.MaxDurationDays,
+            FixedAmountPerTrade = settings.FixedAmountPerTrade,
+            MonitorIntervalSeconds = (int)RealTradeSchedule.MonitorInterval.TotalSeconds
+        };
+
+        var position = await _repository.GetOpenPositionBySymbolAsync(userId, symbol);
+        var orders = (await _repository.GetRecentOrdersAsync(userId, 100))
+            .Where(o => string.Equals(o.Symbol, symbol, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(o => o.CreatedAt)
+            .ToList();
+        var logs = (await GetTodayLogsAsync(userId, 500))
+            .Where(l => string.Equals(l.Symbol, symbol, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(l => l.ExecutedAt)
+            .ToList();
+        dto.Orders = orders;
+        dto.Logs = logs;
+
+        // The popup refreshes every few seconds, so Zerodha is only called when needed: a fresh
+        // WebSocket tick covers a bot-managed position; the account rows are only fetched for a stock
+        // the bot doesn't manage; a REST quote is the last resort.
+        if (_realTradeCache != null && _realTradeCache.TryGetFreshLtp(symbol, RealTradeSchedule.LtpFreshnessWindow, out var wsLtp))
+        {
+            dto.Ltp = wsLtp;
+            dto.LtpSource = "WS";
+        }
+
+        var tokenValidation = await _brokerService.ValidateSessionTokenAsync(userId);
+        if (tokenValidation.IsValid && position == null)
+        {
+            var posTask = _brokerService.GetLivePositionsAsync(userId);
+            var holdTask = _brokerService.GetLiveHoldingsAsync(userId);
+            await Task.WhenAll(posTask, holdTask);
+
+            var posRes = await posTask;
+            dto.BrokerPosition = posRes.Success
+                ? posRes.Positions?.Net?.FirstOrDefault(x => string.Equals(x.TradingSymbol, symbol, StringComparison.OrdinalIgnoreCase) && x.Quantity != 0)
+                : null;
+            var holdRes = await holdTask;
+            dto.BrokerHolding = holdRes.Success
+                ? holdRes.Holdings?.FirstOrDefault(x => string.Equals(x.TradingSymbol, symbol, StringComparison.OrdinalIgnoreCase) && x.Quantity + x.T1Quantity > 0)
+                : null;
+
+            if (!dto.Ltp.HasValue)
+            {
+                decimal? brokerLtp = dto.BrokerPosition is { LastPrice: > 0m } bp ? bp.LastPrice
+                    : dto.BrokerHolding is { LastPrice: > 0m } bh ? bh.LastPrice
+                    : null;
+                if (brokerLtp.HasValue)
+                {
+                    dto.Ltp = brokerLtp;
+                    dto.LtpSource = "ZERODHA";
+                }
+            }
+        }
+
+        if (!dto.Ltp.HasValue && tokenValidation.IsValid && (position != null || dto.BrokerPosition != null || dto.BrokerHolding != null))
+        {
+            var live = await GetLiveLtpsAsync(new[] { symbol }, userId);
+            if (live.TryGetValue(symbol, out var price))
+            {
+                dto.Ltp = price.Ltp;
+                dto.LtpSource = price.Source;
+            }
+        }
+
+        if (position != null)
+        {
+            if (dto.Ltp.HasValue)
+            {
+                position.CurrentPrice = dto.Ltp.Value;
+                position.UnrealizedPnl = CalculateUnrealizedPnl(position, dto.Ltp.Value);
+            }
+            dto.Position = position;
+            dto.IsEntryDay = SwingTradeRules.ToIst(position.OpenedAt).Date == nowIst.Date;
+            dto.TradingDaysHeld = await _marketHoursService.CountTradingDaysElapsedAsync(position.OpenedAt, DateTime.UtcNow);
+
+            // The BUY that opened this position; none means it was enrolled from Zerodha Holdings.
+            dto.EntryOrder = orders
+                .Where(o => o.Side == TradeSide.BUY && o.Status == PaperOrderStatus.Filled)
+                .Select(o => (Order: o, Gap: Math.Abs(((o.FilledAt ?? o.CreatedAt) - position.OpenedAt).TotalMinutes)))
+                .Where(x => x.Gap <= 30)
+                .OrderBy(x => x.Gap)
+                .Select(x => x.Order)
+                .FirstOrDefault();
+            dto.EntrySource = dto.EntryOrder != null
+                ? (dto.EntryOrder.TradeType == TradeType.Manual ? "MANUAL" : "AUTO_SIGNAL")
+                : position.TradeType == TradeType.Manual ? "MANUAL" : "HOLDING";
+
+            // Levels exactly as the monitor derives them (SwingTradeRules infers the ATR from the SL).
+            var view = ExitPositionView.From(position);
+            decimal entry = position.AverageEntryPrice;
+            decimal? PnlAt(decimal? level) => level.HasValue ? Math.Round((level.Value - entry) * position.Quantity, 2) : null;
+
+            var levels = new SymbolJourneyLevelsDto
+            {
+                Invested = Math.Round(entry * position.Quantity, 2),
+                UnrealizedPnl = dto.Ltp.HasValue ? position.UnrealizedPnl : null,
+                StopLoss = position.StopLoss,
+                TakeProfit = position.TakeProfit,
+                TrailingStopLoss = position.TrailingStopLoss,
+                IsTrailActive = tradeParams.IsSwingClose
+                    ? position.TrailingStopLoss.HasValue && position.TrailingStopLoss.Value >= entry
+                    : position.TrailingStopLoss.HasValue,
+                Atr = Math.Round(SwingTradeRules.InferAtr(view, tradeParams), 4)
+            };
+            if (tradeParams.IsSwingClose)
+            {
+                levels.EmergencyStop = SwingTradeRules.GetEmergencyStop(view, tradeParams);
+                levels.TrailActivationPrice = Math.Round(SwingTradeRules.GetTrailActivationPrice(view, tradeParams), 2);
+            }
+            levels.PnlAtTarget = PnlAt(levels.TakeProfit);
+            levels.PnlAtStopLoss = PnlAt(levels.StopLoss);
+            levels.PnlAtEmergencyStop = PnlAt(levels.EmergencyStop);
+            levels.PnlAtTrailingStopLoss = levels.IsTrailActive ? PnlAt(levels.TrailingStopLoss) : null;
+            dto.Levels = levels;
+
+            if (dto.Ltp.HasValue)
+            {
+                var decision = SwingTradeRules.EvaluateExit(view, dto.Ltp.Value, nowIst, dto.TradingDaysHeld,
+                    settings.MaxDurationDays, tradeParams);
+                dto.WouldSellNow = decision.ShouldExit;
+                dto.DecisionReason = decision.ShouldExit ? decision.Reason : null;
+            }
+        }
+
+        var skip = logs.LastOrDefault(l =>
+            string.Equals(l.ActionType, "REAL_SIGNAL_SKIPPED", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(l.ActionType, "CIRCUIT_BREAKER", StringComparison.OrdinalIgnoreCase));
+        if (skip != null)
+        {
+            var guard = RealTradeGuards.Classify(skip.ActionType, skip.Reason);
+            dto.LastSkip = new SymbolJourneySkipDto
+            {
+                AtUtc = skip.ExecutedAt,
+                ActionType = skip.ActionType,
+                Reason = skip.Reason ?? string.Empty,
+                Price = skip.Price,
+                GuardNumber = guard?.Number,
+                GuardName = guard?.Name,
+                TotalGuards = RealTradeGuards.TotalGuards
+            };
+
+            if (guard?.Number == 11 && tokenValidation.IsValid)
+            {
+                var margin = await _brokerService.GetEquityMarginsAsync(userId);
+                if (margin.Success) dto.AvailableMargin = margin.AvailableCash;
+            }
+        }
+
+        dto.Status = position != null ? "OPEN"
+            : dto.BrokerPosition != null || dto.BrokerHolding != null ? "NOT_MANAGED"
+            : dto.LastSkip != null ? "SKIPPED"
+            : "NONE";
+
+        return dto;
     }
 
     private async Task<string> GetUserTagAsync(int userId)
@@ -1797,7 +2057,6 @@ public class AutoRealTradeService : IAutoRealTradeService
     {
         var tokenValidation = await _brokerService.ValidateSessionTokenAsync(userId);
         var positions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
-        decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
         decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
 
         decimal availableMargin = 0m;
@@ -1838,6 +2097,9 @@ public class AutoRealTradeService : IAutoRealTradeService
                 brokerHoldings = holdRes.Holdings;
             }
         }
+
+        ApplyLivePrices(positions, brokerPositions, brokerHoldings);
+        decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
 
         return new RealTradeLivePositionsFastDto
         {

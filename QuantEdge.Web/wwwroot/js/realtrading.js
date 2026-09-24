@@ -536,7 +536,8 @@ function renderFilteredOpenPositions(positions) {
                 <td class="text-white">${slText}</td>
                 <td class="text-white">${tslText}</td>
                 <td class="${pnlClass}">${formatCurrencyWithSign(pnl)} (${pnlPctSign}${pnlPct}%)</td>
-                <td>
+                <td class="text-nowrap">
+                    ${journeyButton(p.symbol)}
                     <button class="btn-square-off" onclick="openSquareOffModal(${p.id}, '${p.symbol}')" title="Square off this real position">
                         Exit / Sell
                     </button>
@@ -616,7 +617,7 @@ function renderZerodhaPositions(brokerPositions) {
                 <td class="text-white">${formatCurrencyWithSign(p.unrealised)}</td>
                 <td class="text-white">${formatCurrencyWithSign(p.realised)}</td>
                 <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
-                <td>${actionCell}</td>
+                <td class="text-nowrap">${journeyButton(p.tradingSymbol)}${actionCell}</td>
             </tr>
         `;
     });
@@ -680,7 +681,7 @@ function renderZerodhaHoldings(holdings) {
                 <td class="${dayChangeClass}">${formatCurrencyWithSign(h.dayChange)} (${h.dayChangePercentage.toFixed(2)}%)</td>
                 <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
                 <td>${targetCell}</td>
-                <td>${actionCell}</td>
+                <td class="text-nowrap">${journeyButton(h.tradingSymbol)}${actionCell}</td>
             </tr>
         `;
     });
@@ -960,11 +961,15 @@ function appendLogEntry(log) {
         displayTag = (currentUserName || "CHIRAG").toUpperCase();
     }
 
+    const isSkip = log.actionType === "REAL_SIGNAL_SKIPPED" || log.actionType === "CIRCUIT_BREAKER";
+    const hasStockSymbol = displayTag === (log.symbol || "").trim().toUpperCase();
+    const whyButton = isSkip && hasStockSymbol ? journeyButton(log.symbol, "skip", "Why?") : "";
+
     div.innerHTML = `
         <span class="log-time">[${timeStr}]</span>
         <span class="${badgeClass} me-2" style="font-size: 0.7rem;">${log.actionType}</span>
         <span class="fw-bold me-2">${displayTag}:</span>
-        <span class="log-msg">${log.reason || ''}</span>
+        <span class="log-msg">${log.reason || ''}</span>${whyButton}
     `;
 
     container.prepend(div);
@@ -1473,6 +1478,13 @@ function formatCurrencyWithSign(val) {
     const num = parseFloat(val || 0);
     const sign = num > 0 ? '+' : '';
     return sign + '₹' + num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// "Flow" button that opens the Stock Journey popup (realtrade-journey.js) for one symbol.
+const JOURNEY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"></rect><rect x="15" y="15" width="6" height="6" rx="1"></rect><path d="M9 6h4a2 2 0 0 1 2 2v7"></path></svg>';
+function journeyButton(symbol, mode, label) {
+    const safe = String(symbol || "").replace(/[^A-Za-z0-9&._-]/g, "");
+    return `<button type="button" class="btn-journey" onclick="openStockJourney('${safe}', '${mode || "position"}')" title="See how the bot handles ${safe}">${JOURNEY_ICON}${label || "Flow"}</button>`;
 }
 
 // ============================================================================

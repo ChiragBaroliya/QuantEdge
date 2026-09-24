@@ -1,0 +1,48 @@
+@* Stock Journey popup for the Auto Real Trade page - filled by wwwroot/js/realtrade-journey.js *@
+<div class="modal fade" id="modalStockJourney" tabindex="-1" aria-labelledby="sjTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content sj-modal">
+            <div class="modal-header sj-head">
+                <div>
+                    <h5 class="modal-title sj-title" id="sjTitle">Stock journey</h5>
+                    <p class="sj-sub" id="sjSub"></p>
+                </div>
+                <div class="sj-head-right">
+                    <span class="sj-live" id="sjLive"></span>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="modal-body sj-body">
+                <div class="sj-message" id="sjMessage">Loading…</div>
+
+                <div class="sj-content" id="sjContent" hidden>
+                    <div class="sj-stats" id="sjStats"></div>
+
+                    <div id="sjStripWrap">
+                        <h6 class="sj-heading">Where the price is now</h6>
+                        <div class="sj-strip" id="sjStrip"></div>
+                    </div>
+
+                    <div class="sj-row">
+                        <h6 class="sj-heading" id="sjDiagramTitle"></h6>
+                        <span class="sj-decision" id="sjDecision"></span>
+                    </div>
+                    <div class="qe-flow-canvas">
+                        <svg id="sjSvg" xmlns="http://www.w3.org/2000/svg" role="img"></svg>
+                    </div>
+
+                    <div class="sj-detail" id="sjDetail" aria-live="polite"></div>
+
+                    <div class="sj-legend" aria-label="Legend">
+                        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#12261f" stroke="#2f8f6d" /></svg>Done</span>
+                        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#1e1b3a" stroke="#a78bfa" /></svg>Now</span>
+                        <span><svg viewBox="0 0 26 16"><path d="M1,8 H25" stroke="#a78bfa" stroke-width="2" stroke-dasharray="4 3" /></svg>Path the bot is on</span>
+                        <span><svg viewBox="0 0 26 16"><polygon points="6,1 20,1 25,8 20,15 6,15 1,8" fill="#172033" stroke="#7c8db5" /></svg>Check</span>
+                        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#10302a" stroke="#34d399" stroke-dasharray="3 2" /></svg>Possible profit exit</span>
+                        <span><svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="4" fill="#3a1d24" stroke="#f87171" stroke-dasharray="3 2" /></svg>Possible loss exit</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
