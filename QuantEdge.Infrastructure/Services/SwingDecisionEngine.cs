@@ -33,7 +33,25 @@ public class SwingEvaluationResult
     public decimal CalculatedRiskAmount { get; set; }
     public string TimeframeUsed { get; set; } = "1D + 15M + 60M";
     public string ExitSignalReason { get; set; } = string.Empty;
+
+    // Breakdown for the Signal Dashboard verdict card: points per scoring factor (their sum minus
+    // MarketPenaltyApplied is Score) and the key readings behind the 1D / 60m / 15m checks.
+    public List<SwingFactorScore> Factors { get; set; } = new();
+    public int MarketPenaltyApplied { get; set; }
+    public bool EmaTrendPassed { get; set; }
+    public bool AdxPassed { get; set; }
+    public decimal Adx1d { get; set; }
+    public decimal Ema20_1d { get; set; }
+    public decimal Ema50_1d { get; set; }
+    public bool Has60mData { get; set; }
+    public decimal? Rsi60m { get; set; }
+    public bool? Is60mAboveEma20 { get; set; }
+    public decimal Rsi15m { get; set; }
+    public decimal VolumeMultiple { get; set; }
 }
+
+/// <summary>Points one scoring factor earned (0..MaxPoints) and the timeframe it was measured on.</summary>
+public sealed record SwingFactorScore(string Code, string Name, int Points, int MaxPoints, string Timeframe);
 
 public static class SwingDecisionEngine
 {
@@ -118,6 +136,11 @@ public static class SwingDecisionEngine
 
         // Hard Filter 2 (Stock-Level): ADX_STRENGTH (ADX 14 >= 20.0 - Filters out choppy markets)
         bool adxPassed = curAdx_1d >= 20.0m;
+        result.EmaTrendPassed = emaTrendPassed;
+        result.AdxPassed = adxPassed;
+        result.Adx1d = Math.Round(curAdx_1d, 2);
+        result.Ema20_1d = Math.Round(curEma20_1d, 2);
+        result.Ema50_1d = Math.Round(curEma50_1d, 2);
 
         // Check Hard Filter Gate - stock-level filters only; market context is never part of this gate.
         if (!emaTrendPassed || !adxPassed)
@@ -189,6 +212,12 @@ public static class SwingDecisionEngine
         bool isNear52WHigh = currentPrice >= 0.90m * cur52wHigh;
 
         bool breakoutGroupPassed = isPrevHighBreakout || isConsolidationBreakout || isNear52WHigh;
+        int scoreBefore = score;
+        void AddFactor(string code, string name, int max, string timeframe)
+        {
+            result.Factors.Add(new SwingFactorScore(code, name, score - scoreBefore, max, timeframe));
+            scoreBefore = score;
+        }
         if (breakoutGroupPassed)
         {
             score += 20;
@@ -198,6 +227,7 @@ public static class SwingDecisionEngine
         {
             failedRules.Add("BREAKOUT_GROUP (0/20 pts): Inside trading range, no breakout detected");
         }
+        AddFactor("BREAKOUT_GROUP", "Breakout", 20, "15m");
 
         // Rule 5: VOL_CONFIRMATION (15 Pts Max)
         // Volume >= 2.5x 20-period Average Volume AND Volume > Prev Volume
@@ -222,6 +252,8 @@ public static class SwingDecisionEngine
         {
             failedRules.Add($"VOL_CONFIRMATION (0/15 pts): Volume low ({volMult:F1}x Avg Volume)");
         }
+        AddFactor("VOL_CONFIRMATION", "Volume", 15, "15m");
+        result.VolumeMultiple = volMult;
 
         // Rule 6: RELATIVE_STRENGTH (15 Pts Max)
         // Stock 1M or 3M return > NIFTY 50 return
@@ -242,6 +274,7 @@ public static class SwingDecisionEngine
         {
             failedRules.Add("RELATIVE_STRENGTH (0/15 pts): Underperforming NIFTY 50 Benchmark");
         }
+        AddFactor("RELATIVE_STRENGTH", "Relative strength", 15, "1d");
 
         // Rule 7: MULTITIMEFRAME (15 Pts Max)
         // 60m Close > 60m EMA20 AND 60m RSI >= 40
@@ -261,7 +294,10 @@ public static class SwingDecisionEngine
             decimal rsi60mVal = rsi_60m[idx60m];
 
             mtfPassed = close60m > ema20_60mVal && rsi60mVal >= 40m;
+            result.Rsi60m = Math.Round(rsi60mVal, 2);
+            result.Is60mAboveEma20 = close60m > ema20_60mVal;
         }
+        result.Has60mData = hasMtfData;
         if (mtfPassed)
         {
             score += 15;
@@ -275,6 +311,7 @@ public static class SwingDecisionEngine
         {
             failedRules.Add("MULTITIMEFRAME (0/15 pts): 60m Hourly Trend Bearish");
         }
+        AddFactor("MULTITIMEFRAME", "60m trend", 15, "60m");
 
         // Rule 8: RSI_MOMENTUM (10 Pts Max)
         // RSI(14) between 50 and 75 (Sweet spot: 55-70)
@@ -295,6 +332,8 @@ public static class SwingDecisionEngine
         {
             failedRules.Add($"RSI_MOMENTUM (0/10 pts): Outside 50-75 Zone ({curRsi:F1})");
         }
+        AddFactor("RSI_MOMENTUM", "RSI", 10, "15m");
+        result.Rsi15m = Math.Round(curRsi, 2);
 
         // Rule 9: MACD_BULLISH (10 Pts Max)
         // MACD Line > Signal Line OR fresh bullish crossover
@@ -311,6 +350,7 @@ public static class SwingDecisionEngine
         {
             failedRules.Add("MACD_BULLISH (0/10 pts): Bearish MACD Line below Signal");
         }
+        AddFactor("MACD_BULLISH", "MACD", 10, "15m");
 
         // Rule 10: BULLISH_CANDLE (8 Pts Max)
         // Bullish Engulfing / Marubozu / Breakout candle (>1.5x ATR) / Close near High
@@ -333,6 +373,7 @@ public static class SwingDecisionEngine
         {
             failedRules.Add("BULLISH_CANDLE (0/8 pts): Weak or indecisive candle pattern");
         }
+        AddFactor("BULLISH_CANDLE", "Candle", 8, "15m");
 
         // Rule 11: RISK_REWARD (7 Pts Max)
         // Target (Price + 2.0*curAtr) vs SL (Price - 1.5*curAtr) ratio >= 1:2.0
@@ -353,6 +394,7 @@ public static class SwingDecisionEngine
         {
             failedRules.Add($"RISK_REWARD (0/7 pts): Low R:R Ratio (1:{result.RiskRewardRatio:F1})");
         }
+        AddFactor("RISK_REWARD", "Risk:reward", 7, "15m");
 
         // --------------------------------------------------------------------
         // STAGE C: MARKET CONTEXT RISK ADJUSTMENT + SIGNAL DECISION THRESHOLDS
@@ -363,6 +405,7 @@ public static class SwingDecisionEngine
         if (!niftyPassed)
         {
             score -= marketContextScorePenalty;
+            result.MarketPenaltyApplied = marketContextScorePenalty;
         }
 
         result.Score = Math.Min(100, Math.Max(0, score));

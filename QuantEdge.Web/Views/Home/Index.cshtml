@@ -5,6 +5,9 @@
 }
 
 <link rel="stylesheet" href="~/css/dashboard.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/flow-diagram.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/stock-verdict.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/realtrade-journey.css" asp-append-version="true" />
 
 <div class="dashboard-container">
     @if (!isAdmin)
@@ -31,12 +34,12 @@
             </div>
             
             <div class="timeframe-group">
-                <div class="tabs" data-tooltip="⏱️ **Timeframe**: Select chart timeframe from 1 minute to 1 day.">
-                    <button class="tab-btn active" data-timeframe="1m">1 MIN</button>
-                    <button class="tab-btn" data-timeframe="5m">5 MIN</button>
-                    <button class="tab-btn" data-timeframe="15m">15 MIN</button>
-                    <button class="tab-btn" data-timeframe="60m">60 MIN</button>
-                    <button class="tab-btn" data-timeframe="1d">1 DAY</button>
+                <div class="tabs" data-tooltip="⏱️ **Timeframe**: 1 day sets the trend, 60 min confirms the setup, 15 min times the entry. 1 and 5 min are for watching the chart only - the verdict above never uses them.">
+                    <button class="tab-btn tab-chart-only" data-timeframe="1m">1 MIN<span class="tab-role">chart only</span></button>
+                    <button class="tab-btn tab-chart-only" data-timeframe="5m">5 MIN<span class="tab-role">chart only</span></button>
+                    <button class="tab-btn active" data-timeframe="15m">15 MIN<span class="tab-role">timing</span></button>
+                    <button class="tab-btn" data-timeframe="60m">60 MIN<span class="tab-role">setup</span></button>
+                    <button class="tab-btn" data-timeframe="1d">1 DAY<span class="tab-role">trend</span></button>
                 </div>
             </div>
         </div>
@@ -72,6 +75,44 @@
         </div>
     </div>
 
+    <!-- Overall verdict across all timeframes (stock-verdict.js) - same engine as the auto-trading bot -->
+    <div id="verdictEmpty" class="card sv-empty">Select a stock to see its overall verdict across all timeframes.</div>
+    <div id="verdictCard" class="card sv-card" hidden>
+        <div class="sv-head">
+            <div>
+                <div class="sv-eyebrow">Overall verdict · all timeframes</div>
+                <h2 class="sv-title"><span id="svSymbol"></span><span id="svPrice" class="sv-price"></span><span id="svChange" class="sv-change"></span></h2>
+                <div class="sv-meta" id="svMeta"></div>
+            </div>
+            <div class="sv-tags" id="svTags"></div>
+        </div>
+        <div class="sv-body">
+            <div class="sv-left">
+                <div>
+                    <div class="sv-for" id="svFor"></div>
+                    <div class="sv-verdict" id="svVerdict"></div>
+                </div>
+                <div class="sv-ring" aria-hidden="true">
+                    <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" fill="none" stroke="#1e293b" stroke-width="3.2" /><circle id="svRingArc" cx="18" cy="18" r="15.9" fill="none" stroke-width="3.2" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100" /></svg>
+                    <div class="sv-ring-num"><div><b id="svScore">–</b><span>of 100</span></div></div>
+                </div>
+                <p class="sv-why" id="svWhy"></p>
+                <div class="sv-miss" id="svMiss"></div>
+            </div>
+            <div class="sv-right">
+                <div class="sv-row"><h3>How the timeframes line up</h3><span>Higher timeframe always wins · click a box</span></div>
+                <div class="qe-flow-canvas"><svg id="svSvg" xmlns="http://www.w3.org/2000/svg" role="img"></svg></div>
+                <div class="sv-detail" id="svDetail" aria-live="polite"></div>
+                <div>
+                    <div class="sv-row" style="margin-bottom: 8px;"><h3>Where the score comes from</h3><span id="svScoreNote"></span></div>
+                    <div class="sv-bar" id="svBar"></div>
+                    <div class="sv-factors" id="svFactors" style="margin-top: 26px;"></div>
+                </div>
+                <div class="sv-bot" id="svBot" hidden></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Signal Indicator Grid -->
     <div class="signal-grid">
         <!-- AI Recommendation Glowing Card -->
@@ -81,8 +122,8 @@
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="margin-right: 6px;">
                         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                     </svg>
-                    AI RECOMMENDATION
-                    <span class="info-tooltip-trigger" data-tooltip="🤖 **AI Recommendation**: Generated automatically using EMA, RSI, VWAP, and MACD indicators.">
+                    TIMEFRAME SIGNAL
+                    <span class="info-tooltip-trigger" data-tooltip="📊 **Timeframe Signal**: Rule-based EMA, RSI, VWAP, MACD and volume score for the selected tab only. The overall verdict above combines all timeframes and is what the bot trades on.">
                         <svg class="info-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
                             <circle cx="12" cy="12" r="10"></circle>
                             <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -219,78 +260,6 @@
                 </div>
                 <div class="w-value-wrapper">
                     <span id="widgetMACD" class="w-value monospace">-</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Asset Specification Card -->
-    <div class="card asset-spec-card">
-        <div class="card-header">
-            <span class="card-section-title">
-                ASSET SPECIFICATION (STOCK MASTER METADATA)
-                <span class="info-tooltip-trigger" data-tooltip="Detailed instrument metadata from the stock master database.">
-                    <svg class="info-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="16" x2="12" y2="12"></line>
-                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                </span>
-            </span>
-        </div>
-        <div class="card-body">
-            <div class="asset-spec-grid">
-                <div class="spec-item">
-                    <span class="spec-label">Company Name</span>
-                    <span class="spec-value" id="specName">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Trading Symbol</span>
-                    <span class="spec-value" id="specSymbol">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Instrument Token</span>
-                    <span class="spec-value monospace" id="specInstrumentToken">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Exchange Token</span>
-                    <span class="spec-value monospace" id="specExchangeToken">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Exchange</span>
-                    <span class="spec-value" id="specExchange">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Segment</span>
-                    <span class="spec-value" id="specSegment">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Instrument Type</span>
-                    <span class="spec-value" id="specInstrumentType">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Last Price</span>
-                    <span class="spec-value monospace" id="specLastPrice">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Lot Size</span>
-                    <span class="spec-value monospace" id="specLotSize">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Tick Size</span>
-                    <span class="spec-value monospace" id="specTickSize">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Expiry Date</span>
-                    <span class="spec-value monospace" id="specExpiry">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Strike Price</span>
-                    <span class="spec-value monospace" id="specStrike">-</span>
-                </div>
-                <div class="spec-item">
-                    <span class="spec-label">Status</span>
-                    <span class="spec-status-badge" id="specStatus">-</span>
                 </div>
             </div>
         </div>
@@ -498,6 +467,10 @@
 
 <partial name="_StrategyFormulasModal" />
 
+@* Config + popup for the Stock Journey "Flow" button on owned stocks (realtrade-journey.js) *@
+<div id="realtrade-config" hidden data-api-base-url="@ViewBag.ApiBaseUrl" data-user-id="@ViewBag.UserId"></div>
+<partial name="_StockJourneyModal" />
+
 @section Scripts {
     <!-- SweetAlert2 CDN -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -510,9 +483,13 @@
     <script src="~/js/theme/signalr.min.js"></script>
     <script>
         window.QuantEdgeConfig = {
-            apiBaseUrl: "@ViewBag.ApiBaseUrl"
+            apiBaseUrl: "@ViewBag.ApiBaseUrl",
+            userId: @ViewBag.UserId
         };
     </script>
+    <script src="~/js/flow-diagram.js" asp-append-version="true"></script>
+    <script src="~/js/stock-verdict.js" asp-append-version="true"></script>
+    <script src="~/js/realtrade-journey.js" asp-append-version="true"></script>
     <script src="~/js/dashboard.js" asp-append-version="true"></script>
     <script>
         $(document).ready(function() {

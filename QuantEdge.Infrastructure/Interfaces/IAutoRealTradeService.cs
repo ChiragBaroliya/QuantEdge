@@ -57,6 +57,12 @@ public interface IAutoRealTradeService
     Task<SymbolJourneyDto> GetSymbolJourneyAsync(string symbol, int userId = 1);
 
     /// <summary>
+    /// Read-only preview of the pre-trade guards for one stock (would the bot buy it right now?).
+    /// Nothing is logged or ordered; guard 12 (live price drift) is only checked at order time.
+    /// </summary>
+    Task<BuyGuardPreviewDto> PreviewBuyGuardsAsync(string symbol, decimal entryPrice, int metConditionsCount, bool isBuySignal, int userId = 1);
+
+    /// <summary>
     /// Polls Zerodha for every real order still recorded as Open (broker-accepted but unconfirmed) across
     /// all users, and finalizes it once the broker confirms the real outcome (FILLED closes the position
     /// and records realized P&amp;L; REJECTED/CANCELLED clears the order and leaves the position open for retry).

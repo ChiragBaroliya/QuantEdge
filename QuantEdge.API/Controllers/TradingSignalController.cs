@@ -13,13 +13,16 @@ namespace QuantEdge.API.Controllers;
 public class TradingSignalController : ControllerBase
 {
     private readonly ISignalEngineService _signalEngine;
+    private readonly IStockVerdictService _verdictService;
     private readonly ILogger<TradingSignalController> _logger;
 
     public TradingSignalController(
         ISignalEngineService signalEngine,
+        IStockVerdictService verdictService,
         ILogger<TradingSignalController> logger)
     {
         _signalEngine = signalEngine ?? throw new ArgumentNullException(nameof(signalEngine));
+        _verdictService = verdictService ?? throw new ArgumentNullException(nameof(verdictService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -53,6 +56,30 @@ public class TradingSignalController : ControllerBase
         {
             _logger.LogError(ex, "Failed to run signal evaluation for symbol {Symbol}.", symbol);
             return StatusCode(500, $"An error occurred during evaluation: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// One multi-timeframe verdict for the Signal Dashboard (BUY / WAIT / AVOID, or HOLD when owned),
+    /// from the same SwingDecisionEngine evaluation the auto-trading bot runs.
+    /// </summary>
+    [HttpGet("verdict")]
+    public async Task<IActionResult> GetVerdict([FromQuery] string symbol, [FromQuery] int userId = 1)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest("Query parameter 'symbol' cannot be empty.");
+        }
+
+        try
+        {
+            var verdict = await _verdictService.GetVerdictAsync(symbol, userId);
+            return Ok(verdict);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to build the verdict for symbol {Symbol}.", symbol);
+            return StatusCode(500, $"An error occurred while building the verdict: {ex.Message}");
         }
     }
 }

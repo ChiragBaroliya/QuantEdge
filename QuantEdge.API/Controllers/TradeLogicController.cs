@@ -14,6 +14,7 @@ namespace QuantEdge.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Route("[controller]")] // the API host runs UsePathBase("/api"), so /api/tradelogic arrives as /tradelogic
 public class TradeLogicController : ControllerBase
 {
     private readonly IAutoRealTradeService _realTradeService;

@@ -1,0 +1,93 @@
+/* ==========================================================================
+   Signal Dashboard - overall verdict card (stock-verdict.js)
+   ========================================================================== */
+
+.sv-card {
+    --sv-color: #94a3b8;
+    border: 1px solid color-mix(in srgb, var(--sv-color) 55%, var(--border-subtle));
+    border-radius: 18px;
+    background: linear-gradient(160deg, color-mix(in srgb, var(--sv-color) 10%, #101729), #0d1221 55%);
+    box-shadow: 0 30px 80px -45px color-mix(in srgb, var(--sv-color) 60%, transparent);
+    padding: 0;
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+
+.sv-empty { padding: 18px 20px; color: var(--text-secondary); font-size: 13.5px; margin-bottom: 20px; }
+
+.sv-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); }
+.sv-eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; color: var(--theme-accent, #a78bfa); }
+.sv-title { font-size: 21px; font-weight: 700; margin: 4px 0 2px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; color: var(--text-primary); }
+.sv-price { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sv-change { font-size: 13px; font-variant-numeric: tabular-nums; }
+.sv-change.pos { color: var(--accent-green, #34d399); }
+.sv-change.neg { color: var(--accent-red, #f87171); }
+.sv-meta { font-size: 12px; color: var(--text-secondary); }
+.sv-tags { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sv-tag { font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.sv-tag-hold { background: rgba(79, 156, 249, .14); color: var(--accent-blue, #4f9cf9); }
+.sv-tag-warn { background: rgba(251, 191, 36, .13); color: var(--accent-amber, #fbbf24); }
+
+.sv-body { display: grid; grid-template-columns: 250px minmax(0, 1fr); }
+.sv-left { padding: 18px 20px; border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+.sv-for { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 4px; }
+.sv-verdict {
+    font-size: 30px; font-weight: 800; letter-spacing: .02em; padding: 5px 18px; border-radius: 12px;
+    color: var(--sv-color); background: color-mix(in srgb, var(--sv-color) 16%, transparent);
+    border: 1.5px solid color-mix(in srgb, var(--sv-color) 55%, transparent);
+}
+.sv-ring { position: relative; width: 116px; height: 116px; }
+.sv-ring svg { width: 116px; height: 116px; transform: rotate(-90deg); }
+.sv-ring-num { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+.sv-ring-num b { font-size: 30px; font-weight: 700; display: block; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.sv-ring-num span { font-size: 10.5px; color: var(--text-secondary); display: block; margin-top: 3px; }
+.sv-why { margin: 0; font-size: 13.5px; line-height: 1.5; color: #dbe3ef; }
+.sv-miss { font-size: 12.5px; padding: 7px 10px; border-radius: 9px; background: var(--bg-input, #151e30); border: 1px solid var(--border-subtle); color: var(--text-secondary); }
+.sv-miss b { color: var(--text-primary); }
+
+.sv-right { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.sv-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sv-row h3 { font-size: 14px; font-weight: 600; margin: 0; color: var(--text-primary); }
+.sv-row span { font-size: 12px; color: var(--text-secondary); }
+
+.sv-detail { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; background: #172033; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 10px 14px; }
+.sv-detail h4 { font-size: 14px; font-weight: 600; margin: 0 0 2px; color: var(--text-primary); }
+.sv-detail p { margin: 0; font-size: 12.5px; color: var(--text-secondary); }
+.sv-detail-value { font-size: 12.5px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Score bar: earned points by factor, NIFTY penalty, points not earned, WAIT/BUY lines */
+.sv-bar { position: relative; height: 30px; border-radius: 8px; background: var(--bg-input, #151e30); border: 1px solid var(--border-subtle); display: flex; }
+.sv-seg { height: 100%; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: #0b1020; overflow: hidden; white-space: nowrap; }
+.sv-seg:first-child { border-radius: 7px 0 0 7px; }
+.sv-seg-penalty { background: repeating-linear-gradient(135deg, rgba(248, 113, 113, .3) 0 5px, rgba(248, 113, 113, .1) 5px 10px); color: #fca5a5; }
+.sv-seg-missing { background: repeating-linear-gradient(135deg, transparent 0 5px, rgba(148, 163, 184, .12) 5px 10px); color: var(--text-muted); }
+.sv-mark { position: absolute; top: -5px; bottom: -20px; border-left: 2px dashed var(--text-muted); }
+.sv-mark span { position: absolute; bottom: 0; left: 4px; font-size: 10.5px; color: var(--text-secondary); white-space: nowrap; }
+.sv-factors { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; color: var(--text-secondary); margin-top: 8px; }
+.sv-factors span { display: inline-flex; gap: 6px; align-items: center; }
+.sv-factors i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.sv-factors .off { opacity: .55; text-decoration: line-through; }
+
+/* Bot strip (BUY verdict only) */
+.sv-bot { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 11px 14px; border-radius: 12px; border: 1px solid; }
+.sv-bot.ok { border-color: rgba(52, 211, 153, .45); background: rgba(52, 211, 153, .08); }
+.sv-bot.bad { border-color: rgba(248, 113, 113, .45); background: rgba(248, 113, 113, .08); }
+.sv-bot-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 800; border: 1.5px solid currentColor; flex: none; }
+.sv-bot.ok .sv-bot-icon { color: var(--accent-green, #34d399); }
+.sv-bot.bad .sv-bot-icon { color: var(--accent-red, #f87171); }
+.sv-bot-text { flex: 1; min-width: 220px; font-size: 12.5px; color: var(--text-secondary); }
+.sv-bot-text b { display: block; font-size: 13.5px; color: var(--text-primary); }
+.sv-bot-link { font-size: 12.5px; color: var(--theme-accent, #a78bfa); white-space: nowrap; }
+
+/* Timeframe tabs: role under each label */
+.tab-btn .tab-role { display: block; font-size: 9px; font-weight: 600; letter-spacing: .06em; opacity: .7; line-height: 1.1; }
+.tab-btn.tab-chart-only { opacity: .75; }
+
+@media (max-width: 900px) {
+    .sv-body { grid-template-columns: 1fr; }
+    .sv-left { border-right: 0; border-bottom: 1px solid var(--border-subtle); flex-direction: row; flex-wrap: wrap; align-items: center; }
+}
+
+@media (max-width: 560px) {
+    .sv-detail { grid-template-columns: 1fr; }
+}

@@ -35,7 +35,8 @@ window.QeFlow = (function () {
         now: { fill: "#1e1b3a", stroke: "#a78bfa", text: "#f1f5f9", icon: "●" },
         win: { fill: "#10302a", stroke: "#34d399", text: "#34d399", icon: "₹", dashed: true },
         loss: { fill: "#3a1d24", stroke: "#f87171", text: "#f87171", icon: "₹", dashed: true },
-        later: { fill: "#33290f", stroke: "#fbbf24", text: "#fbbf24", icon: "…", dashed: true }
+        later: { fill: "#33290f", stroke: "#fbbf24", text: "#fbbf24", icon: "…", dashed: true },
+        skip: { fill: "#141b2d", stroke: "#34425f", text: "#64748b", icon: "–", dashed: true }
     };
 
     const MARKER = { gray: "qf-ahg", red: "qf-ahr", active: "qf-ahp", done: "qf-ahd" };

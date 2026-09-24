@@ -116,6 +116,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<SignalScoreCalculator>();
         services.AddTransient<ISignalEngineService, SignalEngineService>();
         services.AddTransient<ISwingTradingService, SwingTradingService>();
+        services.AddTransient<IStockVerdictService, StockVerdictService>();
 
         // Register Paper Trading Infrastructure Services
         services.AddTransient<IPaperTradingRepository, PaperTradingRepository>();

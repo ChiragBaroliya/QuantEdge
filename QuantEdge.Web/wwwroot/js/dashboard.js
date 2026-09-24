@@ -4,7 +4,7 @@ const API_BASE_URL = window.QuantEdgeConfig?.apiBaseUrl || "";
 let connection = null;
 
 let activeSymbol = "";
-let activeTimeframe = "1m";
+let activeTimeframe = "15m"; // swing timing timeframe; 1m/5m tabs are chart-only
 
 // Chart definitions
 let weeklyPnlChart = null;
@@ -157,7 +157,7 @@ async function triggerDashboardRefresh(isManual = true) {
     try {
         if (activeSymbol) {
             await fetchChartHistory();
-            await fetchStockMasterDetails(activeSymbol);
+            await fetchInitialLastPrice(activeSymbol);
             fetchWeeklyPnl(activeSymbol);
         }
     } catch (ex) {
@@ -303,55 +303,24 @@ async function loadStocksDropdown() {
     }
 }
 
-// Fetch and display single stock master details
-async function fetchStockMasterDetails(symbol) {
+// Seed the live price header from the stock master's last price until the first live tick arrives.
+async function fetchInitialLastPrice(symbol) {
     if (!symbol) return;
     try {
         let data;
         const cacheKey = `stock_details_${symbol}`;
         if (jsMemoryCache.has(cacheKey)) {
             data = jsMemoryCache.get(cacheKey);
-            console.log(`[JS MemoryCache] Loaded details for ${symbol} from client cache.`);
         } else {
             const response = await fetch(`${API_BASE_URL}/api/marketdata/stock-details/${symbol}`);
             if (!response.ok) throw new Error("Failed to load stock details.");
             data = await response.json();
             jsMemoryCache.set(cacheKey, data);
         }
-        
-        $("#specName").text(data.name || "-");
-        $("#specSymbol").text(data.symbol || "-");
-        $("#specInstrumentToken").text(data.instrumentToken || "-");
-        $("#specExchangeToken").text(data.exchangeToken || "-");
-        $("#specExchange").text(data.exchange || "-");
-        $("#specSegment").text(data.segment || "-");
-        $("#specInstrumentType").text(data.instrumentType || "-");
-        
-        $("#specLastPrice").text(data.lastPrice !== null && data.lastPrice !== undefined ? "₹" + parseFloat(data.lastPrice).toFixed(2) : "-");
+
         if (data.lastPrice !== null && data.lastPrice !== undefined && parseFloat(data.lastPrice) > 0) {
             currentLivePrice = parseFloat(data.lastPrice);
             refreshLivePriceHeader();
-        }
-        $("#specLotSize").text(data.lotSize !== null && data.lotSize !== undefined ? data.lotSize : "-");
-        $("#specTickSize").text(data.tickSize !== null && data.tickSize !== undefined ? parseFloat(data.tickSize).toFixed(4) : "-");
-        $("#specStrike").text(data.strike !== null && data.strike !== undefined && parseFloat(data.strike) !== 0 ? "₹" + parseFloat(data.strike).toFixed(2) : "-");
-
-        if (data.expiry) {
-            const expiryDate = new Date(data.expiry);
-            if (!isNaN(expiryDate.getTime())) {
-                $("#specExpiry").text(expiryDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }));
-            } else {
-                $("#specExpiry").text("-");
-            }
-        } else {
-            $("#specExpiry").text("-");
-        }
-
-        const statusBadge = $("#specStatus");
-        if (data.isActive) {
-            statusBadge.text("Active").attr("class", "spec-status-badge active");
-        } else {
-            statusBadge.text("Inactive").attr("class", "spec-status-badge inactive");
         }
     } catch (ex) {
         console.error("Failed to load stock details:", ex);
@@ -508,8 +477,10 @@ async function switchSymbol(symbol) {
         updateAutoRefreshBadge(autoRefreshRemainingSeconds);
     }
 
+    if (window.QeStockVerdict) window.QeStockVerdict.load(symbol);
+
     await fetchChartHistory();
-    await fetchStockMasterDetails(symbol);
+    await fetchInitialLastPrice(symbol);
     fetchWeeklyPnl(symbol, 0); // reset to the current week whenever a different stock is selected
 
     // Re-subscribe to SignalR groups

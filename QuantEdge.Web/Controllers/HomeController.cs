@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using QuantEdge.Web.Models;
@@ -21,6 +22,7 @@ public class HomeController : Controller
     public IActionResult Index()
     {
         ViewBag.ApiBaseUrl = _configuration["ApiBaseUrl"] ?? "https://localhost:44370";
+        ViewBag.UserId = int.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var uid) ? uid : 1;
         return View();
     }
 

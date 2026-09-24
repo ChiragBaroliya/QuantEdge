@@ -969,46 +969,6 @@ input:checked + .slider:before {
     padding: 0 24px;
 }
 
-/* ---- Asset Specification ---- */
-.asset-spec-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 14px;
-}
-
-.spec-item {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 14px 16px;
-    background: rgba(255,255,255,0.02);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    transition: background var(--transition), border-color var(--transition);
-}
-
-.spec-item:hover {
-    background: rgba(255,255,255,0.04);
-    border-color: rgba(255,255,255,0.1);
-}
-
-.spec-label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; }
-.spec-value { font-size: 13.5px; font-weight: 700; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.spec-value.monospace { font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace; }
-
-.spec-status-badge {
-    align-self: flex-start;
-    font-size: 11px;
-    font-weight: 800;
-    padding: 2px 10px;
-    border-radius: 20px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-}
-
-.spec-status-badge.active   { background: rgba(52,211,153,0.1); color: var(--accent-green); border: 1px solid rgba(52,211,153,0.25); }
-.spec-status-badge.inactive { background: rgba(248,113,113,0.1); color: var(--accent-red); border: 1px solid rgba(248,113,113,0.25); }
-
 /* ---- Tooltip system ---- */
 .info-tooltip-trigger {
     display: inline-flex;
@@ -1079,7 +1039,6 @@ input:checked + .slider:before {
 
     .chart-container-pane { height: 380px; }
 
-    .asset-spec-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 
     .indicator-cards-grid { grid-template-columns: repeat(2, 1fr); }
 }
@@ -1158,10 +1117,6 @@ input:checked + .slider:before {
     .connection-badge { flex: 1 !important; justify-content: center !important; min-height: 44px !important; }
 
     .metrics-widget-grid { grid-template-columns: 1fr; gap: 10px; }
-    .asset-spec-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
-    .spec-item { padding: 10px 12px; }
-    .spec-label { font-size: 9.5px; }
-    .spec-value { font-size: 12.5px; }
 
     .chart-container-pane { height: 280px; }
 
@@ -1188,11 +1143,6 @@ input:checked + .slider:before {
         width: 100%;
     }
 
-    .asset-spec-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-}
-
-@media (max-width: 360px) {
-    .asset-spec-grid { grid-template-columns: 1fr; }
 }
 
 /* Landscape mode optimization for mobile devices */

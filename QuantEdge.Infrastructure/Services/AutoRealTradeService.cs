@@ -387,6 +387,9 @@ public class AutoRealTradeService : IAutoRealTradeService
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
 
+        // The guards below are mirrored read-only by PreviewBuyGuardsAsync (Signal Dashboard verdict
+        // card) - keep both in the same order when a guard is added, removed or changed.
+
         // 1. Master Switch Validation
         if (!settings.IsRealTradeEnabled)
         {
@@ -1816,6 +1819,91 @@ public class AutoRealTradeService : IAutoRealTradeService
         livePrices.TryGetValue(position.Symbol, out var live) ? live.Ltp
         : position.CurrentPrice > 0m ? position.CurrentPrice
         : position.AverageEntryPrice;
+
+    // ------------------------------------------------------------------------------------------
+    // Pre-trade guard preview (Signal Dashboard verdict card)
+    // ------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Read-only mirror of the guards in EvaluateAndExecuteRealBuyCoreAsync, in the same order and with
+    /// the same reason texts: nothing is logged, no order is placed and the circuit breaker does not
+    /// switch the bot off. Guard 12 (live price drift since the scan) is only knowable at order time.
+    /// </summary>
+    public async Task<BuyGuardPreviewDto> PreviewBuyGuardsAsync(string symbol, decimal entryPrice, int metConditionsCount, bool isBuySignal, int userId = 1)
+    {
+        symbol = symbol.ToUpper().Trim();
+        var settings = await GetSettingsAsync(userId);
+        var preview = new BuyGuardPreviewDto
+        {
+            IsBotEnabled = settings.IsRealTradeEnabled,
+            TradeAmount = settings.FixedAmountPerTrade
+        };
+
+        BuyGuardPreviewDto Fail(int guard, string reason)
+        {
+            var g = RealTradeGuards.Get(guard);
+            preview.WillBuy = false;
+            preview.FailedGuardNumber = g.Number;
+            preview.FailedGuardName = g.Name;
+            preview.Reason = reason;
+            return preview;
+        }
+
+        if (!settings.IsRealTradeEnabled)
+            return Fail(1, "Auto Real Trade is switched off");
+
+        var tokenCheck = await _brokerService.ValidateSessionTokenAsync(userId);
+        if (!tokenCheck.IsValid)
+            return Fail(2, $"Zerodha Token Invalid: {tokenCheck.Message}");
+
+        if (!await _marketHoursService.IsWithinMarketHoursAsync())
+            return Fail(3, "Outside Market Hours or Holiday");
+        if (!IsWithinTradingWindow(settings.TradingWindowStart, settings.TradingWindowEnd))
+            return Fail(3, $"Outside trading window ({settings.TradingWindowStart} - {settings.TradingWindowEnd})");
+
+        if (!IsPastEntryDelay(settings.TradingWindowStart, settings.EntryDelayMinutes))
+            return Fail(4, $"Opening entry delay active - new BUY signals held back for {settings.EntryDelayMinutes} min after {settings.TradingWindowStart}");
+
+        if (!isBuySignal && metConditionsCount < settings.MinConditionsMatch)
+            return Fail(5, $"Condition score {metConditionsCount}/11 below required {settings.MinConditionsMatch}/11");
+
+        int todayCount = await GetTodayRealTradeCountAsync(userId);
+        if (todayCount >= settings.MaxTradesPerDay)
+            return Fail(6, $"Daily limit of {settings.MaxTradesPerDay} real trades reached ({todayCount}/{settings.MaxTradesPerDay})");
+
+        decimal effectiveDailyLossLimit = SwingTradeRules.EffectiveDailyLossLimit(settings.MaxDailyLossLimit, settings.AvailableCapital);
+        decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
+        var openPositions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
+        decimal totalLoss = todayRealizedPnl + openPositions.Sum(p => p.UnrealizedPnl);
+        if (totalLoss <= -effectiveDailyLossLimit)
+            return Fail(7, $"Daily loss limit ₹{effectiveDailyLossLimit:N2} breached (Total Loss: ₹{totalLoss:N2}) - the bot pauses itself on its next buy attempt");
+
+        if (openPositions.Count >= SwingTradeRules.MaxConcurrentPositions)
+            return Fail(8, $"Portfolio exposure cap reached ({openPositions.Count}/{SwingTradeRules.MaxConcurrentPositions} concurrent open positions)");
+
+        var existingOpenPos = await _repository.GetOpenPositionBySymbolAsync(userId, symbol);
+        if (existingOpenPos != null)
+            return Fail(9, $"Symbol already has an OPEN real position (Position #{existingOpenPos.Id})");
+
+        var existingPendingBuy = await _repository.GetOpenBrokerOrderAsync(userId, symbol, TradeSide.BUY);
+        if (existingPendingBuy != null)
+            return Fail(10, $"A BUY order (#{existingPendingBuy.BrokerOrderId}) is still waiting at the broker");
+
+        var marginResult = await _brokerService.GetEquityMarginsAsync(userId);
+        decimal availableMargin = marginResult.Success ? marginResult.AvailableCash : settings.AvailableCapital;
+        preview.AvailableMargin = availableMargin;
+        if (availableMargin < settings.FixedAmountPerTrade)
+            return Fail(11, $"Insufficient Broker Capital (₹{availableMargin:N2} < Trade Amount ₹{settings.FixedAmountPerTrade:N2})");
+
+        int quantity = entryPrice > 0m ? (int)Math.Floor(settings.FixedAmountPerTrade / entryPrice) : 0;
+        preview.Quantity = quantity;
+        preview.EstimatedCost = Math.Round(quantity * entryPrice, 2);
+        if (quantity < 1)
+            return Fail(13, $"Calculated quantity 0 for entry price ₹{entryPrice:N2}");
+
+        preview.WillBuy = true;
+        return preview;
+    }
 
     // ------------------------------------------------------------------------------------------
     // Stock journey (Auto Real Trade "Flow" popup)
