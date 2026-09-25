@@ -523,7 +523,7 @@ function renderFilteredOpenPositions(positions) {
         const tslActive = p.trailingStopLoss && (!isSwingClose || p.trailingStopLoss >= p.averageEntryPrice);
         const tslText = tslActive
             ? `₹${p.trailingStopLoss.toFixed(2)}`
-            : (isSwingClose ? '<span class="text-muted small" title="Activates once price reaches entry + 1 ATR (never on the entry day)">Not active yet</span>' : '-');
+            : (isSwingClose ? '<span class="text-white small" title="Activates once price reaches entry + 1 ATR (never on the entry day)">Not active yet</span>' : '-');
 
         html += `
             <tr>
