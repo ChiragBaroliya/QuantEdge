@@ -80,37 +80,49 @@
     // ------------------------------------------------------------------------------------------
     // 2. Signal scan
     // ------------------------------------------------------------------------------------------
+    // Mandatory NIFTY gate (SwingStrategySettings.RequireNiftyMarketFilter): checked once per scan,
+    // before any stock is scored. In legacy soft mode a weak NIFTY only lowers the score instead.
+    const niftyGate = R.requireNiftyMarketFilter !== false;
+    const toStock = niftyGate ? ["nifty", "stock"] : ["stock"];
     const signalScan = {
         name: "Signal scan",
         title: "Finding a stock to buy",
         runs: `AutoRealTradeSignalScanWorker · every ${R.scanIntervalMinutes} min`,
-        desc: `Every ${R.scanIntervalMinutes} minutes during market hours, each active stock is scored. Only a strong signal that also passes all 13 risk guards becomes a real order.`,
+        desc: `Every ${R.scanIntervalMinutes} minutes during market hours, ${niftyGate ? "the NIFTY 50 trend is checked first and, only if it is healthy, " : ""}each active stock is scored. Only a strong signal that also passes all 13 risk guards becomes a real order.`,
         nodes: [
             N("wake", 0, 0, "start", "Timer fires", `every ${R.scanIntervalMinutes} min`, `The worker wakes every ${R.scanIntervalMinutes} minutes, counted from when the process started.`, `${R.scanIntervalMinutes} min`, "AutoRealTradeSignalScanWorker"),
             N("mkt", 1, 0, "dec", "Market\nopen?", "", "Checks NSE hours, 09:15 to 15:30 IST on weekdays, and skips holidays from the holiday table.", "09:15 – 15:30", "MarketHoursService"),
             N("sleep", 1, 1, "end", "Sleep", `try again in ${R.scanIntervalMinutes} min`, "Outside market hours the worker does nothing and waits for the next cycle."),
             N("users", 2, 0, "proc", "Load active users", "bot switch ON", "Loads every user who has Auto Real Trade switched on, with their own settings."),
-            N("stock", 3, 0, "proc", "Next stock", "1d · 15m · 60m candles", `Loads the last ${R.candleHistoryCount} candles on three timeframes plus NIFTY 50. Stocks with fewer than ${R.minDailyCandles} daily candles are skipped.`, `${R.candleHistoryCount} candles`),
-            N("hard", 3, 1, "dec", "Hard filters\npass?", "", "Two must-pass rules on the daily chart: uptrend (Close > EMA20 > EMA50, both rising) and trend strength ADX ≥ 20.", "ADX ≥ 20", "SwingDecisionEngine"),
-            N("reject", 4, 1, "bad", "REJECT", "score = 0", "The stock fails a hard filter, so it gets no score and is not traded in this scan."),
-            N("score", 3, 2, "proc", "Score 8 factors", "max 100 pts", `Breakout 20, volume 15, relative strength 15, 60-min trend 15, RSI 10, MACD 10, candle 8, risk:reward 7. A weak NIFTY subtracts ${R.marketContextScorePenalty}.`, "100 pts", "SwingDecisionEngine"),
-            N("dec", 2, 2, "dec", `BUY ≥ ${R.buyScoreThreshold} or\n≥ ${R.minConditionsMatch}/${CHECKLIST_TOTAL} met?`, "", `The stock goes forward if its score is ${R.buyScoreThreshold} or more (BUY), or if it meets at least ${R.minConditionsMatch} of the ${CHECKLIST_TOTAL} checklist items.`, `${R.buyScoreThreshold} · ${R.minConditionsMatch}/${CHECKLIST_TOTAL}`),
-            N("nosig", 2, 3, "end", "No trade", "WATCH / NO SIGNAL", `A score from ${R.watchScoreThreshold} to ${R.buyScoreThreshold - 1} is WATCH, and under ${R.watchScoreThreshold} is NO SIGNAL. Nothing is bought.`),
-            N("guards", 1, 2, "warn", "Risk guards", "13 checks in order", "Safety checks such as the trading window, daily trade cap, loss limit, open-position cap, margin and price drift. See the Risk guards tab.", "13 checks"),
-            N("skip", 1, 3, "bad", "Skipped", "logged with reason", "The first failing guard stops the trade. It is written to the audit log as REAL_SIGNAL_SKIPPED."),
-            N("order", 0, 2, "ok", "Place LIMIT BUY", `qty = ${money(R.fixedAmountPerTrade)} ÷ price`, `Quantity = ${money(R.fixedAmountPerTrade)} ÷ live price (rounded down). The order goes to Zerodha as a LIMIT at price + ${buffer}.`, `${money(R.fixedAmountPerTrade)} / trade`),
-            N("life", 0, 3, "info", "Order lifecycle", "see next tabs", "What happens after the order is sent: filled, resting or rejected. See the Order lifecycle tab.")
+            ...(niftyGate ? [
+                N("nifty", 3, 0, "dec", "NIFTY 50\nhealthy?", "", "Checked once per scan on the daily chart: NIFTY Close above its 50-day average and EMA20 above EMA50. Missing or short NIFTY data counts as not healthy.", "Close > SMA50 · EMA20 > EMA50", "SwingDecisionEngine"),
+                N("nobuy", 4, 0, "bad", "No new buys", "whole scan skipped", "The market is weak, so no stock is scored or bought in this scan. Open positions keep their stop loss and target (see the Position monitor tab).")
+            ] : []),
+            N("stock", 3, 1, "proc", "Next stock", "1d · 15m · 60m candles", `Loads the last ${R.candleHistoryCount} candles on three timeframes. Stocks with fewer than ${R.minDailyCandles} daily candles are skipped.`, `${R.candleHistoryCount} candles`),
+            N("hard", 3, 2, "dec", "Hard filters\npass?", "", "Two must-pass rules on the daily chart: uptrend (Close > EMA20 > EMA50, both rising) and trend strength ADX ≥ 20.", "ADX ≥ 20", "SwingDecisionEngine"),
+            N("reject", 4, 2, "bad", "REJECT", "score = 0", "The stock fails a hard filter, so it gets no score and is not traded in this scan."),
+            N("score", 3, 3, "proc", "Score 8 factors", "max 100 pts", `Breakout 20, volume 15, relative strength 15, 60-min trend 15, RSI 10, MACD 10, candle 8, risk:reward 7.${niftyGate ? "" : ` A weak NIFTY subtracts ${R.marketContextScorePenalty}.`}`, "100 pts", "SwingDecisionEngine"),
+            N("dec", 2, 3, "dec", `BUY ≥ ${R.buyScoreThreshold} or\n≥ ${R.minConditionsMatch}/${CHECKLIST_TOTAL} met?`, "", `The stock goes forward if its score is ${R.buyScoreThreshold} or more (BUY), or if it meets at least ${R.minConditionsMatch} of the ${CHECKLIST_TOTAL} checklist items.`, `${R.buyScoreThreshold} · ${R.minConditionsMatch}/${CHECKLIST_TOTAL}`),
+            N("nosig", 2, 4, "end", "No trade", "WATCH / NO SIGNAL", `A score from ${R.watchScoreThreshold} to ${R.buyScoreThreshold - 1} is WATCH, and under ${R.watchScoreThreshold} is NO SIGNAL. Nothing is bought.`),
+            N("guards", 1, 3, "warn", "Risk guards", "13 checks in order", "Safety checks such as the trading window, daily trade cap, loss limit, open-position cap, margin and price drift. See the Risk guards tab.", "13 checks"),
+            N("skip", 1, 4, "bad", "Skipped", "logged with reason", "The first failing guard stops the trade. It is written to the audit log as REAL_SIGNAL_SKIPPED."),
+            N("order", 0, 3, "ok", "Place LIMIT BUY", `qty = ${money(R.fixedAmountPerTrade)} ÷ price`, `Quantity = ${money(R.fixedAmountPerTrade)} ÷ live price (rounded down). The order goes to Zerodha as a LIMIT at price + ${buffer}.`, `${money(R.fixedAmountPerTrade)} / trade`),
+            N("life", 0, 4, "info", "Order lifecycle", "see next tabs", "What happens after the order is sent: filled, resting or rejected. See the Order lifecycle tab.")
         ],
         edges: [
-            E("wake", "mkt", "r", "l"), E("mkt", "users", "r", "l", "yes"), E("mkt", "sleep", "b", "t", "no"), E("users", "stock", "r", "l"),
+            E("wake", "mkt", "r", "l"), E("mkt", "users", "r", "l", "yes"), E("mkt", "sleep", "b", "t", "no"),
+            ...(niftyGate
+                ? [E("users", "nifty", "r", "l"), E("nifty", "nobuy", "r", "l", "no"), E("nifty", "stock", "b", "t", "yes")]
+                : [E("users", "stock", "r", "t")]),
             E("stock", "hard", "b", "t"), E("hard", "reject", "r", "l", "no"), E("hard", "score", "b", "t", "yes"), E("score", "dec", "l", "r"),
             E("dec", "nosig", "b", "t", "no"), E("dec", "guards", "l", "r", "yes"), E("guards", "skip", "b", "t", "fail"), E("guards", "order", "l", "r", "pass"),
             E("order", "life", "b", "t")
         ],
         scenarios: [
-            { name: "Stock gets bought", path: ["wake", "mkt", "users", "stock", "hard", "score", "dec", "guards", "order", "life"] },
-            { name: "Weak trend", path: ["wake", "mkt", "users", "stock", "hard", "reject"] },
-            { name: "Blocked by a guard", path: ["wake", "mkt", "users", "stock", "hard", "score", "dec", "guards", "skip"] },
+            { name: "Stock gets bought", path: ["wake", "mkt", "users", ...toStock, "hard", "score", "dec", "guards", "order", "life"] },
+            ...(niftyGate ? [{ name: "Weak market", path: ["wake", "mkt", "users", "nifty", "nobuy"] }] : []),
+            { name: "Weak trend", path: ["wake", "mkt", "users", ...toStock, "hard", "reject"] },
+            { name: "Blocked by a guard", path: ["wake", "mkt", "users", ...toStock, "hard", "score", "dec", "guards", "skip"] },
             { name: "Market closed", path: ["wake", "mkt", "sleep"] }
         ]
     };

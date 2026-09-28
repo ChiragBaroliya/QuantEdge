@@ -129,6 +129,16 @@ public class AutoTradeSignalScanWorker : BackgroundService
                 .ToList();
         }
 
+        // Mandatory market gate (checked once per scan): when the NIFTY filter fails - or its data is
+        // missing - no new entry is taken, including via the MinConditionsMatch path below.
+        // Exits / SL / targets on open positions are handled elsewhere and are unaffected.
+        if (strategySettings.RequireNiftyMarketFilter && !SwingDecisionEngine.IsNiftyMarketFilterPassed(niftyCandles, strategySettings))
+        {
+            _logger.LogWarning("⛔ NIFTY Market Filter FAILED (Close <= 50 DMA / EMA20 <= EMA50 or {Count} daily candles available) - no new Auto Paper entries for User '{UserId}' this scan.",
+                niftyCandles.Count, settings.UserId);
+            return;
+        }
+
         int buySignalsFound = 0;
         int executedOrdersCount = 0;
 

@@ -121,7 +121,8 @@ public class SwingTradingService : ISwingTradingService
             }
             else
             {
-                niftyStatus = new NiftyStatusDto("NIFTY 50", 22000m, 21800m, 21900m, 21850m, true, true, true);
+                // Insufficient NIFTY data: show the filter as failed (the engine blocks new entries in this case).
+                niftyStatus = new NiftyStatusDto("NIFTY 50", 0m, 0m, 0m, 0m, false, false, false);
             }
         }
 
@@ -469,7 +470,8 @@ public class SwingTradingService : ISwingTradingService
             }
             else
             {
-                niftyStatus = new NiftyStatusDto("NIFTY 50", 22000m, 21800m, 21900m, 21850m, true, true, true);
+                // Insufficient NIFTY data: show the filter as failed (the engine blocks new entries in this case).
+                niftyStatus = new NiftyStatusDto("NIFTY 50", 0m, 0m, 0m, 0m, false, false, false);
             }
 
             var strategySettings = await _strategySettingsRepository.GetSettingsAsync();

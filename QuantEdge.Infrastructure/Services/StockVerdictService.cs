@@ -97,8 +97,10 @@ public class StockVerdictService : IStockVerdictService
         dto.TotalConditions = result.Checklist?.TotalCount ?? 11;
 
         dto.MarketPassed = result.IsMarketFilterPassed;
+        dto.MarketRequired = strategy.RequireNiftyMarketFilter;
         dto.MarketPenalty = result.MarketPenaltyApplied;
-        dto.TrendPassed = result.HardFiltersPassed;
+        // Daily-trend rules only; a failed mandatory NIFTY filter is reported separately via MarketPassed.
+        dto.TrendPassed = result.EmaTrendPassed && result.AdxPassed;
         dto.EmaTrendPassed = result.EmaTrendPassed;
         dto.AdxPassed = result.AdxPassed;
         dto.Adx1d = result.Adx1d;

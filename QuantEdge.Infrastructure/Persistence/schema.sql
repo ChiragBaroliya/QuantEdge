@@ -482,9 +482,12 @@ CREATE TABLE IF NOT EXISTS swing_strategy_settings (
     market_context_score_penalty INT NOT NULL DEFAULT 10,
     market_context_position_size_factor NUMERIC(5, 2) NOT NULL DEFAULT 0.5,
     market_protection_buffer_pct NUMERIC(6, 4) NOT NULL DEFAULT 0.005,
+    -- TRUE: NIFTY market filter is a mandatory hard filter (no new entries when NIFTY fails or data is missing)
+    require_nifty_market_filter BOOLEAN NOT NULL DEFAULT TRUE,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_swing_strategy_settings_singleton CHECK (id = 1)
 );
+ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS require_nifty_market_filter BOOLEAN NOT NULL DEFAULT TRUE;
 
 INSERT INTO swing_strategy_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 

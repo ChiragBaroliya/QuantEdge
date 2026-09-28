@@ -14,10 +14,17 @@ public class SwingStrategySettings
     /// <summary>Minimum score (0-100) for a WATCH decision.</summary>
     public int WatchScoreThreshold { get; set; } = 50;
 
-    /// <summary>Score penalty applied when the NIFTY market-context filter fails (risk adjustment, never a hard reject).</summary>
+    /// <summary>
+    /// When true (default), the NIFTY market filter is a mandatory hard filter: if NIFTY fails
+    /// (or its data is missing/insufficient) every stock is REJECTED and no new entry is taken.
+    /// When false, the legacy soft behaviour applies (score penalty + reduced size, never a reject).
+    /// </summary>
+    public bool RequireNiftyMarketFilter { get; set; } = true;
+
+    /// <summary>Score penalty applied when the NIFTY market-context filter fails. Only used when <see cref="RequireNiftyMarketFilter"/> is false.</summary>
     public int MarketContextScorePenalty { get; set; } = 10;
 
-    /// <summary>Position-size multiplier applied when the NIFTY market-context filter fails.</summary>
+    /// <summary>Position-size multiplier applied when the NIFTY market-context filter fails. Only used when <see cref="RequireNiftyMarketFilter"/> is false.</summary>
     public decimal MarketContextPositionSizeFactor { get; set; } = 0.5m;
 
     /// <summary>

@@ -32,6 +32,8 @@ public class StockVerdictDto
 
     // Timeframe ladder: NIFTY -> 1 day trend -> 60 min setup -> 15 min timing
     public bool MarketPassed { get; set; }
+    /// <summary>True when the NIFTY filter is mandatory: a failed market blocks every new buy (no penalty is used).</summary>
+    public bool MarketRequired { get; set; }
     public int MarketPenalty { get; set; }
     public bool TrendPassed { get; set; }
     public bool EmaTrendPassed { get; set; }

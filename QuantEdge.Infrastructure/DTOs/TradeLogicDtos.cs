@@ -45,6 +45,7 @@ public class TradeLogicRulesDto
     // Global swing strategy settings
     public int BuyScoreThreshold { get; set; }
     public int WatchScoreThreshold { get; set; }
+    public bool RequireNiftyMarketFilter { get; set; }
     public int MarketContextScorePenalty { get; set; }
     public decimal MarketProtectionBufferPct { get; set; }
     public decimal GapExitProtectionBufferPct { get; set; }
@@ -94,6 +95,7 @@ public class TradeLogicRulesDto
 
             BuyScoreThreshold = strategy.BuyScoreThreshold,
             WatchScoreThreshold = strategy.WatchScoreThreshold,
+            RequireNiftyMarketFilter = strategy.RequireNiftyMarketFilter,
             MarketContextScorePenalty = strategy.MarketContextScorePenalty,
             MarketProtectionBufferPct = strategy.MarketProtectionBufferPct,
             GapExitProtectionBufferPct = AutoRealTradeService.GapExitProtectionBufferPct,

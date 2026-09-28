@@ -56,10 +56,11 @@ public sealed record SwingFactorScore(string Code, string Name, int Points, int 
 public static class SwingDecisionEngine
 {
     /// <summary>
-    /// Evaluates a stock using 2 Mandatory Stock-Level Hard Filters (1D) and an 8-factor 100-Point
-    /// Weighted Scoring Matrix (15m/60m/1d). Market/index context (e.g. NIFTY trend) is evaluated
-    /// independently and applied only as a non-blocking risk adjustment (score + position size) -
-    /// it can never by itself force a REJECT for a stock with a valid stock-level setup.
+    /// Evaluates a stock using Mandatory Hard Filters (NIFTY market filter + 2 stock-level 1D filters)
+    /// and an 8-factor 100-Point Weighted Scoring Matrix (15m/60m/1d).
+    /// When <see cref="QuantEdge.Domain.Entities.SwingStrategySettings.RequireNiftyMarketFilter"/> is true
+    /// (default) a failed NIFTY filter - or missing/insufficient NIFTY data - REJECTS every stock.
+    /// When false, the legacy soft mode applies (score penalty + reduced position size, never a reject).
     /// </summary>
     public static SwingEvaluationResult Evaluate(
         StockMaster stock,
@@ -72,6 +73,7 @@ public static class SwingDecisionEngine
         settings ??= QuantEdge.Domain.Entities.SwingStrategySettings.Default;
         int buyScoreThreshold = settings.BuyScoreThreshold;
         int watchScoreThreshold = settings.WatchScoreThreshold;
+        bool requireNifty = settings.RequireNiftyMarketFilter;
         int marketContextScorePenalty = settings.MarketContextScorePenalty;
         decimal marketContextPositionSizeFactor = settings.MarketContextPositionSizeFactor;
 
@@ -117,24 +119,25 @@ public static class SwingDecisionEngine
         result.DailyAtr = Math.Round(IndicatorCalculator.CalculateAtr(highs1d, lows1d, closes1d, 14)[idx1d], 4);
 
         // --------------------------------------------------------------------
-        // STAGE A: MARKET CONTEXT (non-blocking) + STOCK-LEVEL HARD FILTERS
-        // (If a stock-level filter fails -> REJECT immediately. Market context
-        // never gates here - see MarketContextScorePenalty in Stage C.)
+        // STAGE A: HARD FILTERS (NIFTY market filter + stock-level filters)
+        // (If any hard filter fails -> REJECT immediately. In soft mode
+        // (RequireNiftyMarketFilter = false) NIFTY is not part of this gate -
+        // see MarketContextScorePenalty in Stage C.)
         // --------------------------------------------------------------------
 
-        // Market Context: MARKET_FILTER (NIFTY 50 Close > 50 DMA & EMA20 > EMA50)
-        // Evaluated independently of the stock. Used only as a risk/confidence
-        // adjustment below - a bearish market alone can never REJECT a stock.
-        bool niftyPassed = EvaluateNiftyMarketFilter(niftyCandles1d);
+        // Hard Filter 1 (Market): NIFTY 50 Close > 50 DMA & EMA20 > EMA50.
+        // Missing/insufficient NIFTY data fails closed in mandatory mode.
+        bool niftyPassed = IsNiftyMarketFilterPassed(niftyCandles1d, settings);
         result.IsMarketFilterPassed = niftyPassed;
+        bool niftyGateFailed = requireNifty && !niftyPassed;
 
-        // Hard Filter 1 (Stock-Level): EMA_TREND (Price > EMA20 > EMA50, rising slopes, stable EMA200)
+        // Hard Filter 2 (Stock-Level): EMA_TREND (Price > EMA20 > EMA50, rising slopes, stable EMA200)
         bool ema20Rising = idx1d >= 2 && ema20_1d[idx1d] > ema20_1d[idx1d - 2];
         bool ema50Rising = idx1d >= 2 && ema50_1d[idx1d] > ema50_1d[idx1d - 2];
         bool ema200Stable = idx1d >= 5 && (ema200_1d[idx1d] >= ema200_1d[idx1d - 5] * 0.995m);
         bool emaTrendPassed = price1d > curEma20_1d && curEma20_1d > curEma50_1d && ema20Rising && ema50Rising && ema200Stable;
 
-        // Hard Filter 2 (Stock-Level): ADX_STRENGTH (ADX 14 >= 20.0 - Filters out choppy markets)
+        // Hard Filter 3 (Stock-Level): ADX_STRENGTH (ADX 14 >= 20.0 - Filters out choppy markets)
         bool adxPassed = curAdx_1d >= 20.0m;
         result.EmaTrendPassed = emaTrendPassed;
         result.AdxPassed = adxPassed;
@@ -142,8 +145,8 @@ public static class SwingDecisionEngine
         result.Ema20_1d = Math.Round(curEma20_1d, 2);
         result.Ema50_1d = Math.Round(curEma50_1d, 2);
 
-        // Check Hard Filter Gate - stock-level filters only; market context is never part of this gate.
-        if (!emaTrendPassed || !adxPassed)
+        // Check Hard Filter Gate - NIFTY (mandatory mode) + stock-level filters.
+        if (niftyGateFailed || !emaTrendPassed || !adxPassed)
         {
             result.HardFiltersPassed = false;
             result.Decision = "REJECT";
@@ -151,24 +154,25 @@ public static class SwingDecisionEngine
             result.ConfidencePct = 0;
 
             var hardFailed = new List<string>();
+            if (niftyGateFailed) hardFailed.Add("NIFTY_MARKET_FILTER (Nifty 50 below 50 DMA / EMA20 < EMA50 or data unavailable - no new entries)");
             if (!emaTrendPassed) hardFailed.Add("EMA_TREND (Price below EMA20/EMA50 or declining slope)");
             if (!adxPassed) hardFailed.Add($"ADX_STRENGTH (ADX {curAdx_1d:F1} < 20.0 - Choppy / Weak Trend)");
 
             result.FailedRules = hardFailed;
             result.Reason = $"REJECTED by Hard Filter: {string.Join("; ", hardFailed)}";
             result.Checklist = BuildChecklist(
-                niftyPassed, emaTrendPassed, adxPassed, false, false, false, false, false, false, false, false,
+                requireNifty, niftyPassed, emaTrendPassed, adxPassed, false, false, false, false, false, false, false, false,
                 currentPrice, curEma20_1d, curEma50_1d, 0m, curAdx_1d, 0m, 0m
             );
             return result;
         }
 
         result.HardFiltersPassed = true;
-        result.PassedRules.Add("Hard Filter 1: EMA Trend Alignment (Passed 1D)");
-        result.PassedRules.Add($"Hard Filter 2: ADX Trend Strength (Passed {curAdx_1d:F1} >= 20)");
         if (niftyPassed)
-            result.PassedRules.Add("Market Context: NIFTY Market Filter (Passed)");
-        else
+            result.PassedRules.Add(requireNifty ? "Hard Filter 1: NIFTY Market Filter (Passed)" : "Market Context: NIFTY Market Filter (Passed)");
+        result.PassedRules.Add("Hard Filter 2: EMA Trend Alignment (Passed 1D)");
+        result.PassedRules.Add($"Hard Filter 3: ADX Trend Strength (Passed {curAdx_1d:F1} >= 20)");
+        if (!niftyPassed)
             result.FailedRules.Add($"Market Context: NIFTY Market Filter (Failed - Defensive Mode, -{marketContextScorePenalty} pt score penalty applied, not a block)");
 
         // --------------------------------------------------------------------
@@ -399,9 +403,9 @@ public static class SwingDecisionEngine
         // --------------------------------------------------------------------
         // STAGE C: MARKET CONTEXT RISK ADJUSTMENT + SIGNAL DECISION THRESHOLDS
         // --------------------------------------------------------------------
-        // A weak/bearish market context lowers confidence instead of blocking the
-        // trade outright: a strong stock-level setup can still clear the BUY
-        // threshold even when the market/index filter fails.
+        // Soft mode only (RequireNiftyMarketFilter = false; in mandatory mode a failed
+        // NIFTY filter already returned REJECT above): a weak market lowers confidence
+        // instead of blocking, so a strong setup can still clear the BUY threshold.
         if (!niftyPassed)
         {
             score -= marketContextScorePenalty;
@@ -447,7 +451,7 @@ public static class SwingDecisionEngine
 
         // Build UI Checklist
         result.Checklist = BuildChecklist(
-            niftyPassed, emaTrendPassed, adxPassed, breakoutGroupPassed, volSpikePassed, rsPassed,
+            requireNifty, niftyPassed, emaTrendPassed, adxPassed, breakoutGroupPassed, volSpikePassed, rsPassed,
             mtfPassed, rsiPassed, macdPassed, candlePassed, rrPassed,
             currentPrice, curEma20_1d, curEma50_1d, volMult, curAdx_1d, curRsi, result.RiskRewardRatio
         );
@@ -468,9 +472,16 @@ public static class SwingDecisionEngine
         return Evaluate(stock, stockCandles1d, null!, stockCandles60m, niftyCandles1d, settings);
     }
 
-    private static bool EvaluateNiftyMarketFilter(List<MarketCandle> niftyCandles)
+    /// <summary>
+    /// NIFTY 50 market filter: Close > SMA50 AND EMA20 > EMA50 on daily candles.
+    /// Missing/insufficient data (&lt; 50 candles) fails closed when the filter is mandatory
+    /// (never buy blind) and passes in legacy soft mode.
+    /// Shared by the engine and the auto-trade workers' once-per-scan market gate.
+    /// </summary>
+    public static bool IsNiftyMarketFilterPassed(List<MarketCandle>? niftyCandles, QuantEdge.Domain.Entities.SwingStrategySettings? settings = null)
     {
-        if (niftyCandles == null || niftyCandles.Count < 50) return true; // Fallback
+        settings ??= QuantEdge.Domain.Entities.SwingStrategySettings.Default;
+        if (niftyCandles == null || niftyCandles.Count < 50) return !settings.RequireNiftyMarketFilter;
 
         var closes = niftyCandles.Select(c => c.Close).ToList();
         var sma50 = IndicatorCalculator.CalculateSma(closes, 50);
@@ -485,15 +496,20 @@ public static class SwingDecisionEngine
     }
 
     private static ConditionChecklistDto BuildChecklist(
-        bool niftyPassed, bool emaTrendPassed, bool adxPassed, bool breakoutPassed,
+        bool requireNifty, bool niftyPassed, bool emaTrendPassed, bool adxPassed, bool breakoutPassed,
         bool volSpikePassed, bool rsPassed, bool mtfPassed, bool rsiPassed, bool macdPassed,
         bool candlePassed, bool rrPassed,
         decimal price, decimal ema20, decimal ema50, decimal volMult, decimal adx, decimal rsi, decimal rr)
     {
+        var niftyItem = requireNifty
+            ? new ConditionItemDto("HARD_NIFTY_MARKET_FILTER", "1. [HARD FILTER] Nifty Market Filter", "Nifty 50 Close > 50 DMA & EMA20 > EMA50 (mandatory - no stock is bought when this fails)",
+                niftyPassed ? "Passed (Market Uptrend)" : "Failed (Market Weak - No New Entries)", "Close > SMA50 & EMA20 > EMA50", niftyPassed)
+            : new ConditionItemDto("MARKET_CONTEXT_FILTER", "1. [MARKET CONTEXT - RISK FACTOR] Nifty Market Filter", "Nifty 50 Close > 50 DMA & EMA20 > EMA50 (does not block trade; applies score/size penalty when failed)",
+                niftyPassed ? "Passed (Market Uptrend)" : "Failed (Defensive Mode - Risk Adjustment Applied)", "Close > SMA50 & EMA20 > EMA50", niftyPassed);
+
         var conditions = new List<ConditionItemDto>
         {
-            new("MARKET_CONTEXT_FILTER", "1. [MARKET CONTEXT - RISK FACTOR] Nifty Market Filter", "Nifty 50 Close > 50 DMA & EMA20 > EMA50 (does not block trade; applies score/size penalty when failed)",
-                niftyPassed ? "Passed (Market Uptrend)" : "Failed (Defensive Mode - Risk Adjustment Applied)", "Close > SMA50 & EMA20 > EMA50", niftyPassed),
+            niftyItem,
 
             new("HARD_EMA_TREND", "2. [HARD FILTER] EMA Trend Alignment", "Daily Close > EMA20 > EMA50 with rising slopes",
                 emaTrendPassed ? $"Passed (Close ₹{price:F1} > EMA20 ₹{ema20:F1} > EMA50 ₹{ema50:F1})" : $"Close ₹{price:F1}, EMA20 ₹{ema20:F1}",

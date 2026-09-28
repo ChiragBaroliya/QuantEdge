@@ -143,6 +143,14 @@ window.QeStockVerdict = (function () {
             return { why, miss };
         }
 
+        if (d.verdict === "AVOID" && d.marketRequired && !d.marketPassed) {
+            return {
+                why: "NIFTY 50 is weak: it is below its 50-day average or its EMA20 is under EMA50 (or NIFTY data is missing). The bot buys nothing while the market is weak, however strong this stock looks." +
+                    (d.trendPassed ? "" : ` The stock's own daily trend also fails (${trendIssue}).`),
+                miss: "<b>Blocked by the market.</b> Needs NIFTY back above its 50-day average with EMA20 above EMA50."
+            };
+        }
+
         if (d.verdict === "AVOID") {
             return {
                 why: `The daily trend fails a must-pass rule: ${trendIssue}. The bot never buys against the daily trend, however strong the shorter charts look.`,
@@ -178,29 +186,37 @@ window.QeStockVerdict = (function () {
         const W = 140, PITCH = 166, X = i => 8 + i * PITCH, Y = 26, H = 56;
         const at = (i, kind, title, sub, info, value) => Flow.node("n" + i, 0, 0, kind, title, sub, info, value, "", { x: X(i), y: Y, w: W, h: H });
         const noData = d.verdict === "NO_DATA";
+        const marketBlocked = !noData && d.marketRequired && !d.marketPassed;
         const trendFailed = !noData && !d.trendPassed;
+        const skipLower = trendFailed || marketBlocked;
+        const skipWhy = marketBlocked ? "Skipped: NIFTY is weak, so no stock is scored or bought." : null;
         const factor = code => (d.factors || []).find(f => f.code === code);
         const breakout = factor("BREAKOUT_GROUP");
 
         const nodes = [
             noData ? at(0, "skip", "NIFTY 50", "not checked", "The stock has too little history to be scored, so the market isn't checked either.", "") :
-            at(0, d.marketPassed ? "done" : "bad", "NIFTY 50", d.marketPassed ? "uptrend · no penalty" : `weak · −${d.marketPenalty} pts`,
-                d.marketPassed ? "NIFTY is above its 50-day average with EMA20 above EMA50, so the market adds no penalty."
-                    : `NIFTY is below its 50-day average or its EMA20 is under EMA50. It doesn't block the stock, but takes ${d.marketPenalty} points off the score.`,
-                d.marketPassed ? "✓" : `−${d.marketPenalty}`),
+            d.marketRequired
+                ? at(0, d.marketPassed ? "done" : "bad", "NIFTY 50", d.marketPassed ? "uptrend · must-pass ✓" : "weak · no new buys",
+                    d.marketPassed ? "Must pass. NIFTY is above its 50-day average with EMA20 above EMA50, so new buys are allowed."
+                        : "Must pass. NIFTY is below its 50-day average or its EMA20 is under EMA50 (or its data is missing), so the bot buys no stock until the market recovers.",
+                    d.marketPassed ? "must-pass ✓" : "must-pass ✕")
+                : at(0, d.marketPassed ? "done" : "bad", "NIFTY 50", d.marketPassed ? "uptrend · no penalty" : `weak · −${d.marketPenalty} pts`,
+                    d.marketPassed ? "NIFTY is above its 50-day average with EMA20 above EMA50, so the market adds no penalty."
+                        : `NIFTY is below its 50-day average or its EMA20 is under EMA50. It doesn't block the stock, but takes ${d.marketPenalty} points off the score.`,
+                    d.marketPassed ? "✓" : `−${d.marketPenalty}`),
             at(1, noData ? "skip" : d.trendPassed ? "done" : "bad", "1 day · trend",
                 noData ? "not enough data" : !d.emaTrendPassed ? "EMA trend broken" : !d.adxPassed ? `ADX ${num(d.adx1d)} < 20` : `ADX ${num(d.adx1d)} · EMA ✓`,
                 `Must pass. Close above EMA20 above EMA50 (now ${money(d.ema20_1d)} / ${money(d.ema50_1d)}), both rising, and ADX of 20 or more (now ${num(d.adx1d)}).`,
                 d.trendPassed ? "must-pass ✓" : "must-pass ✕"),
-            trendFailed || noData
-                ? at(2, "skip", "60 min · setup", "not checked", "Skipped: once the daily trend fails, the lower timeframes don't matter.", "")
+            skipLower || noData
+                ? at(2, "skip", "60 min · setup", "not checked", skipWhy || "Skipped: once the daily trend fails, the lower timeframes don't matter.", "")
                 : at(2, d.setupPassed ? "done" : "bad", "60 min · setup",
                     !d.has60mData ? "no 60m data" : d.setupPassed ? `RSI ${num(d.rsi60m)} · +15` : `below EMA20 · +0`,
                     !d.has60mData ? "Not enough hourly candles, so no confirmation points are given."
                         : `Hourly close above its EMA20 with RSI at least 40 earns 15 points. RSI is ${num(d.rsi60m)}.`,
                     d.setupPassed ? "+15" : "+0"),
-            trendFailed || noData
-                ? at(3, "skip", "15 min · timing", "not checked", "Skipped: a strong 15-min move can't override a daily downtrend.", "")
+            skipLower || noData
+                ? at(3, "skip", "15 min · timing", "not checked", skipWhy || "Skipped: a strong 15-min move can't override a daily downtrend.", "")
                 : at(3, breakout && breakout.points > 0 ? "done" : d.timingPoints > 0 ? "warn" : "bad", "15 min · timing",
                     `${d.timingPoints}/${d.timingMaxPoints} pts · vol ${num(d.volumeMultiple)}×`,
                     `Entry timing on the 15-min chart: ${breakout && breakout.points > 0 ? "a breakout" : "no breakout yet"}, volume ${num(d.volumeMultiple)}× average, RSI ${num(d.rsi15m)}. Scores ${d.timingPoints} of ${d.timingMaxPoints} timing points.`,
@@ -253,6 +269,7 @@ window.QeStockVerdict = (function () {
         el("svBar").innerHTML = bar;
 
         el("svScoreNote").textContent = d.verdict === "NO_DATA" ? ""
+            : d.marketRequired && !d.marketPassed ? "NIFTY market filter failed: score set to 0"
             : !d.trendPassed ? "Daily trend failed: score set to 0"
             : `${earned} earned${d.marketPenalty ? ` − ${d.marketPenalty} market penalty` : ""} = ${d.score} · ${d.metCount}/${d.totalConditions} conditions`;
         el("svFactors").innerHTML = factors.map(f =>

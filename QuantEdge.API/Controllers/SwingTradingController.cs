@@ -123,8 +123,8 @@ public class SwingTradingController : ControllerBase
         try
         {
             var updated = await _strategySettingsRepository.UpdateSettingsAsync(settings);
-            _logger.LogInformation("Swing strategy settings updated: Buy>={Buy} Watch>={Watch} Penalty={Penalty} SizeFactor={Factor}",
-                updated.BuyScoreThreshold, updated.WatchScoreThreshold, updated.MarketContextScorePenalty, updated.MarketContextPositionSizeFactor);
+            _logger.LogInformation("Swing strategy settings updated: Buy>={Buy} Watch>={Watch} RequireNifty={RequireNifty} Penalty={Penalty} SizeFactor={Factor}",
+                updated.BuyScoreThreshold, updated.WatchScoreThreshold, updated.RequireNiftyMarketFilter, updated.MarketContextScorePenalty, updated.MarketContextPositionSizeFactor);
             return Ok(updated);
         }
         catch (Exception ex)
