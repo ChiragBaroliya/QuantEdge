@@ -133,8 +133,41 @@ public class StockVerdictService : IStockVerdictService
             dto.Verdict = result.Decision == "REJECT" ? "AVOID" : "WAIT";
         }
 
+        // Blocked only by the market: score the stock as if NIFTY were healthy, for display only.
+        // The verdict, score and bot candidacy above are untouched, so the bot and dashboard still agree.
+        if (dto.MarketRequired && !dto.MarketPassed && dto.TrendPassed)
+        {
+            var whatIf = SwingDecisionEngine.Evaluate(stock, candles1d, candles15m, candles60m, nifty, WithoutMarketGate(strategy));
+            dto.ReadyIfMarketRecovers = new StockVerdictReadinessDto
+            {
+                Score = whatIf.Score,
+                Verdict = whatIf.IsBuySignal ? "BUY" : "WAIT",
+                Has60mData = whatIf.Has60mData,
+                SetupPassed = whatIf.Factors.Any(f => f.Code == "MULTITIMEFRAME" && f.Points > 0),
+                Rsi60m = whatIf.Rsi60m,
+                Rsi15m = whatIf.Rsi15m,
+                VolumeMultiple = whatIf.VolumeMultiple,
+                TimingPoints = whatIf.Factors.Where(f => TimingFactors.Contains(f.Code)).Sum(f => f.Points),
+                TimingMaxPoints = whatIf.Factors.Where(f => TimingFactors.Contains(f.Code)).Sum(f => f.MaxPoints),
+                Factors = whatIf.Factors
+            };
+        }
+
         return dto;
     }
+
+    // Same thresholds, but NIFTY neither blocks nor costs points.
+    private static SwingStrategySettings WithoutMarketGate(SwingStrategySettings s) => new()
+    {
+        Id = s.Id,
+        BuyScoreThreshold = s.BuyScoreThreshold,
+        WatchScoreThreshold = s.WatchScoreThreshold,
+        RequireNiftyMarketFilter = false,
+        MarketContextScorePenalty = 0,
+        MarketContextPositionSizeFactor = s.MarketContextPositionSizeFactor,
+        MarketProtectionBufferPct = s.MarketProtectionBufferPct,
+        UpdatedAt = s.UpdatedAt
+    };
 
     private async Task<List<MarketCandle>> LoadAsync(string symbol, string timeframe) =>
         (await _candleRepository.GetHistoryAsync(symbol, timeframe, RealTradeSchedule.CandleHistoryCount))

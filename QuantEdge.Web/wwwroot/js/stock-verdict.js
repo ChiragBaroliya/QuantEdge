@@ -103,6 +103,8 @@ window.QeStockVerdict = (function () {
         el("svTags").innerHTML =
             (h ? `<span class="sv-tag sv-tag-hold">You own ${h.quantity} @ ${money(h.averagePrice)}</span>` : "") +
             (h && h.source === "ZERODHA" ? `<span class="sv-tag sv-tag-warn">Not monitored by the bot</span>` : "") +
+            (!h && d.readyIfMarketRecovers && d.marketRequired && !d.marketPassed && d.trendPassed
+                ? `<span class="sv-tag ${d.readyIfMarketRecovers.verdict === "BUY" ? "sv-tag-ready" : "sv-tag-held"}" title="Display only - the bot buys nothing while NIFTY is weak.">Ready score ${d.readyIfMarketRecovers.score} when NIFTY recovers</span>` : "") +
             (h && h.source === "BOT" && typeof window.openStockJourney === "function"
                 ? `<button type="button" class="btn-journey" onclick="openStockJourney('${esc(d.symbol).replace(/'/g, "")}')">Flow</button>` : "");
 
@@ -144,10 +146,14 @@ window.QeStockVerdict = (function () {
         }
 
         if (d.verdict === "AVOID" && d.marketRequired && !d.marketPassed) {
+            const r = d.readyIfMarketRecovers;
+            const ready = !r ? ""
+                : r.verdict === "BUY" ? ` <b>Ready: ${r.score}/100 would be a BUY</b> once the market recovers - worth watching.`
+                : ` When the market recovers it would score ${r.score}/100 (BUY needs ${d.buyThreshold}), so it would still be a WAIT.`;
             return {
                 why: "NIFTY 50 is weak: it is below its 50-day average or its EMA20 is under EMA50 (or NIFTY data is missing). The bot buys nothing while the market is weak, however strong this stock looks." +
-                    (d.trendPassed ? "" : ` The stock's own daily trend also fails (${trendIssue}).`),
-                miss: "<b>Blocked by the market.</b> Needs NIFTY back above its 50-day average with EMA20 above EMA50."
+                    (d.trendPassed ? " This stock's own daily trend holds up, so it is only waiting on the market." : ` The stock's own daily trend also fails (${trendIssue}).`),
+                miss: "<b>Blocked by the market.</b> Needs NIFTY back above its 50-day average with EMA20 above EMA50." + ready
             };
         }
 
@@ -193,6 +199,21 @@ window.QeStockVerdict = (function () {
         const factor = code => (d.factors || []).find(f => f.code === code);
         const breakout = factor("BREAKOUT_GROUP");
 
+        // Blocked only by the market: the lower timeframes are still evaluated for display ("held"),
+        // but none of it counts - the verdict stays AVOID · 0 and the bot buys nothing.
+        const r = marketBlocked && !trendFailed ? d.readyIfMarketRecovers : null;
+        const heldNote = " On hold: this counts only once NIFTY recovers - the bot buys nothing until then.";
+        const rBreakout = r && (r.factors || []).find(f => f.code === "BREAKOUT_GROUP");
+        const heldSetup = r && at(2, "held", "60 min · setup",
+            !r.has60mData ? "no 60m data" : r.setupPassed ? `RSI ${num(r.rsi60m)} · would +15` : "below EMA20 · +0",
+            (!r.has60mData ? "Not enough hourly candles, so no confirmation points would be given."
+                : `Hourly close above its EMA20 with RSI at least 40 earns 15 points. RSI is ${num(r.rsi60m)}.`) + heldNote,
+            r.setupPassed ? "+15 on hold" : "+0");
+        const heldTiming = r && at(3, "held", "15 min · timing",
+            `${r.timingPoints}/${r.timingMaxPoints} pts · vol ${num(r.volumeMultiple)}×`,
+            `Entry timing on the 15-min chart: ${rBreakout && rBreakout.points > 0 ? "a breakout" : "no breakout yet"}, volume ${num(r.volumeMultiple)}× average, RSI ${num(r.rsi15m)}. Would score ${r.timingPoints} of ${r.timingMaxPoints} timing points.` + heldNote,
+            `${r.timingPoints}/${r.timingMaxPoints} on hold`);
+
         const nodes = [
             noData ? at(0, "skip", "NIFTY 50", "not checked", "The stock has too little history to be scored, so the market isn't checked either.", "") :
             d.marketRequired
@@ -208,14 +229,14 @@ window.QeStockVerdict = (function () {
                 noData ? "not enough data" : !d.emaTrendPassed ? "EMA trend broken" : !d.adxPassed ? `ADX ${num(d.adx1d)} < 20` : `ADX ${num(d.adx1d)} · EMA ✓`,
                 `Must pass. Close above EMA20 above EMA50 (now ${money(d.ema20_1d)} / ${money(d.ema50_1d)}), both rising, and ADX of 20 or more (now ${num(d.adx1d)}).`,
                 d.trendPassed ? "must-pass ✓" : "must-pass ✕"),
-            skipLower || noData
+            heldSetup ? heldSetup : skipLower || noData
                 ? at(2, "skip", "60 min · setup", "not checked", skipWhy || "Skipped: once the daily trend fails, the lower timeframes don't matter.", "")
                 : at(2, d.setupPassed ? "done" : "bad", "60 min · setup",
                     !d.has60mData ? "no 60m data" : d.setupPassed ? `RSI ${num(d.rsi60m)} · +15` : `below EMA20 · +0`,
                     !d.has60mData ? "Not enough hourly candles, so no confirmation points are given."
                         : `Hourly close above its EMA20 with RSI at least 40 earns 15 points. RSI is ${num(d.rsi60m)}.`,
                     d.setupPassed ? "+15" : "+0"),
-            skipLower || noData
+            heldTiming ? heldTiming : skipLower || noData
                 ? at(3, "skip", "15 min · timing", "not checked", skipWhy || "Skipped: a strong 15-min move can't override a daily downtrend.", "")
                 : at(3, breakout && breakout.points > 0 ? "done" : d.timingPoints > 0 ? "warn" : "bad", "15 min · timing",
                     `${d.timingPoints}/${d.timingMaxPoints} pts · vol ${num(d.volumeMultiple)}×`,
@@ -239,7 +260,7 @@ window.QeStockVerdict = (function () {
         const state = e => {
             if (e.t === "n4" || e.f === "n4") return "cur";
             const from = nodes.find(n => n.id === e.f), to = nodes.find(n => n.id === e.t);
-            return from.kind === "skip" || to.kind === "skip" ? "" : "done";
+            return ["skip", "held"].includes(from.kind) || ["skip", "held"].includes(to.kind) ? "" : "done";
         };
         nodeMap = Flow.render(el("svSvg"), { nodes, edges }, { nowId: "n4", edgeState: state });
         el("svSvg").setAttribute("aria-label", `${d.symbol} timeframe verdict`);
@@ -257,10 +278,12 @@ window.QeStockVerdict = (function () {
     }
 
     function renderScoreBar(d) {
-        const factors = d.factors || [];
+        // Blocked only by the market: show the points it would earn, faded, with the real score still 0.
+        const r = d.marketRequired && !d.marketPassed && d.trendPassed ? d.readyIfMarketRecovers : null;
+        const factors = (r ? r.factors : d.factors) || [];
         const earned = factors.reduce((a, f) => a + f.points, 0);
         let bar = factors.filter(f => f.points > 0).map(f =>
-            `<div class="sv-seg" style="width:${f.points}%;background:${FACTOR_COLORS[f.code] || "#94a3b8"}" title="${esc(f.name)} +${f.points}">${f.points >= 7 ? "+" + f.points : ""}</div>`).join("");
+            `<div class="sv-seg${r ? " sv-seg-held" : ""}" style="width:${f.points}%;background:${FACTOR_COLORS[f.code] || "#94a3b8"}" title="${esc(f.name)} +${f.points}${r ? " (on hold until NIFTY recovers)" : ""}">${f.points >= 7 ? "+" + f.points : ""}</div>`).join("");
         const penalty = Math.min(d.marketPenalty || 0, earned);
         if (penalty > 0) bar += `<div class="sv-seg sv-seg-penalty" style="width:${penalty}%" title="NIFTY penalty">−${penalty}</div>`;
         const missing = Math.max(0, 100 - earned - penalty);
@@ -269,6 +292,7 @@ window.QeStockVerdict = (function () {
         el("svBar").innerHTML = bar;
 
         el("svScoreNote").textContent = d.verdict === "NO_DATA" ? ""
+            : r ? `NIFTY failed: score set to 0 · would be ${r.score} when the market recovers`
             : d.marketRequired && !d.marketPassed ? "NIFTY market filter failed: score set to 0"
             : !d.trendPassed ? "Daily trend failed: score set to 0"
             : `${earned} earned${d.marketPenalty ? ` − ${d.marketPenalty} market penalty` : ""} = ${d.score} · ${d.metCount}/${d.totalConditions} conditions`;

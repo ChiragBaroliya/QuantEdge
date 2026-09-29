@@ -57,6 +57,28 @@ public class StockVerdictDto
 
     /// <summary>Only when Verdict is BUY: would the bot actually place the order right now?</summary>
     public BuyGuardPreviewDto? BotPreview { get; set; }
+
+    /// <summary>
+    /// Display only - never used for trading. Set when the mandatory NIFTY filter is the ONLY thing
+    /// blocking the stock (daily trend passes): the 60 min / 15 min parts and the score the stock
+    /// would get if the market were healthy, so it can be watched for when NIFTY recovers.
+    /// </summary>
+    public StockVerdictReadinessDto? ReadyIfMarketRecovers { get; set; }
+}
+
+public class StockVerdictReadinessDto
+{
+    public int Score { get; set; }
+    /// <summary>BUY or WAIT - what the verdict would be with a healthy NIFTY (before the bot's buy guards).</summary>
+    public string Verdict { get; set; } = "WAIT";
+    public bool Has60mData { get; set; }
+    public bool SetupPassed { get; set; }
+    public decimal? Rsi60m { get; set; }
+    public decimal Rsi15m { get; set; }
+    public decimal VolumeMultiple { get; set; }
+    public int TimingPoints { get; set; }
+    public int TimingMaxPoints { get; set; }
+    public List<SwingFactorScore> Factors { get; set; } = new();
 }
 
 public class StockVerdictHoldingDto

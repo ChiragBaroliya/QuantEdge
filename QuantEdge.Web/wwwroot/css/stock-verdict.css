@@ -91,3 +91,8 @@
 @media (max-width: 560px) {
     .sv-detail { grid-template-columns: 1fr; }
 }
+
+/* Market-blocked stock: points it would earn once NIFTY recovers (display only) */
+.sv-seg-held { opacity: .38; }
+.sv-tag-ready { background: rgba(52, 211, 153, .13); color: var(--accent-green, #34d399); }
+.sv-tag-held { background: rgba(148, 163, 184, .13); color: var(--text-secondary, #94a3b8); }

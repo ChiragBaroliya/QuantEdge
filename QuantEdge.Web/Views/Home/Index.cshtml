@@ -25,6 +25,44 @@
             <span class="badge bg-secondary">User Role</span>
         </div>
     }
+    <!-- NIFTY Market Filter (nifty-market-filter.js): live NIFTY 50 price + the daily filter the bots must pass before buying -->
+    <div id="niftyStatusBanner" class="nifty-status-banner" data-tooltip="🏛️ **NIFTY Market Filter**: The bots buy nothing unless NIFTY 50's daily close is above its 50 DMA and EMA20 is above EMA50. The price updates live; the filter uses daily candles.">
+        <div class="nifty-banner-left">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <h3 class="nifty-title">NIFTY MARKET FILTER</h3>
+                <span id="niftyBadge" class="nifty-badge">Loading</span>
+            </div>
+            <div class="nifty-price-row">
+                <span id="niftyPrice" class="nifty-price">-</span>
+                <span id="niftyChange" class="nifty-change"></span>
+                <span id="niftyPriceSource" class="nifty-price-source">EOD Close</span>
+            </div>
+        </div>
+
+        <div class="nifty-banner-right">
+            <div class="nifty-detail-item" data-tooltip="50-day Simple Moving Average (50 DMA)">
+                <span class="label">50 Day DMA</span>
+                <span id="niftySma50" class="value">-</span>
+            </div>
+            <div class="nifty-detail-item" data-tooltip="20-day Exponential Moving Average (20 EMA)">
+                <span class="label">20 Day EMA</span>
+                <span id="niftyEma20" class="value">-</span>
+            </div>
+            <div class="nifty-detail-item" data-tooltip="50-day Exponential Moving Average (50 EMA)">
+                <span class="label">50 Day EMA</span>
+                <span id="niftyEma50" class="value">-</span>
+            </div>
+            <div class="nifty-detail-item nifty-detail-divider" data-tooltip="Condition 1: NIFTY daily close > 50 DMA">
+                <span class="label">Close > 50 DMA</span>
+                <span id="niftyCond1" class="value">-</span>
+            </div>
+            <div class="nifty-detail-item" data-tooltip="Condition 2: 20 EMA > 50 EMA (bullish momentum)">
+                <span class="label">EMA20 > EMA50</span>
+                <span id="niftyCond2" class="value">-</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Filters & Selection Row -->
     <div class="control-panel card">
         <div class="control-left">
@@ -75,44 +113,6 @@
             <div id="connectionStatus" class="connection-badge offline" data-tooltip="📡 **Live Connection**: Shows real-time market feed connection status.">
                 <span class="status-dot"></span>
                 <span class="status-text">Disconnected</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- NIFTY Market Filter (nifty-market-filter.js): live NIFTY 50 price + the daily filter the bots must pass before buying -->
-    <div id="niftyStatusBanner" class="nifty-status-banner" data-tooltip="🏛️ **NIFTY Market Filter**: The bots buy nothing unless NIFTY 50's daily close is above its 50 DMA and EMA20 is above EMA50. The price updates live; the filter uses daily candles.">
-        <div class="nifty-banner-left">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <h3 class="nifty-title">NIFTY MARKET FILTER</h3>
-                <span id="niftyBadge" class="nifty-badge">Loading</span>
-            </div>
-            <div class="nifty-price-row">
-                <span id="niftyPrice" class="nifty-price">-</span>
-                <span id="niftyChange" class="nifty-change"></span>
-                <span id="niftyPriceSource" class="nifty-price-source">EOD Close</span>
-            </div>
-        </div>
-
-        <div class="nifty-banner-right">
-            <div class="nifty-detail-item" data-tooltip="50-day Simple Moving Average (50 DMA)">
-                <span class="label">50 Day DMA</span>
-                <span id="niftySma50" class="value">-</span>
-            </div>
-            <div class="nifty-detail-item" data-tooltip="20-day Exponential Moving Average (20 EMA)">
-                <span class="label">20 Day EMA</span>
-                <span id="niftyEma20" class="value">-</span>
-            </div>
-            <div class="nifty-detail-item" data-tooltip="50-day Exponential Moving Average (50 EMA)">
-                <span class="label">50 Day EMA</span>
-                <span id="niftyEma50" class="value">-</span>
-            </div>
-            <div class="nifty-detail-item nifty-detail-divider" data-tooltip="Condition 1: NIFTY daily close > 50 DMA">
-                <span class="label">Close > 50 DMA</span>
-                <span id="niftyCond1" class="value">-</span>
-            </div>
-            <div class="nifty-detail-item" data-tooltip="Condition 2: 20 EMA > 50 EMA (bullish momentum)">
-                <span class="label">EMA20 > EMA50</span>
-                <span id="niftyCond2" class="value">-</span>
             </div>
         </div>
     </div>
