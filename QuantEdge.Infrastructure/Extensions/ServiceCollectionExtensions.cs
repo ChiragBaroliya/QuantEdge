@@ -61,6 +61,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IUserRepository, UserRepository>();
         services.AddTransient<ISwingSlotRecommendationRepository, SwingSlotRecommendationRepository>();
         services.AddTransient<ISwingStrategySettingsRepository, SwingStrategySettingsRepository>();
+        services.AddTransient<IFavoriteSymbolRepository, FavoriteSymbolRepository>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
 
         services.AddTransient<IIndicatorService, IndicatorService>();

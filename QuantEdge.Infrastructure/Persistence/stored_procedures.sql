@@ -707,6 +707,45 @@ BEGIN
     ORDER BY f.executed_at DESC
     LIMIT v_limit OFFSET v_offset;
 END;
+$$;
 
 
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_add_user_favorite_symbol
+-- Signal Dashboard: pins a symbol to the top of the user's symbol dropdown.
+-- Idempotent - adding an existing favorite is a no-op.
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_add_user_favorite_symbol(INT, VARCHAR) CASCADE;
 
+CREATE OR REPLACE PROCEDURE sp_add_user_favorite_symbol(
+    p_user_id INT,
+    p_symbol VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO user_favorite_symbols (user_id, symbol, created_at)
+    VALUES (p_user_id, UPPER(TRIM(p_symbol)), NOW())
+    ON CONFLICT (user_id, symbol) DO NOTHING;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_remove_user_favorite_symbol
+-- Signal Dashboard: unpins a symbol. Removing a non-favorite is a no-op.
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_remove_user_favorite_symbol(INT, VARCHAR) CASCADE;
+
+CREATE OR REPLACE PROCEDURE sp_remove_user_favorite_symbol(
+    p_user_id INT,
+    p_symbol VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    DELETE FROM user_favorite_symbols
+    WHERE user_id = p_user_id
+      AND symbol = UPPER(TRIM(p_symbol));
+END;
+$$;

@@ -66,6 +66,7 @@ $(document).ready(async function () {
         }
     });
 
+    initFavoriteSymbols();
     await loadStocksDropdown();
     initCharts();
 
@@ -263,10 +264,114 @@ function initCharts() {
 // Client-side JavaScript Memory Cache
 const jsMemoryCache = new Map();
 
-// Fetch active stock instruments
+// ---- Favorite symbols (per user, stored in the DB via /api/favorites) ----
+// Favorites are listed first in the symbol dropdown under their own group. A star on every row
+// toggles a favorite without selecting the stock; the list re-sorts when the dropdown closes so
+// rows don't jump under the cursor. #btnFavoriteSymbol toggles the currently selected stock.
+const FAVORITES_USER_ID = window.QuantEdgeConfig?.userId || 1;
+let allStockSymbols = [];
+let favoriteSymbols = new Set();
+let favoritesDirty = false;
+
+async function fetchFavoriteSymbols() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/favorites?userId=${FAVORITES_USER_ID}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return new Set((await response.json()).map(s => String(s).toUpperCase()));
+    } catch (ex) {
+        console.error("Favorite symbols load failed:", ex);
+        return new Set();
+    }
+}
+
+const escapeAttr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+// Rebuilds the <option>s: "★ Favorites" group first, then every other symbol. Keeps the selection.
+function renderStockOptions() {
+    const selector = $("#stockSelector");
+    const selected = selector.val() || activeSymbol;
+    const favs = allStockSymbols.filter(s => favoriteSymbols.has(s.toUpperCase())).sort();
+    const rest = allStockSymbols.filter(s => !favoriteSymbols.has(s.toUpperCase()));
+    const opt = (s) => `<option value="${escapeAttr(s)}">${escapeAttr(s)}</option>`;
+
+    let html = "";
+    if (favs.length) html += `<optgroup label="★ Favorites">${favs.map(opt).join("")}</optgroup>`;
+    html += favs.length ? `<optgroup label="All Symbols">${rest.map(opt).join("")}</optgroup>` : rest.map(opt).join("");
+    selector.html(html);
+
+    if (selected) selector.val(selected);
+    selector.trigger('change.select2'); // refresh Select2's display only - not a symbol switch
+    favoritesDirty = false;
+    updateFavoriteButton();
+}
+
+// Select2 row template: symbol name + star toggle (optgroup headers have no id and stay plain text).
+function formatStockOption(option) {
+    if (!option.id) return option.text;
+    const isFav = favoriteSymbols.has(option.id.toUpperCase());
+    return $(`<span class="sym-opt"><span class="sym-opt-name">${escapeAttr(option.text)}</span>` +
+        `<button type="button" class="sym-fav-toggle${isFav ? " on" : ""}" data-symbol="${escapeAttr(option.id)}" ` +
+        `aria-pressed="${isFav}" aria-label="${isFav ? "Remove from" : "Add to"} favorites" title="${isFav ? "Remove from" : "Add to"} favorites">★</button></span>`);
+}
+
+function updateFavoriteButton() {
+    const btn = $("#btnFavoriteSymbol");
+    if (!btn.length) return;
+    const isFav = !!activeSymbol && favoriteSymbols.has(activeSymbol.toUpperCase());
+    btn.toggleClass("on", isFav)
+        .prop("disabled", !activeSymbol)
+        .attr("aria-pressed", isFav)
+        .attr("aria-label", isFav ? `Remove ${activeSymbol} from favorites` : `Add ${activeSymbol || "symbol"} to favorites`)
+        .attr("data-tooltip", isFav ? `★ **Favorite**: ${activeSymbol} is pinned to the top of the list. Click to unpin.` : "☆ **Favorite**: Pin this symbol to the top of the list.");
+}
+
+// Optimistic toggle: update the UI straight away, roll back with a toast if the save fails.
+async function toggleFavoriteSymbol(symbol) {
+    const key = symbol.toUpperCase();
+    const makeFav = !favoriteSymbols.has(key);
+    const apply = (fav) => {
+        if (fav) favoriteSymbols.add(key); else favoriteSymbols.delete(key);
+        $(`.sym-fav-toggle[data-symbol="${CSS.escape(symbol)}"]`).toggleClass("on", fav).attr("aria-pressed", fav);
+        updateFavoriteButton();
+    };
+
+    apply(makeFav);
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/favorites/${encodeURIComponent(symbol)}?userId=${FAVORITES_USER_ID}`,
+            { method: makeFav ? "PUT" : "DELETE" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    } catch (ex) {
+        console.error("Favorite toggle failed:", ex);
+        apply(!makeFav);
+        if (typeof window.showToast === "function") window.showToast(`Couldn't update favorites for ${escapeAttr(symbol)}.`, "error");
+        return;
+    }
+
+    // Re-sort now if the dropdown is closed, otherwise when it closes.
+    if ($("#stockSelector").data("select2")?.isOpen()) favoritesDirty = true;
+    else renderStockOptions();
+}
+
+function initFavoriteSymbols() {
+    // Select2 selects a row on mouseup, so a star click is intercepted in the capture phase,
+    // before it reaches Select2's handler - the dropdown stays open and the stock isn't selected.
+    ["mousedown", "mouseup", "click"].forEach(type => document.addEventListener(type, (e) => {
+        const star = e.target.closest && e.target.closest(".sym-fav-toggle");
+        if (!star) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (type === "mouseup") toggleFavoriteSymbol(star.dataset.symbol);
+    }, true));
+
+    $("#stockSelector").on("select2:close", () => { if (favoritesDirty) renderStockOptions(); });
+    $("#btnFavoriteSymbol").on("click", () => { if (activeSymbol) toggleFavoriteSymbol(activeSymbol); });
+}
+
+// Fetch active stock instruments (+ the user's favorites, which are listed first)
 async function loadStocksDropdown() {
     try {
         let stocksList;
+        const favoritesPromise = fetchFavoriteSymbols();
         if (jsMemoryCache.has('stocks_dropdown')) {
             stocksList = jsMemoryCache.get('stocks_dropdown');
             console.log("[JS MemoryCache] Loaded stocks dropdown from client cache.");
@@ -276,25 +381,25 @@ async function loadStocksDropdown() {
             stocksList = await response.json();
             jsMemoryCache.set('stocks_dropdown', stocksList);
         }
-        
-        const selector = $("#stockSelector");
-        selector.empty();
-        stocksList.forEach(stock => {
-            selector.append(`<option value="${stock.symbol}">${stock.symbol}</option>`);
-        });
+        favoriteSymbols = await favoritesPromise;
+        allStockSymbols = stocksList.map(s => s.symbol);
 
-        // Re-initialize Select2 to ensure options are refreshed
+        const selector = $("#stockSelector");
+
+        // Re-initialize Select2 with the favorite-star row template
         if ($.fn.select2) {
             selector.select2({
                 placeholder: "Select Stock Symbol...",
                 allowClear: false,
-                width: '100%'
+                width: '100%',
+                templateResult: formatStockOption
             });
         }
+        renderStockOptions();
 
-        // Auto-select first stock and load
-        if (stocksList.length > 0) {
-            const defaultSym = stocksList[0].symbol;
+        // Auto-select the first favorite (or the first stock) and load
+        if (allStockSymbols.length > 0) {
+            const defaultSym = allStockSymbols.filter(s => favoriteSymbols.has(s.toUpperCase())).sort()[0] || allStockSymbols[0];
             selector.val(defaultSym).trigger('change.select2').trigger('change');
             switchSymbol(defaultSym);
         }
@@ -471,7 +576,8 @@ async function switchSymbol(symbol) {
     currentCandleOpenPrice = null;
     const oldSymbol = activeSymbol;
     activeSymbol = symbol;
-    
+    updateFavoriteButton();
+
     if (isAutoRefreshEnabled) {
         autoRefreshRemainingSeconds = AUTO_REFRESH_INTERVAL_SECONDS;
         updateAutoRefreshBadge(autoRefreshRemainingSeconds);

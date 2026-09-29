@@ -855,3 +855,12 @@ ALTER TABLE IF EXISTS market_indicators_60m ADD COLUMN IF NOT EXISTS adx NUMERIC
 ALTER TABLE IF EXISTS market_indicators_1d ADD COLUMN IF NOT EXISTS adx NUMERIC(18, 6) NOT NULL DEFAULT 0;
 
 
+
+-- Signal Dashboard: per-user favorite symbols, pinned to the top of the symbol dropdown.
+-- Accessed via fn_get_user_favorite_symbols, sp_add_user_favorite_symbol and sp_remove_user_favorite_symbol.
+CREATE TABLE IF NOT EXISTS user_favorite_symbols (
+    user_id INT NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, symbol)
+);

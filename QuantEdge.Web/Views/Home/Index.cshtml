@@ -28,10 +28,13 @@
     <!-- Filters & Selection Row -->
     <div class="control-panel card">
         <div class="control-left">
-            <div class="control-select-group" data-tooltip="🔍 **Stock Symbol**: Select a stock to analyze (e.g. RELIANCE, INFY, NIFTY).">
-                <select id="stockSelector" class="custom-select" aria-label="Asset Symbol">
-                    <option value="" disabled selected>Select Stock Symbol...</option>
-                </select>
+            <div class="symbol-picker">
+                <div class="control-select-group" data-tooltip="🔍 **Stock Symbol**: Select a stock to analyze (e.g. RELIANCE, INFY, NIFTY). Click ★ on a row to pin it to the top.">
+                    <select id="stockSelector" class="custom-select" aria-label="Asset Symbol">
+                        <option value="" disabled selected>Select Stock Symbol...</option>
+                    </select>
+                </div>
+                <button id="btnFavoriteSymbol" type="button" class="btn-fav-symbol" disabled aria-pressed="false" aria-label="Add symbol to favorites" data-tooltip="☆ **Favorite**: Pin this symbol to the top of the list.">★</button>
             </div>
             
             <div class="timeframe-group">

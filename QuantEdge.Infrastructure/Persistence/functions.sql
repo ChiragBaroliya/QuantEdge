@@ -3085,3 +3085,23 @@ $$;
 
 
 
+-- Function: fn_get_user_favorite_symbols
+-- Signal Dashboard: the user's favorite symbols (A-Z), listed first in the symbol dropdown.
+DROP FUNCTION IF EXISTS fn_get_user_favorite_symbols(INT);
+
+CREATE OR REPLACE FUNCTION fn_get_user_favorite_symbols(
+    p_user_id INT
+)
+RETURNS TABLE (
+    Symbol VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT f.symbol AS Symbol
+    FROM user_favorite_symbols f
+    WHERE f.user_id = p_user_id
+    ORDER BY f.symbol;
+END;
+$$;
