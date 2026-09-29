@@ -9,6 +9,7 @@ namespace QuantEdge.Infrastructure.Interfaces;
 public interface ISwingTradingService
 {
     Task<SwingTradingDashboardDto> GetDashboardDataAsync(CancellationToken cancellationToken);
+    Task<NiftyStatusDto> GetNiftyStatusAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<SwingScanSlotDto>> GetScanSlotsAsync(DateTime scanDate, CancellationToken cancellationToken);
     Task<IReadOnlyList<SwingStockSignalDto>> GetSlotRecommendationsAsync(DateTime scanDate, string slotLabel, CancellationToken cancellationToken);
     Task RunEodJobAsync(CancellationToken cancellationToken);

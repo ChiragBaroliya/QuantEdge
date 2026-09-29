@@ -114,43 +114,6 @@
         </div>
     </div>
 
-    <!-- Nifty Market Filter Banner -->
-    <div class="nifty-status-banner" data-tooltip="🏛️ **NIFTY Market Filter**: Only allows buy trades when Nifty 50 is above its moving averages.">
-        <div class="nifty-banner-left">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <h3 class="nifty-title">NIFTY MARKET FILTER</h3>
-                <span id="niftyBadge" class="nifty-badge passed">Passed</span>
-            </div>
-            <div class="nifty-price-row">
-                <span id="niftyClose" class="nifty-price">22,450.25</span>
-                <span style="font-size: 11px; color: rgba(255,255,255,0.4); font-weight: 600;">EOD CLOSE</span>
-            </div>
-        </div>
-        
-        <div class="nifty-banner-right">
-            <div class="nifty-detail-item" data-tooltip="50-day Simple Moving Average (50 DMA)">
-                <span class="label">50 Day DMA</span>
-                <span id="niftySma50" class="value">21,950.00</span>
-            </div>
-            <div class="nifty-detail-item" data-tooltip="20-day Exponential Moving Average (20 EMA)">
-                <span class="label">20 Day EMA</span>
-                <span id="niftyEma20" class="value">22,120.40</span>
-            </div>
-            <div class="nifty-detail-item" data-tooltip="50-day Exponential Moving Average (50 EMA)">
-                <span class="label">50 Day EMA</span>
-                <span id="niftyEma50" class="value">21,990.20</span>
-            </div>
-            <div class="nifty-detail-item" style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;" data-tooltip="Condition 1: Nifty Closing Price > 50 DMA">
-                <span class="label">Price > 50 DMA</span>
-                <span id="niftyCond1" class="value pnl-text positive">Yes</span>
-            </div>
-            <div class="nifty-detail-item" data-tooltip="Condition 2: 20 EMA > 50 EMA (Bullish Momentum)">
-                <span class="label">EMA20 > EMA50</span>
-                <span id="niftyCond2" class="value pnl-text positive">Yes</span>
-            </div>
-        </div>
-    </div>
-
     <!-- Recommendations Watchlist -->
     <div class="swing-tab-pane active" id="paneRecommendations">
         
@@ -391,7 +354,6 @@
             connection.on("ReceiveSwingDashboardUpdate", function(dashboardData) {
                 console.log("⚡ SignalR Received Swing Dashboard Update:", dashboardData);
                 if (dashboardData) {
-                    populateNifty(dashboardData.niftyStatus);
                     const nextRunTime = dashboardData.nextRunTime || dashboardData.NextRunTime;
                     const nextRunFormatted = dashboardData.nextRunFormatted || dashboardData.NextRunFormatted;
                     const isMarketOpen = dashboardData.isMarketOpen !== undefined ? dashboardData.isMarketOpen : (dashboardData.IsMarketOpen !== undefined ? dashboardData.IsMarketOpen : false);
@@ -831,7 +793,6 @@
                 type: "GET",
                 success: function(data) {
                     if (!data) return;
-                    populateNifty(data.niftyStatus);
 
                     const nextRunTime = data.nextRunTime || data.NextRunTime;
                     const nextRunFormatted = data.nextRunFormatted || data.NextRunFormatted;
@@ -1068,36 +1029,6 @@
                     }
                 });
             }, 2000);
-        }
-
-        function populateNifty(ns) {
-            if (!ns) return;
-
-            $("#niftyClose").text(Number(ns.close).toLocaleString("en-IN", { minimumFractionDigits: 2 }));
-            $("#niftySma50").text(Number(ns.sma50).toLocaleString("en-IN", { minimumFractionDigits: 2 }));
-            $("#niftyEma20").text(Number(ns.ema20).toLocaleString("en-IN", { minimumFractionDigits: 2 }));
-            $("#niftyEma50").text(Number(ns.ema50).toLocaleString("en-IN", { minimumFractionDigits: 2 }));
-
-            const badge = $("#niftyBadge");
-            badge.removeClass("passed failed");
-            if (ns.isMarketFilterPassed) {
-                badge.addClass("passed").text("Passed");
-            } else {
-                badge.addClass("failed").text("Failed");
-            }
-
-            setConditionText("#niftyCond1", ns.isAboveSma50);
-            setConditionText("#niftyCond2", ns.isEmaBullish);
-        }
-
-        function setConditionText(selector, cond) {
-            const el = $(selector);
-            el.removeClass("positive negative");
-            if (cond) {
-                el.addClass("positive").text("Yes");
-            } else {
-                el.addClass("negative").text("No");
-            }
         }
 
         // confirmSendToRealTrade / sendToRealTrade / getEndpointUrl now live in ~/js/realtrade-actions.js

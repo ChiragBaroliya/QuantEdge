@@ -82,99 +82,6 @@
     transform: translateY(-2px);
 }
 
-/* Nifty Horizontal Banner */
-.nifty-status-banner {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-    padding: 20px 28px;
-    border-radius: 16px;
-    background: linear-gradient(90deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 41, 59, 0.6) 100%);
-    border-left: 4px solid var(--theme-accent);
-}
-
-.nifty-banner-left {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.nifty-banner-right {
-    display: flex;
-    gap: 32px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-.nifty-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.6);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin: 0;
-}
-
-.nifty-badge {
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
-
-.nifty-badge.passed {
-    background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
-    border: 1px solid rgba(52, 211, 153, 0.3);
-    box-shadow: 0 0 12px rgba(52, 211, 153, 0.2);
-}
-
-.nifty-badge.failed {
-    background: rgba(248, 113, 113, 0.15);
-    color: #f87171;
-    border: 1px solid rgba(248, 113, 113, 0.3);
-    box-shadow: 0 0 12px rgba(248, 113, 113, 0.2);
-}
-
-.nifty-price-row {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-}
-
-.nifty-price {
-    font-size: 28px;
-    font-weight: 800;
-    color: #ffffff;
-    font-family: monospace;
-    letter-spacing: -0.5px;
-}
-
-.nifty-detail-item {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.nifty-detail-item .label {
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 11px;
-    text-transform: uppercase;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-}
-
-.nifty-detail-item .value {
-    color: #ffffff;
-    font-weight: 700;
-    font-family: monospace;
-    font-size: 14px;
-}
-
 /* Stat Metrics (Profit/Loss Cards) */
 .stat-metric-card {
     display: flex;
@@ -781,22 +688,6 @@
 
     .stat-metric-value {
         font-size: 28px;
-    }
-
-    .nifty-status-banner {
-        flex-direction: column;
-        align-items: flex-start;
-        padding: 16px;
-    }
-    
-    .nifty-banner-right {
-        width: 100%;
-        justify-content: space-between;
-        gap: 12px;
-    }
-
-    .nifty-price {
-        font-size: 26px;
     }
 
     .swing-table {
@@ -1555,15 +1446,6 @@
         grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         gap: 16px;
     }
-
-    .nifty-status-banner {
-        padding: 16px 20px;
-        gap: 16px;
-    }
-
-    .nifty-banner-right {
-        gap: 20px;
-    }
 }
 
 @media (max-width: 991.98px) {
@@ -1583,16 +1465,6 @@
         flex: 1 1 auto;
         min-width: 180px;
         justify-content: center;
-    }
-
-    .nifty-status-banner {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .nifty-banner-right {
-        width: 100%;
-        justify-content: space-between;
     }
 }
 
@@ -1615,23 +1487,6 @@
     .stats-grid {
         grid-template-columns: 1fr;
         gap: 12px;
-    }
-
-    .nifty-status-banner {
-        padding: 14px 16px;
-        gap: 14px;
-        border-left-width: 3px;
-    }
-
-    .nifty-banner-right {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-    }
-
-    .nifty-detail-item[style*="border-left"] {
-        border-left: none !important;
-        padding-left: 0 !important;
     }
 
     .swing-tabs-nav {
@@ -1707,14 +1562,6 @@
 }
 
 @media (max-width: 480px) {
-    .nifty-price {
-        font-size: 22px;
-    }
-
-    .nifty-banner-right {
-        grid-template-columns: 1fr 1fr;
-    }
-
     .stat-metric-value {
         font-size: 28px;
     }

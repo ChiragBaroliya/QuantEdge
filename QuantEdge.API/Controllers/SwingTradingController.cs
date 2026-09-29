@@ -150,6 +150,51 @@ public class SwingTradingController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// NIFTY 50 market filter (from daily candles) plus a live LTP quote, polled by the Signal Dashboard banner.
+    /// LiveLtp is null when the broker quote is unavailable (not logged in, API error).
+    /// </summary>
+    [HttpGet("nifty-status")]
+    public async Task<IActionResult> GetNiftyStatus(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var status = await _swingTradingService.GetNiftyStatusAsync(cancellationToken);
+
+            decimal? liveLtp = null;
+            try
+            {
+                var quote = await _brokerService.GetLtpQuotesAsync(new[] { ("NIFTY 50", "NSE") });
+                if (quote.Success && quote.Ltps != null && quote.Ltps.TryGetValue("NIFTY 50", out var ltp) && ltp > 0)
+                {
+                    liveLtp = ltp;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch live NIFTY 50 LTP quote.");
+            }
+
+            return Ok(new
+            {
+                status.Symbol,
+                status.Close,
+                status.Sma50,
+                status.Ema20,
+                status.Ema50,
+                status.IsAboveSma50,
+                status.IsEmaBullish,
+                status.IsMarketFilterPassed,
+                LiveLtp = liveLtp
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve NIFTY market filter status.");
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
     [HttpGet("job-status")]
     public IActionResult GetJobStatus([FromQuery] string jobType = "backfill")
     {

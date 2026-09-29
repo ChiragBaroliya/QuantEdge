@@ -74,6 +74,40 @@ public class SwingTradingService : ISwingTradingService
         }
 
         // 1. Fetch latest daily Nifty status (using memory cache if available)
+        var niftyStatus = await GetNiftyStatusAsync(cancellationToken);
+
+        // 2. Fetch latest recommendations for today from memory cache or slot recommendations repository
+        DateTime todayIst = GetIstNow().Date;
+        var stockSignals = (await GetSlotRecommendationsAsync(todayIst, "all", cancellationToken)).ToList();
+
+        var nextRunInfo = CalculateNextRunInfo();
+
+        var dashboardResult = new SwingTradingDashboardDto(
+            NiftyStatus: niftyStatus,
+            StockSignals: stockSignals,
+            BacktestStats15Days: new BacktestStatsDto(15, 0, 0, 0, 0m, 0m, 0m),
+            BacktestStats30Days: new BacktestStatsDto(30, 0, 0, 0, 0m, 0m, 0m),
+            RecentTrades: new List<SwingTradeDto>(),
+            NextRunTime: nextRunInfo.NextRunTime,
+            NextRunSeconds: nextRunInfo.NextRunSeconds,
+            NextRunFormatted: nextRunInfo.FormattedText,
+            IsMarketOpen: nextRunInfo.IsMarketOpen
+        );
+
+        if (_cacheService != null)
+        {
+            await _cacheService.SetAsync(cacheKey, dashboardResult, TimeSpan.FromMinutes(2));
+        }
+
+        return dashboardResult;
+    }
+
+    /// <summary>
+    /// Latest daily NIFTY 50 market-filter status (Close &gt; SMA50 and EMA20 &gt; EMA50), cached for 5 minutes.
+    /// Shared by the Swing dashboard payload and the Signal Dashboard's NIFTY banner.
+    /// </summary>
+    public async Task<NiftyStatusDto> GetNiftyStatusAsync(CancellationToken cancellationToken)
+    {
         NiftyStatusDto? niftyStatus = null;
         string niftyCacheKey = "swing_nifty_status";
         if (_cacheService != null)
@@ -126,30 +160,7 @@ public class SwingTradingService : ISwingTradingService
             }
         }
 
-        // 2. Fetch latest recommendations for today from memory cache or slot recommendations repository
-        DateTime todayIst = GetIstNow().Date;
-        var stockSignals = (await GetSlotRecommendationsAsync(todayIst, "all", cancellationToken)).ToList();
-
-        var nextRunInfo = CalculateNextRunInfo();
-
-        var dashboardResult = new SwingTradingDashboardDto(
-            NiftyStatus: niftyStatus,
-            StockSignals: stockSignals,
-            BacktestStats15Days: new BacktestStatsDto(15, 0, 0, 0, 0m, 0m, 0m),
-            BacktestStats30Days: new BacktestStatsDto(30, 0, 0, 0, 0m, 0m, 0m),
-            RecentTrades: new List<SwingTradeDto>(),
-            NextRunTime: nextRunInfo.NextRunTime,
-            NextRunSeconds: nextRunInfo.NextRunSeconds,
-            NextRunFormatted: nextRunInfo.FormattedText,
-            IsMarketOpen: nextRunInfo.IsMarketOpen
-        );
-
-        if (_cacheService != null)
-        {
-            await _cacheService.SetAsync(cacheKey, dashboardResult, TimeSpan.FromMinutes(2));
-        }
-
-        return dashboardResult;
+        return niftyStatus;
     }
 
     public static (DateTime NextRunTime, int NextRunSeconds, string FormattedText, bool IsMarketOpen) CalculateNextRunInfo()
