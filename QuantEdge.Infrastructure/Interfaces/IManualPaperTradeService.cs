@@ -6,9 +6,9 @@ using QuantEdge.Infrastructure.DTOs;
 namespace QuantEdge.Infrastructure.Interfaces;
 
 /// <summary>
-/// Manual Paper Trading - the paper counterpart of Manual Real Trade. Fully separate from
-/// <see cref="IAutoTradeService"/>: its own settings (manual_paper_trade_settings) and execution logs
-/// (manual_paper_trade_execution_logs), so Auto Paper Trading behaviour is not affected.
+/// Manual Paper Trading - fully manual (Buy / Close / Edit levels from the page, no Worker job). Fully separate from
+/// <see cref="IAutoTradeService"/>: its own settings, execution logs, orders, positions and trade history
+/// (manual_paper_* tables), so Auto Paper / Auto Real Trading are not affected.
 /// </summary>
 public interface IManualPaperTradeService
 {
@@ -22,13 +22,16 @@ public interface IManualPaperTradeService
     Task<ManualPaperDashboardDto> GetDashboardAsync(int userId = 1);
 
     /// <summary>Manual Trading page - OPEN Manual paper positions with live LTP / unrealized P&amp;L.</summary>
-    Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync();
+    Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync(int userId = 1);
 
     /// <summary>Manual Trading page - paged, filtered Manual paper orders.</summary>
-    Task<PagedResultDto<PaperOrder>> GetOrdersPagedAsync(ManualPaperOrderFilterDto filter);
+    Task<PagedResultDto<PaperOrder>> GetOrdersPagedAsync(ManualPaperOrderFilterDto filter, int userId = 1);
 
     /// <summary>Manual Trading page - paged, filtered Manual paper trade execution history.</summary>
-    Task<PagedResultDto<PaperTradeHistory>> GetTradeHistoryPagedAsync(PaperTradeHistoryFilterDto filter);
+    Task<PagedResultDto<PaperTradeHistory>> GetTradeHistoryPagedAsync(PaperTradeHistoryFilterDto filter, int userId = 1);
+
+    /// <summary>Reset Capital on the Manual Trading page - clears only manual orders, positions, history and logs.</summary>
+    Task ResetAsync(int userId = 1);
 
     /// <summary>
     /// Places a manual paper BUY after the same entry gates as Manual Real Trade, with user Quantity and
@@ -36,6 +39,13 @@ public interface IManualPaperTradeService
     /// </summary>
     Task<(bool Success, string Message)> ExecuteManualBuyAsync(string symbol, decimal entryPrice, int quantity,
         decimal stopLossPct, decimal trailingSlPct, int userId = 1);
+
+    /// <summary>
+    /// Edit button on Live Open Positions - changes an OPEN manual position's Stop Loss, Trailing SL % and
+    /// Target (reference levels only; the position is still sold only with Close).
+    /// </summary>
+    Task<(bool Success, string Message)> UpdatePositionLevelsAsync(int positionId, decimal stopLoss, decimal trailingSlPct,
+        decimal takeProfit, int userId = 1);
 
     /// <summary>
     /// Close button on the Manual Trading page - sells an OPEN manual position at the latest price.

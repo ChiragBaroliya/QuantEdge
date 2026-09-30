@@ -95,7 +95,35 @@ public class ManualPaperTradeController : ControllerBase
     [HttpGet("positions")]
     public async Task<IActionResult> GetPositions()
     {
-        return Ok(await _manualPaperTradeService.GetOpenPositionsAsync());
+        return Ok(await _manualPaperTradeService.GetOpenPositionsAsync(GetCurrentUserId()));
+    }
+
+    /// <summary>
+    /// Reset Capital on the Manual Trading page - clears ONLY manual orders, positions, trade history and
+    /// logs (fn_reset_manual_paper_trading). Settings are kept; Auto Paper / Auto Real data is not touched.
+    /// </summary>
+    [HttpPost("reset")]
+    public async Task<IActionResult> Reset()
+    {
+        await _manualPaperTradeService.ResetAsync(GetCurrentUserId());
+        return Ok(new { success = true, message = "Manual Paper Trading has been reset. Manual Capital is available again in full." });
+    }
+
+    /// <summary>
+    /// Edit button on Live Open Positions - updates Stop Loss, Trailing SL % and Target of an OPEN
+    /// manual paper position (fn_update_manual_paper_position_levels).
+    /// </summary>
+    [HttpPut("position/{positionId:int}/levels")]
+    public async Task<IActionResult> UpdatePositionLevels(int positionId, [FromBody] UpdateManualPositionLevelsDto dto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var (success, message) = await _manualPaperTradeService.UpdatePositionLevelsAsync(
+            positionId, dto.StopLoss, dto.TrailingSlPct, dto.TakeProfit, GetCurrentUserId());
+        return Ok(new { success, message });
     }
 
     /// <summary>
@@ -133,7 +161,7 @@ public class ManualPaperTradeController : ControllerBase
             ToDate = ToIstDayEndUtc(toDate)
         };
 
-        return Ok(await _manualPaperTradeService.GetOrdersPagedAsync(filter));
+        return Ok(await _manualPaperTradeService.GetOrdersPagedAsync(filter, GetCurrentUserId()));
     }
 
     /// <summary>
@@ -159,7 +187,7 @@ public class ManualPaperTradeController : ControllerBase
             ToDate = ToIstDayEndUtc(toDate)
         };
 
-        return Ok(await _manualPaperTradeService.GetTradeHistoryPagedAsync(filter));
+        return Ok(await _manualPaperTradeService.GetTradeHistoryPagedAsync(filter, GetCurrentUserId()));
     }
 
     // The date pickers send calendar dates; treat them as IST days so "From / To" cover the full

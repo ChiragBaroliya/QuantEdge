@@ -5,6 +5,11 @@ using QuantEdge.Infrastructure.DTOs;
 
 namespace QuantEdge.Infrastructure.Persistence.Repositories;
 
+/// <summary>
+/// Manual Paper Trading data - settings, execution logs and its own orders / positions / trade history
+/// (manual_paper_* tables). Nothing else in the system (Worker jobs, paper matching engine, Auto Paper,
+/// Auto Real) reads or writes these tables.
+/// </summary>
 public interface IManualPaperTradeRepository
 {
     Task<ManualPaperTradeSettings> GetSettingsAsync(int userId = 1);
@@ -14,15 +19,29 @@ public interface IManualPaperTradeRepository
     Task LogExecutionAsync(ManualPaperTradeExecutionLog log);
     Task<IEnumerable<ManualPaperTradeExecutionLog>> GetTodayLogsAsync(int userId = 1, int limit = 50);
 
-    /// <summary>Paged Manual (trade_type = 0) paper orders - fn_get_manual_paper_orders_paged.</summary>
-    Task<(IEnumerable<PaperOrder> Items, int TotalCount)> GetOrdersPagedAsync(int accountId, ManualPaperOrderFilterDto filter);
+    /// <summary>Manual BUY (order + OPEN position + history) - fn_create_manual_paper_buy.
+    /// Returns the new position id, or null when an OPEN position already exists for the symbol.</summary>
+    Task<int?> CreateBuyAsync(int userId, string symbol, int quantity, decimal price, decimal stopLoss,
+        decimal trailingSlPct, decimal takeProfit, string orderRemarks, string historyRemarks);
 
-    /// <summary>Manual (trade_type = 0) dashboard figures - fn_get_manual_paper_dashboard.</summary>
-    Task<ManualPaperDashboardDto> GetDashboardAsync(int accountId, System.DateTime todayStartUtc);
+    /// <summary>Manual SELL / Close (position closed + SELL order + history) - fn_close_manual_paper_position.</summary>
+    Task<ManualPaperCloseResult> ClosePositionAsync(int userId, int positionId, decimal exitPrice, string exitReason);
 
-    /// <summary>OPEN Manual (trade_type = 0) paper positions - fn_get_manual_paper_open_positions.</summary>
-    Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync(int accountId);
+    /// <summary>Edit an OPEN position's SL / Trailing SL % / Target - fn_update_manual_paper_position_levels.</summary>
+    Task<bool> UpdatePositionLevelsAsync(int userId, int positionId, decimal stopLoss, decimal trailingSlPct, decimal takeProfit);
 
-    /// <summary>Paged Manual (trade_type = 0) paper trade history - fn_get_manual_paper_trade_history_paged.</summary>
-    Task<(IEnumerable<PaperTradeHistory> Items, int TotalCount)> GetTradeHistoryPagedAsync(int accountId, PaperTradeHistoryFilterDto filter);
+    /// <summary>OPEN manual positions - fn_get_manual_paper_open_positions.</summary>
+    Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync(int userId);
+
+    /// <summary>Dashboard figures - fn_get_manual_paper_dashboard.</summary>
+    Task<ManualPaperDashboardDto> GetDashboardAsync(int userId, System.DateTime todayStartUtc);
+
+    /// <summary>Paged manual orders - fn_get_manual_paper_orders_paged.</summary>
+    Task<(IEnumerable<PaperOrder> Items, int TotalCount)> GetOrdersPagedAsync(int userId, ManualPaperOrderFilterDto filter);
+
+    /// <summary>Paged manual trade history - fn_get_manual_paper_trade_history_paged.</summary>
+    Task<(IEnumerable<PaperTradeHistory> Items, int TotalCount)> GetTradeHistoryPagedAsync(int userId, PaperTradeHistoryFilterDto filter);
+
+    /// <summary>Reset Capital - deletes the user's manual orders, positions, history and logs.</summary>
+    Task ResetAsync(int userId);
 }

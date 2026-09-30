@@ -928,3 +928,100 @@ END;
 $$;
 
 CREATE INDEX IF NOT EXISTS ix_manual_paper_trade_logs_user ON manual_paper_trade_execution_logs(user_id, executed_at);
+
+-- ----------------------------------------------------------------------------
+-- Manual Paper Trading - own orders / positions / trade history tables.
+-- Fully manual (Buy, Close, Edit levels from the Manual Trading page only). No Worker job, paper
+-- matching engine or Auto Paper / Auto Real code reads or writes these tables.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS manual_paper_orders (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    position_id INT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    side INT NOT NULL,                      -- 0 = BUY, 1 = SELL
+    order_type INT NOT NULL DEFAULT 0,      -- 0 = Market
+    quantity INT NOT NULL,
+    price NUMERIC(18, 4) NOT NULL,
+    stop_loss NUMERIC(18, 4),
+    take_profit NUMERIC(18, 4),
+    status INT NOT NULL DEFAULT 1,          -- 1 = Filled
+    filled_price NUMERIC(18, 4),
+    filled_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    remarks VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS manual_paper_positions (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    symbol VARCHAR(50) NOT NULL,
+    side INT NOT NULL DEFAULT 0,            -- 0 = BUY (long)
+    quantity INT NOT NULL,
+    average_entry_price NUMERIC(18, 4) NOT NULL,
+    stop_loss NUMERIC(18, 4),
+    trailing_sl_pct NUMERIC(9, 4),
+    take_profit NUMERIC(18, 4),
+    status INT NOT NULL DEFAULT 0,          -- 0 = OPEN, 1 = CLOSED
+    exit_price NUMERIC(18, 4),
+    exit_reason VARCHAR(100),
+    realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+    opened_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    closed_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS manual_paper_trade_history (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    order_id INT NULL,
+    position_id INT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    side INT NOT NULL,
+    quantity INT NOT NULL,
+    entry_price NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+    executed_price NUMERIC(18, 4) NOT NULL,
+    realized_pnl NUMERIC(18, 4) NOT NULL DEFAULT 0.00,
+    exit_reason VARCHAR(100),
+    executed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    remarks VARCHAR(255)
+);
+
+CREATE INDEX IF NOT EXISTS ix_manual_paper_orders_user ON manual_paper_orders(user_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_manual_paper_positions_user ON manual_paper_positions(user_id, status);
+CREATE INDEX IF NOT EXISTS ix_manual_paper_trade_history_user ON manual_paper_trade_history(user_id, executed_at);
+
+-- One-time move of Manual Paper Trade rows created by the Manual Trading page while it still used the
+-- shared paper_* tables (identified by trade_type = 0 plus the page's own trailing_sl_pct / remarks).
+-- Rows are copied into the manual_* tables and removed from paper_* in the same block, so re-running
+-- finds nothing left to move. Older manual paper rows (before the Manual Trading page) are not touched.
+DO $$
+BEGIN
+    INSERT INTO manual_paper_positions (
+        user_id, symbol, side, quantity, average_entry_price, stop_loss, trailing_sl_pct, take_profit,
+        status, exit_price, exit_reason, realized_pnl, opened_at, closed_at, updated_at)
+    SELECT 1, p.symbol, p.side, p.quantity, p.average_entry_price, p.stop_loss, p.trailing_sl_pct, p.take_profit,
+           CASE WHEN p.status = 0 THEN 0 ELSE 1 END,
+           CASE WHEN p.status = 0 THEN NULL ELSE p.current_price END,
+           p.exit_reason, p.realized_pnl, p.opened_at, p.closed_at, NOW()
+    FROM paper_positions p
+    WHERE p.trade_type = 0 AND p.trailing_sl_pct IS NOT NULL;
+    DELETE FROM paper_positions WHERE trade_type = 0 AND trailing_sl_pct IS NOT NULL;
+
+    INSERT INTO manual_paper_orders (user_id, symbol, side, order_type, quantity, price, stop_loss, take_profit,
+                                     status, filled_price, filled_at, created_at, remarks)
+    SELECT 1, o.symbol, o.side, o.order_type, o.quantity, o.price, o.stop_loss, o.take_profit,
+           o.status, o.filled_price, o.filled_at, o.created_at, o.remarks
+    FROM paper_orders o
+    WHERE o.trade_type = 0 AND o.remarks LIKE 'Manual Paper %';
+    DELETE FROM paper_orders WHERE trade_type = 0 AND remarks LIKE 'Manual Paper %';
+
+    INSERT INTO manual_paper_trade_history (user_id, symbol, side, quantity, entry_price, executed_price,
+                                            realized_pnl, exit_reason, executed_at, remarks)
+    SELECT 1, h.symbol, h.side, h.quantity, COALESCE(h.entry_price, 0.00), h.executed_price,
+           h.realized_pnl, h.exit_reason, h.executed_at, h.remarks
+    FROM paper_trade_history h
+    WHERE h.trade_type = 0 AND h.remarks LIKE 'Manual Paper %';
+    DELETE FROM paper_trade_history WHERE trade_type = 0 AND remarks LIKE 'Manual Paper %';
+END;
+$$;

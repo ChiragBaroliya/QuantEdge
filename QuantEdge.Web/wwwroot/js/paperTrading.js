@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: '', toDate: '' };
     let ordersPageState = { page: 1, pageSize: 10, symbol: '', side: '', status: '', fromDate: '', toDate: '' };
     let manualRefreshTimer = null; // debounce for Manual-only dashboard reloads
+    let lastRenderedPositions = []; // rows shown in Live Open Positions (Edit dialog pre-fill)
     let manualSettings = null; // manual_paper_trade_settings
     let quantityTouched = false; // user typed a Quantity - stop auto-filling it from Amount / LTP
     let quantityDefaultedFor = null; // symbol the Quantity was last auto-filled for (once per symbol)
@@ -258,7 +259,8 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'TRADE_SKIPPED': return 'bg-warning text-dark';
             case 'CIRCUIT_BREAKER':
             case 'SYSTEM_ERROR': return 'bg-danger';
-            case 'TRAILING_SL_ACTIVATED': return 'bg-primary';
+            case 'TRAILING_SL_ACTIVATED':
+            case 'LEVELS_UPDATED': return 'bg-primary';
             default: return 'bg-secondary';
         }
     }
@@ -345,6 +347,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const btnSaveManualSettings = document.getElementById('btnSaveManualSettings');
         if (btnSaveManualSettings) btnSaveManualSettings.addEventListener('click', handleSaveManualSettings);
+
+        const btnSaveLevels = document.getElementById('btnSaveLevels');
+        if (btnSaveLevels) btnSaveLevels.addEventListener('click', handleSaveLevels);
+        ['editStopLoss', 'editTakeProfit'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', updateEditLevelsPreview);
+        });
         if (orderSlPct) orderSlPct.addEventListener('input', validateFormInputs);
         if (orderTslPct) orderTslPct.addEventListener('input', validateFormInputs);
 
@@ -755,7 +764,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="text-warning fw-semibold">${tslText}</td>
                 <td class="text-success fw-bold">${tpText}${toTargetText}</td>
                 <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}</td>
-                <td class="text-end">
+                <td class="text-end text-nowrap">
+                    ${tslPct > 0 ? `<button class="btn btn-outline-primary btn-sm rounded-2 me-1 edit-pos-btn" data-id="${pos.id}" title="Edit Stop Loss / Trailing SL / Target">✏️ Edit</button>` : ''}
                     <button class="btn btn-outline-danger btn-sm rounded-2 close-pos-btn" data-id="${pos.id}">Close</button>
                 </td>
             `;
@@ -765,6 +775,83 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.close-pos-btn').forEach(btn => {
             btn.addEventListener('click', () => handleClosePosition(btn.dataset.id));
         });
+
+        // Keep the rendered rows so the Edit dialog can pre-fill from the same values the table shows.
+        lastRenderedPositions = positions;
+        document.querySelectorAll('.edit-pos-btn').forEach(btn => {
+            btn.addEventListener('click', () => openEditLevelsModal(parseInt(btn.dataset.id, 10)));
+        });
+    }
+
+    // --- Edit Stop Loss / Trailing SL % / Target of an open manual position ---
+    function openEditLevelsModal(positionId) {
+        const pos = (lastRenderedPositions || []).find(p => p.id === positionId);
+        if (!pos) return;
+
+        document.getElementById('editLevelsPositionId').value = pos.id;
+        document.getElementById('editLevelsTitle').innerText = `${pos.symbol} · ${pos.quantity} @ ₹${Number(pos.averageEntryPrice).toFixed(2)}`;
+        document.getElementById('editLevelsLtp').innerText = `₹${Number(pos.currentPrice || pos.averageEntryPrice).toFixed(2)}`;
+        document.getElementById('editStopLoss').value = pos.stopLoss > 0 ? Number(pos.stopLoss).toFixed(2) : '';
+        document.getElementById('editTrailingSlPct').value = pos.trailingSlPct > 0 ? Number(pos.trailingSlPct).toFixed(2) : '';
+        document.getElementById('editTakeProfit').value = pos.takeProfit > 0 ? Number(pos.takeProfit).toFixed(2) : '';
+        document.getElementById('editLevelsError').innerText = '';
+        updateEditLevelsPreview();
+
+        const modalEl = document.getElementById('editLevelsModal');
+        if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+
+    // Shows risk / reward vs the average entry price while editing.
+    function updateEditLevelsPreview() {
+        const pos = (lastRenderedPositions || []).find(p => p.id === parseInt(document.getElementById('editLevelsPositionId').value, 10));
+        const preview = document.getElementById('editLevelsPreview');
+        if (!pos || !preview) return;
+        const sl = parseFloat(document.getElementById('editStopLoss').value) || 0;
+        const tp = parseFloat(document.getElementById('editTakeProfit').value) || 0;
+        const entry = Number(pos.averageEntryPrice);
+        const risk = sl > 0 ? (entry - sl) * pos.quantity : null;
+        const reward = tp > 0 ? (tp - entry) * pos.quantity : null;
+        preview.innerText = `Risk at SL: ${risk !== null ? formatSignedInr(-risk) : '-'} · Reward at Target: ${reward !== null ? formatSignedInr(reward) : '-'}`;
+    }
+
+    async function handleSaveLevels() {
+        const positionId = parseInt(document.getElementById('editLevelsPositionId').value, 10);
+        const stopLoss = parseFloat(document.getElementById('editStopLoss').value);
+        const trailingSlPct = parseFloat(document.getElementById('editTrailingSlPct').value);
+        const takeProfit = parseFloat(document.getElementById('editTakeProfit').value);
+        const errorEl = document.getElementById('editLevelsError');
+
+        if (!(stopLoss > 0) || !(trailingSlPct > 0) || !(takeProfit > 0)) {
+            errorEl.innerText = 'Stop Loss, Trailing SL % and Target must all be greater than zero.';
+            return;
+        }
+        if (stopLoss >= takeProfit) {
+            errorEl.innerText = 'Stop Loss must be below Target.';
+            return;
+        }
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/position/${positionId}/levels`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ stopLoss, trailingSlPct, takeProfit })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success !== true) {
+                const firstError = data.errors ? Object.values(data.errors).flat()[0] : null;
+                errorEl.innerText = data.message || firstError || data.title || 'Could not update levels.';
+                return;
+            }
+
+            const modalEl = document.getElementById('editLevelsModal');
+            if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+            showToast('Levels Updated', data.message, 'success');
+            await loadPositions();
+            await loadManualLogs();
+        } catch (ex) {
+            console.error('Failed to update position levels:', ex);
+            errorEl.innerText = 'Failed to connect to the server.';
+        }
     }
 
     // Manual (trade_type = 0) paper orders only, filtered & paged server-side (fn_get_manual_paper_orders_paged).
@@ -1082,18 +1169,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function handleResetAccount() {
-        if (!confirm('Are you sure you want to reset your virtual account balance to ₹1,00,000? All active open positions and orders will be cleared.')) {
+        if (!confirm('Reset Manual Paper Trading? All manual open positions, orders, trade history and today\'s manual logs will be cleared and your full Manual Capital becomes available again. Auto Paper Trading is not affected.')) {
             return;
         }
 
         try {
-            const res = await fetch(`${apiBaseUrl}/api/papertrading/account/reset`, { method: 'POST' });
-            if (res.ok) {
-                showToast('Account Reset', 'Virtual account balance reset to ₹1,00,000.', 'success');
+            // Manual-only reset (fn_reset_manual_paper_trading) - Auto Paper / Auto Real data is untouched.
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/reset`, { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.success) {
+                showToast('Manual Trading Reset', data.message || 'Manual Paper Trading has been reset.', 'success');
                 await loadPortfolio();
                 await loadPositions();
-                await loadOrders();
-                await loadHistory();
+                await loadOrders(1);
+                await loadHistory(1);
+                await loadManualLogs();
+            } else {
+                showToast('Reset Failed', data.message || 'Could not reset Manual Paper Trading.', 'danger');
             }
         } catch (err) {
             console.error('Error resetting account:', err);

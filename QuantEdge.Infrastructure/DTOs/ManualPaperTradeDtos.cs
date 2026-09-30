@@ -100,15 +100,10 @@ public class ManualPaperOrderFilterDto
 }
 
 /// <summary>
-/// Manual Trading page stat cards (fn_get_manual_paper_dashboard) - Manual (trade_type = 0) figures
-/// from the paper_* tables, plus the shared paper account's cash that every paper BUY is checked against.
+/// Manual Trading page stat cards (fn_get_manual_paper_dashboard) - figures from the manual_paper_* tables.
 /// </summary>
 public class ManualPaperDashboardDto
 {
-    // Shared paper account (paper_accounts) - informational; Manual Trading uses ManualAvailableMargin.
-    public decimal AccountAvailableMargin { get; set; }
-    public decimal AccountUsedMargin { get; set; }
-
     // Manual-only figures
     public decimal ManualCapital { get; set; }
     public decimal ManualUsedMargin { get; set; }
@@ -127,4 +122,31 @@ public class ManualPaperDashboardDto
 
     public bool IsManualTradeEnabled { get; set; }
     public int MaxTradesPerDay { get; set; }
+}
+
+/// <summary>
+/// Edit Stop Loss / Trailing SL % / Target of an OPEN manual paper position (Live Open Positions "Edit").
+/// These are reference levels - manual paper positions are only sold with the Close button.
+/// </summary>
+public class UpdateManualPositionLevelsDto
+{
+    [Range(typeof(decimal), "0.01", "10000000", ErrorMessage = "Stop Loss must be a positive price.")]
+    public decimal StopLoss { get; set; }
+
+    [Range(typeof(decimal), "0.1", "50.0", ErrorMessage = "Trailing Stop Loss % must be between 0.1% and 50%.")]
+    public decimal TrailingSlPct { get; set; }
+
+    [Range(typeof(decimal), "0.01", "10000000", ErrorMessage = "Target must be a positive price.")]
+    public decimal TakeProfit { get; set; }
+}
+
+/// <summary>Result row of fn_close_manual_paper_position (Close button).</summary>
+public class ManualPaperCloseResult
+{
+    public bool Success { get; set; }
+    public string? Symbol { get; set; }
+    public int Quantity { get; set; }
+    public decimal EntryPrice { get; set; }
+    public decimal ExitPrice { get; set; }
+    public decimal RealizedPnl { get; set; }
 }
