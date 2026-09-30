@@ -91,7 +91,9 @@ public class PaperMatchingEngine
             // Auto positions are exited only by AutoTradeService via the shared SwingTradeRules policy
             // (closing-basis stops, emergency stop, trailing SL) - the same rules as Auto Real Trading.
             // A raw tick-level SL/TP trigger here would bypass that, so only their price is updated.
-            bool isAutoManaged = pos.TradeType == TradeType.Auto;
+            // Manual Paper Trade positions (ManualPaperTradeService) are sold manually only - their SL/TP are
+            // reference levels, so they are never auto-closed here either; only their price is updated.
+            bool isAutoManaged = pos.TradeType == TradeType.Auto || ManualPaperTradeService.IsManagedPosition(pos);
 
             // Check Stop-Loss Trigger
             bool slTriggered = false;

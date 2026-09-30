@@ -123,6 +123,7 @@ public static class ServiceCollectionExtensions
         // Register Paper Trading Infrastructure Services
         services.AddTransient<IPaperTradingRepository, PaperTradingRepository>();
         services.AddTransient<IAutoTradeRepository, AutoTradeRepository>();
+        services.AddTransient<IManualPaperTradeRepository, ManualPaperTradeRepository>();
         services.AddTransient<PaperOrderValidator>();
         services.AddSingleton<PaperMatchingEngine>();
         services.AddHttpClient();
@@ -161,6 +162,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITradingBrokerService, ZerodhaKiteBrokerService>();
         services.AddSingleton<IPaperTradingService, PaperTradingService>();
         services.AddSingleton<IAutoTradeService, AutoTradeService>();
+        services.AddSingleton<IManualPaperTradeService, ManualPaperTradeService>();
 
         // Register Real Trading Infrastructure Services
         services.AddTransient<IRealTradingRepository, RealTradingRepository>();

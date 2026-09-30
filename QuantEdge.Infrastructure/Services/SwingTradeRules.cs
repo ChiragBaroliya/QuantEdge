@@ -26,6 +26,9 @@ public sealed record SwingTradeParams(
     public static SwingTradeParams From(AutoTradeSettings s) =>
         Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct);
 
+    public static SwingTradeParams From(ManualPaperTradeSettings s) =>
+        Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct);
+
     private static SwingTradeParams Create(string? exitMode, string? closeCheckTime, string? windowEnd,
         decimal slMult, decimal trailMult, decimal targetMult, decimal profitTargetPct)
     {

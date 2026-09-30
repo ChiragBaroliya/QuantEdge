@@ -18,13 +18,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const paperOrderForm = document.getElementById('paperOrderForm');
     const orderSymbol = document.getElementById('orderSymbol');
-    const orderType = document.getElementById('orderType');
-    const limitPriceGroup = document.getElementById('limitPriceGroup');
-    const orderLimitPrice = document.getElementById('orderLimitPrice');
     const orderQuantity = document.getElementById('orderQuantity');
-    const orderStopLoss = document.getElementById('orderStopLoss');
-    const orderTakeProfit = document.getElementById('orderTakeProfit');
+    const orderSlPct = document.getElementById('orderSlPct');
+    const orderTslPct = document.getElementById('orderTslPct');
     const estimatedMargin = document.getElementById('estimatedMargin');
+    const estSlPrice = document.getElementById('estSlPrice');
+    const estRisk = document.getElementById('estRisk');
     const placeOrderBtn = document.getElementById('placeOrderBtn');
     const liveLtpBadge = document.getElementById('liveLtpBadge');
 
@@ -40,6 +39,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeSymbol = orderSymbol ? orderSymbol.value : 'NIFTY';
     let signalRConnection = null;
     let historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: '', toDate: '' };
+    let ordersPageState = { page: 1, pageSize: 10, symbol: '', side: '', status: '', fromDate: '', toDate: '' };
+    let manualRefreshTimer = null; // debounce for Manual-only dashboard reloads
+    let manualSettings = null; // manual_paper_trade_settings
+    let quantityTouched = false; // user typed a Quantity - stop auto-filling it from Amount / LTP
+    let quantityDefaultedFor = null; // symbol the Quantity was last auto-filled for (once per symbol)
 
     // --- 1. Initial Load & Setup ---
     init();
@@ -51,8 +55,243 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadPositions();
         await loadOrders();
         await loadHistory();
-        await loadAutoTradeSettings();
+        await loadManualTradeDefaults();
+        await loadManualLogs();
         initSignalR();
+        await refreshQuote(activeSymbol);
+
+        // Keep the displayed LTP (and so Required Capital / SL price / Risk) fresh every 5s, like the
+        // Manual Real Trade popup. Display only - the server re-checks the live price at order time.
+        setInterval(() => refreshQuote(activeSymbol), 5000);
+
+        // Keep the Manual stat cards / open positions' live P&L current between trade events.
+        setInterval(scheduleManualDashboardRefresh, 10000);
+    }
+
+    function onSymbolChanged(newSymbol) {
+        if (!newSymbol || newSymbol === activeSymbol) {
+            updateLtpDisplay();
+            validateFormInputs();
+            return;
+        }
+
+        const previousSymbol = activeSymbol;
+        activeSymbol = newSymbol;
+        quantityTouched = false;
+        applyDefaultQuantity();
+        updateLtpDisplay();
+        validateFormInputs();
+
+        // Move the live tick stream to the newly selected symbol.
+        if (signalRConnection && signalRConnection.state === 'Connected') {
+            if (previousSymbol) signalRConnection.invoke('Unsubscribe', previousSymbol, '1m').catch(console.error);
+            signalRConnection.invoke('Subscribe', newSymbol, '1m').catch(console.error);
+        }
+
+        refreshQuote(newSymbol);
+    }
+
+    // Fetches the live LTP for the symbol from the same quote endpoint the Manual Real Trade popup uses.
+    async function refreshQuote(symbol) {
+        if (!symbol) return;
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/realtrade/quote?symbol=${encodeURIComponent(symbol)}`);
+            if (!res.ok) return;
+            const q = await res.json();
+            if (q && q.success && q.ltp > 0) {
+                currentLtpMap[symbol] = Number(q.ltp);
+                if (symbol === activeSymbol) {
+                    if (quantityDefaultedFor !== symbol) applyDefaultQuantity();
+                    updateLtpDisplay();
+                    validateFormInputs();
+                }
+            }
+        } catch (ex) {
+            // Transient failure - keep the last known price.
+        }
+    }
+
+    // --- Manual Paper Trading settings (manual_paper_trade_settings) ---
+    // Pre-fills trade-wise SL%/Trailing SL% from the Manual Trading settings - the same defaults the
+    // Manual Real Trade popup takes from Real Trade settings. Fixed defaults stay if unreachable.
+    async function loadManualTradeDefaults() {
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/settings`);
+            if (!res.ok) return;
+            manualSettings = await res.json();
+            if (orderSlPct && manualSettings.stopLossPct > 0) orderSlPct.value = manualSettings.stopLossPct;
+            if (orderTslPct && manualSettings.trailingSlPct > 0) orderTslPct.value = manualSettings.trailingSlPct;
+            updateManualToggleUi(!!manualSettings.isManualTradeEnabled);
+            applyDefaultQuantity();
+            validateFormInputs();
+        } catch (ex) {
+            console.error('Failed to load manual trade defaults:', ex);
+        }
+    }
+
+    // Default Quantity = Default Amount per Trade / LTP (like the Manual Real Trade popup), until the
+    // user types their own Quantity for the selected symbol.
+    function applyDefaultQuantity() {
+        if (quantityTouched || !orderQuantity || !manualSettings) return;
+        const ltp = getEffectivePrice();
+        if (manualSettings.fixedAmountPerTrade > 0 && ltp > 0) {
+            orderQuantity.value = Math.max(1, Math.floor(manualSettings.fixedAmountPerTrade / ltp));
+            quantityDefaultedFor = activeSymbol;
+        }
+    }
+
+    function updateManualToggleUi(enabled) {
+        const toggle = document.getElementById('manualTradeToggle');
+        const badge = document.getElementById('manualTradeStatusBadge');
+        if (toggle) toggle.checked = enabled;
+        if (badge) {
+            badge.className = enabled ? 'badge bg-success' : 'badge bg-danger';
+            badge.innerText = enabled ? 'ON' : 'OFF';
+        }
+    }
+
+    async function handleManualToggle(e) {
+        const enabled = e.target.checked;
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/toggle`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (manualSettings) manualSettings.isManualTradeEnabled = enabled;
+            updateManualToggleUi(enabled);
+            showToast('Manual Trading', `Manual Paper Trading switched ${enabled ? 'ON' : 'OFF'}.`, enabled ? 'success' : 'warning');
+            await loadManualLogs();
+        } catch (ex) {
+            console.error('Failed to toggle manual trading:', ex);
+            updateManualToggleUi(!enabled);
+            showToast('Error', 'Failed to change the Manual Trading switch.', 'danger');
+        }
+    }
+
+    // Settings modal field id -> settings property
+    const manualSettingsFields = {
+        msStopLossPct: 'stopLossPct',
+        msTrailingSlPct: 'trailingSlPct',
+        msFixedAmountPerTrade: 'fixedAmountPerTrade',
+        msMaxTradesPerDay: 'maxTradesPerDay',
+        msAvailableCapital: 'availableCapital',
+        msMaxDailyLossLimit: 'maxDailyLossLimit',
+        msTradingWindowStart: 'tradingWindowStart',
+        msTradingWindowEnd: 'tradingWindowEnd',
+        msEntryDelayMinutes: 'entryDelayMinutes',
+        msExitMode: 'exitMode',
+        msCloseCheckTime: 'closeCheckTime',
+        msMaxDurationDays: 'maxDurationDays',
+        msProfitTargetPct: 'profitTargetPct',
+        msStopLossAtrMult: 'stopLossAtrMult',
+        msTrailAtrMult: 'trailAtrMult',
+        msTargetAtrMult: 'targetAtrMult'
+    };
+    const manualSettingsTextFields = ['tradingWindowStart', 'tradingWindowEnd', 'exitMode', 'closeCheckTime'];
+
+    async function openManualSettingsModal() {
+        await loadManualTradeDefaults();
+        if (!manualSettings) {
+            showToast('Error', 'Could not load Manual Trading settings.', 'danger');
+            return;
+        }
+        Object.entries(manualSettingsFields).forEach(([id, prop]) => {
+            const el = document.getElementById(id);
+            if (el) el.value = manualSettings[prop] ?? '';
+        });
+        const modalEl = document.getElementById('manualSettingsModal');
+        if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+
+    async function handleSaveManualSettings() {
+        const payload = { isManualTradeEnabled: manualSettings ? !!manualSettings.isManualTradeEnabled : true };
+        Object.entries(manualSettingsFields).forEach(([id, prop]) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const raw = (el.value || '').trim();
+            if (manualSettingsTextFields.includes(prop)) {
+                payload[prop] = raw;
+            } else if (prop === 'maxDailyLossLimit') {
+                payload[prop] = raw === '' ? null : Number(raw);
+            } else {
+                payload[prop] = Number(raw);
+            }
+        });
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/settings`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                const firstError = err.errors ? Object.values(err.errors).flat()[0] : null;
+                showToast('Settings Not Saved', firstError || err.title || 'Invalid settings.', 'danger');
+                return;
+            }
+            manualSettings = await res.json();
+            const modalEl = document.getElementById('manualSettingsModal');
+            if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+            if (orderSlPct) orderSlPct.value = manualSettings.stopLossPct;
+            if (orderTslPct) orderTslPct.value = manualSettings.trailingSlPct;
+            validateFormInputs();
+            showToast('Settings Saved', 'Manual Paper Trading settings updated.', 'success');
+            await loadManualLogs();
+        } catch (ex) {
+            console.error('Failed to save manual settings:', ex);
+            showToast('Error', 'Failed to save Manual Trading settings.', 'danger');
+        }
+    }
+
+    // --- Today's Manual Paper Trade logs (manual_paper_trade_execution_logs) ---
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function getLogBadgeClass(actionType) {
+        switch (actionType) {
+            case 'MANUAL_BUY': return 'bg-success';
+            case 'MANUAL_SELL': return 'bg-info text-dark';
+            case 'TRADE_SKIPPED': return 'bg-warning text-dark';
+            case 'CIRCUIT_BREAKER':
+            case 'SYSTEM_ERROR': return 'bg-danger';
+            case 'TRAILING_SL_ACTIVATED': return 'bg-primary';
+            default: return 'bg-secondary';
+        }
+    }
+
+    async function loadManualLogs() {
+        const list = document.getElementById('manualLogsList');
+        const countBadge = document.getElementById('manualTradeCountBadge');
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/logs?limit=50`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const logs = data.logs || [];
+            if (countBadge) {
+                const max = manualSettings ? manualSettings.maxTradesPerDay : '-';
+                countBadge.innerText = `${data.todayTradeCount || 0} / ${max} trades`;
+            }
+            if (!list) return;
+            if (logs.length === 0) {
+                list.innerHTML = '<div class="text-white-50">No manual trade activity today.</div>';
+                return;
+            }
+            list.innerHTML = logs.map(l => `
+                <div class="border-bottom border-secondary border-opacity-25 py-2">
+                    <div class="d-flex justify-content-between align-items-center gap-2">
+                        <span><span class="badge ${getLogBadgeClass(l.actionType)}">${escapeHtml(l.actionType)}</span>
+                            <strong class="text-light ms-1">${escapeHtml(l.symbol)}</strong></span>
+                        <span class="text-white-50">${formatISTTime(l.executedAt)}</span>
+                    </div>
+                    <div class="text-white mt-1">${escapeHtml(l.reason)}</div>
+                </div>`).join('');
+        } catch (ex) {
+            console.error('Failed to load manual trade logs:', ex);
+        }
     }
 
     async function loadAutoTradeSettings() {
@@ -85,49 +324,29 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             $symbol.on('change select2:select', function() {
-                activeSymbol = orderSymbol.value;
-                updateLtpDisplay();
-                validateFormInputs();
+                onSymbolChanged(orderSymbol.value);
             });
         } else if (orderSymbol) {
             orderSymbol.addEventListener('change', () => {
-                activeSymbol = orderSymbol.value;
-                updateLtpDisplay();
-                validateFormInputs();
+                onSymbolChanged(orderSymbol.value);
             });
         }
 
-        if (orderType) {
-            orderType.addEventListener('change', () => {
-                if (orderType.value === 'Limit') {
-                    limitPriceGroup.classList.remove('d-none');
-                } else {
-                    limitPriceGroup.classList.add('d-none');
-                }
-                validateFormInputs();
-            });
-        }
-
-        document.querySelectorAll('input[name="orderSide"]').forEach(radio => {
-            radio.addEventListener('change', () => {
-                const side = getSelectedSide();
-                if (placeOrderBtn) {
-                    if (side === 'BUY') {
-                        placeOrderBtn.className = 'btn btn-success w-100 fw-bold py-2 rounded-3 shadow';
-                        placeOrderBtn.innerText = 'Place BUY Paper Order';
-                    } else {
-                        placeOrderBtn.className = 'btn btn-danger w-100 fw-bold py-2 rounded-3 shadow';
-                        placeOrderBtn.innerText = 'Place SELL Paper Order';
-                    }
-                }
-                validateFormInputs();
-            });
+        if (orderQuantity) orderQuantity.addEventListener('input', () => {
+            quantityTouched = true;
+            validateFormInputs();
         });
 
-        if (orderQuantity) orderQuantity.addEventListener('input', validateFormInputs);
-        if (orderLimitPrice) orderLimitPrice.addEventListener('input', validateFormInputs);
-        if (orderStopLoss) orderStopLoss.addEventListener('input', validateFormInputs);
-        if (orderTakeProfit) orderTakeProfit.addEventListener('input', validateFormInputs);
+        const manualTradeToggle = document.getElementById('manualTradeToggle');
+        if (manualTradeToggle) manualTradeToggle.addEventListener('change', handleManualToggle);
+
+        const btnOpenManualSettings = document.getElementById('btnOpenManualSettings');
+        if (btnOpenManualSettings) btnOpenManualSettings.addEventListener('click', openManualSettingsModal);
+
+        const btnSaveManualSettings = document.getElementById('btnSaveManualSettings');
+        if (btnSaveManualSettings) btnSaveManualSettings.addEventListener('click', handleSaveManualSettings);
+        if (orderSlPct) orderSlPct.addEventListener('input', validateFormInputs);
+        if (orderTslPct) orderTslPct.addEventListener('input', validateFormInputs);
 
         if (paperOrderForm) {
             paperOrderForm.addEventListener('submit', handleOrderSubmit);
@@ -149,6 +368,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnSaveAutoTradeSettings = document.getElementById('btnSaveAutoTradeSettings');
         if (btnSaveAutoTradeSettings) {
             btnSaveAutoTradeSettings.addEventListener('click', handleSaveAutoTradeSettings);
+        }
+
+        const btnFilterOrders = document.getElementById('btnFilterOrders');
+        if (btnFilterOrders) {
+            btnFilterOrders.addEventListener('click', () => {
+                ordersPageState.symbol = document.getElementById('ordersFilterSymbol')?.value || '';
+                ordersPageState.side = document.getElementById('ordersFilterSide')?.value || '';
+                ordersPageState.status = document.getElementById('ordersFilterStatus')?.value || '';
+                ordersPageState.fromDate = document.getElementById('ordersFilterFromDate')?.value || '';
+                ordersPageState.toDate = document.getElementById('ordersFilterToDate')?.value || '';
+                loadOrders(1);
+            });
+        }
+
+        const btnResetOrdersFilter = document.getElementById('btnResetOrdersFilter');
+        if (btnResetOrdersFilter) {
+            btnResetOrdersFilter.addEventListener('click', () => {
+                ['ordersFilterSymbol', 'ordersFilterSide', 'ordersFilterStatus', 'ordersFilterFromDate', 'ordersFilterToDate']
+                    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+                ordersPageState = { ...ordersPageState, page: 1, symbol: '', side: '', status: '', fromDate: '', toDate: '' };
+                loadOrders(1);
+            });
         }
 
         const btnFilterHistory = document.getElementById('btnFilterHistory');
@@ -251,67 +492,56 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- 2. Live Validation & Helper Calculation ---
-    function getSelectedSide() {
-        const checked = document.querySelector('input[name="orderSide"]:checked');
-        return checked ? checked.value : 'BUY';
-    }
-
     function getEffectivePrice() {
-        if (orderType && orderType.value === 'Limit') {
-            return parseFloat(orderLimitPrice.value) || 0;
-        }
         return currentLtpMap[activeSymbol] || 0;
     }
 
+    // Same client-side checks as the Manual Real Trade popup - the server re-runs every risk gate.
     function validateFormInputs() {
         let isValid = true;
-        const side = getSelectedSide();
         const price = getEffectivePrice();
-        const qty = parseInt(orderQuantity.value) || 0;
-        const sl = parseFloat(orderStopLoss.value) || 0;
-        const tp = parseFloat(orderTakeProfit.value) || 0;
+        const qty = parseInt(orderQuantity.value, 10) || 0;
+        const slPct = parseFloat(orderSlPct.value) || 0;
+        const tslPct = parseFloat(orderTslPct.value) || 0;
 
         // Reset errors
         resetInputStyles();
 
         // 1. Quantity Check
-        if (qty <= 0) {
-            showFieldError(orderQuantity, 'quantityError', 'Quantity must be a positive number greater than 0.');
+        if (qty < 1) {
+            showFieldError(orderQuantity, 'quantityError', 'Quantity must be a positive whole number.');
             isValid = false;
         }
 
-        // 2. Margin Check
+        // 2. SL% / Trailing SL% - both mandatory
+        if (slPct <= 0) {
+            showFieldError(orderSlPct, 'slPctError', 'Stop Loss % must be greater than zero.');
+            isValid = false;
+        }
+        if (tslPct <= 0) {
+            showFieldError(orderTslPct, 'tslPctError', 'Trailing Stop Loss % must be greater than zero.');
+            isValid = false;
+        }
+
+        // 3. Capital Check
         const required = qty * price;
         estimatedMargin.innerText = `₹${required.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
         if (required > currentAccount.availableMargin) {
             estimatedMargin.className = 'fw-bold text-danger';
-            showFieldError(orderQuantity, 'quantityError', `Required margin (₹${required.toFixed(2)}) exceeds available margin (₹${currentAccount.availableMargin.toFixed(2)}).`);
+            showFieldError(orderQuantity, 'quantityError', `Required capital (₹${required.toFixed(2)}) exceeds available margin (₹${currentAccount.availableMargin.toFixed(2)}).`);
             isValid = false;
         } else {
             estimatedMargin.className = 'fw-bold text-light';
         }
 
-        // 3. Stop-Loss Bounds Check
-        if (sl > 0 && price > 0) {
-            if (side === 'BUY' && sl >= price) {
-                showFieldError(orderStopLoss, 'stopLossError', `For a BUY trade, Stop-Loss (₹${sl}) must be less than entry price (₹${price.toFixed(2)}).`);
-                isValid = false;
-            } else if (side === 'SELL' && sl <= price) {
-                showFieldError(orderStopLoss, 'stopLossError', `For a SELL trade, Stop-Loss (₹${sl}) must be higher than entry price (₹${price.toFixed(2)}).`);
-                isValid = false;
-            }
-        }
+        // 4. Estimated SL price & risk
+        const slPrice = (slPct > 0 && price > 0) ? price * (1 - slPct / 100) : 0;
+        if (estSlPrice) estSlPrice.textContent = slPrice > 0 ? `₹${slPrice.toFixed(2)}` : '-';
+        if (estRisk) estRisk.textContent = (slPrice > 0 && qty > 0) ? `₹${((price - slPrice) * qty).toFixed(2)}` : '-';
 
-        // 4. Take-Profit Bounds Check
-        if (tp > 0 && price > 0) {
-            if (side === 'BUY' && tp <= price) {
-                showFieldError(orderTakeProfit, 'takeProfitError', `For a BUY trade, Target (₹${tp}) must be higher than entry price (₹${price.toFixed(2)}).`);
-                isValid = false;
-            } else if (side === 'SELL' && tp >= price) {
-                showFieldError(orderTakeProfit, 'takeProfitError', `For a SELL trade, Target (₹${tp}) must be lower than entry price (₹${price.toFixed(2)}).`);
-                isValid = false;
-            }
+        if (!activeSymbol || price <= 0) {
+            isValid = false;
         }
 
         if (placeOrderBtn) {
@@ -322,7 +552,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resetInputStyles() {
-        [orderQuantity, orderLimitPrice, orderStopLoss, orderTakeProfit].forEach(el => {
+        [orderQuantity, orderSlPct, orderTslPct].forEach(el => {
             if (el) {
                 el.classList.remove('is-invalid');
             }
@@ -359,6 +589,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 orderSymbol.innerHTML = '';
                 const historyFilterSymbol = document.getElementById('historyFilterSymbol');
                 if (historyFilterSymbol) historyFilterSymbol.innerHTML = '<option value="">All Symbols</option>';
+                const ordersFilterSymbol = document.getElementById('ordersFilterSymbol');
+                if (ordersFilterSymbol) ordersFilterSymbol.innerHTML = '<option value="">All Symbols</option>';
 
                 stocks.forEach(stock => {
                     const sym = stock.symbol || stock.Symbol;
@@ -368,12 +600,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         opt.innerText = sym;
                         orderSymbol.appendChild(opt);
 
-                        if (historyFilterSymbol) {
-                            const opt2 = document.createElement('option');
-                            opt2.value = sym;
-                            opt2.innerText = sym;
-                            historyFilterSymbol.appendChild(opt2);
-                        }
+                        [historyFilterSymbol, ordersFilterSymbol].forEach(filterSelect => {
+                            if (!filterSelect) return;
+                            const filterOpt = document.createElement('option');
+                            filterOpt.value = sym;
+                            filterOpt.innerText = sym;
+                            filterSelect.appendChild(filterOpt);
+                        });
                     }
                 });
                 activeSymbol = orderSymbol.value;
@@ -399,44 +632,75 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Manual-only stat cards from the paper_* tables (fn_get_manual_paper_dashboard).
     async function loadPortfolio() {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/papertrading/account`);
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/dashboard`);
             if (!res.ok) return;
             const data = await res.json();
             updatePortfolioUi(data);
         } catch (err) {
-            console.error('Error loading paper portfolio:', err);
+            console.error('Error loading manual paper dashboard:', err);
         }
     }
 
+    function formatInr(value) {
+        return `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    function formatSignedInr(value) {
+        const v = Number(value || 0);
+        return `${v >= 0 ? '+' : '-'}${formatInr(Math.abs(v))}`;
+    }
+
     function updatePortfolioUi(data) {
-        if (!data || !data.account) return;
-        const acc = data.account;
-        currentAccount = acc;
+        if (!data) return;
 
-        statTotalEquity.innerText = `₹${(data.totalEquity || acc.currentBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-        statAvailableMargin.innerText = `₹${(acc.availableMargin || (acc.currentBalance - acc.usedMargin)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-        statUsedMargin.innerText = `Used Margin: ₹${acc.usedMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        // The BUY capital check (validateFormInputs) uses Manual Trading's own cash, same as the server.
+        currentAccount = { ...currentAccount, availableMargin: data.manualAvailableMargin || 0, usedMargin: data.manualUsedMargin || 0 };
 
-        const unPnl = data.totalUnrealizedPnl || 0;
-        statUnrealizedPnl.innerText = `${unPnl >= 0 ? '+' : ''}₹${unPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        statTotalEquity.innerText = formatInr(data.manualEquity);
+        const capitalEl = document.getElementById('statManualCapital');
+        if (capitalEl) capitalEl.innerText = `Capital: ${formatInr(data.manualCapital)}`;
+
+        statAvailableMargin.innerText = formatInr(data.manualAvailableMargin);
+        statUsedMargin.innerText = `Manual Used Margin: ${formatInr(data.manualUsedMargin)}`;
+
+        const unPnl = data.manualUnrealizedPnl || 0;
+        statUnrealizedPnl.innerText = formatSignedInr(unPnl);
         statUnrealizedPnl.className = `fw-bold mb-0 mt-1 ${unPnl >= 0 ? 'text-success' : 'text-danger'}`;
+        const openEl = document.getElementById('statOpenPositions');
+        if (openEl) openEl.innerText = `${data.openPositionsCount || 0} Open Manual Position${data.openPositionsCount === 1 ? '' : 's'}`;
 
-        const rePnl = acc.realizedPnl || 0;
-        statRealizedPnl.innerText = `${rePnl >= 0 ? '+' : ''}₹${rePnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        const rePnl = data.manualRealizedPnl || 0;
+        statRealizedPnl.innerText = formatSignedInr(rePnl);
         statRealizedPnl.className = `fw-bold mb-0 mt-1 ${rePnl >= 0 ? 'text-success' : 'text-danger'}`;
-
-        if (autoTradeToggle) {
-            autoTradeToggle.checked = !!data.autoTradeEnabled;
+        const realizedSubEl = document.getElementById('statRealizedSub');
+        if (realizedSubEl) {
+            realizedSubEl.innerText = `Today: ${formatSignedInr(data.manualTodayRealizedPnl)} · Win Rate: ${data.winRatePct || 0}% (${data.winningTrades || 0}/${data.closedTrades || 0})`;
         }
+
+        if (typeof data.isManualTradeEnabled === 'boolean') updateManualToggleUi(data.isManualTradeEnabled);
 
         validateFormInputs();
     }
 
+    // Shared paper-account broadcasts (ReceivePaperAccountUpdate / ReceivePaperPositionsUpdate) carry
+    // Auto + Manual data - on this page they only trigger a Manual-only reload, debounced.
+
+    function scheduleManualDashboardRefresh() {
+        if (manualRefreshTimer) clearTimeout(manualRefreshTimer);
+        manualRefreshTimer = setTimeout(async () => {
+            manualRefreshTimer = null;
+            await loadPortfolio();
+            await loadPositions();
+        }, 500);
+    }
+
+    // Manual-only open positions (fn_get_manual_paper_open_positions).
     async function loadPositions() {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/papertrading/positions`);
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/positions`);
             if (!res.ok) return;
             const positions = await res.json();
             renderPositions(positions);
@@ -450,7 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
         positionsTableBody.innerHTML = '';
 
         if (!positions || positions.length === 0) {
-            positionsTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No open positions. Place an order from the ticket to start paper trading.</td></tr>';
+            positionsTableBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">No open positions. Place an order from the ticket to start paper trading.</td></tr>';
             if (positionsCountBadge) positionsCountBadge.innerText = '0 Active';
             return;
         }
@@ -466,8 +730,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const sl = pos.stopLoss ?? pos.StopLoss;
             const tp = pos.takeProfit ?? pos.TakeProfit;
+            const tsl = pos.trailingStopLoss ?? pos.TrailingStopLoss;
+            const tslPct = pos.trailingSlPct ?? pos.TrailingSlPct;
             const slText = sl && sl > 0 ? `₹${parseFloat(sl).toFixed(2)}` : '-';
             const tpText = tp && tp > 0 ? `₹${parseFloat(tp).toFixed(2)}` : '-';
+            // Trailing SL has no level until the trade has moved in our favour (SWING_CLOSE) - show its %.
+            const tslText = tsl && tsl > 0
+                ? `₹${parseFloat(tsl).toFixed(2)}`
+                : (tslPct > 0 ? `<span class="text-white-50">Not active (${parseFloat(tslPct).toFixed(2)}%)</span>` : '-');
+            const ltpVal = pos.currentPrice || pos.averageEntryPrice;
+            const toTargetPct = tp > 0 && ltpVal > 0 ? ((tp - ltpVal) / ltpVal) * 100 : null;
+            const toTargetText = toTargetPct !== null
+                ? `<small class="d-block text-white-50">${toTargetPct >= 0 ? toTargetPct.toFixed(2) + '% away' : 'reached'}</small>`
+                : '';
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -476,7 +751,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${pos.quantity}</td>
                 <td>₹${pos.averageEntryPrice.toFixed(2)}</td>
                 <td>₹${(pos.currentPrice || pos.averageEntryPrice).toFixed(2)}</td>
-                <td style="color:#ffffff !important;"><small class="text-white fw-bold">SL: ${slText} | TP: ${tpText}</small></td>
+                <td class="text-danger fw-semibold">${slText}</td>
+                <td class="text-warning fw-semibold">${tslText}</td>
+                <td class="text-success fw-bold">${tpText}${toTargetText}</td>
                 <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}</td>
                 <td class="text-end">
                     <button class="btn btn-outline-danger btn-sm rounded-2 close-pos-btn" data-id="${pos.id}">Close</button>
@@ -490,12 +767,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function loadOrders() {
+    // Manual (trade_type = 0) paper orders only, filtered & paged server-side (fn_get_manual_paper_orders_paged).
+    async function loadOrders(page = ordersPageState.page) {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/papertrading/orders`);
+            ordersPageState.page = page;
+            const query = new URLSearchParams({
+                page: ordersPageState.page,
+                pageSize: ordersPageState.pageSize,
+                symbol: ordersPageState.symbol || '',
+                side: ordersPageState.side || '',
+                status: ordersPageState.status || '',
+                fromDate: ordersPageState.fromDate || '',
+                toDate: ordersPageState.toDate || ''
+            });
+
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/orders?${query.toString()}`);
             if (!res.ok) return;
-            const orders = await res.json();
-            renderOrders(orders);
+            const pagedData = await res.json();
+            renderOrders(pagedData);
         } catch (err) {
             console.error('Error loading orders:', err);
         }
@@ -534,14 +823,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderOrders(orders) {
+    function renderOrders(pagedData) {
         if (!ordersTableBody) return;
         ordersTableBody.innerHTML = '';
 
+        const orders = pagedData.items || pagedData.Items || [];
+        const totalCount = pagedData.totalCount ?? pagedData.TotalCount ?? 0;
+        const page = pagedData.page ?? pagedData.Page ?? 1;
+        const pageSize = pagedData.pageSize ?? pagedData.PageSize ?? ordersPageState.pageSize;
+        const totalPages = pagedData.totalPages ?? pagedData.TotalPages ?? 0;
+
         if (!orders || orders.length === 0) {
-            ordersTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No active pending orders.</td></tr>';
+            ordersTableBody.innerHTML = '<tr><td colspan="10" class="text-center text-white py-3">No manual orders for selected criteria.</td></tr>';
+            renderPager('ordersPaginationUl', 'ordersPaginationInfo', 'orders', 0, 0, 0, 1, 0, loadOrders);
             return;
         }
+
+        renderPager('ordersPaginationUl', 'ordersPaginationInfo', 'orders',
+            (page - 1) * pageSize + 1, Math.min(page * pageSize, totalCount), totalCount, page, totalPages, loadOrders);
 
         orders.forEach(o => {
             const sideBadge = o.side === 0 || o.side === 'BUY' ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>' : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
@@ -555,6 +854,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${o.orderType === 0 || o.orderType === 'Market' ? 'Market' : 'Limit'}</td>
                 <td>${o.quantity}</td>
                 <td>${o.price > 0 ? '₹' + o.price.toFixed(2) : 'MKT'}</td>
+                <td class="text-danger fw-semibold">${o.stopLoss > 0 ? '₹' + Number(o.stopLoss).toFixed(2) : '-'}</td>
+                <td class="text-success fw-bold">${o.takeProfit > 0 ? '₹' + Number(o.takeProfit).toFixed(2) : '-'}</td>
                 <td>${statusBadge}</td>
                 <td class="text-end">
                     ${(o.status === 0 || o.status === 'Pending') ? `<button class="btn btn-outline-secondary btn-sm cancel-order-btn" data-id="${o.id}">Cancel</button>` : '-'}
@@ -572,6 +873,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (status === 0 || status === 'Pending') return '<span class="badge bg-warning text-dark">Pending</span>';
         if (status === 1 || status === 'Filled') return '<span class="badge bg-success">Filled</span>';
         if (status === 2 || status === 'Cancelled') return '<span class="badge bg-secondary">Cancelled</span>';
+        if (status === 4 || status === 'Open') return '<span class="badge bg-info text-dark">Open</span>';
         return '<span class="badge bg-danger">Rejected</span>';
     }
 
@@ -587,7 +889,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 toDate: historyPageState.toDate || ''
             });
 
-            const res = await fetch(`${apiBaseUrl}/api/papertrading/history/paged?${query.toString()}`);
+            // Manual (trade_type = 0) paper trade history only (fn_get_manual_paper_trade_history_paged).
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/history?${query.toString()}`);
             if (!res.ok) return;
             const pagedData = await res.json();
             renderHistory(pagedData);
@@ -638,52 +941,52 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderPaginationControls(startItem, endItem, totalCount, currentPage, totalPages) {
-        const infoSpan = document.getElementById('historyPaginationInfo');
-        const ul = document.getElementById('historyPaginationUl');
+        renderPager('historyPaginationUl', 'historyPaginationInfo', 'trades', startItem, endItem, totalCount, currentPage, totalPages, loadHistory);
+    }
+
+    // Shared pager for the Orders and Execution History tabs: Prev, first, window of +/-2 pages
+    // around the current page, last, Next - so long histories don't render hundreds of links.
+    function renderPager(ulId, infoId, label, startItem, endItem, totalCount, currentPage, totalPages, onPage) {
+        const infoSpan = document.getElementById(infoId);
+        const ul = document.getElementById(ulId);
 
         if (infoSpan) {
-            if (totalCount === 0) {
-                infoSpan.innerText = 'Showing 0 of 0 trades';
-            } else {
-                infoSpan.innerText = `Showing ${startItem}-${endItem} of ${totalCount} trades`;
-            }
+            infoSpan.innerText = totalCount === 0
+                ? `Showing 0 of 0 ${label}`
+                : `Showing ${startItem}-${endItem} of ${totalCount} ${label}`;
         }
 
         if (!ul) return;
         ul.innerHTML = '';
-
         if (totalPages <= 1) return;
 
-        // Previous Button
-        const prevLi = document.createElement('li');
-        prevLi.className = `page-item ${currentPage <= 1 ? 'disabled' : ''}`;
-        prevLi.innerHTML = `<a class="page-link bg-dark text-light border-secondary" href="javascript:void(0)" aria-label="Previous">« Prev</a>`;
-        if (currentPage > 1) {
-            prevLi.addEventListener('click', () => loadHistory(currentPage - 1));
-        }
-        ul.appendChild(prevLi);
-
-        // Page Numbers
-        for (let i = 1; i <= totalPages; i++) {
+        const addItem = (text, targetPage, { active = false, disabled = false } = {}) => {
             const li = document.createElement('li');
-            const isActive = i === currentPage;
-            li.className = `page-item ${isActive ? 'active' : ''}`;
-            li.innerHTML = `<a class="page-link ${isActive ? 'bg-primary text-white border-primary fw-bold' : 'bg-dark text-light border-secondary'}" href="javascript:void(0)">${i}</a>`;
-            if (!isActive) {
-                const pNum = i;
-                li.addEventListener('click', () => loadHistory(pNum));
+            li.className = `page-item ${active ? 'active' : ''} ${disabled ? 'disabled' : ''}`;
+            li.innerHTML = `<a class="page-link ${active ? 'bg-primary text-white border-primary fw-bold' : 'bg-dark text-light border-secondary'}" href="javascript:void(0)">${text}</a>`;
+            if (!active && !disabled && targetPage) {
+                li.addEventListener('click', () => onPage(targetPage));
             }
             ul.appendChild(li);
+        };
+
+        addItem('« Prev', currentPage - 1, { disabled: currentPage <= 1 });
+
+        const windowStart = Math.max(1, currentPage - 2);
+        const windowEnd = Math.min(totalPages, currentPage + 2);
+        if (windowStart > 1) {
+            addItem('1', 1);
+            if (windowStart > 2) addItem('…', null, { disabled: true });
+        }
+        for (let i = windowStart; i <= windowEnd; i++) {
+            addItem(String(i), i, { active: i === currentPage });
+        }
+        if (windowEnd < totalPages) {
+            if (windowEnd < totalPages - 1) addItem('…', null, { disabled: true });
+            addItem(String(totalPages), totalPages);
         }
 
-        // Next Button
-        const nextLi = document.createElement('li');
-        nextLi.className = `page-item ${currentPage >= totalPages ? 'disabled' : ''}`;
-        nextLi.innerHTML = `<a class="page-link bg-dark text-light border-secondary" href="javascript:void(0)" aria-label="Next">Next »</a>`;
-        if (currentPage < totalPages) {
-            nextLi.addEventListener('click', () => loadHistory(currentPage + 1));
-        }
-        ul.appendChild(nextLi);
+        addItem('Next »', currentPage + 1, { disabled: currentPage >= totalPages });
     }
 
     // --- 4. User Actions & Handlers ---
@@ -691,38 +994,32 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         if (!validateFormInputs()) return;
 
+        // Same request as Manual Real Trade (/api/realtrade/manual-buy), routed to the paper account.
         const payload = {
             symbol: activeSymbol,
-            side: getSelectedSide() === 'BUY' ? 0 : 1,
-            orderType: orderType.value === 'Market' ? 0 : 1,
-            quantity: parseInt(orderQuantity.value),
-            price: getEffectivePrice(),
-            stopLoss: parseFloat(orderStopLoss.value) || null,
-            takeProfit: parseFloat(orderTakeProfit.value) || null
+            entryPrice: getEffectivePrice(),
+            quantity: parseInt(orderQuantity.value, 10),
+            stopLossPct: parseFloat(orderSlPct.value),
+            trailingSlPct: parseFloat(orderTslPct.value)
         };
 
         try {
             placeOrderBtn.disabled = true;
             placeOrderBtn.innerText = 'Processing Trade...';
 
-            const res = await fetch(`${apiBaseUrl}/api/papertrading/order`, {
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/buy`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
 
-            if (!res.ok) {
-                const errData = await res.json();
-                showToast(errData.title || 'Order Rejection Alert', errData.detail || 'Could not place paper order.', 'danger');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success !== true) {
+                showToast('Paper Trade Not Executed', data.message || data.title || 'Could not place paper trade.', 'danger');
                 return;
             }
 
-            const data = await res.json();
-            showToast('Order Placed Successfully', `Paper trade for ${payload.quantity} ${activeSymbol} executed.`, 'success');
-            
-            // Clear optional fields
-            orderStopLoss.value = '';
-            orderTakeProfit.value = '';
+            showToast('Paper Trade Executed', data.message || `Paper BUY for ${payload.quantity} ${activeSymbol} executed.`, 'success');
 
             await loadPortfolio();
             await loadPositions();
@@ -732,28 +1029,32 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Order submission exception:', err);
             showToast('System Error', 'Failed to connect to order execution server.', 'danger');
         } finally {
+            placeOrderBtn.innerText = '📝 Place Paper Trade';
             validateFormInputs();
+            loadManualLogs();
         }
     }
 
     async function handleClosePosition(positionId) {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/papertrading/position/close`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ positionId: parseInt(positionId), exitPrice: currentLtpMap[activeSymbol] || 0 })
+            // Manual close: exits at the position's own latest price (server-side), without touching the
+            // shared paper account used by Auto Paper Trading.
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/position/close/${parseInt(positionId, 10)}`, {
+                method: 'POST'
             });
 
-            if (!res.ok) {
-                const errData = await res.json();
-                showToast('Closure Error', errData.detail || 'Failed to close position.', 'danger');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success !== true) {
+                showToast('Closure Error', data.message || data.detail || 'Failed to close position.', 'danger');
                 return;
             }
 
-            showToast('Position Closed', 'Open paper position has been closed at market price.', 'success');
+            showToast('Position Closed', data.message || 'Open paper position has been closed at market price.', 'success');
             await loadPortfolio();
             await loadPositions();
+            await loadOrders();
             await loadHistory();
+            await loadManualLogs();
         } catch (err) {
             console.error('Error closing position:', err);
             showToast('System Error', 'Could not execute position closure.', 'danger');
@@ -832,18 +1133,34 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        signalRConnection.on('ReceivePaperAccountUpdate', (portfolio) => {
-            updatePortfolioUi(portfolio);
+        signalRConnection.on('ReceivePaperAccountUpdate', () => {
+            scheduleManualDashboardRefresh();
         });
 
-        signalRConnection.on('ReceivePaperPositionsUpdate', (positions) => {
-            renderPositions(positions);
+        signalRConnection.on('ReceivePaperPositionsUpdate', () => {
+            scheduleManualDashboardRefresh();
         });
 
         signalRConnection.on('ReceivePaperError', (err) => {
             if (err) {
                 showToast(err.errorCode || 'Trading Error', err.message || 'An error occurred during trade execution.', 'danger');
             }
+        });
+
+        // Manual Paper Trade BUY/SELL executions (incl. automatic Target / SL / Trailing SL exits).
+        signalRConnection.on('ReceiveManualPaperTradeAlert', async (alert) => {
+            if (alert && alert.message) {
+                showToast(alert.side === 'SELL' ? '🎯 Manual Paper SELL' : '📝 Manual Paper BUY', alert.message, 'success');
+            }
+            await loadPortfolio();
+            await loadPositions();
+            await loadOrders();
+            await loadHistory(historyPageState.page);
+        });
+
+        // New manual_paper_trade_execution_logs row (BUY/SELL, skipped trade, trailing SL, switch change).
+        signalRConnection.on('ReceiveManualPaperTradeLogEvent', () => {
+            loadManualLogs();
         });
 
         signalRConnection.on('ReceiveAutoTradeAlert', (alert) => {

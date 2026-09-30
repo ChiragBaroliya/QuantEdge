@@ -1,5 +1,5 @@
 @{
-    ViewData["Title"] = "Paper Trading Dashboard";
+    ViewData["Title"] = "Manual Paper Trading";
 }
 
 <div class="paper-workspace-container">
@@ -14,23 +14,20 @@
                         <line x1="12" y1="17" x2="12" y2="21"></line>
                     </svg>
                 </span>
-                Paper Trading Workspace
+                Manual Paper Trading
             </h2>
-            <p class="paper-subtitle mb-0">Simulate trades with virtual capital (₹1,00,000) using live WebSocket prices and AI signals.</p>
+            <p class="paper-subtitle mb-0">Simulate trades with virtual capital (₹1,00,000) by placing your own orders against live WebSocket prices.</p>
         </div>
         <div class="paper-header-actions d-flex align-items-center gap-2 flex-wrap">
-            <div class="paper-switch-box d-flex align-items-center gap-2">
-                <input class="form-check-input" type="checkbox" id="autoTradeToggle">
-                <label class="form-check-label text-light fw-medium mb-0 small" for="autoTradeToggle" style="cursor:pointer;">
-                    ⚡ Auto-Trade AI Signals
+            <span id="tradingModeBadge" class="badge bg-primary" style="font-size: 0.75rem;">🧪 MANUAL · PAPER</span>
+            <div class="paper-switch-box d-flex align-items-center gap-2" title="Manual Paper Trading ON / OFF (manual_paper_trade_settings)">
+                <input class="form-check-input" type="checkbox" id="manualTradeToggle" checked>
+                <label class="form-check-label text-light fw-medium mb-0 small" for="manualTradeToggle" style="cursor:pointer;">
+                    Manual Trading
                 </label>
-                <span id="tradingModeBadge" class="badge bg-primary ms-1" style="font-size: 0.75rem;">PAPER</span>
+                <span id="manualTradeStatusBadge" class="badge bg-success" style="font-size: 0.7rem;">ON</span>
             </div>
-            <button id="btnOpenAutoTradeSettings" class="btn btn-outline-primary btn-sm px-3 py-2 rounded-3 d-flex align-items-center gap-1 shadow-sm" title="Configure Auto-Trade Strategy & Risk Rules">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
+            <button id="btnOpenManualSettings" type="button" class="btn btn-outline-primary btn-sm px-3 py-2 rounded-3 d-flex align-items-center gap-1 shadow-sm" title="Manual Paper Trading limits & exit rules">
                 ⚙️ Settings
             </button>
             <button id="resetAccountBtn" class="btn btn-outline-danger btn-sm px-3 py-2 rounded-3 d-flex align-items-center gap-1 shadow-sm">
@@ -43,36 +40,37 @@
         </div>
     </div>
 
-    <!-- Account Summary Stat Cards -->
+    <!-- Manual Paper Trading Stat Cards (fn_get_manual_paper_dashboard - Manual trades only) -->
     <div class="row g-3 mb-4">
         <div class="col-xl-3 col-lg-6 col-md-6 col-6">
-            <div class="card paper-card p-3" title="Overall account portfolio value: Current Cash Balance + Live Unrealized P&L.">
-                <span class="stat-card-title">Total Account Equity</span>
-                <h4 id="statTotalEquity" class="fw-bold text-light mb-0 mt-1">₹1,00,000.00</h4>
+            <div class="card paper-card p-3" title="Manual Capital (Manual Trading settings) + Manual Realized P&L + Manual Unrealized P&L.">
+                <span class="stat-card-title">Manual Equity</span>
+                <h4 id="statTotalEquity" class="fw-bold text-light mb-0 mt-1">₹0.00</h4>
+                <small id="statManualCapital" class="stat-card-subtext">Capital: ₹0.00</small>
                 <div class="progress mt-2" style="height: 4px; background: rgba(255,255,255,0.1);">
                     <div class="progress-bar bg-primary" role="progressbar" style="width: 100%"></div>
                 </div>
             </div>
         </div>
         <div class="col-xl-3 col-lg-6 col-md-6 col-6">
-            <div class="card paper-card p-3" title="Cash balance remaining to place new manual or auto paper orders.">
+            <div class="card paper-card p-3" title="Manual Trading cash: Manual Capital + Manual Realized P&amp;L - money in open manual positions. Every manual BUY is checked against this (separate from Auto Paper Trading).">
                 <span class="stat-card-title">Available Margin</span>
-                <h4 id="statAvailableMargin" class="fw-bold text-info mb-0 mt-1">₹1,00,000.00</h4>
-                <small id="statUsedMargin" class="stat-card-subtext text-warning fw-semibold mt-1 d-block" title="Total money committed to active open paper positions.">Used Margin: ₹0.00</small>
+                <h4 id="statAvailableMargin" class="fw-bold text-info mb-0 mt-1">₹0.00</h4>
+                <small id="statUsedMargin" class="stat-card-subtext text-warning fw-semibold mt-1 d-block" title="Money committed to OPEN manual paper positions.">Manual Used Margin: ₹0.00</small>
             </div>
         </div>
         <div class="col-xl-3 col-lg-6 col-md-6 col-6">
-            <div class="card paper-card p-3" title="Combined live profit or loss across all active open paper positions.">
+            <div class="card paper-card p-3" title="Live profit or loss across OPEN manual paper positions.">
                 <span class="stat-card-title">Unrealized P&L</span>
                 <h4 id="statUnrealizedPnl" class="fw-bold text-light mb-0 mt-1">₹0.00</h4>
-                <small class="stat-card-subtext">Live Open Positions</small>
+                <small id="statOpenPositions" class="stat-card-subtext">0 Open Manual Positions</small>
             </div>
         </div>
         <div class="col-xl-3 col-lg-6 col-md-6 col-6">
-            <div class="card paper-card p-3" title="Net booked profit or loss from all closed trades in history.">
+            <div class="card paper-card p-3" title="Booked profit or loss from closed manual paper trades.">
                 <span class="stat-card-title">Realized P&L</span>
                 <h4 id="statRealizedPnl" class="fw-bold text-light mb-0 mt-1">₹0.00</h4>
-                <small class="stat-card-subtext">Closed Trades Ledger</small>
+                <small id="statRealizedSub" class="stat-card-subtext">Today: ₹0.00 · Win Rate: 0%</small>
             </div>
         </div>
     </div>
@@ -96,63 +94,63 @@
                         </select>
                     </div>
 
-                    <!-- Side Tabs (BUY / SELL) -->
-                    <div class="btn-group w-100 mb-3" role="group">
-                        <input type="radio" class="btn-check" name="orderSide" id="sideBuy" value="BUY" checked>
-                        <label class="btn btn-outline-success fw-bold py-2" for="sideBuy" title="BUY (LONG): Take position expecting stock price to go up.">BUY (LONG)</label>
-
-                        <input type="radio" class="btn-check" name="orderSide" id="sideSell" value="SELL">
-                        <label class="btn btn-outline-danger fw-bold py-2" for="sideSell" title="SELL (SHORT): Take position expecting stock price to go down.">SELL (SHORT)</label>
-                    </div>
-
-                    <!-- Order Type (Market / Limit) -->
-                    <div class="mb-3">
-                        <label class="paper-label" for="orderType" title="Market fills instantly at live price; Limit triggers only at your target price.">Order Type</label>
-                        <select id="orderType" class="form-select paper-input" title="Order execution type">
-                            <option value="Market">Market (Instant Fill)</option>
-                            <option value="Limit">Limit Order</option>
-                        </select>
-                    </div>
-
-                    <!-- Limit Price (Hidden by default for Market) -->
-                    <div class="mb-3 d-none" id="limitPriceGroup">
-                        <label class="paper-label" for="orderLimitPrice" title="Target entry price for Limit order execution.">Limit Price (₹)</label>
-                        <input type="number" step="0.05" id="orderLimitPrice" class="form-control paper-input" placeholder="Target entry price" title="Target entry price for Limit order execution.">
-                        <div id="limitPriceError" class="invalid-feedback text-danger small mt-1"></div>
+                    <!-- Side & Order Type - same as Manual Real Trade: BUY at market only -->
+                    <div class="d-flex justify-content-between align-items-center mb-3 small">
+                        <span class="paper-label mb-0">Side: <strong class="text-success">BUY</strong></span>
+                        <span class="paper-label mb-0">Order Type: <strong class="text-light">Market</strong></span>
                     </div>
 
                     <!-- Quantity -->
                     <div class="mb-3">
-                        <label class="paper-label" for="orderQuantity" title="Number of shares or lot quantity to order.">Quantity (Lots / Shares)</label>
-                        <input type="number" id="orderQuantity" class="form-control paper-input" value="25" min="1" title="Number of shares or lot quantity to order.">
+                        <label class="paper-label" for="orderQuantity" title="Number of shares to buy.">Quantity</label>
+                        <input type="number" id="orderQuantity" class="form-control paper-input" value="1" min="1" step="1" title="Number of shares to buy.">
                         <div id="quantityError" class="invalid-feedback text-danger small mt-1"></div>
                     </div>
 
-                    <!-- Stop Loss & Take Profit (Optional Brackets) -->
+                    <!-- Trade-wise Stop Loss % & Trailing Stop Loss % (mandatory, like Manual Real Trade) -->
                     <div class="row g-2 mb-3">
                         <div class="col-6">
-                            <label class="paper-label" for="orderStopLoss" title="Optional price level to automatically exit and limit losses.">Stop-Loss (₹)</label>
-                            <input type="number" step="0.05" id="orderStopLoss" class="form-control paper-input" placeholder="SL Price" title="Optional price level to automatically exit and limit losses.">
-                            <div id="stopLossError" class="invalid-feedback text-danger small mt-1"></div>
+                            <label class="paper-label" for="orderSlPct" title="Stop Loss % below the executed price. Applies to this trade only.">Stop Loss (%)</label>
+                            <input type="number" id="orderSlPct" class="form-control paper-input" min="0.1" max="100" step="0.1" value="3" title="Stop Loss % below the executed price. Applies to this trade only.">
+                            <div id="slPctError" class="invalid-feedback text-danger small mt-1"></div>
                         </div>
                         <div class="col-6">
-                            <label class="paper-label" for="orderTakeProfit" title="Optional target price level to automatically exit with profit.">Target TP (₹)</label>
-                            <input type="number" step="0.05" id="orderTakeProfit" class="form-control paper-input" placeholder="Target Price" title="Optional target price level to automatically exit with profit.">
-                            <div id="takeProfitError" class="invalid-feedback text-danger small mt-1"></div>
+                            <label class="paper-label" for="orderTslPct" title="Trailing Stop Loss %. Applies to this trade only.">Trailing Stop Loss (%)</label>
+                            <input type="number" id="orderTslPct" class="form-control paper-input" min="0.1" max="50" step="0.1" value="2" title="Trailing Stop Loss %. Applies to this trade only.">
+                            <div id="tslPctError" class="invalid-feedback text-danger small mt-1"></div>
                         </div>
                     </div>
 
-                    <!-- Margin Estimate -->
-                    <div class="d-flex justify-content-between align-items-center bg-dark bg-opacity-75 p-3 rounded-3 mb-3 border border-secondary border-opacity-25">
-                        <span class="paper-label mb-0">Required Margin:</span>
-                        <span id="estimatedMargin" class="fw-bold text-light fs-6">₹0.00</span>
+                    <!-- Estimates -->
+                    <div class="bg-dark bg-opacity-75 p-3 rounded-3 mb-3 border border-secondary border-opacity-25 small">
+                        <div class="d-flex justify-content-between"><span class="paper-label mb-0">Required Capital:</span><span id="estimatedMargin" class="fw-bold text-light">₹0.00</span></div>
+                        <div class="d-flex justify-content-between"><span class="paper-label mb-0">Estimated Stop Loss Price:</span><span id="estSlPrice" class="fw-bold text-light">-</span></div>
+                        <div class="d-flex justify-content-between"><span class="paper-label mb-0">Estimated Risk:</span><span id="estRisk" class="fw-bold text-light">-</span></div>
                     </div>
 
                     <!-- Submit Button -->
                     <button type="submit" id="placeOrderBtn" class="btn btn-success w-100 fw-bold py-2 rounded-3 shadow">
-                        Place Paper Order
+                        📝 Place Paper Trade
                     </button>
+                    <p class="text-white small mt-2 mb-0">
+                        Same checks as Manual Real Trade, using the Manual Trading settings: Manual Trading switch, trading
+                        window and entry delay, daily trade/loss limits, max open positions, capital, and no duplicate open
+                        position. The price is re-checked when you place the trade. The position is <strong>sold manually
+                        only</strong> - use the Close button in Live Open Positions. Stop Loss, Trailing SL and Target are
+                        shown for reference and never sell it automatically.
+                    </p>
                 </form>
+            </div>
+
+            <!-- Today's Manual Paper Trade Logs (manual_paper_trade_execution_logs) -->
+            <div class="card paper-card p-4 mt-4">
+                <div class="d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary border-opacity-25 pb-2">
+                    <h5 class="fw-bold text-light mb-0">📜 Today's Manual Logs</h5>
+                    <span id="manualTradeCountBadge" class="badge bg-secondary bg-opacity-50 text-light" title="Manual paper BUYs today / Max Trades Per Day">0 / 0 trades</span>
+                </div>
+                <div id="manualLogsList" class="small" style="max-height: 360px; overflow-y: auto;">
+                    <div class="text-white-50">No manual trade activity today.</div>
+                </div>
             </div>
         </div>
 
@@ -174,14 +172,16 @@
                                 <th>QTY</th>
                                 <th>AVG ENTRY</th>
                                 <th>LTP</th>
-                                <th>SL / TP</th>
+                                <th>STOP LOSS</th>
+                                <th>TRAILING SL</th>
+                                <th class="text-success">TARGET</th>
                                 <th>UNREALIZED P&L</th>
                                 <th class="text-end">ACTION</th>
                             </tr>
                         </thead>
                         <tbody id="positionsTableBody">
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-4">No open positions. Place an order from the ticket to start paper trading.</td>
+                                <td colspan="10" class="text-center text-muted py-4">No open positions. Place an order from the ticket to start paper trading.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -206,26 +206,79 @@
                 <div class="tab-content" id="paperTabsContent">
                     <!-- Pending Orders Tab -->
                     <div class="tab-pane fade show active" id="ordersTabPane" role="tabpanel">
+                        <!-- Orders Filter Toolbar (Manual paper orders only) -->
+                        <div class="p-3 bg-dark bg-opacity-50 border-bottom border-secondary border-opacity-25">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-xl-3 col-lg-3 col-md-6 col-12">
+                                    <label class="paper-label text-light mb-1" for="ordersFilterSymbol">Stock Symbol</label>
+                                    <select id="ordersFilterSymbol" class="form-select paper-input form-select-sm">
+                                        <option value="">All Symbols</option>
+                                    </select>
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-3 col-6">
+                                    <label class="paper-label text-light mb-1" for="ordersFilterSide">Side</label>
+                                    <select id="ordersFilterSide" class="form-select paper-input form-select-sm">
+                                        <option value="">All Sides</option>
+                                        <option value="BUY">BUY</option>
+                                        <option value="SELL">SELL</option>
+                                    </select>
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-3 col-6">
+                                    <label class="paper-label text-light mb-1" for="ordersFilterStatus">Status</label>
+                                    <select id="ordersFilterStatus" class="form-select paper-input form-select-sm">
+                                        <option value="">All Status</option>
+                                        <option value="0">Pending</option>
+                                        <option value="4">Open</option>
+                                        <option value="1">Filled</option>
+                                        <option value="2">Cancelled</option>
+                                        <option value="3">Rejected</option>
+                                    </select>
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-6 col-6">
+                                    <label class="paper-label text-light mb-1" for="ordersFilterFromDate">From Date</label>
+                                    <input type="date" id="ordersFilterFromDate" class="form-control paper-input form-control-sm">
+                                </div>
+                                <div class="col-xl-2 col-lg-2 col-md-6 col-6">
+                                    <label class="paper-label text-light mb-1" for="ordersFilterToDate">To Date</label>
+                                    <input type="date" id="ordersFilterToDate" class="form-control paper-input form-control-sm">
+                                </div>
+                                <div class="col-xl-1 col-lg-1 col-md-12 col-12 d-flex gap-2 justify-content-end">
+                                    <button type="button" id="btnFilterOrders" class="btn btn-primary btn-sm px-2 fw-bold flex-grow-1" title="Apply selected filters">🔍</button>
+                                    <button type="button" id="btnResetOrdersFilter" class="btn btn-outline-secondary btn-sm px-2 fw-bold" title="Reset all filters">↺</button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="paper-table-responsive">
                             <table class="table table-dark table-hover align-middle text-nowrap mb-0 paper-table">
                                 <thead>
                                     <tr>
                                         <th>TIME</th>
                                         <th>SYMBOL</th>
-                                        <th>TYPE</th>
                                         <th>SIDE</th>
+                                        <th>TYPE</th>
                                         <th>QTY</th>
                                         <th>PRICE</th>
+                                        <th>STOP LOSS</th>
+                                        <th class="text-success">TARGET</th>
                                         <th>STATUS</th>
                                         <th class="text-end">ACTION</th>
                                     </tr>
                                 </thead>
                                 <tbody id="ordersTableBody">
                                     <tr>
-                                        <td colspan="8" class="text-center text-muted py-3">No active or pending orders.</td>
+                                        <td colspan="10" class="text-center text-muted py-3">No active or pending orders.</td>
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Orders Pagination Footer -->
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 p-3 bg-dark bg-opacity-75 border-top border-secondary border-opacity-25">
+                            <span id="ordersPaginationInfo" class="text-white small fw-medium">Showing 0 of 0 orders</span>
+                            <nav aria-label="Manual orders pagination">
+                                <ul id="ordersPaginationUl" class="pagination pagination-sm mb-0"></ul>
+                            </nav>
                         </div>
                     </div>
 
@@ -305,98 +358,96 @@
 <!-- Glassmorphism Floating Toast Container for Error / Success alerts -->
 <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;" id="toastContainer"></div>
 
-<!-- Auto-Trade Configuration Modal -->
-<div class="modal fade" id="autoTradeSettingsModal" tabindex="-1" aria-labelledby="autoTradeSettingsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+<!-- Manual Paper Trading Settings Modal (manual_paper_trade_settings) -->
+<div class="modal fade" id="manualSettingsModal" tabindex="-1" aria-labelledby="manualSettingsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
         <div class="modal-content paper-card border border-primary border-opacity-25 text-light shadow-lg" style="background-color: #121824;">
             <div class="modal-header border-bottom border-secondary border-opacity-25">
-                <h5 class="modal-title fw-bold d-flex align-items-center gap-2" id="autoTradeSettingsModalLabel">
-                    <span class="badge bg-primary p-2 rounded-3">⚡</span>
-                    Auto-Trade Strategy & Risk Configuration
-                </h5>
+                <h5 class="modal-title fw-bold" id="manualSettingsModalLabel">⚙️ Manual Paper Trading Settings</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
-                <form id="autoTradeSettingsForm">
-                    <div class="row g-3">
-                        <!-- Trading Execution Mode (Paper vs Live) -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-info">🎯 Trading Execution Mode</label>
-                            <select id="cfgTradingMode" class="form-select paper-input border-info">
-                                <option value="Paper">🧪 Paper Trading (Virtual Capital Sandbox)</option>
-                                <option value="Live">🚀 Live Real-Money Trading (Zerodha Kite API)</option>
-                            </select>
-                            <small class="text-muted d-block mt-1">Paper uses virtual capital. Live routes orders to Zerodha API.</small>
-                        </div>
+                <p class="text-white small mb-3">These settings apply to Manual Trading only. Auto Paper Trading keeps its own settings.</p>
+                <form id="manualSettingsForm" class="row g-3">
+                    <div class="col-12"><span class="paper-label text-info">Order Ticket Defaults</span></div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msStopLossPct">Default Stop Loss (%)</label>
+                        <input type="number" id="msStopLossPct" class="form-control paper-input" min="0.1" max="100" step="0.1">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msTrailingSlPct">Default Trailing SL (%)</label>
+                        <input type="number" id="msTrailingSlPct" class="form-control paper-input" min="0.1" max="50" step="0.1">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msFixedAmountPerTrade">Default Amount / Trade (₹)</label>
+                        <input type="number" id="msFixedAmountPerTrade" class="form-control paper-input" min="100" step="100" title="Pre-fills Quantity as Amount ÷ LTP">
+                    </div>
 
-                        <!-- Target TimeFrame -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-light">⏱️ Target TimeFrame</label>
-                            <select id="cfgAutoTradeTimeframe" class="form-select paper-input">
-                                <option value="1m">1 MIN (Intraday Scalping - Default)</option>
-                                <option value="5m">5 MIN (Intraday Momentum)</option>
-                                <option value="15m">15 MIN (Intraday Trend)</option>
-                                <option value="60m">60 MIN (Hourly Trend)</option>
-                                <option value="1d">1 DAY (Daily Swing)</option>
-                            </select>
-                            <small class="text-muted d-block mt-1">Evaluates signals on closed candles for this timeframe.</small>
-                        </div>
+                    <div class="col-12"><span class="paper-label text-info">Limits</span></div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msMaxTradesPerDay">Max Trades Per Day</label>
+                        <input type="number" id="msMaxTradesPerDay" class="form-control paper-input" min="1" max="50" step="1">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msAvailableCapital">Capital for Loss Limit (₹)</label>
+                        <input type="number" id="msAvailableCapital" class="form-control paper-input" min="100" step="1000" title="Daily loss limit defaults to 10% of this when left blank">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msMaxDailyLossLimit">Daily Max Loss (₹)</label>
+                        <input type="number" id="msMaxDailyLossLimit" class="form-control paper-input" min="10" step="100" placeholder="Blank = 10% of capital">
+                    </div>
 
-                        <!-- Minimum Signal Strength Threshold -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-light">💪 Min Signal Confidence (%)</label>
-                            <select id="cfgMinSignalStrength" class="form-select paper-input">
-                                <option value="60">60% (Moderate Confidence)</option>
-                                <option value="70" selected>70% (Strong Signal - Recommended)</option>
-                                <option value="80">80% (Very Strong Signal)</option>
-                                <option value="90">90% (Ultra High Probability)</option>
-                            </select>
-                        </div>
+                    <div class="col-12"><span class="paper-label text-info">Trading Window</span></div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msTradingWindowStart">Window Start (HH:mm)</label>
+                        <input type="text" id="msTradingWindowStart" class="form-control paper-input" placeholder="09:15">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msTradingWindowEnd">Window End (HH:mm)</label>
+                        <input type="text" id="msTradingWindowEnd" class="form-control paper-input" placeholder="15:30">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msEntryDelayMinutes">Entry Delay (min)</label>
+                        <input type="number" id="msEntryDelayMinutes" class="form-control paper-input" min="0" max="120" step="1">
+                    </div>
 
-                        <!-- Quantity per Trade -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-light">📦 Trade Lot Size / Quantity</label>
-                            <input type="number" id="cfgAutoTradeQuantity" class="form-control paper-input" min="1" max="10000" value="25">
-                            <small class="text-muted d-block mt-1">Number of shares/lots per automated order.</small>
-                        </div>
-
-                        <!-- Stop Loss % -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-danger">🛡️ Automated Stop-Loss (%)</label>
-                            <div class="input-group">
-                                <input type="number" id="cfgStopLossPercent" class="form-control paper-input" step="0.1" min="0.1" max="10" value="1.0">
-                                <span class="input-group-text bg-secondary bg-opacity-25 text-light border-secondary">%</span>
-                            </div>
-                        </div>
-
-                        <!-- Take Profit % -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-success">🎯 Automated Take-Profit (%)</label>
-                            <div class="input-group">
-                                <input type="number" id="cfgTakeProfitPercent" class="form-control paper-input" step="0.1" min="0.1" max="20" value="2.0">
-                                <span class="input-group-text bg-secondary bg-opacity-25 text-light border-secondary">%</span>
-                            </div>
-                        </div>
-
-                        <!-- Max Concurrent Open Positions -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-light">📊 Max Concurrent Open Positions</label>
-                            <input type="number" id="cfgMaxOpenPositions" class="form-control paper-input" min="1" max="20" value="5">
-                        </div>
-
-                        <!-- Daily Max Loss Emergency Limit -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-warning">⚠️ Daily Max Loss Kill-Limit (₹)</label>
-                            <input type="number" id="cfgDailyMaxLossLimit" class="form-control paper-input" step="100" min="500" value="2000">
-                        </div>
+                    <div class="col-12"><span class="paper-label text-info">Reference Levels</span> <small class="text-white-50">- used to calculate the Target / Stop Loss shown on a position; positions are never sold automatically</small></div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msExitMode">Exit Mode</label>
+                        <select id="msExitMode" class="form-select paper-input">
+                            <option value="SWING_CLOSE">SWING_CLOSE (closing basis)</option>
+                            <option value="INTRADAY">INTRADAY (tick basis)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msCloseCheckTime">Close Check Time (HH:mm)</label>
+                        <input type="text" id="msCloseCheckTime" class="form-control paper-input" placeholder="15:15">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msMaxDurationDays">Max Days Hold</label>
+                        <input type="number" id="msMaxDurationDays" class="form-control paper-input" min="1" max="365" step="1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="paper-label" for="msProfitTargetPct">Profit Target (%)</label>
+                        <input type="number" id="msProfitTargetPct" class="form-control paper-input" min="0.1" max="100" step="0.1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="paper-label" for="msStopLossAtrMult">SL ATR ×</label>
+                        <input type="number" id="msStopLossAtrMult" class="form-control paper-input" min="0.5" max="5" step="0.1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="paper-label" for="msTrailAtrMult">Trail ATR ×</label>
+                        <input type="number" id="msTrailAtrMult" class="form-control paper-input" min="0.5" max="10" step="0.1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="paper-label" for="msTargetAtrMult">Target ATR ×</label>
+                        <input type="number" id="msTargetAtrMult" class="form-control paper-input" min="0.5" max="20" step="0.1">
                     </div>
                 </form>
             </div>
             <div class="modal-footer border-top border-secondary border-opacity-25">
                 <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" id="btnSaveAutoTradeSettings" class="btn btn-primary rounded-3 px-4 fw-bold shadow">
-                    💾 Save Strategy Settings
-                </button>
+                <button type="button" id="btnSaveManualSettings" class="btn btn-primary rounded-3 px-4 fw-bold shadow">💾 Save Settings</button>
             </div>
         </div>
     </div>

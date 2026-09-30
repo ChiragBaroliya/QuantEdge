@@ -864,3 +864,67 @@ CREATE TABLE IF NOT EXISTS user_favorite_symbols (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, symbol)
 );
+
+-- ----------------------------------------------------------------------------
+-- Manual Paper Trading Tables
+-- Settings and execution logs for Manual Paper Trading (ManualPaperTradeService), kept separate from
+-- auto_trade_settings / auto_trade_execution_logs so Auto Paper Trading is unaffected. Orders,
+-- positions and trade history still live in the shared paper_* tables (trade_type = 0 / Manual).
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS manual_paper_trade_settings (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1 UNIQUE,
+    is_manual_trade_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    available_capital NUMERIC(18, 4) NOT NULL DEFAULT 100000.00,
+    profit_target_pct NUMERIC(5, 2) NOT NULL DEFAULT 5.00,
+    stop_loss_pct NUMERIC(5, 2) NOT NULL DEFAULT 3.00,
+    trailing_sl_pct NUMERIC(5, 2) NOT NULL DEFAULT 2.00,
+    max_duration_days INT NOT NULL DEFAULT 20,
+    max_trades_per_day INT NOT NULL DEFAULT 5,
+    fixed_amount_per_trade NUMERIC(18, 4) NOT NULL DEFAULT 20000.00,
+    trading_window_start VARCHAR(10) NOT NULL DEFAULT '09:15',
+    trading_window_end VARCHAR(10) NOT NULL DEFAULT '15:30',
+    entry_delay_minutes INT NOT NULL DEFAULT 15,
+    max_daily_loss_limit NUMERIC(18, 4) NULL,
+    exit_mode VARCHAR(20) NOT NULL DEFAULT 'SWING_CLOSE',
+    close_check_time VARCHAR(10) NOT NULL DEFAULT '15:15',
+    stop_loss_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.50,
+    trail_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00,
+    target_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 3.00,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS manual_paper_trade_execution_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    symbol VARCHAR(50) NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    price NUMERIC(18, 4),
+    quantity INT,
+    reason VARCHAR(255),
+    executed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Idempotent fix for databases where these tables were first created with user_id VARCHAR:
+-- convert to INT (same as the real_* tables). 'default_user' / non-numeric values map to user 1.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'manual_paper_trade_settings' AND column_name = 'user_id' AND data_type = 'character varying') THEN
+        ALTER TABLE manual_paper_trade_settings ALTER COLUMN user_id DROP DEFAULT;
+        ALTER TABLE manual_paper_trade_settings ALTER COLUMN user_id TYPE INT
+            USING (CASE WHEN user_id ~ '^[0-9]+$' THEN user_id::INT ELSE 1 END);
+        ALTER TABLE manual_paper_trade_settings ALTER COLUMN user_id SET DEFAULT 1;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'manual_paper_trade_execution_logs' AND column_name = 'user_id' AND data_type = 'character varying') THEN
+        ALTER TABLE manual_paper_trade_execution_logs ALTER COLUMN user_id DROP DEFAULT;
+        ALTER TABLE manual_paper_trade_execution_logs ALTER COLUMN user_id TYPE INT
+            USING (CASE WHEN user_id ~ '^[0-9]+$' THEN user_id::INT ELSE 1 END);
+        ALTER TABLE manual_paper_trade_execution_logs ALTER COLUMN user_id SET DEFAULT 1;
+    END IF;
+END;
+$$;
+
+CREATE INDEX IF NOT EXISTS ix_manual_paper_trade_logs_user ON manual_paper_trade_execution_logs(user_id, executed_at);

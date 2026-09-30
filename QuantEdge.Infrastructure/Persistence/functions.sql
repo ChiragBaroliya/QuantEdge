@@ -3105,3 +3105,536 @@ BEGIN
     ORDER BY f.symbol;
 END;
 $$;
+
+
+-- ============================================================================
+-- Manual Paper Trading Functions (manual_paper_trade_settings / manual_paper_trade_execution_logs)
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_upsert_manual_paper_trade_settings
+-- Upserts manual paper trade settings for a user and returns the updated record.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_upsert_manual_paper_trade_settings CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_upsert_manual_paper_trade_settings(
+    p_user_id INT,
+    p_is_manual_trade_enabled BOOLEAN,
+    p_available_capital NUMERIC,
+    p_profit_target_pct NUMERIC,
+    p_stop_loss_pct NUMERIC,
+    p_trailing_sl_pct NUMERIC,
+    p_max_duration_days INT,
+    p_max_trades_per_day INT,
+    p_fixed_amount_per_trade NUMERIC,
+    p_trading_window_start VARCHAR,
+    p_trading_window_end VARCHAR,
+    p_entry_delay_minutes INT,
+    p_max_daily_loss_limit NUMERIC,
+    p_exit_mode VARCHAR,
+    p_close_check_time VARCHAR,
+    p_stop_loss_atr_mult NUMERIC,
+    p_trail_atr_mult NUMERIC,
+    p_target_atr_mult NUMERIC
+)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    IsManualTradeEnabled BOOLEAN,
+    AvailableCapital NUMERIC,
+    ProfitTargetPct NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
+    MaxDurationDays INT,
+    MaxTradesPerDay INT,
+    FixedAmountPerTrade NUMERIC,
+    TradingWindowStart VARCHAR,
+    TradingWindowEnd VARCHAR,
+    EntryDelayMinutes INT,
+    MaxDailyLossLimit NUMERIC,
+    ExitMode VARCHAR,
+    CloseCheckTime VARCHAR,
+    StopLossAtrMult NUMERIC,
+    TrailAtrMult NUMERIC,
+    TargetAtrMult NUMERIC,
+    UpdatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO manual_paper_trade_settings (
+        user_id, is_manual_trade_enabled, available_capital, profit_target_pct, stop_loss_pct, trailing_sl_pct,
+        max_duration_days, max_trades_per_day, fixed_amount_per_trade,
+        trading_window_start, trading_window_end, entry_delay_minutes, max_daily_loss_limit,
+        exit_mode, close_check_time, stop_loss_atr_mult, trail_atr_mult, target_atr_mult, updated_at
+    )
+    VALUES (
+        p_user_id, p_is_manual_trade_enabled, p_available_capital, p_profit_target_pct, p_stop_loss_pct, p_trailing_sl_pct,
+        p_max_duration_days, p_max_trades_per_day, p_fixed_amount_per_trade,
+        p_trading_window_start, p_trading_window_end, p_entry_delay_minutes, p_max_daily_loss_limit,
+        p_exit_mode, p_close_check_time, p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult, NOW()
+    )
+    ON CONFLICT (user_id) DO UPDATE
+    SET is_manual_trade_enabled = EXCLUDED.is_manual_trade_enabled,
+        available_capital = EXCLUDED.available_capital,
+        profit_target_pct = EXCLUDED.profit_target_pct,
+        stop_loss_pct = EXCLUDED.stop_loss_pct,
+        trailing_sl_pct = EXCLUDED.trailing_sl_pct,
+        max_duration_days = EXCLUDED.max_duration_days,
+        max_trades_per_day = EXCLUDED.max_trades_per_day,
+        fixed_amount_per_trade = EXCLUDED.fixed_amount_per_trade,
+        trading_window_start = EXCLUDED.trading_window_start,
+        trading_window_end = EXCLUDED.trading_window_end,
+        entry_delay_minutes = EXCLUDED.entry_delay_minutes,
+        max_daily_loss_limit = EXCLUDED.max_daily_loss_limit,
+        exit_mode = EXCLUDED.exit_mode,
+        close_check_time = EXCLUDED.close_check_time,
+        stop_loss_atr_mult = EXCLUDED.stop_loss_atr_mult,
+        trail_atr_mult = EXCLUDED.trail_atr_mult,
+        target_atr_mult = EXCLUDED.target_atr_mult,
+        updated_at = NOW()
+    RETURNING
+        manual_paper_trade_settings.id AS Id,
+        manual_paper_trade_settings.user_id AS UserId,
+        manual_paper_trade_settings.is_manual_trade_enabled AS IsManualTradeEnabled,
+        manual_paper_trade_settings.available_capital AS AvailableCapital,
+        manual_paper_trade_settings.profit_target_pct AS ProfitTargetPct,
+        manual_paper_trade_settings.stop_loss_pct AS StopLossPct,
+        manual_paper_trade_settings.trailing_sl_pct AS TrailingSlPct,
+        manual_paper_trade_settings.max_duration_days AS MaxDurationDays,
+        manual_paper_trade_settings.max_trades_per_day AS MaxTradesPerDay,
+        manual_paper_trade_settings.fixed_amount_per_trade AS FixedAmountPerTrade,
+        manual_paper_trade_settings.trading_window_start AS TradingWindowStart,
+        manual_paper_trade_settings.trading_window_end AS TradingWindowEnd,
+        manual_paper_trade_settings.entry_delay_minutes AS EntryDelayMinutes,
+        manual_paper_trade_settings.max_daily_loss_limit AS MaxDailyLossLimit,
+        manual_paper_trade_settings.exit_mode AS ExitMode,
+        manual_paper_trade_settings.close_check_time AS CloseCheckTime,
+        manual_paper_trade_settings.stop_loss_atr_mult AS StopLossAtrMult,
+        manual_paper_trade_settings.trail_atr_mult AS TrailAtrMult,
+        manual_paper_trade_settings.target_atr_mult AS TargetAtrMult,
+        manual_paper_trade_settings.updated_at AS UpdatedAt;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_trade_settings
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_trade_settings(VARCHAR);
+DROP FUNCTION IF EXISTS fn_get_manual_paper_trade_settings(INT);
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_trade_settings(p_user_id INT)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    IsManualTradeEnabled BOOLEAN,
+    AvailableCapital NUMERIC,
+    ProfitTargetPct NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
+    MaxDurationDays INT,
+    MaxTradesPerDay INT,
+    FixedAmountPerTrade NUMERIC,
+    TradingWindowStart VARCHAR,
+    TradingWindowEnd VARCHAR,
+    EntryDelayMinutes INT,
+    MaxDailyLossLimit NUMERIC,
+    ExitMode VARCHAR,
+    CloseCheckTime VARCHAR,
+    StopLossAtrMult NUMERIC,
+    TrailAtrMult NUMERIC,
+    TargetAtrMult NUMERIC,
+    UpdatedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        s.id AS Id,
+        s.user_id AS UserId,
+        s.is_manual_trade_enabled AS IsManualTradeEnabled,
+        s.available_capital AS AvailableCapital,
+        s.profit_target_pct AS ProfitTargetPct,
+        s.stop_loss_pct AS StopLossPct,
+        s.trailing_sl_pct AS TrailingSlPct,
+        s.max_duration_days AS MaxDurationDays,
+        s.max_trades_per_day AS MaxTradesPerDay,
+        s.fixed_amount_per_trade AS FixedAmountPerTrade,
+        s.trading_window_start AS TradingWindowStart,
+        s.trading_window_end AS TradingWindowEnd,
+        s.entry_delay_minutes AS EntryDelayMinutes,
+        s.max_daily_loss_limit AS MaxDailyLossLimit,
+        s.exit_mode AS ExitMode,
+        s.close_check_time AS CloseCheckTime,
+        s.stop_loss_atr_mult AS StopLossAtrMult,
+        s.trail_atr_mult AS TrailAtrMult,
+        s.target_atr_mult AS TargetAtrMult,
+        s.updated_at AS UpdatedAt
+    FROM manual_paper_trade_settings s
+    WHERE s.user_id = p_user_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_toggle_manual_paper_trade
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_toggle_manual_paper_trade(VARCHAR, BOOLEAN);
+DROP FUNCTION IF EXISTS fn_toggle_manual_paper_trade(INT, BOOLEAN);
+
+CREATE OR REPLACE FUNCTION fn_toggle_manual_paper_trade(p_user_id INT, p_enabled BOOLEAN)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE manual_paper_trade_settings
+    SET is_manual_trade_enabled = p_enabled,
+        updated_at = NOW()
+    WHERE user_id = p_user_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_today_manual_paper_trade_count
+-- Counts today's executed manual paper BUYs (daily trade limit).
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_today_manual_paper_trade_count(VARCHAR, TIMESTAMP WITH TIME ZONE);
+DROP FUNCTION IF EXISTS fn_get_today_manual_paper_trade_count(INT, TIMESTAMP WITH TIME ZONE);
+
+CREATE OR REPLACE FUNCTION fn_get_today_manual_paper_trade_count(p_user_id INT, p_today_start TIMESTAMP WITH TIME ZONE)
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_count INT;
+BEGIN
+    SELECT COUNT(*) INTO v_count
+    FROM manual_paper_trade_execution_logs
+    WHERE user_id = p_user_id
+      AND action_type = 'MANUAL_BUY'
+      AND executed_at >= p_today_start;
+
+    RETURN v_count;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_log_manual_paper_trade_execution
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_log_manual_paper_trade_execution(VARCHAR, VARCHAR, VARCHAR, NUMERIC, INT, VARCHAR);
+DROP FUNCTION IF EXISTS fn_log_manual_paper_trade_execution(INT, VARCHAR, VARCHAR, NUMERIC, INT, VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_log_manual_paper_trade_execution(
+    p_user_id INT,
+    p_symbol VARCHAR,
+    p_action_type VARCHAR,
+    p_price NUMERIC,
+    p_quantity INT,
+    p_reason VARCHAR
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO manual_paper_trade_execution_logs (user_id, symbol, action_type, price, quantity, reason, executed_at)
+    VALUES (p_user_id, p_symbol, p_action_type, p_price, p_quantity, LEFT(p_reason, 255), NOW());
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_today_manual_paper_trade_logs
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_today_manual_paper_trade_logs(VARCHAR, TIMESTAMP WITH TIME ZONE, INT);
+DROP FUNCTION IF EXISTS fn_get_today_manual_paper_trade_logs(INT, TIMESTAMP WITH TIME ZONE, INT);
+
+CREATE OR REPLACE FUNCTION fn_get_today_manual_paper_trade_logs(
+    p_user_id INT,
+    p_today_start TIMESTAMP WITH TIME ZONE,
+    p_limit INT
+)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    Symbol VARCHAR,
+    ActionType VARCHAR,
+    Price NUMERIC,
+    Quantity INT,
+    Reason VARCHAR,
+    ExecutedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        l.id AS Id,
+        l.user_id AS UserId,
+        l.symbol AS Symbol,
+        l.action_type AS ActionType,
+        l.price AS Price,
+        l.quantity AS Quantity,
+        l.reason AS Reason,
+        l.executed_at AS ExecutedAt
+    FROM manual_paper_trade_execution_logs l
+    WHERE l.user_id = p_user_id AND l.executed_at >= p_today_start
+    ORDER BY l.executed_at DESC
+    LIMIT p_limit;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_orders_paged
+-- Manual Trading page - paged Manual (trade_type = 0) paper orders with filters.
+-- Separate from fn_get_paper_orders, which Auto Paper Trading keeps using unchanged.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_orders_paged CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_orders_paged(
+    p_account_id INT,
+    p_symbol VARCHAR DEFAULT NULL,
+    p_side INT DEFAULT NULL,
+    p_status INT DEFAULT NULL,
+    p_from_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_to_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_page_size INT DEFAULT 10,
+    p_offset INT DEFAULT 0
+)
+RETURNS TABLE (
+    Id INT,
+    AccountId INT,
+    Symbol VARCHAR,
+    OrderType INT,
+    Side INT,
+    Quantity INT,
+    Price NUMERIC,
+    TriggerPrice NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    Status INT,
+    FilledPrice NUMERIC,
+    FilledAt TIMESTAMP WITH TIME ZONE,
+    TradeType INT,
+    CreatedAt TIMESTAMP WITH TIME ZONE,
+    Remarks VARCHAR,
+    TotalCount BIGINT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        o.id AS Id,
+        o.account_id AS AccountId,
+        o.symbol AS Symbol,
+        o.order_type AS OrderType,
+        o.side AS Side,
+        o.quantity AS Quantity,
+        o.price AS Price,
+        o.trigger_price AS TriggerPrice,
+        o.stop_loss AS StopLoss,
+        o.take_profit AS TakeProfit,
+        o.status AS Status,
+        o.filled_price AS FilledPrice,
+        o.filled_at AS FilledAt,
+        o.trade_type AS TradeType,
+        o.created_at AS CreatedAt,
+        o.remarks AS Remarks,
+        COUNT(*) OVER() AS TotalCount
+    FROM paper_orders o
+    WHERE o.account_id = p_account_id
+      AND o.trade_type = 0
+      AND (p_symbol IS NULL OR p_symbol = '' OR UPPER(o.symbol) = UPPER(p_symbol))
+      AND (p_side IS NULL OR o.side = p_side)
+      AND (p_status IS NULL OR o.status = p_status)
+      AND (p_from_date IS NULL OR o.created_at >= p_from_date)
+      AND (p_to_date IS NULL OR o.created_at <= p_to_date)
+    ORDER BY o.created_at DESC, o.id DESC
+    LIMIT p_page_size OFFSET p_offset;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_trade_history_paged
+-- Manual Trading page - paged Manual (trade_type = 0) paper trade execution history with filters.
+-- Separate from fn_get_paper_trade_history_paged, which stays unchanged.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_trade_history_paged CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_trade_history_paged(
+    p_account_id INT,
+    p_symbol VARCHAR DEFAULT NULL,
+    p_side INT DEFAULT NULL,
+    p_from_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_to_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    p_page_size INT DEFAULT 10,
+    p_offset INT DEFAULT 0
+)
+RETURNS TABLE (
+    Id INT,
+    AccountId INT,
+    OrderId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    EntryPrice NUMERIC,
+    ExecutedPrice NUMERIC,
+    RealizedPnl NUMERIC,
+    TradeType INT,
+    ExitReason VARCHAR,
+    ExecutedAt TIMESTAMP WITH TIME ZONE,
+    Remarks VARCHAR,
+    TotalCount BIGINT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        h.id AS Id,
+        h.account_id AS AccountId,
+        h.order_id AS OrderId,
+        h.symbol AS Symbol,
+        h.side AS Side,
+        h.quantity AS Quantity,
+        COALESCE(h.entry_price, 0.00) AS EntryPrice,
+        h.executed_price AS ExecutedPrice,
+        h.realized_pnl AS RealizedPnl,
+        h.trade_type AS TradeType,
+        h.exit_reason AS ExitReason,
+        h.executed_at AS ExecutedAt,
+        h.remarks AS Remarks,
+        COUNT(*) OVER() AS TotalCount
+    FROM paper_trade_history h
+    WHERE h.account_id = p_account_id
+      AND h.trade_type = 0
+      AND (p_symbol IS NULL OR p_symbol = '' OR UPPER(h.symbol) = UPPER(p_symbol))
+      AND (p_side IS NULL OR h.side = p_side)
+      AND (p_from_date IS NULL OR h.executed_at >= p_from_date)
+      AND (p_to_date IS NULL OR h.executed_at <= p_to_date)
+    ORDER BY h.executed_at DESC, h.id DESC
+    LIMIT p_page_size OFFSET p_offset;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_dashboard
+-- Manual Trading page stat cards - Manual (trade_type = 0) figures from the paper_* tables, plus the
+-- shared paper account's cash (the Available Margin every paper BUY is checked against).
+-- p_today_start: start of the current IST day (UTC) for today's realized P&L / trade count.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_dashboard CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_dashboard(
+    p_account_id INT,
+    p_today_start TIMESTAMP WITH TIME ZONE
+)
+RETURNS TABLE (
+    AccountAvailableMargin NUMERIC,
+    AccountUsedMargin NUMERIC,
+    ManualUsedMargin NUMERIC,
+    ManualUnrealizedPnl NUMERIC,
+    ManualRealizedPnl NUMERIC,
+    ManualTodayRealizedPnl NUMERIC,
+    OpenPositionsCount INT,
+    TotalBuyTrades INT,
+    TodayBuyTrades INT,
+    ClosedTrades INT,
+    WinningTrades INT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        COALESCE((SELECT a.current_balance - a.used_margin FROM paper_accounts a WHERE a.id = p_account_id), 0.00)::NUMERIC,
+        COALESCE((SELECT a.used_margin FROM paper_accounts a WHERE a.id = p_account_id), 0.00)::NUMERIC,
+        COALESCE((SELECT SUM(p.quantity * p.average_entry_price) FROM paper_positions p
+                  WHERE p.account_id = p_account_id AND p.trade_type = 0 AND p.status = 0), 0.00)::NUMERIC,
+        COALESCE((SELECT SUM(p.unrealized_pnl) FROM paper_positions p
+                  WHERE p.account_id = p_account_id AND p.trade_type = 0 AND p.status = 0), 0.00)::NUMERIC,
+        COALESCE((SELECT SUM(h.realized_pnl) FROM paper_trade_history h
+                  WHERE h.account_id = p_account_id AND h.trade_type = 0), 0.00)::NUMERIC,
+        COALESCE((SELECT SUM(h.realized_pnl) FROM paper_trade_history h
+                  WHERE h.account_id = p_account_id AND h.trade_type = 0 AND h.executed_at >= p_today_start), 0.00)::NUMERIC,
+        (SELECT COUNT(*) FROM paper_positions p
+         WHERE p.account_id = p_account_id AND p.trade_type = 0 AND p.status = 0)::INT,
+        (SELECT COUNT(*) FROM paper_trade_history h
+         WHERE h.account_id = p_account_id AND h.trade_type = 0 AND h.side = 0)::INT,
+        (SELECT COUNT(*) FROM paper_trade_history h
+         WHERE h.account_id = p_account_id AND h.trade_type = 0 AND h.side = 0 AND h.executed_at >= p_today_start)::INT,
+        (SELECT COUNT(*) FROM paper_trade_history h
+         WHERE h.account_id = p_account_id AND h.trade_type = 0 AND h.side = 1)::INT,
+        (SELECT COUNT(*) FROM paper_trade_history h
+         WHERE h.account_id = p_account_id AND h.trade_type = 0 AND h.side = 1 AND h.realized_pnl > 0)::INT;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_open_positions
+-- Manual Trading page - Live Open Positions table: OPEN Manual (trade_type = 0) paper positions only.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_open_positions CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_open_positions(p_account_id INT)
+RETURNS TABLE (
+    Id INT,
+    AccountId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    AverageEntryPrice NUMERIC,
+    CurrentPrice NUMERIC,
+    UnrealizedPnl NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    TrailingStopLoss NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
+    Status INT,
+    TradeType INT,
+    ExitReason VARCHAR,
+    OpenedAt TIMESTAMP WITH TIME ZONE,
+    ClosedAt TIMESTAMP WITH TIME ZONE,
+    RealizedPnl NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        p.id AS Id,
+        p.account_id AS AccountId,
+        p.symbol AS Symbol,
+        p.side AS Side,
+        p.quantity AS Quantity,
+        p.average_entry_price AS AverageEntryPrice,
+        p.current_price AS CurrentPrice,
+        p.unrealized_pnl AS UnrealizedPnl,
+        p.stop_loss AS StopLoss,
+        p.take_profit AS TakeProfit,
+        p.trailing_stop_loss AS TrailingStopLoss,
+        p.stop_loss_pct AS StopLossPct,
+        p.trailing_sl_pct AS TrailingSlPct,
+        p.status AS Status,
+        p.trade_type AS TradeType,
+        p.exit_reason AS ExitReason,
+        p.opened_at AS OpenedAt,
+        p.closed_at AS ClosedAt,
+        p.realized_pnl AS RealizedPnl
+    FROM paper_positions p
+    WHERE p.account_id = p_account_id
+      AND p.trade_type = 0
+      AND p.status = 0
+    ORDER BY p.opened_at DESC;
+END;
+$$;
