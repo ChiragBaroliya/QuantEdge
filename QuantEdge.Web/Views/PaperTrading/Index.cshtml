@@ -16,7 +16,7 @@
                 </span>
                 Manual Paper Trading
             </h2>
-            <p class="paper-subtitle mb-0">Simulate trades with virtual capital (₹1,00,000) by placing your own orders against live WebSocket prices.</p>
+            <p class="paper-subtitle mb-0">Simulate trades with virtual capital (₹1,00,000) by placing your own orders at the latest stored market price (1-minute candles).</p>
         </div>
         <div class="paper-header-actions d-flex align-items-center gap-2 flex-wrap">
             <span id="tradingModeBadge" class="badge bg-primary" style="font-size: 0.75rem;">🧪 MANUAL · PAPER</span>
@@ -82,7 +82,7 @@
             <div class="card paper-card p-4">
                 <h5 class="fw-bold text-light mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom border-secondary border-opacity-25 pb-2">
                     <span>🎯 Order Ticket</span>
-                    <span id="liveLtpBadge" class="badge bg-secondary bg-opacity-25 text-info font-monospace" title="Current Live Last Traded Price from market feeds">LTP: --</span>
+                    <span id="liveLtpBadge" class="badge bg-secondary bg-opacity-25 text-info font-monospace" title="Latest stored price: last 1-minute candle close in the database (no live Zerodha call)">LTP: --</span>
                 </h5>
 
                 <form id="paperOrderForm" novalidate>

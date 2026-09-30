@@ -3774,3 +3774,34 @@ BEGIN
     DELETE FROM manual_paper_trade_execution_logs WHERE user_id = p_user_id;
 END;
 $$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_latest_prices
+-- Manual Paper Trading price source: the latest stored 1-minute candle close per symbol
+-- (market_candles_1m, written by the market data feed). Manual Trading never calls Zerodha for prices.
+-- Uses ix_market_candles_1m_symbol_candle_time (one index lookup per symbol).
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_latest_prices CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_latest_prices(p_symbols TEXT[])
+RETURNS TABLE (
+    Symbol VARCHAR,
+    Ltp NUMERIC,
+    PriceTime TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT s.sym::VARCHAR AS Symbol, c.close AS Ltp, c.candle_time AS PriceTime
+    FROM UNNEST(p_symbols) AS s(sym)
+    CROSS JOIN LATERAL (
+        SELECT m.close, m.candle_time
+        FROM market_candles_1m m
+        WHERE m.symbol = s.sym
+        ORDER BY m.candle_time DESC
+        LIMIT 1
+    ) c;
+END;
+$$;

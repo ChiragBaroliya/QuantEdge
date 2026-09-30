@@ -79,6 +79,27 @@ public class ManualPaperTradeController : ControllerBase
     }
 
     /// <summary>
+    /// Order ticket price - the latest stored 1-minute candle close from Postgres (market_candles_1m).
+    /// Manual Trading never asks Zerodha for a live price.
+    /// </summary>
+    [HttpGet("quote")]
+    public async Task<IActionResult> GetQuote([FromQuery] string symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new { success = false, message = "Symbol is required." });
+        }
+
+        var price = await _manualPaperTradeService.GetQuoteAsync(symbol.Trim().ToUpper());
+        if (price == null || price.Ltp <= 0m)
+        {
+            return Ok(new { success = false, symbol = symbol.Trim().ToUpper(), message = "No stored price for this symbol." });
+        }
+
+        return Ok(new { success = true, symbol = price.Symbol, ltp = price.Ltp, asOfUtc = price.PriceTime });
+    }
+
+    /// <summary>
     /// Manual Trading page stat cards - Manual paper equity, margin, unrealized / realized P&amp;L
     /// (fn_get_manual_paper_dashboard).
     /// </summary>

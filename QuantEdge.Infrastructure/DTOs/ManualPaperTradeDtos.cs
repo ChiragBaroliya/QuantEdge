@@ -150,3 +150,11 @@ public class ManualPaperCloseResult
     public decimal ExitPrice { get; set; }
     public decimal RealizedPnl { get; set; }
 }
+
+/// <summary>Latest stored price for a symbol (fn_get_manual_paper_latest_prices - market_candles_1m close).</summary>
+public class ManualPaperPriceDto
+{
+    public string Symbol { get; set; } = string.Empty;
+    public decimal Ltp { get; set; }
+    public System.DateTime PriceTime { get; set; }
+}

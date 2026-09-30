@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Local State
     let currentAccount = { currentBalance: 100000, availableMargin: 100000, usedMargin: 0, realizedPnl: 0 };
     let currentLtpMap = {};
+    let currentLtpTimeMap = {}; // symbol -> stored candle time of currentLtpMap price
     let activeSymbol = orderSymbol ? orderSymbol.value : 'NIFTY';
     let signalRConnection = null;
     let historyPageState = { page: 1, pageSize: 10, symbol: '', side: '', fromDate: '', toDate: '' };
@@ -76,31 +77,26 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const previousSymbol = activeSymbol;
         activeSymbol = newSymbol;
         quantityTouched = false;
         applyDefaultQuantity();
         updateLtpDisplay();
         validateFormInputs();
 
-        // Move the live tick stream to the newly selected symbol.
-        if (signalRConnection && signalRConnection.state === 'Connected') {
-            if (previousSymbol) signalRConnection.invoke('Unsubscribe', previousSymbol, '1m').catch(console.error);
-            signalRConnection.invoke('Subscribe', newSymbol, '1m').catch(console.error);
-        }
-
         refreshQuote(newSymbol);
     }
 
-    // Fetches the live LTP for the symbol from the same quote endpoint the Manual Real Trade popup uses.
+    // Latest stored 1-minute close from Postgres (market_candles_1m) - the same price a BUY fills at.
+    // Manual Trading never asks Zerodha for a live price.
     async function refreshQuote(symbol) {
         if (!symbol) return;
         try {
-            const res = await fetch(`${apiBaseUrl}/api/realtrade/quote?symbol=${encodeURIComponent(symbol)}`);
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/quote?symbol=${encodeURIComponent(symbol)}`);
             if (!res.ok) return;
             const q = await res.json();
             if (q && q.success && q.ltp > 0) {
                 currentLtpMap[symbol] = Number(q.ltp);
+                currentLtpTimeMap[symbol] = q.asOfUtc || null;
                 if (symbol === activeSymbol) {
                     if (quantityDefaultedFor !== symbol) applyDefaultQuantity();
                     updateLtpDisplay();
@@ -579,10 +575,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const ltp = currentLtpMap[activeSymbol];
         if (liveLtpBadge) {
             if (ltp > 0) {
-                liveLtpBadge.innerText = `LTP (${activeSymbol}): ₹${ltp.toFixed(2)}`;
+                // Show the stored candle's time so a stale price (symbol no longer updating) is obvious.
+                const asOf = currentLtpTimeMap[activeSymbol];
+                const asOfText = asOf ? ` @ ${formatISTTime(asOf)}` : '';
+                liveLtpBadge.innerText = `LTP (${activeSymbol}): ₹${ltp.toFixed(2)}${asOfText}`;
                 liveLtpBadge.className = 'badge bg-primary bg-opacity-25 text-info ms-auto font-monospace';
             } else {
-                liveLtpBadge.innerText = `LTP (${activeSymbol}): Fetching...`;
+                liveLtpBadge.innerText = `LTP (${activeSymbol}): No stored price`;
             }
         }
     }
@@ -1215,16 +1214,6 @@ document.addEventListener('DOMContentLoaded', () => {
             .withAutomaticReconnect()
             .build();
 
-        signalRConnection.on('ReceiveActiveCandle', (data) => {
-            if (data && data.symbol && data.close) {
-                currentLtpMap[data.symbol] = data.close;
-                if (data.symbol === activeSymbol) {
-                    updateLtpDisplay();
-                    validateFormInputs();
-                }
-            }
-        });
-
         signalRConnection.on('ReceivePaperAccountUpdate', () => {
             scheduleManualDashboardRefresh();
         });
@@ -1264,8 +1253,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         signalRConnection.start()
             .then(() => {
-                console.log('SignalR connected for Paper Trading ticks.');
-                signalRConnection.invoke('Subscribe', activeSymbol, '1m').catch(console.error);
+                console.log('SignalR connected for Manual Trading events.');
             })
             .catch(err => console.error('SignalR Connection Error:', err));
     }

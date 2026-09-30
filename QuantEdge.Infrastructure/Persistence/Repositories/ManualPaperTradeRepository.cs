@@ -201,6 +201,17 @@ public class ManualPaperTradeRepository : IManualPaperTradeRepository
         return rows.Count == 0 ? (Enumerable.Empty<PaperTradeHistory>(), 0) : (rows, (int)rows[0].TotalCount);
     }
 
+    public async Task<IEnumerable<ManualPaperPriceDto>> GetLatestPricesAsync(IEnumerable<string> symbols)
+    {
+        var list = symbols.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.ToUpper().Trim()).Distinct().ToArray();
+        if (list.Length == 0) return Enumerable.Empty<ManualPaperPriceDto>();
+
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = "SELECT * FROM fn_get_manual_paper_latest_prices(@symbols);";
+
+        return await connection.QueryAsync<ManualPaperPriceDto>(sql, new { symbols = list });
+    }
+
     public async Task ResetAsync(int userId)
     {
         using var connection = _connectionFactory.CreateConnection();

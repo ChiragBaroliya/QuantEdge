@@ -42,6 +42,9 @@ public interface IManualPaperTradeRepository
     /// <summary>Paged manual trade history - fn_get_manual_paper_trade_history_paged.</summary>
     Task<(IEnumerable<PaperTradeHistory> Items, int TotalCount)> GetTradeHistoryPagedAsync(int userId, PaperTradeHistoryFilterDto filter);
 
+    /// <summary>Latest stored 1-minute close per symbol - fn_get_manual_paper_latest_prices (no Zerodha call).</summary>
+    Task<IEnumerable<ManualPaperPriceDto>> GetLatestPricesAsync(IEnumerable<string> symbols);
+
     /// <summary>Reset Capital - deletes the user's manual orders, positions, history and logs.</summary>
     Task ResetAsync(int userId);
 }

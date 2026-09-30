@@ -20,13 +20,16 @@ namespace QuantEdge.Infrastructure.Services;
 /// Trading page; nothing runs in the Worker. Entry checks mirror AutoRealTradeService's Manual Real Trade
 /// path (switch, window, entry delay, daily trade/loss limits, exposure cap, duplicate position, price
 /// drift, capital, mandatory SL%/Trailing SL%). All data lives in its own manual_paper_* tables, which
-/// no Worker job, paper matching engine, Auto Paper or Auto Real code reads or writes. Live prices come
-/// from the broker LTP quote on demand.
+/// no Worker job, paper matching engine, Auto Paper or Auto Real code reads or writes. Prices are the
+/// latest stored 1-minute candle close in Postgres (market_candles_1m) - Manual Trading never calls Zerodha.
 /// </summary>
 public class ManualPaperTradeService : IManualPaperTradeService
 {
+    // A BUY needs a stored price no older than this, so a symbol whose candles stopped updating can't
+    // be bought at a stale price. Close / P&L use the latest stored price whatever its age.
+    private static readonly TimeSpan MaxBuyPriceAge = TimeSpan.FromMinutes(10);
+
     private readonly IManualPaperTradeRepository _repository;
-    private readonly IZerodhaKiteBrokerService _brokerService;
     private readonly IMarketHoursService _marketHoursService;
     private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly ILogger<ManualPaperTradeService> _logger;
@@ -37,13 +40,11 @@ public class ManualPaperTradeService : IManualPaperTradeService
 
     public ManualPaperTradeService(
         IManualPaperTradeRepository repository,
-        IZerodhaKiteBrokerService brokerService,
         IMarketHoursService marketHoursService,
         ILogger<ManualPaperTradeService> logger,
         IHubContext<MarketDataHub>? hubContext = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
-        _brokerService = brokerService ?? throw new ArgumentNullException(nameof(brokerService));
         _marketHoursService = marketHoursService ?? throw new ArgumentNullException(nameof(marketHoursService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _hubContext = hubContext;
@@ -113,19 +114,19 @@ public class ManualPaperTradeService : IManualPaperTradeService
         return dashboard;
     }
 
-    // OPEN positions with live LTP / unrealized P&L from one broker quote call (not stored - nothing
-    // runs in the background for manual trading, so prices are fetched when the page asks).
+    // OPEN positions with LTP / unrealized P&L from the latest stored 1-minute close (one DB call for
+    // all symbols; falls back to the entry price when a symbol has no stored candle).
     public async Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync(int userId = 1)
     {
         var positions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
         if (positions.Count == 0) return positions;
 
-        var ltps = await GetLtpsAsync(positions.Select(p => p.Symbol), userId);
+        var prices = await GetStoredPricesAsync(positions.Select(p => p.Symbol));
         foreach (var pos in positions)
         {
-            if (ltps.TryGetValue(pos.Symbol, out var ltp) && ltp > 0m)
+            if (prices.TryGetValue(pos.Symbol, out var price) && price.Ltp > 0m)
             {
-                pos.CurrentPrice = ltp;
+                pos.CurrentPrice = price.Ltp;
             }
             pos.UnrealizedPnl = (pos.CurrentPrice - pos.AverageEntryPrice) * pos.Quantity;
         }
@@ -247,18 +248,25 @@ public class ManualPaperTradeService : IManualPaperTradeService
                 $"{symbol} already has an OPEN manual position (Position #{existingOpenPos.Id})", userId);
         }
 
-        // 6. Live Quote Re-check (broker LTP), same drift guard as Real. If the quote fails, proceed with
-        // the submitted price (Real does the same when its quote fetch fails).
-        var ltps = await GetLtpsAsync(new[] { symbol }, userId);
-        if (ltps.TryGetValue(symbol, out var liveLtp) && liveLtp > 0m)
+        // 6. Price Re-check against the latest stored 1-minute close (same drift guard as Real). The trade
+        // fills at that stored price; a missing or stale price (> MaxBuyPriceAge) rejects the BUY.
+        var prices = await GetStoredPricesAsync(new[] { symbol });
+        if (!prices.TryGetValue(symbol, out var stored) || stored.Ltp <= 0m)
         {
-            string? driftReason = SwingTradeRules.CheckSignalDrift(entryPrice, liveLtp);
-            if (driftReason != null)
-            {
-                return await RejectAsync(symbol, entryPrice, driftReason, userId);
-            }
-            entryPrice = liveLtp;
+            return await RejectAsync(symbol, entryPrice, $"No stored price found for {symbol} (market_candles_1m).", userId);
         }
+        if (DateTime.UtcNow - stored.PriceTime.ToUniversalTime() > MaxBuyPriceAge)
+        {
+            return await RejectAsync(symbol, entryPrice,
+                $"Stored price for {symbol} is stale (last candle {TimeZoneInfo.ConvertTimeFromUtc(stored.PriceTime.ToUniversalTime(), TimeZoneHelper.IndianTimeZone):dd-MMM HH:mm} IST) - not buying at an old price.", userId);
+        }
+
+        string? driftReason = SwingTradeRules.CheckSignalDrift(entryPrice, stored.Ltp);
+        if (driftReason != null)
+        {
+            return await RejectAsync(symbol, entryPrice, driftReason, userId);
+        }
+        entryPrice = stored.Ltp;
 
         // 7. Quantity, Manual Trading's own capital, mandatory trade-wise SL%/Trailing SL%
         if (quantity < 1)
@@ -325,7 +333,7 @@ public class ManualPaperTradeService : IManualPaperTradeService
         var position = (await GetOpenPositionsAsync(userId)).FirstOrDefault(p => p.Id == positionId);
         if (position == null) return (false, $"Open manual position #{positionId} not found.");
 
-        // GetOpenPositionsAsync set CurrentPrice to the live LTP (entry price if the quote was unavailable).
+        // GetOpenPositionsAsync set CurrentPrice to the latest stored 1-minute close (entry price if none stored).
         decimal exitPrice = position.CurrentPrice > 0m ? position.CurrentPrice : position.AverageEntryPrice;
 
         try
@@ -388,26 +396,19 @@ public class ManualPaperTradeService : IManualPaperTradeService
     private static DateTime TodayStartUtc() =>
         TimeZoneInfo.ConvertTimeToUtc(SwingTradeRules.NowIst().Date, TimeZoneHelper.IndianTimeZone);
 
-    // Live broker LTPs (same source as the order ticket's quote). Empty on failure - callers fall back.
-    private async Task<Dictionary<string, decimal>> GetLtpsAsync(IEnumerable<string> symbols, int userId)
+    // Latest stored 1-minute close per symbol from Postgres (fn_get_manual_paper_latest_prices).
+    private async Task<Dictionary<string, ManualPaperPriceDto>> GetStoredPricesAsync(IEnumerable<string> symbols)
     {
-        var distinct = symbols.Where(s => !string.IsNullOrWhiteSpace(s))
-            .Select(s => s.ToUpper().Trim()).Distinct().ToList();
-        if (distinct.Count == 0) return new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var rows = await _repository.GetLatestPricesAsync(symbols);
+        return rows.GroupBy(r => r.Symbol, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+    }
 
-        try
-        {
-            var result = await _brokerService.GetLtpQuotesAsync(distinct.Select(s => (s, "NSE")), userId);
-            if (result.Success && result.Ltps != null)
-            {
-                return new Dictionary<string, decimal>(result.Ltps, StringComparer.OrdinalIgnoreCase);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Manual Paper Trading: LTP quote failed for {Symbols}", string.Join(",", distinct));
-        }
-        return new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+    public async Task<ManualPaperPriceDto?> GetQuoteAsync(string symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return null;
+        var prices = await GetStoredPricesAsync(new[] { symbol });
+        return prices.TryGetValue(symbol.Trim(), out var price) ? price : null;
     }
 
     private async Task LogAuditAsync(string symbol, string actionType, decimal? price, int? quantity, string? reason, int userId)

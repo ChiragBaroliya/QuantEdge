@@ -18,7 +18,10 @@ public interface IManualPaperTradeService
     Task<int> GetTodayTradeCountAsync(int userId = 1);
     Task<IEnumerable<ManualPaperTradeExecutionLog>> GetTodayLogsAsync(int userId = 1, int limit = 50);
 
-    /// <summary>Manual Trading page stat cards - Manual paper figures with live unrealized P&amp;L.</summary>
+    /// <summary>Order ticket price - latest stored 1-minute close from Postgres (no Zerodha call); null if none.</summary>
+    Task<ManualPaperPriceDto?> GetQuoteAsync(string symbol);
+
+    /// <summary>Manual Trading page stat cards - Manual paper figures with unrealized P&amp;L at stored prices.</summary>
     Task<ManualPaperDashboardDto> GetDashboardAsync(int userId = 1);
 
     /// <summary>Manual Trading page - OPEN Manual paper positions with live LTP / unrealized P&amp;L.</summary>
