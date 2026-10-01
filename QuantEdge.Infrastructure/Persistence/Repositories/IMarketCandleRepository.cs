@@ -25,6 +25,12 @@ public interface IMarketCandleRepository
     Task<IEnumerable<MarketCandle>> GetHistoryAsync(string symbol, string timeframe, int? limit = null, System.DateTime? beforeTime = null);
 
     /// <summary>
+    /// The latest <paramref name="limitPerSymbol"/> candles of each symbol in ONE query (newest first per symbol),
+    /// for screens that score many stocks at once. Symbols with no candles are simply absent.
+    /// </summary>
+    Task<IEnumerable<MarketCandle>> GetRecentHistoryBatchAsync(IReadOnlyCollection<string> symbols, string timeframe, int limitPerSymbol);
+
+    /// <summary>
     /// Deletes all history for today for a specific symbol and timeframe.
     /// </summary>
     Task DeleteTodayHistoryAsync(string symbol, string timeframe);

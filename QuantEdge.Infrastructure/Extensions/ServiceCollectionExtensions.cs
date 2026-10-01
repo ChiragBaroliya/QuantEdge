@@ -62,6 +62,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ISwingSlotRecommendationRepository, SwingSlotRecommendationRepository>();
         services.AddTransient<ISwingStrategySettingsRepository, SwingStrategySettingsRepository>();
         services.AddTransient<IFavoriteSymbolRepository, FavoriteSymbolRepository>();
+        services.AddTransient<ISectorRepository, SectorRepository>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
 
         services.AddTransient<IIndicatorService, IndicatorService>();
@@ -118,6 +119,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ISignalEngineService, SignalEngineService>();
         services.AddTransient<ISwingTradingService, SwingTradingService>();
         services.AddTransient<IStockVerdictService, StockVerdictService>();
+        services.AddTransient<ISectorDashboardService, SectorDashboardService>();
         services.AddTransient<INotificationService, NotificationService>();
 
         // Register Paper Trading Infrastructure Services

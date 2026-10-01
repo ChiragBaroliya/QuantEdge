@@ -3805,3 +3805,40 @@ BEGIN
     ) c;
 END;
 $$;
+
+
+-- ============================================================================
+-- Sector Dashboard Functions (sectors / stock_sectors)
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_sector_stocks
+-- Every active sector with its linked stocks (one row per sector-stock link). A sector with no
+-- linked stocks still returns one row with NULL stock columns, so it shows on the Sector Dashboard.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_sector_stocks();
+
+CREATE OR REPLACE FUNCTION fn_get_sector_stocks()
+RETURNS TABLE (
+    SectorId INT,
+    SectorName VARCHAR,
+    StockId INT,
+    Symbol VARCHAR,
+    StockName VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT sec.id AS SectorId,
+           sec.name AS SectorName,
+           s.id AS StockId,
+           s.symbol AS Symbol,
+           s.name AS StockName
+    FROM sectors sec
+    LEFT JOIN stock_sectors ss ON ss.sector_id = sec.id
+    LEFT JOIN stock_master s ON s.id = ss.stock_id
+    WHERE sec.is_active = TRUE
+    ORDER BY sec.id, s.symbol;
+END;
+$$;

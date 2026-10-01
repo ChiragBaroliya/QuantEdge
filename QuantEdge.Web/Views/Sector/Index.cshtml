@@ -1,0 +1,68 @@
+@{
+    ViewData["Title"] = "Sector Dashboard";
+    ViewData["PageTitle"] = "Sector Dashboard";
+}
+
+<link rel="stylesheet" href="~/css/sectors.css" asp-append-version="true" />
+
+<div class="sx-page" id="sectorOverview">
+    <div class="sx-bar">
+        <p class="sx-meta" id="sxMeta">Loading sectors…</p>
+        <div class="sx-actions">
+            <button type="button" class="btn-trigger" id="sxRefresh" data-tooltip="Re-score every sector now (the page also refreshes every minute).">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <div id="sxMarket"></div>
+
+    <section class="sx-section">
+        <div class="sx-section-head">
+            <div>
+                <h2>Top strong sectors</h2>
+                <p>Start here at market open - click a sector to see which of its stocks have a valid setup.</p>
+            </div>
+        </div>
+        <div class="sx-top" id="sxTop"></div>
+    </section>
+
+    <section class="sx-section">
+        <div class="sx-section-head">
+            <div>
+                <h2>All sectors</h2>
+                <p id="sxLegend">🟢 Strong · 🟡 Neutral / mixed · 🔴 Weak · ⚪ No data</p>
+            </div>
+            <div class="sx-pills" id="sxSort">
+                <span class="sx-pills-label">Rank by</span>
+                <button type="button" class="sx-pill active" data-sort="strength">Strength</button>
+                <button type="button" class="sx-pill" data-sort="change">% change</button>
+                <button type="button" class="sx-pill" data-sort="buy">BUY setups</button>
+                <button type="button" class="sx-pill" data-sort="momentum">Momentum</button>
+            </div>
+        </div>
+        <div class="sx-pills" id="sxFilter">
+            <span class="sx-pills-label">Show</span>
+            <button type="button" class="sx-pill active" data-filter="ALL">All</button>
+            <button type="button" class="sx-pill" data-filter="STRONG">🟢 Strong</button>
+            <button type="button" class="sx-pill" data-filter="NEUTRAL">🟡 Neutral</button>
+            <button type="button" class="sx-pill" data-filter="WEAK">🔴 Weak</button>
+        </div>
+        <div class="sx-grid" id="sxGrid"></div>
+    </section>
+</div>
+
+@section Scripts {
+    <script>
+        window.QuantEdgeConfig = {
+            apiBaseUrl: "@ViewBag.ApiBaseUrl",
+            userId: @ViewBag.UserId,
+            detailUrl: "@Url.Action("Detail", "Sector")"
+        };
+    </script>
+    <script src="~/js/sectors.js" asp-append-version="true"></script>
+}

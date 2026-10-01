@@ -133,6 +133,33 @@ public class MarketCandleRepository : IMarketCandleRepository
         }
     }
 
+    public async Task<IEnumerable<MarketCandle>> GetRecentHistoryBatchAsync(IReadOnlyCollection<string> symbols, string timeframe, int limitPerSymbol)
+    {
+        if (symbols == null || symbols.Count == 0) return Array.Empty<MarketCandle>();
+
+        string safeTimeframe = timeframe.ToLower();
+        if (!new[] { "1m", "5m", "15m", "60m", "1d" }.Contains(safeTimeframe))
+        {
+            safeTimeframe = "1m";
+        }
+        string tableName = $"market_candles_{safeTimeframe}";
+
+        // LATERAL + LIMIT walks ix_market_candles_*_symbol_candle_time once per symbol - one round trip
+        // instead of one query per symbol.
+        string sql = $@"SELECT c.id, c.candle_time AS CandleTime, c.symbol, c.timeframe, c.open, c.high, c.low, c.close, c.volume, c.created_at AS CreatedAt
+                        FROM unnest(@Symbols) AS s(sym)
+                        CROSS JOIN LATERAL (
+                            SELECT * FROM {tableName} m
+                            WHERE m.symbol = s.sym
+                            ORDER BY m.candle_time DESC
+                            LIMIT @Limit
+                        ) c;";
+
+        using var connection = _connectionFactory.CreateConnection();
+        var upperSymbols = symbols.Select(s => s.ToUpper()).Distinct().ToArray();
+        return await connection.QueryAsync<MarketCandle>(sql, new { Symbols = upperSymbols, Limit = limitPerSymbol });
+    }
+
     public async Task DeleteTodayHistoryAsync(string symbol, string timeframe)
     {
         DateTime todayStart = DateTime.UtcNow.Date;

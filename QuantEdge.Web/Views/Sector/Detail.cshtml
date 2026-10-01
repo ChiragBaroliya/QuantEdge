@@ -1,0 +1,100 @@
+@{
+    ViewData["Title"] = "Sector Detail";
+    ViewData["PageTitle"] = "Sector Detail";
+}
+
+<link rel="stylesheet" href="~/css/sectors.css" asp-append-version="true" />
+
+<div class="sx-page" id="sectorDetail" data-sector-id="@ViewBag.SectorId">
+    <div class="sx-bar">
+        <a class="sx-back" href="@Url.Action("Index", "Sector")">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+            All sectors
+        </a>
+        <div class="sx-actions">
+            <span class="sx-meta" id="sxMeta">Loading…</span>
+            <button type="button" class="btn-trigger" id="sxRefresh" data-tooltip="Re-score the sector now (the page also refreshes every minute).">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="sx-hero sx-nodata" id="sxHero">
+        <div><h2>Loading sector…</h2></div>
+    </div>
+
+    <div id="sxMarket"></div>
+
+    <section class="sx-section">
+        <div class="sx-section-head">
+            <div>
+                <h2>Today's trade candidates</h2>
+                <p>Only stocks with a BUY or WATCH setup. Click one to see exactly which conditions passed or failed.</p>
+            </div>
+            <div class="sx-pills" id="sxCandSort">
+                <span class="sx-pills-label">Sort by</span>
+                <button type="button" class="sx-pill active" data-sort="score">Signal strength</button>
+                <button type="button" class="sx-pill" data-sort="momentum">Momentum</button>
+                <button type="button" class="sx-pill" data-sort="volume">Volume</button>
+                <button type="button" class="sx-pill" data-sort="rr">Risk/Reward</button>
+                <button type="button" class="sx-pill" data-sort="change">% change</button>
+            </div>
+        </div>
+        <div class="sx-panel"><div class="sx-cands" id="sxCands"></div></div>
+    </section>
+
+    <section class="sx-section">
+        <div class="sx-section-head">
+            <div>
+                <h2>All stocks in this sector</h2>
+                <p>🟢 BUY - meets the trading conditions · 🟡 WATCH - close, waiting for confirmation · 🔴 NO TRADE · ⚪ No data</p>
+            </div>
+        </div>
+        <div class="sx-panel sx-table-wrap">
+            <table class="sx-table">
+                <thead>
+                    <tr>
+                        <th>Stock</th>
+                        <th>Signal</th>
+                        <th class="num">Price</th>
+                        <th class="num">Change</th>
+                        <th class="num">Volume</th>
+                        <th class="num">RSI 15m</th>
+                        <th>Score</th>
+                        <th class="num">Conditions</th>
+                        <th>Why</th>
+                    </tr>
+                </thead>
+                <tbody id="sxStocks"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<div class="modal fade sx-modal" id="sxStockModal" tabindex="-1" aria-hidden="true" aria-labelledby="sxStockTitle">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="sx-m-head" id="sxStockTitle"></div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="sxStockBody"></div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        window.QuantEdgeConfig = {
+            apiBaseUrl: "@ViewBag.ApiBaseUrl",
+            userId: @ViewBag.UserId
+        };
+    </script>
+    <script src="~/js/sectors.js" asp-append-version="true"></script>
+}

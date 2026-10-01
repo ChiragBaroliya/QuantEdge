@@ -1025,3 +1025,52 @@ BEGIN
     DELETE FROM paper_trade_history WHERE trade_type = 0 AND remarks LIKE 'Manual Paper %';
 END;
 $$;
+
+-- ----------------------------------------------------------------------------
+-- Sector Master
+-- NSE sectoral indices used to group stocks by sector.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sectors (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO sectors (name)
+VALUES
+    ('NIFTY AUTO'),
+    ('NIFTY BANK'),
+    ('NIFTY FINANCIAL SERVICES'),
+    ('NIFTY FINANCIAL SERVICES 25/50'),
+    ('NIFTY FMCG'),
+    ('NIFTY IT'),
+    ('NIFTY MEDIA'),
+    ('NIFTY METAL'),
+    ('NIFTY PHARMA'),
+    ('NIFTY PSU BANK'),
+    ('NIFTY REALTY'),
+    ('NIFTY PRIVATE BANK'),
+    ('NIFTY HEALTHCARE INDEX'),
+    ('NIFTY CONSUMER DURABLES'),
+    ('NIFTY OIL & GAS'),
+    ('NIFTY MIDSMALL HEALTHCARE'),
+    ('NIFTY CHEMICALS'),
+    ('NIFTY500 HEALTHCARE'),
+    ('NIFTY FINANCIAL SERVICES EX-BANK'),
+    ('NIFTY MIDSMALL FINANCIAL SERVICES'),
+    ('NIFTY MIDSMALL IT & TELECOM'),
+    ('NIFTY CEMENT'),
+    ('NIFTY REITS & REALTY')
+ON CONFLICT (name) DO NOTHING;
+
+-- Table: stock_sectors
+-- Many-to-many link between stock_master and sectors (one symbol can belong to multiple sectors).
+CREATE TABLE IF NOT EXISTS stock_sectors (
+    stock_id INT NOT NULL REFERENCES stock_master(id) ON DELETE CASCADE,
+    sector_id INT NOT NULL REFERENCES sectors(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (stock_id, sector_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_sectors_sector_id ON stock_sectors (sector_id);
