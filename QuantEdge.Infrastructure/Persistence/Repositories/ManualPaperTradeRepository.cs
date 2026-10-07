@@ -57,7 +57,9 @@ public class ManualPaperTradeRepository : IManualPaperTradeRepository
                 @CloseCheckTime,
                 @StopLossAtrMult,
                 @TrailAtrMult,
-                @TargetAtrMult
+                @TargetAtrMult,
+                @ShortEntryCutoff,
+                @ShortSquareOffTime
             );";
 
         return await connection.QuerySingleAsync<ManualPaperTradeSettings>(sql, settings);
@@ -99,19 +101,25 @@ public class ManualPaperTradeRepository : IManualPaperTradeRepository
         return await connection.QueryAsync<ManualPaperTradeExecutionLog>(sql, new { userId, todayStartUtc, limit });
     }
 
-    public async Task<int?> CreateBuyAsync(int userId, string symbol, int quantity, decimal price, decimal stopLoss,
+    public async Task<int?> CreateEntryAsync(int userId, TradeSide side, string symbol, int quantity, decimal price, decimal stopLoss,
         decimal trailingSlPct, decimal takeProfit, string orderRemarks, string historyRemarks)
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
-            SELECT fn_create_manual_paper_buy(
-                @userId, @symbol, @quantity, @price, @stopLoss, @trailingSlPct, @takeProfit, @orderRemarks, @historyRemarks
+            SELECT fn_open_manual_paper_position(
+                @userId, @side, @symbol, @quantity, @price, @stopLoss, @trailingSlPct, @takeProfit, @orderRemarks, @historyRemarks
             );";
 
         return await connection.ExecuteScalarAsync<int?>(sql, new
         {
-            userId, symbol, quantity, price, stopLoss, trailingSlPct, takeProfit, orderRemarks, historyRemarks
+            userId, side = (int)side, symbol, quantity, price, stopLoss, trailingSlPct, takeProfit, orderRemarks, historyRemarks
         });
+    }
+
+    public async Task<IEnumerable<PaperPosition>> GetAllOpenShortPositionsAsync()
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        return await connection.QueryAsync<PaperPosition>("SELECT * FROM fn_get_manual_paper_open_shorts();");
     }
 
     public async Task<ManualPaperCloseResult> ClosePositionAsync(int userId, int positionId, decimal exitPrice, string exitReason)

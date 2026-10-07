@@ -3135,7 +3135,9 @@ CREATE OR REPLACE FUNCTION fn_upsert_manual_paper_trade_settings(
     p_close_check_time VARCHAR,
     p_stop_loss_atr_mult NUMERIC,
     p_trail_atr_mult NUMERIC,
-    p_target_atr_mult NUMERIC
+    p_target_atr_mult NUMERIC,
+    p_short_entry_cutoff VARCHAR DEFAULT '15:00',
+    p_short_square_off_time VARCHAR DEFAULT '15:15'
 )
 RETURNS TABLE (
     Id INT,
@@ -3157,6 +3159,8 @@ RETURNS TABLE (
     StopLossAtrMult NUMERIC,
     TrailAtrMult NUMERIC,
     TargetAtrMult NUMERIC,
+    ShortEntryCutoff VARCHAR,
+    ShortSquareOffTime VARCHAR,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -3167,13 +3171,15 @@ BEGIN
         user_id, is_manual_trade_enabled, available_capital, profit_target_pct, stop_loss_pct, trailing_sl_pct,
         max_duration_days, max_trades_per_day, fixed_amount_per_trade,
         trading_window_start, trading_window_end, entry_delay_minutes, max_daily_loss_limit,
-        exit_mode, close_check_time, stop_loss_atr_mult, trail_atr_mult, target_atr_mult, updated_at
+        exit_mode, close_check_time, stop_loss_atr_mult, trail_atr_mult, target_atr_mult,
+        short_entry_cutoff, short_square_off_time, updated_at
     )
     VALUES (
         p_user_id, p_is_manual_trade_enabled, p_available_capital, p_profit_target_pct, p_stop_loss_pct, p_trailing_sl_pct,
         p_max_duration_days, p_max_trades_per_day, p_fixed_amount_per_trade,
         p_trading_window_start, p_trading_window_end, p_entry_delay_minutes, p_max_daily_loss_limit,
-        p_exit_mode, p_close_check_time, p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult, NOW()
+        p_exit_mode, p_close_check_time, p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult,
+        COALESCE(p_short_entry_cutoff, '15:00'), COALESCE(p_short_square_off_time, '15:15'), NOW()
     )
     ON CONFLICT (user_id) DO UPDATE
     SET is_manual_trade_enabled = EXCLUDED.is_manual_trade_enabled,
@@ -3193,6 +3199,8 @@ BEGIN
         stop_loss_atr_mult = EXCLUDED.stop_loss_atr_mult,
         trail_atr_mult = EXCLUDED.trail_atr_mult,
         target_atr_mult = EXCLUDED.target_atr_mult,
+        short_entry_cutoff = EXCLUDED.short_entry_cutoff,
+        short_square_off_time = EXCLUDED.short_square_off_time,
         updated_at = NOW()
     RETURNING
         manual_paper_trade_settings.id AS Id,
@@ -3214,6 +3222,8 @@ BEGIN
         manual_paper_trade_settings.stop_loss_atr_mult AS StopLossAtrMult,
         manual_paper_trade_settings.trail_atr_mult AS TrailAtrMult,
         manual_paper_trade_settings.target_atr_mult AS TargetAtrMult,
+        manual_paper_trade_settings.short_entry_cutoff AS ShortEntryCutoff,
+        manual_paper_trade_settings.short_square_off_time AS ShortSquareOffTime,
         manual_paper_trade_settings.updated_at AS UpdatedAt;
 END;
 $$;
@@ -3246,6 +3256,8 @@ RETURNS TABLE (
     StopLossAtrMult NUMERIC,
     TrailAtrMult NUMERIC,
     TargetAtrMult NUMERIC,
+    ShortEntryCutoff VARCHAR,
+    ShortSquareOffTime VARCHAR,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -3272,6 +3284,8 @@ BEGIN
         s.stop_loss_atr_mult AS StopLossAtrMult,
         s.trail_atr_mult AS TrailAtrMult,
         s.target_atr_mult AS TargetAtrMult,
+        s.short_entry_cutoff AS ShortEntryCutoff,
+        s.short_square_off_time AS ShortSquareOffTime,
         s.updated_at AS UpdatedAt
     FROM manual_paper_trade_settings s
     WHERE s.user_id = p_user_id;
@@ -3315,7 +3329,7 @@ BEGIN
     SELECT COUNT(*) INTO v_count
     FROM manual_paper_trade_execution_logs
     WHERE user_id = p_user_id
-      AND action_type = 'MANUAL_BUY'
+      AND action_type IN ('MANUAL_BUY', 'MANUAL_SHORT')
       AND executed_at >= p_today_start;
 
     RETURN v_count;
@@ -3406,14 +3420,17 @@ DROP FUNCTION IF EXISTS fn_update_manual_paper_position_levels CASCADE;
 
 
 -- ----------------------------------------------------------------------------
--- Function: fn_create_manual_paper_buy
--- Manual BUY: inserts the filled BUY order, the OPEN position and the BUY history row in one call.
--- Returns the new position id, or NULL when the user already has an OPEN position in the symbol.
+-- Function: fn_open_manual_paper_position
+-- Manual entry: p_side 0 = BUY (long), 1 = SELL (short sell). Inserts the filled entry order, the OPEN
+-- position and the entry history row (is_exit = FALSE) in one call. Returns the new position id, or NULL
+-- when the user already has an OPEN position (long or short) in the symbol.
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS fn_create_manual_paper_buy CASCADE;
+DROP FUNCTION IF EXISTS fn_open_manual_paper_position CASCADE;
 
-CREATE OR REPLACE FUNCTION fn_create_manual_paper_buy(
+CREATE OR REPLACE FUNCTION fn_open_manual_paper_position(
     p_user_id INT,
+    p_side INT,
     p_symbol VARCHAR,
     p_quantity INT,
     p_price NUMERIC,
@@ -3437,19 +3454,19 @@ BEGIN
 
     INSERT INTO manual_paper_positions (user_id, symbol, side, quantity, average_entry_price,
                                         stop_loss, trailing_sl_pct, take_profit, status, opened_at, updated_at)
-    VALUES (p_user_id, UPPER(p_symbol), 0, p_quantity, p_price, p_stop_loss, p_trailing_sl_pct, p_take_profit, 0, NOW(), NOW())
+    VALUES (p_user_id, UPPER(p_symbol), p_side, p_quantity, p_price, p_stop_loss, p_trailing_sl_pct, p_take_profit, 0, NOW(), NOW())
     RETURNING id INTO v_position_id;
 
     INSERT INTO manual_paper_orders (user_id, position_id, symbol, side, order_type, quantity, price,
                                      stop_loss, take_profit, status, filled_price, filled_at, created_at, remarks)
-    VALUES (p_user_id, v_position_id, UPPER(p_symbol), 0, 0, p_quantity, p_price,
+    VALUES (p_user_id, v_position_id, UPPER(p_symbol), p_side, 0, p_quantity, p_price,
             p_stop_loss, p_take_profit, 1, p_price, NOW(), NOW(), LEFT(p_order_remarks, 255))
     RETURNING id INTO v_order_id;
 
     INSERT INTO manual_paper_trade_history (user_id, order_id, position_id, symbol, side, quantity,
-                                            entry_price, executed_price, realized_pnl, executed_at, remarks)
-    VALUES (p_user_id, v_order_id, v_position_id, UPPER(p_symbol), 0, p_quantity,
-            p_price, p_price, 0.00, NOW(), LEFT(p_history_remarks, 255));
+                                            entry_price, executed_price, realized_pnl, is_exit, executed_at, remarks)
+    VALUES (p_user_id, v_order_id, v_position_id, UPPER(p_symbol), p_side, p_quantity,
+            p_price, p_price, 0.00, FALSE, NOW(), LEFT(p_history_remarks, 255));
 
     RETURN v_position_id;
 END;
@@ -3458,8 +3475,9 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- Function: fn_close_manual_paper_position
--- Manual SELL (Close button): closes an OPEN position at p_exit_price, inserts the filled SELL order and
--- the SELL history row with realized P&L. Returns one row; Success = FALSE if it was not OPEN.
+-- Close button / short auto square-off: closes an OPEN position at p_exit_price, inserts the filled exit
+-- order (SELL for a long, BUY to cover for a short) and the exit history row (is_exit = TRUE) with realized
+-- P&L. Returns one row; Success = FALSE if it was not OPEN.
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS fn_close_manual_paper_position CASCADE;
 
@@ -3483,6 +3501,8 @@ DECLARE
     v_pos manual_paper_positions%ROWTYPE;
     v_pnl NUMERIC;
     v_order_id INT;
+    v_exit_side INT;
+    v_exit_label VARCHAR;
 BEGIN
     SELECT * INTO v_pos FROM manual_paper_positions
     WHERE id = p_position_id AND user_id = p_user_id AND status = 0
@@ -3493,7 +3513,17 @@ BEGIN
         RETURN;
     END IF;
 
-    v_pnl := (p_exit_price - v_pos.average_entry_price) * v_pos.quantity;
+    -- Long (side 0): exit is a SELL, P&L = (exit - entry) x qty.
+    -- Short (side 1): exit is a BUY to cover, P&L = (entry - exit) x qty.
+    IF v_pos.side = 1 THEN
+        v_pnl := (v_pos.average_entry_price - p_exit_price) * v_pos.quantity;
+        v_exit_side := 0;
+        v_exit_label := 'Manual Paper BUY TO COVER';
+    ELSE
+        v_pnl := (p_exit_price - v_pos.average_entry_price) * v_pos.quantity;
+        v_exit_side := 1;
+        v_exit_label := 'Manual Paper SELL';
+    END IF;
 
     UPDATE manual_paper_positions
     SET status = 1, exit_price = p_exit_price, exit_reason = p_exit_reason,
@@ -3502,15 +3532,15 @@ BEGIN
 
     INSERT INTO manual_paper_orders (user_id, position_id, symbol, side, order_type, quantity, price,
                                      status, filled_price, filled_at, created_at, remarks)
-    VALUES (p_user_id, v_pos.id, v_pos.symbol, 1, 0, v_pos.quantity, p_exit_price,
-            1, p_exit_price, NOW(), NOW(), LEFT('Manual Paper SELL (' || p_exit_reason || ')', 255))
+    VALUES (p_user_id, v_pos.id, v_pos.symbol, v_exit_side, 0, v_pos.quantity, p_exit_price,
+            1, p_exit_price, NOW(), NOW(), LEFT(v_exit_label || ' (' || p_exit_reason || ')', 255))
     RETURNING id INTO v_order_id;
 
     INSERT INTO manual_paper_trade_history (user_id, order_id, position_id, symbol, side, quantity,
-                                            entry_price, executed_price, realized_pnl, exit_reason, executed_at, remarks)
-    VALUES (p_user_id, v_order_id, v_pos.id, v_pos.symbol, 1, v_pos.quantity,
-            v_pos.average_entry_price, p_exit_price, v_pnl, p_exit_reason, NOW(),
-            LEFT('Manual Paper SELL (' || p_exit_reason || ') @ ' || ROUND(p_exit_price, 2), 255));
+                                            entry_price, executed_price, realized_pnl, is_exit, exit_reason, executed_at, remarks)
+    VALUES (p_user_id, v_order_id, v_pos.id, v_pos.symbol, v_exit_side, v_pos.quantity,
+            v_pos.average_entry_price, p_exit_price, v_pnl, TRUE, p_exit_reason, NOW(),
+            LEFT(v_exit_label || ' (' || p_exit_reason || ') @ ' || ROUND(p_exit_price, 2), 255));
 
     RETURN QUERY SELECT TRUE, v_pos.symbol, v_pos.quantity, v_pos.average_entry_price, p_exit_price, v_pnl;
 END;
@@ -3594,6 +3624,36 @@ $$;
 
 
 -- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_open_shorts
+-- Short auto square-off (Worker): every user's OPEN short (side = 1) manual positions. AccountId = user id.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_open_shorts CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_open_shorts()
+RETURNS TABLE (
+    Id INT,
+    AccountId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    AverageEntryPrice NUMERIC,
+    OpenedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT p.id AS Id, p.user_id AS AccountId, p.symbol AS Symbol, p.side AS Side, p.quantity AS Quantity,
+           p.average_entry_price AS AverageEntryPrice, p.opened_at AS OpenedAt
+    FROM manual_paper_positions p
+    WHERE p.status = 0
+      AND p.side = 1
+    ORDER BY p.user_id, p.opened_at;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
 -- Function: fn_get_manual_paper_dashboard
 -- Stat cards: money in OPEN positions, realized P&L (all-time / today) and trade counts.
 -- p_today_start: start of the current IST day (UTC).
@@ -3624,12 +3684,13 @@ BEGIN
         COALESCE((SELECT SUM(h.realized_pnl) FROM manual_paper_trade_history h
                   WHERE h.user_id = p_user_id AND h.executed_at >= p_today_start), 0.00)::NUMERIC,
         (SELECT COUNT(*) FROM manual_paper_positions p WHERE p.user_id = p_user_id AND p.status = 0)::INT,
-        (SELECT COUNT(*) FROM manual_paper_trade_history h WHERE h.user_id = p_user_id AND h.side = 0)::INT,
+        -- Entries (BUY or short SELL) vs exits (SELL or BUY to cover) - by is_exit, not side.
+        (SELECT COUNT(*) FROM manual_paper_trade_history h WHERE h.user_id = p_user_id AND NOT h.is_exit)::INT,
         (SELECT COUNT(*) FROM manual_paper_trade_history h
-         WHERE h.user_id = p_user_id AND h.side = 0 AND h.executed_at >= p_today_start)::INT,
-        (SELECT COUNT(*) FROM manual_paper_trade_history h WHERE h.user_id = p_user_id AND h.side = 1)::INT,
+         WHERE h.user_id = p_user_id AND NOT h.is_exit AND h.executed_at >= p_today_start)::INT,
+        (SELECT COUNT(*) FROM manual_paper_trade_history h WHERE h.user_id = p_user_id AND h.is_exit)::INT,
         (SELECT COUNT(*) FROM manual_paper_trade_history h
-         WHERE h.user_id = p_user_id AND h.side = 1 AND h.realized_pnl > 0)::INT;
+         WHERE h.user_id = p_user_id AND h.is_exit AND h.realized_pnl > 0)::INT;
 END;
 $$;
 
@@ -3740,7 +3801,8 @@ BEGIN
         h.executed_price AS ExecutedPrice,
         h.realized_pnl AS RealizedPnl,
         0 AS TradeType,
-        h.exit_reason AS ExitReason,
+        -- Exit rows always carry an exit reason (the page labels SELL / COVER from it; entries show BUY / SHORT).
+        COALESCE(h.exit_reason, CASE WHEN h.is_exit THEN 'Exit' END)::VARCHAR AS ExitReason,
         h.executed_at AS ExecutedAt,
         h.remarks AS Remarks,
         COUNT(*) OVER() AS TotalCount

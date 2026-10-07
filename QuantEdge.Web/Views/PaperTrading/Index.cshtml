@@ -94,24 +94,36 @@
                         </select>
                     </div>
 
-                    <!-- Side & Order Type - same as Manual Real Trade: BUY at market only -->
-                    <div class="d-flex justify-content-between align-items-center mb-3 small">
-                        <span class="paper-label mb-0">Side: <strong class="text-success">BUY</strong></span>
-                        <span class="paper-label mb-0">Order Type: <strong class="text-light">Market</strong></span>
+                    <!-- Side: BUY (long - profit when price rises) or SHORT SELL (sell first, buy back later - profit when price falls). Market orders only. -->
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1 small">
+                            <span class="paper-label mb-0">Side</span>
+                            <span class="paper-label mb-0">Order Type: <strong class="text-light">Market</strong></span>
+                        </div>
+                        <div class="btn-group w-100" role="group" aria-label="Order side">
+                            <input type="radio" class="btn-check" name="orderSide" id="orderSideBuy" value="BUY" autocomplete="off" checked>
+                            <label class="btn btn-outline-success fw-bold" for="orderSideBuy" title="Buy now, sell later. Profit when the price rises.">BUY (Long)</label>
+                            <input type="radio" class="btn-check" name="orderSide" id="orderSideShort" value="SHORT" autocomplete="off">
+                            <label class="btn btn-outline-danger fw-bold" for="orderSideShort">
+                                SHORT SELL
+                                <span id="shortSellInfo" class="short-info-icon ms-1" tabindex="0" role="button" aria-label="How short selling works"
+                                      data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true">i</span>
+                            </label>
+                        </div>
                     </div>
 
                     <!-- Quantity -->
                     <div class="mb-3">
-                        <label class="paper-label" for="orderQuantity" title="Number of shares to buy.">Quantity</label>
-                        <input type="number" id="orderQuantity" class="form-control paper-input" value="1" min="1" step="1" title="Number of shares to buy.">
+                        <label class="paper-label" for="orderQuantity" title="Number of shares to buy (or to short sell).">Quantity</label>
+                        <input type="number" id="orderQuantity" class="form-control paper-input" value="1" min="1" step="1" title="Number of shares to buy (or to short sell).">
                         <div id="quantityError" class="invalid-feedback text-danger small mt-1"></div>
                     </div>
 
                     <!-- Trade-wise Stop Loss % & Trailing Stop Loss % (mandatory, like Manual Real Trade) -->
                     <div class="row g-2 mb-3">
                         <div class="col-6">
-                            <label class="paper-label" for="orderSlPct" title="Stop Loss % below the executed price. Applies to this trade only.">Stop Loss (%)</label>
-                            <input type="number" id="orderSlPct" class="form-control paper-input" min="0.1" max="100" step="0.1" value="3" title="Stop Loss % below the executed price. Applies to this trade only.">
+                            <label class="paper-label" for="orderSlPct" title="Stop Loss % below the executed price (above it for a short sell). Applies to this trade only.">Stop Loss (%)</label>
+                            <input type="number" id="orderSlPct" class="form-control paper-input" min="0.1" max="100" step="0.1" value="3" title="Stop Loss % below the executed price (above it for a short sell). Applies to this trade only.">
                             <div id="slPctError" class="invalid-feedback text-danger small mt-1"></div>
                         </div>
                         <div class="col-6">
@@ -135,9 +147,10 @@
                     <p class="text-white small mt-2 mb-0">
                         Same checks as Manual Real Trade, using the Manual Trading settings: Manual Trading switch, trading
                         window and entry delay, daily trade/loss limits, max open positions, capital, and no duplicate open
-                        position. The price is re-checked when you place the trade. The position is <strong>sold manually
-                        only</strong> - use the Close button in Live Open Positions. Stop Loss, Trailing SL and Target are
-                        shown for reference and never sell it automatically.
+                        position. The price is re-checked when you place the trade. The position is <strong>closed manually</strong>
+                        - use the Close button (Buy to Cover for a short) in Live Open Positions. Stop Loss, Trailing SL and
+                        Target are shown for reference and never close it automatically. The one exception: a short is
+                        intraday only and is bought back automatically at the Short Square-off Time.
                     </p>
                 </form>
             </div>
@@ -146,7 +159,7 @@
             <div class="card paper-card p-4 mt-4">
                 <div class="d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary border-opacity-25 pb-2">
                     <h5 class="fw-bold text-light mb-0">📜 Today's Manual Logs</h5>
-                    <span id="manualTradeCountBadge" class="badge bg-secondary bg-opacity-50 text-light" title="Manual paper BUYs today / Max Trades Per Day">0 / 0 trades</span>
+                    <span id="manualTradeCountBadge" class="badge bg-secondary bg-opacity-50 text-light" title="Manual paper BUYs + short sells today / Max Trades Per Day">0 / 0 trades</span>
                 </div>
                 <div id="manualLogsList" class="small" style="max-height: 360px; overflow-y: auto;">
                     <div class="text-white-50">No manual trade activity today.</div>
@@ -391,7 +404,7 @@
                 </div>
                 <div id="editLevelsPreview" class="small text-white mt-3"></div>
                 <div id="editLevelsError" class="small text-danger mt-2"></div>
-                <p class="small text-white-50 mt-3 mb-0">
+                <p id="editLevelsHint" class="small text-white-50 mt-3 mb-0">
                     Reference levels only - the position is sold only when you click Close.
                 </p>
             </div>
@@ -487,6 +500,16 @@
                     <div class="col-md-3">
                         <label class="paper-label" for="msTargetAtrMult">Target ATR ×</label>
                         <input type="number" id="msTargetAtrMult" class="form-control paper-input" min="0.5" max="20" step="0.1">
+                    </div>
+
+                    <div class="col-12"><span class="paper-label text-info">Short Selling (Intraday Only)</span> <small class="text-white-50">- a short's Target uses Profit Target % below the entry; its Stop Loss is SL % above it</small></div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msShortEntryCutoff">No New Shorts After (HH:mm)</label>
+                        <input type="text" id="msShortEntryCutoff" class="form-control paper-input" placeholder="15:00" title="Short sells are rejected at or after this IST time">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="paper-label" for="msShortSquareOffTime">Auto Square-off Time (HH:mm)</label>
+                        <input type="text" id="msShortSquareOffTime" class="form-control paper-input" placeholder="15:15" title="Every open short is bought back automatically at this IST time">
                     </div>
                 </form>
             </div>

@@ -85,6 +85,7 @@ try
             builder.Services.AddHostedService<AutoRealTradeSignalScanWorker>();
             builder.Services.AddHostedService<AutoRealPositionMonitorWorker>();
             builder.Services.AddHostedService<RealOrderChargesWorker>();
+            builder.Services.AddHostedService<ManualShortSquareOffWorker>();   // Manual Short Selling: intraday square-off (manual_paper_* only)
         }
         else if (actualJobType.Equals("realtrade", StringComparison.OrdinalIgnoreCase) || actualJobType.Equals("autorealtrade", StringComparison.OrdinalIgnoreCase))
         {
@@ -112,6 +113,7 @@ try
         builder.Services.AddHostedService<AutoRealTradeSignalScanWorker>();
         builder.Services.AddHostedService<AutoRealPositionMonitorWorker>();
         builder.Services.AddHostedService<RealOrderChargesWorker>();
+        builder.Services.AddHostedService<ManualShortSquareOffWorker>();
     }
 
 

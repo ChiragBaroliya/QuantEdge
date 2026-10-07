@@ -956,7 +956,7 @@ CREATE TABLE IF NOT EXISTS manual_paper_positions (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL DEFAULT 1,
     symbol VARCHAR(50) NOT NULL,
-    side INT NOT NULL DEFAULT 0,            -- 0 = BUY (long)
+    side INT NOT NULL DEFAULT 0,            -- 0 = BUY (long), 1 = SELL (short)
     quantity INT NOT NULL,
     average_entry_price NUMERIC(18, 4) NOT NULL,
     stop_loss NUMERIC(18, 4),
@@ -1025,6 +1025,20 @@ BEGIN
     DELETE FROM paper_trade_history WHERE trade_type = 0 AND remarks LIKE 'Manual Paper %';
 END;
 $$;
+
+-- Manual Short Selling. A position's side is 0 = BUY (long) or 1 = SELL (short), so a history row's side no
+-- longer says whether it opened or closed a trade: is_exit does. Every row before shorts existed was a long,
+-- where SELL = exit, so the backfill is side = 1 (re-runs touch nothing: only NULLs are filled).
+ALTER TABLE manual_paper_trade_history ADD COLUMN IF NOT EXISTS is_exit BOOLEAN;
+UPDATE manual_paper_trade_history SET is_exit = (side = 1) WHERE is_exit IS NULL;
+ALTER TABLE manual_paper_trade_history ALTER COLUMN is_exit SET DEFAULT FALSE;
+ALTER TABLE manual_paper_trade_history ALTER COLUMN is_exit SET NOT NULL;
+
+-- Shorts are intraday only: no new short at/after short_entry_cutoff, and every open short is bought back
+-- (auto square-off) at short_square_off_time IST.
+ALTER TABLE manual_paper_trade_settings ADD COLUMN IF NOT EXISTS short_entry_cutoff VARCHAR(10) NOT NULL DEFAULT '15:00';
+ALTER TABLE manual_paper_trade_settings ADD COLUMN IF NOT EXISTS short_square_off_time VARCHAR(10) NOT NULL DEFAULT '15:15';
+CREATE INDEX IF NOT EXISTS ix_manual_paper_positions_open_side ON manual_paper_positions(status, side);
 
 -- ----------------------------------------------------------------------------
 -- Sector Master

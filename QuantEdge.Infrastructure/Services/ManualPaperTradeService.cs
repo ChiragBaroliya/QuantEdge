@@ -16,18 +16,24 @@ using QuantEdge.Infrastructure.Persistence.Repositories;
 namespace QuantEdge.Infrastructure.Services;
 
 /// <summary>
-/// Manual Paper Trading - fully manual: the user Buys, Closes (sells) and edits levels from the Manual
-/// Trading page; nothing runs in the Worker. Entry checks mirror AutoRealTradeService's Manual Real Trade
-/// path (switch, window, entry delay, daily trade/loss limits, exposure cap, duplicate position, price
-/// drift, capital, mandatory SL%/Trailing SL%). All data lives in its own manual_paper_* tables, which
-/// no Worker job, paper matching engine, Auto Paper or Auto Real code reads or writes. Prices are the
-/// latest stored 1-minute candle close in Postgres (market_candles_1m) - Manual Trading never calls Zerodha.
+/// Manual Paper Trading - the user Buys (long) or Short Sells, Closes and edits levels from the Manual Trading
+/// page. Entry checks mirror AutoRealTradeService's Manual Real Trade path (switch, window, entry delay, daily
+/// trade/loss limits, exposure cap, duplicate position, price drift, capital, mandatory SL%/Trailing SL%);
+/// shorts add an entry cut-off. Shorts are intraday only, so the one Worker job (ManualShortSquareOffWorker)
+/// buys back open shorts at the Short Square-off Time. All data lives in its own manual_paper_* tables, which
+/// no paper matching engine, Auto Paper or Auto Real code reads or writes. Prices are the latest stored
+/// 1-minute candle close in Postgres (market_candles_1m) - Manual Trading never calls Zerodha.
 /// </summary>
 public class ManualPaperTradeService : IManualPaperTradeService
 {
     // A BUY needs a stored price no older than this, so a symbol whose candles stopped updating can't
     // be bought at a stale price. Close / P&L use the latest stored price whatever its age.
     private static readonly TimeSpan MaxBuyPriceAge = TimeSpan.FromMinutes(10);
+
+    // Manual Short Selling (intraday only) - defaults when a stored setting can't be parsed.
+    private static readonly TimeSpan DefaultShortEntryCutoff = new(15, 0, 0);
+    private static readonly TimeSpan DefaultShortSquareOffTime = new(15, 15, 0);
+    private const string AutoSquareOffReason = "Auto Square-off (Intraday)";
 
     private readonly IManualPaperTradeRepository _repository;
     private readonly IMarketHoursService _marketHoursService;
@@ -77,6 +83,8 @@ public class ManualPaperTradeService : IManualPaperTradeService
         existing.StopLossAtrMult = updateDto.StopLossAtrMult;
         existing.TrailAtrMult = updateDto.TrailAtrMult;
         existing.TargetAtrMult = updateDto.TargetAtrMult;
+        existing.ShortEntryCutoff = updateDto.ShortEntryCutoff;
+        existing.ShortSquareOffTime = updateDto.ShortSquareOffTime;
 
         var updated = await _repository.UpsertSettingsAsync(existing);
         await LogAuditAsync("SYSTEM", "SETTINGS_UPDATED", null, null, "Manual Paper Trading settings updated", userId);
@@ -137,7 +145,10 @@ public class ManualPaperTradeService : IManualPaperTradeService
                 pos.PriceSource = "NONE";
                 pos.PriceAsOfUtc = null;
             }
-            pos.UnrealizedPnl = (pos.CurrentPrice - pos.AverageEntryPrice) * pos.Quantity;
+            // Long gains when the price rises; a short gains when it falls.
+            pos.UnrealizedPnl = pos.Side == TradeSide.SELL
+                ? (pos.AverageEntryPrice - pos.CurrentPrice) * pos.Quantity
+                : (pos.CurrentPrice - pos.AverageEntryPrice) * pos.Quantity;
             pos.EstimatedCharges = PaperTradingService.EstimateCharges(pos);
         }
         return positions;
@@ -163,11 +174,19 @@ public class ManualPaperTradeService : IManualPaperTradeService
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Manual BUY
+    // Manual BUY (long) and Manual SHORT SELL - one entry path, so both run the same gates
     // ---------------------------------------------------------------------------------------------
 
-    public async Task<(bool Success, string Message)> ExecuteManualBuyAsync(string symbol, decimal entryPrice, int quantity,
-        decimal stopLossPct, decimal trailingSlPct, int userId = 1)
+    public Task<(bool Success, string Message)> ExecuteManualBuyAsync(string symbol, decimal entryPrice, int quantity,
+        decimal stopLossPct, decimal trailingSlPct, int userId = 1) =>
+        ExecuteManualEntryAsync(TradeSide.BUY, symbol, entryPrice, quantity, stopLossPct, trailingSlPct, userId);
+
+    public Task<(bool Success, string Message)> ExecuteManualShortAsync(string symbol, decimal entryPrice, int quantity,
+        decimal stopLossPct, decimal trailingSlPct, int userId = 1) =>
+        ExecuteManualEntryAsync(TradeSide.SELL, symbol, entryPrice, quantity, stopLossPct, trailingSlPct, userId);
+
+    private async Task<(bool Success, string Message)> ExecuteManualEntryAsync(TradeSide side, string symbol, decimal entryPrice,
+        int quantity, decimal stopLossPct, decimal trailingSlPct, int userId)
     {
         symbol = symbol.ToUpper().Trim();
         string lockKey = $"{userId}:{symbol}";
@@ -179,7 +198,7 @@ public class ManualPaperTradeService : IManualPaperTradeService
 
         try
         {
-            return await ExecuteManualBuyCoreAsync(symbol, entryPrice, quantity, stopLossPct, trailingSlPct, userId);
+            return await ExecuteManualEntryCoreAsync(side, symbol, entryPrice, quantity, stopLossPct, trailingSlPct, userId);
         }
         finally
         {
@@ -187,9 +206,11 @@ public class ManualPaperTradeService : IManualPaperTradeService
         }
     }
 
-    private async Task<(bool Success, string Message)> ExecuteManualBuyCoreAsync(string symbol, decimal entryPrice, int quantity,
-        decimal stopLossPct, decimal trailingSlPct, int userId)
+    private async Task<(bool Success, string Message)> ExecuteManualEntryCoreAsync(TradeSide side, string symbol, decimal entryPrice,
+        int quantity, decimal stopLossPct, decimal trailingSlPct, int userId)
     {
+        bool isShort = side == TradeSide.SELL;
+        string label = isShort ? "SHORT SELL" : "BUY";
         var settings = await _repository.GetSettingsAsync(userId);
         var nowIst = SwingTradeRules.NowIst();
 
@@ -218,7 +239,15 @@ public class ManualPaperTradeService : IManualPaperTradeService
         if (!SwingTradeRules.IsPastEntryDelay(settings.TradingWindowStart, settings.EntryDelayMinutes, nowIst))
         {
             return await RejectAsync(symbol, entryPrice,
-                $"Opening entry delay active - new BUYs held back for {settings.EntryDelayMinutes} min after {settings.TradingWindowStart}", userId);
+                $"Opening entry delay active - new {(isShort ? "shorts" : "BUYs")} held back for {settings.EntryDelayMinutes} min after {settings.TradingWindowStart}", userId);
+        }
+
+        // 2c. Short selling is intraday only: no new short at/after the cut-off, so every short has time to be
+        // bought back before the auto square-off.
+        if (isShort && nowIst.TimeOfDay >= ParseIstTime(settings.ShortEntryCutoff, DefaultShortEntryCutoff))
+        {
+            return await RejectAsync(symbol, entryPrice,
+                $"Short selling closed for today - no new shorts at/after {settings.ShortEntryCutoff} IST (shorts are intraday only; open shorts are squared off at {settings.ShortSquareOffTime} IST)", userId);
         }
 
         // 3. Daily Trade Limit Check
@@ -268,7 +297,7 @@ public class ManualPaperTradeService : IManualPaperTradeService
         if (DateTime.UtcNow - stored.PriceTime.ToUniversalTime() > MaxBuyPriceAge)
         {
             return await RejectAsync(symbol, entryPrice,
-                $"Stored price for {symbol} is stale (last candle {TimeZoneInfo.ConvertTimeFromUtc(stored.PriceTime.ToUniversalTime(), TimeZoneHelper.IndianTimeZone):dd-MMM HH:mm} IST) - not buying at an old price.", userId);
+                $"Stored price for {symbol} is stale (last candle {TimeZoneInfo.ConvertTimeFromUtc(stored.PriceTime.ToUniversalTime(), TimeZoneHelper.IndianTimeZone):dd-MMM HH:mm} IST) - not {(isShort ? "shorting" : "buying")} at an old price.", userId);
         }
 
         string? driftReason = SwingTradeRules.CheckSignalDrift(entryPrice, stored.Ltp);
@@ -301,41 +330,65 @@ public class ManualPaperTradeService : IManualPaperTradeService
             return await RejectAsync(symbol, entryPrice, "Manual trade rejected: Trailing Stop Loss % must be greater than zero.", userId);
         }
 
-        // 8. Target & Stop Loss - shared SwingTradeRules levels with the trade's own SL%, exactly as for
-        // Manual Real Trade. Reference levels only: the position is sold with the Close button.
+        // 8. Target & Stop Loss - reference levels only (the position is exited with the Close button, or for a
+        // short also by the auto square-off). BUY: shared SwingTradeRules levels with the trade's own SL%, exactly
+        // as for Manual Real Trade. SHORT: mirrored - Stop Loss above the entry, Target below it.
         decimal effectiveStopLossPct = Math.Abs(stopLossPct);
         decimal effectiveTrailingSlPct = Math.Abs(trailingSlPct);
-        var levels = SwingTradeRules.ComputeEntryLevels(entryPrice, null, null, null,
-            effectiveStopLossPct, effectiveTrailingSlPct, SwingTradeParams.From(settings));
-        decimal takeProfit = levels.TakeProfit;
-        decimal stopLoss = levels.StopLoss;
+        decimal takeProfit;
+        decimal stopLoss;
+        if (isShort)
+        {
+            (stopLoss, takeProfit) = ComputeShortLevels(entryPrice, effectiveStopLossPct, settings.ProfitTargetPct);
+        }
+        else
+        {
+            var levels = SwingTradeRules.ComputeEntryLevels(entryPrice, null, null, null,
+                effectiveStopLossPct, effectiveTrailingSlPct, SwingTradeParams.From(settings));
+            takeProfit = levels.TakeProfit;
+            stopLoss = levels.StopLoss;
+        }
 
         try
         {
-            int? positionId = await _repository.CreateBuyAsync(userId, symbol, quantity, entryPrice, stopLoss,
+            int? positionId = await _repository.CreateEntryAsync(userId, side, symbol, quantity, entryPrice, stopLoss,
                 effectiveTrailingSlPct, takeProfit,
-                $"Manual Paper BUY (SL {effectiveStopLossPct:F2}% / TSL {effectiveTrailingSlPct:F2}%, SL ₹{stopLoss:F2} / Target ₹{takeProfit:F2})",
-                $"Manual Paper BUY Executed @ ₹{entryPrice:F2}");
+                $"Manual Paper {label} (SL {effectiveStopLossPct:F2}% / TSL {effectiveTrailingSlPct:F2}%, SL ₹{stopLoss:F2} / Target ₹{takeProfit:F2})",
+                $"Manual Paper {label} Executed @ ₹{entryPrice:F2}");
 
             if (!positionId.HasValue)
             {
                 return await RejectAsync(symbol, entryPrice, $"{symbol} already has an OPEN manual position", userId);
             }
 
-            string message = $"Manual Paper BUY executed @ ₹{entryPrice:F2} (Qty: {quantity}, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {effectiveTrailingSlPct:F2}%)";
-            await LogAuditAsync(symbol, "MANUAL_BUY", entryPrice, quantity, message, userId);
-            await BroadcastAlertAsync(symbol, "BUY", quantity, entryPrice, $"{symbol}: {message}");
+            string message = $"Manual Paper {label} executed @ ₹{entryPrice:F2} (Qty: {quantity}, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {effectiveTrailingSlPct:F2}%)";
+            if (isShort)
+            {
+                message += $" - auto square-off at {settings.ShortSquareOffTime} IST if not covered";
+            }
+            await LogAuditAsync(symbol, isShort ? "MANUAL_SHORT" : "MANUAL_BUY", entryPrice, quantity, message, userId);
+            await BroadcastAlertAsync(symbol, isShort ? "SELL" : "BUY", quantity, entryPrice, $"{symbol}: {message}");
             return (true, $"{symbol}: {message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute Manual Paper BUY for {Symbol} (User {UserId})", symbol, userId);
-            return await RejectAsync(symbol, entryPrice, $"Manual Paper BUY execution failed: {ex.Message}", userId, "SYSTEM_ERROR");
+            _logger.LogError(ex, "Failed to execute Manual Paper {Label} for {Symbol} (User {UserId})", label, symbol, userId);
+            return await RejectAsync(symbol, entryPrice, $"Manual Paper {label} execution failed: {ex.Message}", userId, "SYSTEM_ERROR");
         }
     }
 
+    // Short levels, mirrored from a long: the trade loses when the price RISES, so the Stop Loss sits SL% above
+    // the entry and the Target sits Profit Target % below it.
+    internal static (decimal StopLoss, decimal TakeProfit) ComputeShortLevels(decimal entryPrice, decimal stopLossPct, decimal profitTargetPct)
+    {
+        decimal stopLoss = Math.Round(entryPrice * (1m + Math.Abs(stopLossPct) / 100m), 2);
+        decimal takeProfit = Math.Round(entryPrice * (1m - Math.Abs(profitTargetPct) / 100m), 2);
+        return (stopLoss, takeProfit);
+    }
+
     // ---------------------------------------------------------------------------------------------
-    // Manual SELL (Close button) and Edit levels - the only ways a manual position changes.
+    // Close button (SELL a long / BUY TO COVER a short), short auto square-off and Edit levels - the
+    // only ways a manual position changes.
     // ---------------------------------------------------------------------------------------------
 
     public async Task<(bool Success, string Message)> ClosePositionAsync(int positionId, int userId = 1)
@@ -345,26 +398,72 @@ public class ManualPaperTradeService : IManualPaperTradeService
 
         // GetOpenPositionsAsync set CurrentPrice to the latest stored 1-minute close (entry price if none stored).
         decimal exitPrice = position.CurrentPrice > 0m ? position.CurrentPrice : position.AverageEntryPrice;
+        return await ClosePositionCoreAsync(position, userId, exitPrice, "Manual Close");
+    }
 
+    // Closes one OPEN manual position at exitPrice: a long is SOLD, a short is BOUGHT back (covered).
+    private async Task<(bool Success, string Message)> ClosePositionCoreAsync(PaperPosition position, int userId, decimal exitPrice,
+        string exitReason)
+    {
+        bool isShort = position.Side == TradeSide.SELL;
+        string label = isShort ? "BUY TO COVER" : "SELL";
         try
         {
-            var result = await _repository.ClosePositionAsync(userId, positionId, exitPrice, "Manual Close");
+            var result = await _repository.ClosePositionAsync(userId, position.Id, exitPrice, exitReason);
             if (!result.Success)
             {
                 return (false, $"{position.Symbol}: position could not be closed (it may already be closed).");
             }
 
-            string message = $"Manual Paper SELL Executed (Manual Close) @ ₹{result.ExitPrice:F2} | Realized P&L: ₹{result.RealizedPnl:N2}";
-            await LogAuditAsync(position.Symbol, "MANUAL_SELL", result.ExitPrice, result.Quantity, message, userId);
-            await BroadcastAlertAsync(position.Symbol, "SELL", result.Quantity, result.ExitPrice, $"{position.Symbol}: {message}");
+            string message = $"Manual Paper {label} Executed ({exitReason}) @ ₹{result.ExitPrice:F2} | Realized P&L: ₹{result.RealizedPnl:N2}";
+            string actionType = exitReason == AutoSquareOffReason ? "AUTO_SQUARE_OFF" : (isShort ? "MANUAL_COVER" : "MANUAL_SELL");
+            await LogAuditAsync(position.Symbol, actionType, result.ExitPrice, result.Quantity, message, userId);
+            await BroadcastAlertAsync(position.Symbol, isShort ? "BUY" : "SELL", result.Quantity, result.ExitPrice, $"{position.Symbol}: {message}");
             return (true, $"{position.Symbol}: {message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to close Manual Paper position #{PositionId} on {Symbol}", positionId, position.Symbol);
-            await LogAuditAsync(position.Symbol, "SYSTEM_ERROR", exitPrice, position.Quantity, $"Manual Paper SELL execution failed: {ex.Message}", userId);
+            _logger.LogError(ex, "Failed to close Manual Paper position #{PositionId} on {Symbol}", position.Id, position.Symbol);
+            await LogAuditAsync(position.Symbol, "SYSTEM_ERROR", exitPrice, position.Quantity, $"Manual Paper {label} execution failed: {ex.Message}", userId);
             return (false, $"{position.Symbol}: close failed - {ex.Message}");
         }
+    }
+
+    // Intraday auto square-off (ManualShortSquareOffWorker): buys back every OPEN short that is due - opened on an
+    // earlier IST day (a missed run, never left overnight) or past its user's Short Square-off Time today. Exits at
+    // the latest stored 1-minute close (entry price if none stored); one DB price call for all symbols, no Zerodha.
+    public async Task<int> SquareOffDueShortsAsync()
+    {
+        var shorts = (await _repository.GetAllOpenShortPositionsAsync()).ToList();
+        if (shorts.Count == 0) return 0;
+
+        var nowIst = SwingTradeRules.NowIst();
+        var settingsByUser = new Dictionary<int, ManualPaperTradeSettings>();
+        Dictionary<string, ManualPaperPriceDto>? prices = null;
+        int closed = 0;
+
+        foreach (var pos in shorts)
+        {
+            int userId = pos.AccountId;
+            if (!settingsByUser.TryGetValue(userId, out var settings))
+            {
+                settings = await _repository.GetSettingsAsync(userId);
+                settingsByUser[userId] = settings;
+            }
+
+            bool openedEarlierDay = SwingTradeRules.ToIst(pos.OpenedAt).Date < nowIst.Date;
+            bool pastSquareOff = nowIst.TimeOfDay >= ParseIstTime(settings.ShortSquareOffTime, DefaultShortSquareOffTime);
+            if (!openedEarlierDay && !pastSquareOff) continue;
+
+            prices ??= await GetStoredPricesAsync(shorts.Select(s => s.Symbol));
+            decimal exitPrice = prices.TryGetValue(pos.Symbol, out var price) && price.Ltp > 0m ? price.Ltp : pos.AverageEntryPrice;
+
+            var (success, message) = await ClosePositionCoreAsync(pos, userId, exitPrice, AutoSquareOffReason);
+            if (success) closed++;
+            _logger.LogInformation("Manual short auto square-off #{PositionId} ({Symbol}, user {UserId}): {Message}",
+                pos.Id, pos.Symbol, userId, message);
+        }
+        return closed;
     }
 
     public async Task<(bool Success, string Message)> UpdatePositionLevelsAsync(int positionId, decimal stopLoss, decimal trailingSlPct,
@@ -381,7 +480,15 @@ public class ManualPaperTradeService : IManualPaperTradeService
         {
             return (false, "Stop Loss, Trailing SL % and Target must all be greater than zero.");
         }
-        if (stopLoss >= takeProfit)
+        if (position.Side == TradeSide.SELL)
+        {
+            // Short: loses when the price rises, so the Stop Loss is above the Target.
+            if (stopLoss <= takeProfit)
+            {
+                return (false, $"For a short, Stop Loss ₹{stopLoss:F2} must be above Target ₹{takeProfit:F2}.");
+            }
+        }
+        else if (stopLoss >= takeProfit)
         {
             return (false, $"Stop Loss ₹{stopLoss:F2} must be below Target ₹{takeProfit:F2}.");
         }
@@ -402,6 +509,9 @@ public class ManualPaperTradeService : IManualPaperTradeService
     // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
+
+    private static TimeSpan ParseIstTime(string? hhmm, TimeSpan fallback) =>
+        TimeSpan.TryParse(hhmm, out var time) ? time : fallback;
 
     private static DateTime TodayStartUtc() =>
         TimeZoneInfo.ConvertTimeToUtc(SwingTradeRules.NowIst().Date, TimeZoneHelper.IndianTimeZone);

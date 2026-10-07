@@ -148,7 +148,7 @@ public class ManualPaperTradeController : ControllerBase
     }
 
     /// <summary>
-    /// Close button on Live Open Positions - sells an OPEN manual paper position at the latest price.
+    /// Close button on Live Open Positions - sells an OPEN long / buys back an OPEN short at the latest price.
     /// </summary>
     [HttpPost("position/close/{positionId:int}")]
     public async Task<IActionResult> ClosePosition(int positionId)
@@ -242,6 +242,30 @@ public class ManualPaperTradeController : ControllerBase
         }
 
         var (success, message) = await _manualPaperTradeService.ExecuteManualBuyAsync(
+            dto.Symbol, dto.EntryPrice, dto.Quantity, dto.StopLossPct, dto.TrailingSlPct, GetCurrentUserId());
+
+        return Ok(new { success, message });
+    }
+
+    /// <summary>
+    /// Manual Paper SHORT SELL from the Manual Trading page - sell first, buy back later (Close = Buy to Cover).
+    /// Same request and risk checks as Buy, plus the short entry cut-off. Intraday only: an uncovered short is
+    /// bought back automatically at the Short Square-off Time.
+    /// </summary>
+    [HttpPost("short")]
+    public async Task<IActionResult> Short([FromBody] ManualPaperBuyRequestDto dto)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Symbol) || dto.EntryPrice <= 0)
+        {
+            return BadRequest(new { success = false, message = "A valid Symbol and EntryPrice are required." });
+        }
+
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var (success, message) = await _manualPaperTradeService.ExecuteManualShortAsync(
             dto.Symbol, dto.EntryPrice, dto.Quantity, dto.StopLossPct, dto.TrailingSlPct, GetCurrentUserId());
 
         return Ok(new { success, message });

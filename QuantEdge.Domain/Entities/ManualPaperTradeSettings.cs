@@ -30,5 +30,9 @@ public class ManualPaperTradeSettings
     public decimal StopLossAtrMult { get; set; } = 1.5m;
     public decimal TrailAtrMult { get; set; } = 3.0m;
     public decimal TargetAtrMult { get; set; } = 3.0m;
+    // Manual Short Selling is intraday only: no new short at/after ShortEntryCutoff, and every open short is
+    // bought back automatically (auto square-off) at ShortSquareOffTime IST.
+    public string ShortEntryCutoff { get; set; } = "15:00";
+    public string ShortSquareOffTime { get; set; } = "15:15";
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

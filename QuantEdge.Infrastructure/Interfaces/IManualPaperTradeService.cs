@@ -6,7 +6,8 @@ using QuantEdge.Infrastructure.DTOs;
 namespace QuantEdge.Infrastructure.Interfaces;
 
 /// <summary>
-/// Manual Paper Trading - fully manual (Buy / Close / Edit levels from the page, no Worker job). Fully separate from
+/// Manual Paper Trading - Buy / Short Sell / Close / Edit levels from the page; the only Worker job squares off
+/// open shorts at day end. Fully separate from
 /// <see cref="IAutoTradeService"/>: its own settings, execution logs, orders, positions and trade history
 /// (manual_paper_* tables), so Auto Paper / Auto Real Trading are not affected.
 /// </summary>
@@ -44,6 +45,20 @@ public interface IManualPaperTradeService
         decimal stopLossPct, decimal trailingSlPct, int userId = 1);
 
     /// <summary>
+    /// Places a manual paper SHORT SELL (sell first, buy back later) after the same entry gates as a BUY plus the
+    /// short entry cut-off. Levels are mirrored: Stop Loss above the entry, Target below. Intraday only - an
+    /// uncovered short is bought back by <see cref="SquareOffDueShortsAsync"/>.
+    /// </summary>
+    Task<(bool Success, string Message)> ExecuteManualShortAsync(string symbol, decimal entryPrice, int quantity,
+        decimal stopLossPct, decimal trailingSlPct, int userId = 1);
+
+    /// <summary>
+    /// Auto square-off (Worker): buys back every OPEN short past its user's Short Square-off Time, or opened on an
+    /// earlier day. Uses stored prices only. Returns how many shorts were closed.
+    /// </summary>
+    Task<int> SquareOffDueShortsAsync();
+
+    /// <summary>
     /// Edit button on Live Open Positions - changes an OPEN manual position's Stop Loss, Trailing SL % and
     /// Target (reference levels only; the position is still sold only with Close).
     /// </summary>
@@ -51,8 +66,8 @@ public interface IManualPaperTradeService
         decimal takeProfit, int userId = 1);
 
     /// <summary>
-    /// Close button on the Manual Trading page - sells an OPEN manual position at the latest price.
-    /// This is the only way a manual paper position is sold (no background exit job).
+    /// Close button on the Manual Trading page - sells an OPEN long, or buys back (covers) an OPEN short, at the
+    /// latest price. Apart from the short auto square-off, this is the only way a manual paper position is exited.
     /// </summary>
     Task<(bool Success, string Message)> ClosePositionAsync(int positionId, int userId = 1);
 }

@@ -536,7 +536,7 @@ BEGIN
 
         UNION ALL
 
-        -- 3. Manual Paper Trade History (Manual Trading page; closed trades = SELL rows). Previously left out,
+        -- 3. Manual Paper Trade History (Manual Trading page; closed trades = exit rows: SELL, or BUY to cover a short). Previously left out,
         --    so report totals were missing every manual paper trade. Ids offset to stay distinct from paper/real.
         SELECT
             (mh.id::BIGINT + 10000000000)::BIGINT AS id,
@@ -559,7 +559,7 @@ BEGIN
         LEFT JOIN app_users mu ON mh.user_id = mu.id
         LEFT JOIN manual_paper_positions mp ON mp.id = mh.position_id
         WHERE (v_mode = 'all' OR v_mode = 'manual_paper')
-          AND mh.side = 1
+          AND mh.is_exit
           AND (p_start_date IS NULL OR mh.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR mh.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR mh.symbol ILIKE v_symbol)
@@ -714,7 +714,7 @@ BEGIN
 
         UNION ALL
 
-        -- 3. Manual Paper Trade History (Manual Trading page; closed trades = SELL rows). Previously left out,
+        -- 3. Manual Paper Trade History (Manual Trading page; closed trades = exit rows: SELL, or BUY to cover a short). Previously left out,
         --    so report totals were missing every manual paper trade. Ids offset to stay distinct from paper/real.
         SELECT
             (mh.id::BIGINT + 10000000000)::BIGINT AS id,
@@ -737,7 +737,7 @@ BEGIN
         LEFT JOIN app_users mu ON mh.user_id = mu.id
         LEFT JOIN manual_paper_positions mp ON mp.id = mh.position_id
         WHERE (v_mode = 'all' OR v_mode = 'manual_paper')
-          AND mh.side = 1
+          AND mh.is_exit
           AND (p_start_date IS NULL OR mh.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR mh.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR mh.symbol ILIKE v_symbol)

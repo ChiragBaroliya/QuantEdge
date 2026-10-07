@@ -1,9 +1,11 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace QuantEdge.Infrastructure.DTOs;
 
 /// <summary>
-/// Manual Paper Trade BUY request from the Manual Trading page - same shape and validation as
+/// Manual Paper Trade BUY (and Short SELL) request from the Manual Trading page - same shape and validation as
 /// ManualRealBuyRequestDto, so manual paper and manual real trades are sized and protected alike.
 /// </summary>
 public class ManualPaperBuyRequestDto
@@ -27,7 +29,7 @@ public class ManualPaperBuyRequestDto
 /// Editable Manual Paper Trading settings (manual_paper_trade_settings) - same rule set and validation
 /// ranges as AutoTradeSettingsUpdateDto, minus the auto-only fields (condition score).
 /// </summary>
-public class ManualPaperTradeSettingsUpdateDto
+public class ManualPaperTradeSettingsUpdateDto : IValidatableObject
 {
     public bool IsManualTradeEnabled { get; set; } = true;
 
@@ -78,6 +80,22 @@ public class ManualPaperTradeSettingsUpdateDto
 
     [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Trading Window End must be HH:mm.")]
     public string TradingWindowEnd { get; set; } = "15:30";
+
+    [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Entry Cut-off must be HH:mm.")]
+    public string ShortEntryCutoff { get; set; } = "15:00";
+
+    [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Square-off Time must be HH:mm.")]
+    public string ShortSquareOffTime { get; set; } = "15:15";
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (TimeSpan.TryParse(ShortEntryCutoff, out var cutoff) && TimeSpan.TryParse(ShortSquareOffTime, out var squareOff)
+            && cutoff >= squareOff)
+        {
+            yield return new ValidationResult("Short Entry Cut-off must be earlier than the Short Square-off Time.",
+                new[] { nameof(ShortEntryCutoff) });
+        }
+    }
 }
 
 public class ToggleManualPaperTradeRequestDto

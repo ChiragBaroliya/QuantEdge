@@ -46,6 +46,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let manualSettings = null; // manual_paper_trade_settings
     let quantityTouched = false; // user typed a Quantity - stop auto-filling it from Amount / LTP
     let quantityDefaultedFor = null; // symbol the Quantity was last auto-filled for (once per symbol)
+    let orderSide = 'BUY'; // order ticket side: 'BUY' (long) or 'SHORT' (short sell - sell first, buy back later)
+
+    function isShortOrder() {
+        return orderSide === 'SHORT';
+    }
+
+    // Positions / history rows carry side 0 = BUY, 1 = SELL (numeric or enum name).
+    function isSellSide(side) {
+        return side === 1 || side === 'SELL';
+    }
 
     // --- 1. Initial Load & Setup ---
     init();
@@ -118,6 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
             manualSettings = await res.json();
             if (orderSlPct && manualSettings.stopLossPct > 0) orderSlPct.value = manualSettings.stopLossPct;
             if (orderTslPct && manualSettings.trailingSlPct > 0) orderTslPct.value = manualSettings.trailingSlPct;
+            updateShortTimesText();
             updateManualToggleUi(!!manualSettings.isManualTradeEnabled);
             applyDefaultQuantity();
             validateFormInputs();
@@ -135,6 +146,51 @@ document.addEventListener('DOMContentLoaded', () => {
             orderQuantity.value = Math.max(1, Math.floor(manualSettings.fixedAmountPerTrade / ltp));
             quantityDefaultedFor = activeSymbol;
         }
+    }
+
+    // "i" tooltip on the SHORT SELL toggle - how a short works, with the user's own cut-off / square-off times.
+    function shortSellTooltipHtml() {
+        const cutoff = escapeHtml((manualSettings && manualSettings.shortEntryCutoff) || '15:00');
+        const squareOff = escapeHtml((manualSettings && manualSettings.shortSquareOffTime) || '15:15');
+        return `<span class="sit-title">Short Sell - sell first, buy back later</span>
+            <ul>
+                <li>You profit when the price <b>falls</b>.</li>
+                <li>Stop Loss is <b>above</b> the entry, Target <b>below</b> it.</li>
+                <li>Loss has no ceiling if the price keeps rising.</li>
+                <li>Intraday only: no new shorts after <b>${cutoff}</b> IST.</li>
+                <li>Open shorts are bought back automatically at <b>${squareOff}</b> IST.</li>
+            </ul>`;
+    }
+
+    function updateShortTimesText() {
+        const icon = document.getElementById('shortSellInfo');
+        if (!icon) return;
+        if (!window.bootstrap || !bootstrap.Tooltip) {
+            icon.title = 'Short sell: profit when the price falls. Stop Loss above entry, Target below. Intraday only - auto square-off at day end.';
+            return;
+        }
+        const tip = bootstrap.Tooltip.getOrCreateInstance(icon, {
+            html: true,
+            placement: 'bottom',
+            customClass: 'short-info-tooltip',
+            title: shortSellTooltipHtml()
+        });
+        tip.setContent({ '.tooltip-inner': shortSellTooltipHtml() });
+    }
+
+    // BUY / SHORT SELL toggle: switches the ticket's button and the SL estimate direction.
+    function onOrderSideChanged() {
+        const shortRadio = document.getElementById('orderSideShort');
+        orderSide = shortRadio && shortRadio.checked ? 'SHORT' : 'BUY';
+        resetPlaceOrderButton();
+        validateFormInputs();
+    }
+
+    function resetPlaceOrderButton() {
+        if (!placeOrderBtn) return;
+        placeOrderBtn.innerText = isShortOrder() ? '📉 Place Paper Short Sell' : '📝 Place Paper Trade';
+        placeOrderBtn.classList.toggle('btn-success', !isShortOrder());
+        placeOrderBtn.classList.toggle('btn-danger', isShortOrder());
     }
 
     function updateManualToggleUi(enabled) {
@@ -184,9 +240,12 @@ document.addEventListener('DOMContentLoaded', () => {
         msProfitTargetPct: 'profitTargetPct',
         msStopLossAtrMult: 'stopLossAtrMult',
         msTrailAtrMult: 'trailAtrMult',
-        msTargetAtrMult: 'targetAtrMult'
+        msTargetAtrMult: 'targetAtrMult',
+        msShortEntryCutoff: 'shortEntryCutoff',
+        msShortSquareOffTime: 'shortSquareOffTime'
     };
-    const manualSettingsTextFields = ['tradingWindowStart', 'tradingWindowEnd', 'exitMode', 'closeCheckTime'];
+    const manualSettingsTextFields = ['tradingWindowStart', 'tradingWindowEnd', 'exitMode', 'closeCheckTime',
+        'shortEntryCutoff', 'shortSquareOffTime'];
 
     async function openManualSettingsModal() {
         await loadManualTradeDefaults();
@@ -234,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).hide();
             if (orderSlPct) orderSlPct.value = manualSettings.stopLossPct;
             if (orderTslPct) orderTslPct.value = manualSettings.trailingSlPct;
+            updateShortTimesText();
             validateFormInputs();
             showToast('Settings Saved', 'Manual Paper Trading settings updated.', 'success');
             await loadManualLogs();
@@ -252,6 +312,9 @@ document.addEventListener('DOMContentLoaded', () => {
         switch (actionType) {
             case 'MANUAL_BUY': return 'bg-success';
             case 'MANUAL_SELL': return 'bg-info text-dark';
+            case 'MANUAL_SHORT': return 'bg-danger';
+            case 'MANUAL_COVER': return 'bg-info text-dark';
+            case 'AUTO_SQUARE_OFF': return 'bg-warning text-dark';
             case 'TRADE_SKIPPED': return 'bg-warning text-dark';
             case 'CIRCUIT_BREAKER':
             case 'SYSTEM_ERROR': return 'bg-danger';
@@ -350,6 +413,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('input', updateEditLevelsPreview);
         });
+        document.querySelectorAll('input[name="orderSide"]').forEach(r => r.addEventListener('change', onOrderSideChanged));
+        updateShortTimesText(); // create the SHORT SELL tooltip with default times; refreshed once settings load
+        const shortInfo = document.getElementById('shortSellInfo');
+        // The icon sits inside the SHORT SELL label - don't let a click on it switch the side.
+        if (shortInfo) shortInfo.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
         if (orderSlPct) orderSlPct.addEventListener('input', validateFormInputs);
         if (orderTslPct) orderTslPct.addEventListener('input', validateFormInputs);
 
@@ -540,10 +608,10 @@ document.addEventListener('DOMContentLoaded', () => {
             estimatedMargin.className = 'fw-bold text-light';
         }
 
-        // 4. Estimated SL price & risk
-        const slPrice = (slPct > 0 && price > 0) ? price * (1 - slPct / 100) : 0;
+        // 4. Estimated SL price & risk - a short's Stop Loss sits above the entry (it loses when the price rises).
+        const slPrice = (slPct > 0 && price > 0) ? price * (isShortOrder() ? 1 + slPct / 100 : 1 - slPct / 100) : 0;
         if (estSlPrice) estSlPrice.textContent = slPrice > 0 ? `₹${slPrice.toFixed(2)}` : '-';
-        if (estRisk) estRisk.textContent = (slPrice > 0 && qty > 0) ? `₹${((price - slPrice) * qty).toFixed(2)}` : '-';
+        if (estRisk) estRisk.textContent = (slPrice > 0 && qty > 0) ? `₹${(Math.abs(price - slPrice) * qty).toFixed(2)}` : '-';
 
         if (!activeSymbol || price <= 0) {
             isValid = false;
@@ -749,9 +817,10 @@ document.addEventListener('DOMContentLoaded', () => {
         positions.forEach(pos => {
             const pnl = pos.unrealizedPnl || 0;
             const pnlClass = pnl >= 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
-            const sideBadge = pos.side === 0 || pos.side === 'BUY'
-                ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>'
-                : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
+            const isShortPos = isSellSide(pos.side);
+            const sideBadge = !isShortPos
+                ? '<span class="badge bg-success bg-opacity-25 text-success">LONG</span>'
+                : `<span class="badge bg-danger bg-opacity-25 text-danger" title="Short sell - profits when the price falls">SHORT</span>${squareOffCountdownHtml()}`;
 
             const sl = pos.stopLoss ?? pos.StopLoss;
             const tp = pos.takeProfit ?? pos.TakeProfit;
@@ -764,7 +833,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? `₹${parseFloat(tsl).toFixed(2)}`
                 : (tslPct > 0 ? `<span class="text-white-50">Not active (${parseFloat(tslPct).toFixed(2)}%)</span>` : '-');
             const ltpVal = pos.currentPrice || pos.averageEntryPrice;
-            const toTargetPct = tp > 0 && ltpVal > 0 ? ((tp - ltpVal) / ltpVal) * 100 : null;
+            // Distance still to travel to the Target: up for a long, down for a short.
+            const toTargetPct = tp > 0 && ltpVal > 0 ? ((isShortPos ? ltpVal - tp : tp - ltpVal) / ltpVal) * 100 : null;
             const toTargetText = toTargetPct !== null
                 ? `<small class="d-block text-white-50">${toTargetPct >= 0 ? toTargetPct.toFixed(2) + '% away' : 'reached'}</small>`
                 : '';
@@ -782,7 +852,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="${pos.priceSource === 'NONE' ? 'text-white' : pnlClass}">${pos.priceSource === 'NONE' ? '—' : `${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}${netAfterChargesHtml(pnl, pos.estimatedCharges)}`}${priceAgeHtml(pos.priceSource, pos.priceAsOfUtc)}</td>
                 <td class="text-end text-nowrap">
                     ${tslPct > 0 ? `<button class="btn btn-outline-primary btn-sm rounded-2 me-1 edit-pos-btn" data-id="${pos.id}" title="Edit Stop Loss / Trailing SL / Target">✏️ Edit</button>` : ''}
-                    <button class="btn btn-outline-danger btn-sm rounded-2 close-pos-btn" data-id="${pos.id}">Close</button>
+                    <button class="btn btn-outline-danger btn-sm rounded-2 close-pos-btn" data-id="${pos.id}" title="${isShortPos ? 'Buy back the shares you sold short' : 'Sell this position'}">${isShortPos ? 'Buy to Cover' : 'Close'}</button>
                 </td>
             `;
             positionsTableBody.appendChild(tr);
@@ -799,13 +869,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Under a SHORT badge: time left until the intraday auto square-off (IST).
+    function squareOffCountdownHtml() {
+        const hhmm = (manualSettings && manualSettings.shortSquareOffTime) || '15:15';
+        const [h, m] = hhmm.split(':').map(Number);
+        const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const minsLeft = (h * 60 + m) - (nowIst.getHours() * 60 + nowIst.getMinutes());
+        const text = minsLeft > 0
+            ? `square-off in ${minsLeft >= 60 ? `${Math.floor(minsLeft / 60)}h ` : ''}${minsLeft % 60}m`
+            : 'square-off due';
+        return `<small class="d-block text-warning" title="Shorts are intraday only - bought back automatically at ${hhmm} IST">${text}</small>`;
+    }
+
     // --- Edit Stop Loss / Trailing SL % / Target of an open manual position ---
     function openEditLevelsModal(positionId) {
         const pos = (lastRenderedPositions || []).find(p => p.id === positionId);
         if (!pos) return;
 
         document.getElementById('editLevelsPositionId').value = pos.id;
-        document.getElementById('editLevelsTitle').innerText = `${pos.symbol} · ${pos.quantity} @ ₹${Number(pos.averageEntryPrice).toFixed(2)}`;
+        const isShortPos = isSellSide(pos.side);
+        document.getElementById('editLevelsTitle').innerText = `${pos.symbol} · ${isShortPos ? 'SHORT ' : ''}${pos.quantity} @ ₹${Number(pos.averageEntryPrice).toFixed(2)}`;
+        const hint = document.getElementById('editLevelsHint');
+        if (hint) {
+            hint.innerText = isShortPos
+                ? 'Short: Stop Loss must be ABOVE the Target. Reference levels only - the short is bought back when you click Buy to Cover, or automatically at the square-off time.'
+                : 'Reference levels only - the position is sold only when you click Close.';
+        }
         document.getElementById('editLevelsLtp').innerText = `₹${Number(pos.currentPrice || pos.averageEntryPrice).toFixed(2)}`;
         document.getElementById('editStopLoss').value = pos.stopLoss > 0 ? Number(pos.stopLoss).toFixed(2) : '';
         document.getElementById('editTrailingSlPct').value = pos.trailingSlPct > 0 ? Number(pos.trailingSlPct).toFixed(2) : '';
@@ -825,8 +914,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const sl = parseFloat(document.getElementById('editStopLoss').value) || 0;
         const tp = parseFloat(document.getElementById('editTakeProfit').value) || 0;
         const entry = Number(pos.averageEntryPrice);
-        const risk = sl > 0 ? (entry - sl) * pos.quantity : null;
-        const reward = tp > 0 ? (tp - entry) * pos.quantity : null;
+        const dir = isSellSide(pos.side) ? -1 : 1; // a short gains when the price falls
+        const risk = sl > 0 ? dir * (entry - sl) * pos.quantity : null;
+        const reward = tp > 0 ? dir * (tp - entry) * pos.quantity : null;
         preview.innerText = `Risk at SL: ${risk !== null ? formatSignedInr(-risk) : '-'} · Reward at Target: ${reward !== null ? formatSignedInr(reward) : '-'}`;
     }
 
@@ -841,7 +931,13 @@ document.addEventListener('DOMContentLoaded', () => {
             errorEl.innerText = 'Stop Loss, Trailing SL % and Target must all be greater than zero.';
             return;
         }
-        if (stopLoss >= takeProfit) {
+        const editedPos = (lastRenderedPositions || []).find(p => p.id === positionId);
+        if (editedPos && isSellSide(editedPos.side)) {
+            if (stopLoss <= takeProfit) {
+                errorEl.innerText = 'For a short, Stop Loss must be above Target.';
+                return;
+            }
+        } else if (stopLoss >= takeProfit) {
             errorEl.innerText = 'Stop Loss must be below Target.';
             return;
         }
@@ -1019,7 +1115,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         items.forEach(h => {
-            const sideBadge = h.side === 0 || h.side === 'BUY' ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>' : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
+            // Exit rows carry an exit reason: SELL closes a long, BUY closes (covers) a short. Entry rows have none:
+            // BUY opens a long, SELL opens a short.
+            const isExit = !!(h.exitReason ?? h.ExitReason);
+            const sideText = isSellSide(h.side) ? (isExit ? 'SELL' : 'SHORT') : (isExit ? 'COVER' : 'BUY');
+            const sideBadge = isSellSide(h.side)
+                ? `<span class="badge bg-danger bg-opacity-25 text-danger">${sideText}</span>`
+                : `<span class="badge bg-success bg-opacity-25 text-success">${sideText}</span>`;
             const pnl = h.realizedPnl || 0;
             const pnlClass = pnl > 0 ? 'text-success' : (pnl < 0 ? 'text-danger' : 'text-white');
             const entryPriceVal = h.entryPrice ?? h.EntryPrice ?? 0;
@@ -1110,7 +1212,8 @@ document.addEventListener('DOMContentLoaded', () => {
             placeOrderBtn.disabled = true;
             placeOrderBtn.innerText = 'Processing Trade...';
 
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/buy`, {
+            // Same payload for both sides; a short sell goes to /short (sell first, buy back later).
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/${isShortOrder() ? 'short' : 'buy'}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -1122,7 +1225,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            showToast('Paper Trade Executed', data.message || `Paper BUY for ${payload.quantity} ${activeSymbol} executed.`, 'success');
+            showToast('Paper Trade Executed', data.message || `Paper ${isShortOrder() ? 'SHORT SELL' : 'BUY'} for ${payload.quantity} ${activeSymbol} executed.`, 'success');
 
             await loadPortfolio();
             await loadPositions();
@@ -1132,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Order submission exception:', err);
             showToast('System Error', 'Failed to connect to order execution server.', 'danger');
         } finally {
-            placeOrderBtn.innerText = '📝 Place Paper Trade';
+            resetPlaceOrderButton();
             validateFormInputs();
             loadManualLogs();
         }
