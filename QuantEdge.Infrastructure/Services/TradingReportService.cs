@@ -117,7 +117,9 @@ public class TradingReportService : ITradingReportService
         sb.AppendLine();
         sb.AppendLine("EXECUTIVE SUMMARY");
         sb.AppendLine($"Total Invested Capital (INR),{summary.TotalInvestedCapital:F2}");
-        sb.AppendLine($"Net Realized P&L (INR),{summary.NetRealizedPnl:F2}");
+        sb.AppendLine($"Gross Realized P&L (INR),{summary.GrossRealizedPnl:F2}");
+        sb.AppendLine($"Estimated Charges (INR),{summary.TotalCharges:F2}");
+        sb.AppendLine($"Net Realized P&L after charges (INR),{summary.NetRealizedPnl:F2}");
         sb.AppendLine($"Total ROI (%),{summary.TotalRoiPct:F2}%");
         sb.AppendLine($"Total Trades,{summary.TotalTrades}");
         sb.AppendLine($"Winning Trades,{summary.WinningTrades}");
@@ -126,11 +128,11 @@ public class TradingReportService : ITradingReportService
         sb.AppendLine($"Profit Factor,{summary.ProfitFactor:F2}");
         sb.AppendLine();
         sb.AppendLine("DETAILED TRADE LOG");
-        sb.AppendLine("Trade ID,Execution Date,Symbol,Mode,Side,Quantity,Entry Price (INR),Exit Price (INR),Invested Capital (INR),Realized P&L (INR),Return (%),Trade Type,Exit Reason,User");
+        sb.AppendLine("Trade ID,Execution Date,Symbol,Mode,Side,Quantity,Entry Price (INR),Exit Price (INR),Invested Capital (INR),Gross P&L (INR),Charges (INR),Net P&L (INR),Charge Rates,Charge Source,Net Return (%),Trade Type,Exit Reason,User");
 
         foreach (var t in trades)
         {
-            sb.AppendLine($"{t.Id},{t.ExecutedAt:yyyy-MM-dd HH:mm:ss},{t.Symbol},{t.Mode},{t.Side},{t.Quantity},{t.EntryPrice:F2},{t.ExecutedPrice:F2},{t.InvestedAmount:F2},{t.RealizedPnl:F2},{t.ReturnPct:F2}%,{t.TradeType},\"{t.ExitReason}\",{t.Username}");
+            sb.AppendLine($"{t.Id},{t.ExecutedAt:yyyy-MM-dd HH:mm:ss},{t.Symbol},{t.Mode},{t.Side},{t.Quantity},{t.EntryPrice:F2},{t.ExecutedPrice:F2},{t.InvestedAmount:F2},{t.RealizedPnl:F2},{t.Charges:F2},{t.NetPnl:F2},{t.ChargeProduct},{t.ChargeSource},{t.ReturnPct:F2}%,{t.TradeType},\"{t.ExitReason}\",{t.Username}");
         }
 
         return Encoding.UTF8.GetBytes(sb.ToString());

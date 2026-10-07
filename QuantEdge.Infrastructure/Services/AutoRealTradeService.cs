@@ -285,6 +285,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             TodayTradeAmount = todayTradeAmount,
             ActivePositionsCount = positions.Count,
             TotalUnrealizedPnl = unrealizedPnl,
+            TotalEstimatedCharges = Math.Round(positions.Sum(p => p.EstimatedCharges), 2),
             TotalRealizedPnlToday = todayRealizedPnl,
             AvailableBrokerMargin = availableMargin,
             UsedBrokerMargin = usedMargin,
@@ -635,10 +636,12 @@ public class AutoRealTradeService : IAutoRealTradeService
             // Placing the order only means Kite accepted it for the exchange — it does NOT mean it has
             // traded. Confirm the real fill status before ever recording/announcing "FILLED".
             var statusCheck = await _brokerService.GetOrderStatusAsync(brokerOrderId, userId);
-            bool confirmedComplete = statusCheck.Success && string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
-            bool confirmedRejected = statusCheck.Success &&
-                (string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase));
+            // Settle now only on an exact, broker-priced full fill. Anything else - still resting, COMPLETE
+            // without an average price yet, or partly filled - is recorded Open and settled by the reconcile
+            // pass from the broker's own filled_quantity / average_price (same status call, no extra API use).
+            var fill = ResolveFill(statusCheck, quantity);
+            bool confirmedRejected = fill.Outcome == RealFillOutcome.Rejected;
+            bool confirmedComplete = fill.Outcome == RealFillOutcome.Filled && fill.Quantity == quantity;
 
             if (confirmedRejected)
             {
@@ -670,7 +673,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 // Order accepted by the broker but still resting (OPEN / TRIGGER PENDING), or the status
                 // check itself couldn't confirm a fill. Record it as Open with no position created yet —
                 // ReconcilePendingRealOrdersAsync opens the position once the broker confirms the real fill.
-                await _repository.CreateOrderAsync(new RealOrder
+                var openBuyOrder = await _repository.CreateOrderAsync(new RealOrder
                 {
                     UserId = userId,
                     BrokerOrderId = brokerOrderId,
@@ -686,6 +689,8 @@ public class AutoRealTradeService : IAutoRealTradeService
                     TradeType = isManualTrade ? TradeType.Manual : TradeType.Auto,
                     Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
                 });
+
+                await TryRecordFillDetailsAsync(openBuyOrder.Id, entryPrice, null);
 
                 await LogAuditAsync(symbol, "BUY_ORDER_OPEN", entryPrice, quantity,
                     $"🕓 BUY order placed for {symbol} — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
@@ -708,7 +713,8 @@ public class AutoRealTradeService : IAutoRealTradeService
                 return true;
             }
 
-            decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : (brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : entryPrice);
+            // The broker's average price - never the quote or the order's own price (RealFillResolver).
+            decimal executedPrice = fill.Price;
 
             // Re-anchor SL/Target/Trailing-SL to the actual broker-confirmed fill price rather than the
             // pre-fill quote used to size the order (slippage on a market order). Engine levels keep
@@ -747,6 +753,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     ? $"[LIVE REAL MONEY - MANUAL] Zerodha Order #{brokerOrderId} (SL {effectiveStopLossPct:F2}% / TSL {effectiveTrailingSlPct:F2}%)"
                     : $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
             });
+            await TryRecordFillDetailsAsync(order.Id, entryPrice, fill.Quantity);
 
             // Upsert Real Position
             var newPosition = await _repository.UpsertPositionAsync(new RealPosition
@@ -960,12 +967,12 @@ public class AutoRealTradeService : IAutoRealTradeService
             string brokerOrderId = brokerResult.BrokerOrderId ?? $"KITE-SELL-{DateTime.UtcNow.Ticks}";
 
             // Placing the order only means Kite accepted it for the exchange - confirm the real fill
-            // status before ever recording/announcing "FILLED".
+            // status before ever recording/announcing "FILLED". Only an exact, broker-priced full fill is
+            // settled here; partial / unpriced fills are recorded Open and settled by the reconcile pass.
             var statusCheck = await _brokerService.GetOrderStatusAsync(brokerOrderId, userId);
-            bool confirmedComplete = statusCheck.Success && string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
-            bool confirmedRejected = statusCheck.Success &&
-                (string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase));
+            var fill = ResolveFill(statusCheck, quantity);
+            bool confirmedComplete = fill.Outcome == RealFillOutcome.Filled && fill.Quantity == quantity;
+            bool confirmedRejected = fill.Outcome == RealFillOutcome.Rejected;
 
             if (confirmedRejected)
             {
@@ -994,7 +1001,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             {
                 // Order accepted by the broker but still resting (OPEN / TRIGGER PENDING). Recorded as
                 // Open - ReconcilePendingRealOrdersAsync finalizes it once the broker confirms the fill.
-                await _repository.CreateOrderAsync(new RealOrder
+                var openManualSell = await _repository.CreateOrderAsync(new RealOrder
                 {
                     UserId = userId,
                     BrokerOrderId = brokerOrderId,
@@ -1008,6 +1015,8 @@ public class AutoRealTradeService : IAutoRealTradeService
                     TradeType = TradeType.Manual,
                     Remarks = $"Manual SELL ({reason}) - Broker ID: {brokerOrderId}"
                 });
+
+                await TryRecordFillDetailsAsync(openManualSell.Id, currentPrice, null);
 
                 await LogAuditAsync(symbol, "SELL_ORDER_OPEN", currentPrice, quantity,
                     $"🕓 Manual SELL order placed for {symbol} — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
@@ -1030,7 +1039,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 return (true, $"SELL order placed for {symbol} — currently OPEN at the broker, awaiting execution.");
             }
 
-            decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : (brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : currentPrice);
+            decimal executedPrice = fill.Price;
             decimal? realizedPnl = entryPriceHint.HasValue && entryPriceHint.Value > 0m ? (executedPrice - entryPriceHint.Value) * quantity : (decimal?)null;
 
             var order = await _repository.CreateOrderAsync(new RealOrder
@@ -1048,6 +1057,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 TradeType = TradeType.Manual,
                 Remarks = $"Manual SELL ({reason}) - Broker ID: {brokerOrderId}"
             });
+            await TryRecordFillDetailsAsync(order.Id, currentPrice, fill.Quantity);
 
             await _repository.RecordTradeHistoryAsync(new RealTradeHistory
             {
@@ -1231,10 +1241,11 @@ public class AutoRealTradeService : IAutoRealTradeService
             // Placing the order only means Kite accepted it for the exchange — it does NOT mean it has
             // traded. Confirm the real fill status before ever recording/announcing "FILLED".
             var statusCheck = await _brokerService.GetOrderStatusAsync(brokerOrderId, userId);
-            bool confirmedComplete = statusCheck.Success && string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
-            bool confirmedRejected = statusCheck.Success &&
-                (string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase));
+            // Close the position here only on an exact, broker-priced full fill; a partial or unpriced fill
+            // is recorded Open and the reconcile pass closes or shrinks the position from the broker's numbers.
+            var fill = ResolveFill(statusCheck, position.Quantity);
+            bool confirmedComplete = fill.Outcome == RealFillOutcome.Filled && fill.Quantity == position.Quantity;
+            bool confirmedRejected = fill.Outcome == RealFillOutcome.Rejected;
 
             if (confirmedRejected)
             {
@@ -1264,7 +1275,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 // Order accepted by the broker but still resting (OPEN / TRIGGER PENDING), or the status
                 // check itself couldn't confirm a fill. Record it as Open and leave the position open —
                 // ReconcilePendingRealOrdersAsync finalizes it once the broker confirms the real outcome.
-                await _repository.CreateOrderAsync(new RealOrder
+                var openSellOrder = await _repository.CreateOrderAsync(new RealOrder
                 {
                     UserId = userId,
                     BrokerOrderId = brokerOrderId,
@@ -1277,6 +1288,8 @@ public class AutoRealTradeService : IAutoRealTradeService
                     FilledPrice = 0m,
                     Remarks = $"Real SELL ({exitReason}) - Broker ID: {brokerOrderId}"
                 });
+
+                await TryRecordFillDetailsAsync(openSellOrder.Id, currentLtp, null);
 
                 await LogAuditAsync(position.Symbol, "SELL_ORDER_OPEN", currentLtp, position.Quantity,
                     $"🕓 SELL order placed for {position.Symbol} ({exitReason}) — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
@@ -1300,7 +1313,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 return RealSellOutcome.OrderOpenPending;
             }
 
-            decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : (brokerResult.ExecutedPrice > 0m ? brokerResult.ExecutedPrice : currentLtp);
+            decimal executedPrice = fill.Price;
             decimal realizedPnl = (executedPrice - position.AverageEntryPrice) * position.Quantity;
 
             // Create Sell Order Record
@@ -1318,6 +1331,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 FilledAt = DateTime.UtcNow,
                 Remarks = $"Real SELL ({exitReason}) - Broker ID: {brokerOrderId}"
             });
+            await TryRecordFillDetailsAsync(sellOrder.Id, currentLtp, fill.Quantity);
 
             // Close Real Position in DB & RAM
             await _repository.ClosePositionAsync(position.Id, executedPrice, realizedPnl, exitReason);
@@ -1402,17 +1416,18 @@ public class AutoRealTradeService : IAutoRealTradeService
                     continue; // Broker/session unavailable this cycle - retry next pass, order stays Open.
                 }
 
-                if (string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase))
+                var fill = ResolveFill(statusCheck, order.Quantity);
+                if (fill.Outcome is RealFillOutcome.Filled or RealFillOutcome.PartiallyFilledThenClosed)
                 {
-                    decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : order.Price;
-                    await FinalizeFilledOrderAsync(order, executedPrice);
+                    // Broker's filled quantity and average price - a partly-filled-then-cancelled order still
+                    // moved shares, so it opens / shrinks / closes the position for exactly that quantity.
+                    await FinalizeFilledOrderAsync(order, fill.Price, fill.Quantity);
                 }
-                else if (string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+                else if (fill.Outcome == RealFillOutcome.Rejected)
                 {
                     await FinalizeRejectedOrderAsync(order, statusCheck.BrokerStatus, statusCheck.Message);
                 }
-                // Otherwise still OPEN/TRIGGER PENDING at the broker - leave as-is, retry next cycle.
+                // Pending: still resting, or done but without an average price yet - retry next cycle.
             }
             catch (Exception ex)
             {
@@ -1502,23 +1517,30 @@ public class AutoRealTradeService : IAutoRealTradeService
             return (false, false, statusCheck.Message ?? $"Could not verify {order.Symbol} order #{order.BrokerOrderId} with the broker right now.");
         }
 
-        bool brokerComplete = string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
-        bool brokerRejectedOrCancelled = string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
-                                         string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase);
+        var fill = ResolveFill(statusCheck, order.Quantity);
+        bool brokerTerminal = string.Equals(statusCheck.BrokerStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase) ||
+                              string.Equals(statusCheck.BrokerStatus, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
+                              string.Equals(statusCheck.BrokerStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase);
 
-        if (brokerComplete)
+        if (fill.Outcome is RealFillOutcome.Filled or RealFillOutcome.PartiallyFilledThenClosed)
         {
+            string qtyText = fill.Quantity < order.Quantity ? $" ({fill.Quantity} of {order.Quantity} filled)" : string.Empty;
             if (order.Status == PaperOrderStatus.Filled)
             {
-                return (true, false, $"Already in sync: {order.Symbol} order #{order.BrokerOrderId} is FILLED at the broker.");
+                return (true, false, $"Already in sync: {order.Symbol} order #{order.BrokerOrderId} is FILLED at the broker{qtyText}.");
             }
 
-            decimal executedPrice = statusCheck.AveragePrice > 0m ? statusCheck.AveragePrice : order.Price;
-            await FinalizeFilledOrderAsync(order, executedPrice);
-            return (true, true, $"Corrected: {order.Symbol} order #{order.BrokerOrderId} is FILLED @ ₹{executedPrice:F2} at the broker. Records updated.");
+            await FinalizeFilledOrderAsync(order, fill.Price, fill.Quantity);
+            return (true, true, $"Corrected: {order.Symbol} order #{order.BrokerOrderId} is FILLED @ ₹{fill.Price:F2} at the broker{qtyText}. Records updated.");
         }
 
-        if (brokerRejectedOrCancelled)
+        if (fill.Outcome == RealFillOutcome.Pending && brokerTerminal)
+        {
+            // Finished at the broker but no average price reported yet - never settle on a guessed price.
+            return (true, false, $"{order.Symbol} order #{order.BrokerOrderId} is {statusCheck.BrokerStatus} at the broker; waiting for Zerodha to report the average fill price.");
+        }
+
+        if (fill.Outcome == RealFillOutcome.Rejected)
         {
             if (order.Status == PaperOrderStatus.Rejected)
             {
@@ -1553,21 +1575,39 @@ public class AutoRealTradeService : IAutoRealTradeService
         return (true, true, $"Corrected: {order.Symbol} order #{order.BrokerOrderId} is actually still OPEN at the broker (was recorded {order.Status}).{positionNote}");
     }
 
-    private async Task FinalizeFilledOrderAsync(RealOrder order, decimal executedPrice)
+    /// <param name="executedPrice">The broker's average fill price.</param>
+    /// <param name="filledQuantity">The broker's filled_quantity - below order.Quantity when the order partly filled and was then cancelled.</param>
+    private async Task FinalizeFilledOrderAsync(RealOrder order, decimal executedPrice, int filledQuantity)
     {
         await _repository.UpdateOrderStatusAsync(order.Id, PaperOrderStatus.Filled, executedPrice, order.BrokerOrderId);
+        await TryRecordFillDetailsAsync(order.Id, null, filledQuantity);
+        bool isPartialOrder = filledQuantity < order.Quantity;
 
         if (order.Side == TradeSide.SELL)
         {
             var position = await _repository.GetOpenPositionBySymbolAsync(order.UserId, order.Symbol);
             if (position != null)
             {
-                decimal realizedPnl = (executedPrice - position.AverageEntryPrice) * position.Quantity;
+                // P&L only on the shares that actually sold. Selling fewer than held shrinks the position,
+                // which stays open and monitored for the rest.
+                int soldQty = Math.Min(filledQuantity, position.Quantity);
+                bool closesPosition = soldQty >= position.Quantity;
+                decimal realizedPnl = (executedPrice - position.AverageEntryPrice) * soldQty;
                 string exitReason = order.Remarks ?? "Exit";
 
-                await _repository.ClosePositionAsync(position.Id, executedPrice, realizedPnl, exitReason);
-                _realTradeCache?.RemovePosition(position.Id);
-                _realTradeCache?.RemoveLiveLtp(position.Symbol);
+                if (closesPosition)
+                {
+                    await _repository.ClosePositionAsync(position.Id, executedPrice, position.RealizedPnl + realizedPnl, exitReason);
+                    _realTradeCache?.RemovePosition(position.Id);
+                    _realTradeCache?.RemoveLiveLtp(position.Symbol);
+                }
+                else
+                {
+                    await _repository.ReducePositionQuantityAsync(position.Id, position.Quantity - soldQty, realizedPnl);
+                    position.Quantity -= soldQty;
+                    position.RealizedPnl += realizedPnl;
+                    _realTradeCache?.AddOrUpdatePosition(position);
+                }
 
                 await _repository.RecordTradeHistoryAsync(new RealTradeHistory
                 {
@@ -1576,18 +1616,21 @@ public class AutoRealTradeService : IAutoRealTradeService
                     BrokerOrderId = order.BrokerOrderId,
                     Symbol = order.Symbol,
                     Side = TradeSide.SELL,
-                    Quantity = order.Quantity,
+                    Quantity = soldQty,
                     EntryPrice = position.AverageEntryPrice,
                     ExecutedPrice = executedPrice,
                     RealizedPnl = realizedPnl,
                     TradeType = TradeType.Auto,
                     ExitReason = exitReason,
-                    Remarks = $"Real SELL: {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
+                    Remarks = closesPosition
+                        ? $"Real SELL: {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
+                        : $"Real SELL (partial {soldQty} of {order.Quantity}, {position.Quantity} still held): {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
                 });
 
                 string pnlSign = realizedPnl >= 0 ? "+" : "";
-                await LogAuditAsync(order.Symbol, "REAL_SELL", executedPrice, order.Quantity,
-                    $"⚡ Live SELL confirmed FILLED @ ₹{executedPrice:F2} | P&L: {pnlSign}₹{realizedPnl:N2} (Order #{order.BrokerOrderId})", order.UserId);
+                string partialText = closesPosition ? string.Empty : $" — PARTIAL: {soldQty} of {order.Quantity} sold, {position.Quantity} still held and monitored";
+                await LogAuditAsync(order.Symbol, "REAL_SELL", executedPrice, soldQty,
+                    $"⚡ Live SELL confirmed FILLED @ ₹{executedPrice:F2} | P&L: {pnlSign}₹{realizedPnl:N2} (Order #{order.BrokerOrderId}){partialText}", order.UserId);
 
                 if (_hubBroadcast != null)
                 {
@@ -1595,19 +1638,19 @@ public class AutoRealTradeService : IAutoRealTradeService
                     {
                         symbol = order.Symbol,
                         side = "SELL",
-                        quantity = order.Quantity,
+                        quantity = soldQty,
                         price = executedPrice,
                         realizedPnl,
                         exitReason,
                         brokerOrderId = order.BrokerOrderId,
                         userId = order.UserId,
-                        message = $"⚡ LIVE REAL SELL: {order.Symbol} confirmed FILLED @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}"
+                        message = $"⚡ LIVE REAL SELL: {order.Symbol} confirmed FILLED @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}{partialText}"
                     });
 
                     await _hubBroadcast.BroadcastGroupAsync($"user-{order.UserId}", "ReceiveHoldingSoldEvent", new
                     {
                         symbol = order.Symbol,
-                        quantity = order.Quantity,
+                        quantity = soldQty,
                         price = executedPrice,
                         realizedPnl,
                         exitReason,
@@ -1630,17 +1673,20 @@ public class AutoRealTradeService : IAutoRealTradeService
             // BUY that rests OPEN instead of filling immediately (rare for a Market order) reconciles
             // here without them - its trailing SL then falls back to the fixed default % rather than
             // the user's originally-chosen %, same as an Auto position.
+            // SL / target were computed at signal time from the order price; keep their distance but anchor
+            // them to the real fill price, as the immediate-fill path does.
+            decimal fillDelta = order.Price > 0m ? executedPrice - order.Price : 0m;
             var newPosition = await _repository.UpsertPositionAsync(new RealPosition
             {
                 UserId = order.UserId,
                 Symbol = order.Symbol,
                 Side = TradeSide.BUY,
-                Quantity = order.Quantity,
+                Quantity = filledQuantity,
                 AverageEntryPrice = executedPrice,
                 CurrentPrice = executedPrice,
                 UnrealizedPnl = 0m,
-                StopLoss = order.StopLoss,
-                TakeProfit = order.TakeProfit,
+                StopLoss = order.StopLoss.HasValue ? Math.Round(order.StopLoss.Value + fillDelta, 2) : null,
+                TakeProfit = order.TakeProfit.HasValue ? Math.Round(order.TakeProfit.Value + fillDelta, 2) : null,
                 TrailingStopLoss = null,
                 Status = PositionStatus.OPEN,
                 TradeType = order.TradeType,
@@ -1657,19 +1703,22 @@ public class AutoRealTradeService : IAutoRealTradeService
                 BrokerOrderId = order.BrokerOrderId,
                 Symbol = order.Symbol,
                 Side = TradeSide.BUY,
-                Quantity = order.Quantity,
+                Quantity = filledQuantity,
                 EntryPrice = executedPrice,
                 ExecutedPrice = executedPrice,
                 RealizedPnl = 0m,
                 TradeType = order.TradeType,
-                Remarks = $"Real BUY confirmed FILLED @ ₹{executedPrice:F2} (Broker ID: {order.BrokerOrderId})"
+                Remarks = isPartialOrder
+                    ? $"Real BUY PARTIALLY FILLED {filledQuantity} of {order.Quantity} @ ₹{executedPrice:F2}, rest cancelled (Broker ID: {order.BrokerOrderId})"
+                    : $"Real BUY confirmed FILLED @ ₹{executedPrice:F2} (Broker ID: {order.BrokerOrderId})"
             });
 
             string todayKey = $"realtrade:today_count:{order.UserId}:{DateTime.UtcNow:yyyyMMdd}";
             await _cacheService.RemoveAsync(todayKey);
 
-            await LogAuditAsync(order.Symbol, "REAL_BUY", executedPrice, order.Quantity,
-                $"⚡ Live BUY confirmed FILLED @ ₹{executedPrice:F2} (Qty: {order.Quantity}, Order #{order.BrokerOrderId})", order.UserId);
+            string buyPartialText = isPartialOrder ? $" — PARTIAL: {filledQuantity} of {order.Quantity} filled, rest cancelled; position opened for {filledQuantity}" : string.Empty;
+            await LogAuditAsync(order.Symbol, "REAL_BUY", executedPrice, filledQuantity,
+                $"⚡ Live BUY confirmed FILLED @ ₹{executedPrice:F2} (Qty: {filledQuantity}, Order #{order.BrokerOrderId}){buyPartialText}", order.UserId);
 
             if (_hubBroadcast != null)
             {
@@ -1677,19 +1726,39 @@ public class AutoRealTradeService : IAutoRealTradeService
                 {
                     symbol = order.Symbol,
                     side = "BUY",
-                    quantity = order.Quantity,
+                    quantity = filledQuantity,
                     price = executedPrice,
-                    target = order.TakeProfit,
-                    stopLoss = order.StopLoss,
+                    target = newPosition.TakeProfit,
+                    stopLoss = newPosition.StopLoss,
                     brokerOrderId = order.BrokerOrderId,
                     userId = order.UserId,
-                    message = $"⚡ LIVE REAL BUY: {order.Quantity} shares of {order.Symbol} confirmed FILLED @ ₹{executedPrice:N2}"
+                    message = $"⚡ LIVE REAL BUY: {filledQuantity} shares of {order.Symbol} confirmed FILLED @ ₹{executedPrice:N2}{buyPartialText}"
                 });
             }
 
             await BroadcastDashboardUpdateAsync(order.UserId);
         }
     }
+
+    // Best-effort: signal_price / filled_quantity come from schema.sql (Plan P4/P5). A missing column (script not
+    // applied yet) must never fail an order that has already reached Zerodha - log and carry on.
+    private async Task TryRecordFillDetailsAsync(int orderId, decimal? signalPrice, int? filledQuantity)
+    {
+        try
+        {
+            await _repository.RecordOrderFillDetailsAsync(orderId, signalPrice, filledQuantity);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not store signal price / filled quantity for real order #{OrderId} (apply the real_orders ALTERs in schema.sql).", orderId);
+        }
+    }
+
+    // Reads one broker status into what actually traded. A failed status call counts as Pending (retry next pass).
+    private static RealFill ResolveFill((bool Success, string? BrokerStatus, decimal AveragePrice, int FilledQuantity, string? Message) status, int orderedQuantity) =>
+        status.Success
+            ? RealFillResolver.Resolve(status.BrokerStatus, status.AveragePrice, status.FilledQuantity, orderedQuantity)
+            : new RealFill(RealFillOutcome.Pending, 0, 0m);
 
     private async Task FinalizeRejectedOrderAsync(RealOrder order, string? brokerStatus, string? message)
     {
@@ -1755,12 +1824,28 @@ public class AutoRealTradeService : IAutoRealTradeService
         foreach (var position in positions)
         {
             decimal ltp = 0m;
+            string source = "LIVE";
             if (_realTradeCache == null || !_realTradeCache.TryGetFreshLtp(position.Symbol, RealTradeSchedule.LtpFreshnessWindow, out ltp))
+            {
                 ltp = FindBrokerLastPrice(position.Symbol, brokerPositions, brokerHoldings) ?? 0m;
+                source = "BROKER";
+            }
 
-            if (ltp <= 0m) continue;
+            if (ltp <= 0m)
+            {
+                // No fresh tick and no broker price: CurrentPrice is the value frozen at buy time, so the P&L
+                // shown would be a fake ₹0. Flag it so the page shows "—" instead.
+                position.PriceSource = "NONE";
+                position.PriceAsOfUtc = null;
+                continue;
+            }
+            position.PriceSource = source;
+            position.PriceAsOfUtc = DateTime.UtcNow;
             position.CurrentPrice = ltp;
             position.UnrealizedPnl = CalculateUnrealizedPnl(position, ltp);
+            // "Net if sold now": round-trip charges at this price (display only; gross stays what exits use).
+            position.EstimatedCharges = Math.Round(ChargesCalculator.EstimateOpenPosition(
+                position.AverageEntryPrice, ltp, position.Quantity, position.Side == TradeSide.SELL, position.OpenedAt), 2);
         }
     }
 
@@ -2199,6 +2284,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             ZerodhaRealizedPnl = zerodhaRealizedPnl,
             ZerodhaUnrealizedPnl = zerodhaUnrealizedPnl,
             TotalUnrealizedPnl = unrealizedPnl,
+            TotalEstimatedCharges = Math.Round(positions.Sum(p => p.EstimatedCharges), 2),
             TotalRealizedPnlToday = todayRealizedPnl,
             BrokerPositions = brokerPositions,
             BrokerHoldings = brokerHoldings,

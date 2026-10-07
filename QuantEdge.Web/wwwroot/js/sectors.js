@@ -24,6 +24,10 @@
     const timeIst = utc => new Date(utc).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
     const pct = v => v == null ? "–" : `${v > 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
     const pctClass = v => v == null || Number(v) === 0 ? "sx-flat" : v > 0 ? "sx-pos" : "sx-neg";
+    // Where the price / day change came from: live feed tick or stored candles, and when.
+    const priceTitle = x => x.priceAsOfUtc
+        ? `${x.priceSource === "LIVE" ? "Live" : "Stored candles"} · as of ${timeIst(x.priceAsOfUtc)} IST${x.prevClose ? ` · prev close ${money(x.prevClose)}` : ""}`
+        : "";
 
     const STRENGTH = {
         STRONG: { cls: "sx-strong", label: "Strong", rank: 3 },
@@ -42,6 +46,12 @@
     const chip = (meta, extra = "") => `<span class="sx-chip ${meta.cls} ${extra}">${esc(meta.label)}</span>`;
 
     function marketBanner(d) {
+        if (d.marketGateMode === "REGIME") {
+            const reason = esc(d.marketReason || "Market regime not computed yet.");
+            return d.marketPassed
+                ? `<div class="sx-banner ${d.marketReason && d.marketReason.startsWith("BULLISH (") ? "sx-pass" : "sx-watch"}"><span><b>Market regime gate:</b> ${reason} Stocks must clear this regime's bar to be BUY.</span></div>`
+                : `<div class="sx-banner sx-fail"><span><b>Market regime blocks new buys:</b> ${reason} Every stock shows NO TRADE; sector strength still shows who leads.</span></div>`;
+        }
         if (d.marketPassed) {
             return `<div class="sx-banner sx-pass"><span><b>NIFTY 50 trend filter passes.</b> The market allows new buys - sector and stock conditions decide.</span></div>`;
         }
@@ -49,6 +59,66 @@
             return `<div class="sx-banner sx-fail"><span><b>NIFTY 50 is below its trend filter.</b> The bot buys nothing while the market is weak, so every stock shows NO TRADE. Sector strength is still shown so you can see who leads when NIFTY recovers.</span></div>`;
         }
         return `<div class="sx-banner sx-watch"><span><b>NIFTY 50 is below its trend filter.</b> Soft mode: stocks lose score points and size is reduced, but buys are not blocked.</span></div>`;
+    }
+
+    // Market regime card (Plan Phase 1) - GET /api/market/regime, database only.
+    const REGIME = {
+        BULLISH: { cls: "sx-pass", label: "Bullish" },
+        BULLISH_WEAKENING: { cls: "sx-watch", label: "Bullish, weakening" },
+        SIDEWAYS: { cls: "sx-watch", label: "Sideways" },
+        BEARISH: { cls: "sx-fail", label: "Bearish" },
+        STRONG_BEARISH: { cls: "sx-fail", label: "Strong bearish" }
+    };
+    const regimeOf = r => REGIME[r] || { cls: "sx-nodata", label: r || "Unknown" };
+
+    function sparkline(history) {
+        const pts = (history || []).slice().sort((a, b) => new Date(a.tradeDate) - new Date(b.tradeDate));
+        if (pts.length < 2) return "";
+        const w = 220, h = 44;
+        const xy = pts.map((p, i) => `${(i / (pts.length - 1) * w).toFixed(1)},${(h - p.score / 100 * h).toFixed(1)}`).join(" ");
+        // Dashed guides at the regime boundaries 70 / 40 / 25.
+        const guide = v => `<line x1="0" x2="${w}" y1="${h - v / 100 * h}" y2="${h - v / 100 * h}" stroke="currentColor" stroke-opacity=".2" stroke-dasharray="3 3"/>`;
+        return `<svg class="sx-spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-label="Regime score, last ${pts.length} days">
+            ${guide(70)}${guide(40)}${guide(25)}
+            <polyline points="${xy}" fill="none" stroke="var(--sx-c)" stroke-width="2"/></svg>`;
+    }
+
+    function regimeCard(r) {
+        const x = r.latest;
+        if (!x) return `<div class="sx-panel sx-empty">No market regime yet - it is computed after the evening NSE bhavcopy (needs NIFTY 50 daily candles).</div>`;
+        const meta = regimeOf(x.regime), p = r.policy;
+        const bar = (label, pts, max) => `<div class="sx-rg-part"><span>${label}</span><div class="sx-rg-track"><i style="width:${Math.max(0, Math.min(100, pts / max * 100))}%"></i></div><b class="sx-num">${pts}/${max}</b></div>`;
+        const policy = p
+            ? (p.maxPositions <= 0 ? "No new entries." : `Stock score ≥ ${p.minStockScore}${p.requireRelativeStrength ? ", must beat NIFTY" : ""}, max ${p.maxPositions} positions, risk ${num(p.riskPct, 2)}% per trade.`)
+            : "";
+        const mode = r.botUsesRegime
+            ? `<b>The bot uses this regime</b> as its market gate.`
+            : `Shown for information - the bot still uses the NIFTY trend filter. Switch "Market gate" to Regime in Swing settings to use it.`;
+        return `<div class="sx-panel sx-regime ${meta.cls}">
+            <div class="sx-rg-head">
+                <div><div class="sx-rg-label">Market regime · ${esc(new Date(x.tradeDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }))}</div>
+                    <div class="sx-rg-title">${chip(meta, "sx-chip-lg")} <span class="sx-rg-score sx-num">${x.score}<small>/100</small></span>
+                    ${x.rawRegime !== x.regime ? `<span class="sx-rg-note" title="A regime change needs to hold for a few days (hysteresis)">raw: ${esc(regimeOf(x.rawRegime).label)}</span>` : ""}</div></div>
+                <div style="color:var(--sx-c)">${sparkline(r.history)}</div>
+            </div>
+            <div class="sx-rg-parts">
+                ${bar("Trend", x.trendPts, 40)}${bar("Breadth", x.breadthPts, 35)}${bar("Volatility", x.volPts, 15)}${bar("Drawdown", x.drawdownPts, 10)}
+            </div>
+            <div class="sx-rg-facts">NIFTY ${num(x.niftyClose, 2)} · EMA50 ${num(x.ema50, 0)} · EMA200 ${num(x.ema200, 0)} · ${num(x.drawdownPct)}% off high ·
+                ${num(x.pctAboveEma50, 0)}% of ${x.breadthStocks} stocks above EMA50${x.vix != null ? ` · VIX ${num(x.vix)}` : ""}</div>
+            <div class="sx-rg-policy"><b>Policy:</b> ${esc(policy)} ${mode}</div>
+        </div>`;
+    }
+
+    async function loadRegime() {
+        const box = el("sxRegime");
+        if (!box) return;
+        try {
+            box.innerHTML = regimeCard(await getJson("market/regime?days=60", false));
+        } catch (err) {
+            console.error("Market regime load failed:", err);
+            box.innerHTML = `<div class="sx-panel sx-empty">Market regime unavailable - apply market_regime_daily / regime_policy from schema.sql.</div>`;
+        }
     }
 
     function startPolling(load) {
@@ -108,6 +178,7 @@
             const sectors = data.sectors || [];
             el("sxMeta").textContent = `Updated ${timeIst(data.asOfUtc)} IST · ${sectors.length} sectors · same engine as the auto-trading bot · refreshes every minute`;
             el("sxMarket").innerHTML = marketBanner(data);
+            loadRegime();
             renderTop(sectors);
             renderGrid(sectors);
         }
@@ -289,7 +360,7 @@
                     <tr data-symbol="${esc(x.symbol)}">
                         <td><div class="sx-sym">${esc(x.symbol)}</div>${x.name ? `<div class="sx-name">${esc(x.name)}</div>` : ""}</td>
                         <td>${chip(sig)}</td>
-                        <td class="num sx-num">${x.lastPrice ? money(x.lastPrice) : "–"}</td>
+                        <td class="num sx-num" title="${esc(priceTitle(x))}">${x.lastPrice ? money(x.lastPrice) : "–"}</td>
                         <td class="num sx-num ${pctClass(x.dayChangePct)}">${pct(x.dayChangePct)}</td>
                         <td class="num sx-num">${scored && x.volumeMultiple ? num(x.volumeMultiple) + "x" : "–"}</td>
                         <td class="num sx-num">${scored && x.rsi15m ? num(x.rsi15m) : "–"}</td>
@@ -320,7 +391,7 @@
             el("sxStockTitle").innerHTML = `
                 <h3>${esc(x.symbol)}</h3>
                 ${chip(sig, "sx-chip-lg")}
-                <span class="sx-num">${x.lastPrice ? money(x.lastPrice) : ""}</span>
+                <span class="sx-num" title="${esc(priceTitle(x))}">${x.lastPrice ? money(x.lastPrice) : ""}</span>
                 <span class="sx-num ${pctClass(x.dayChangePct)}">${pct(x.dayChangePct)}</span>
                 ${x.name ? `<span class="sx-meta">${esc(x.name)}</span>` : ""}`;
 

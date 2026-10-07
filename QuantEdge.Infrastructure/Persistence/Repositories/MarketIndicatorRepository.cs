@@ -142,7 +142,7 @@ public class MarketIndicatorRepository : IMarketIndicatorRepository
     /// </summary>
     public async Task DeleteTodayIndicatorsAsync(string symbol, string timeframe)
     {
-        DateTime todayStart = DateTime.UtcNow.Date;
+        DateTime todayStart = QuantEdge.Infrastructure.Helpers.TimeZoneHelper.IstTodayStartUtc(); // IST day, so the 00:00 IST daily candle is included
         DateTime todayEnd = todayStart.AddDays(1).AddTicks(-1);
         await DeleteIndicatorsRangeAsync(symbol, timeframe, todayStart, todayEnd);
     }

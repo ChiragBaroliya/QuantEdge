@@ -143,6 +143,30 @@ public class RealTradingRepository : IRealTradingRepository
         await connection.ExecuteAsync(sql, new { orderId, status = (int)status, filledPrice, brokerOrderId, rejectionReason });
     }
 
+    public async Task RecordOrderFillDetailsAsync(int orderId, decimal? signalPrice, int? filledQuantity)
+    {
+        if (!signalPrice.HasValue && !filledQuantity.HasValue) return;
+
+        using var connection = _connectionFactory.CreateConnection();
+        const string sql = @"
+            UPDATE real_orders
+            SET signal_price = COALESCE(@signalPrice, signal_price),
+                filled_quantity = COALESCE(@filledQuantity, filled_quantity)
+            WHERE id = @orderId;";
+        await connection.ExecuteAsync(sql, new { orderId, signalPrice, filledQuantity });
+    }
+
+    public async Task ReducePositionQuantityAsync(int positionId, int newQuantity, decimal realizedPnlToAdd)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        const string sql = @"
+            UPDATE real_positions
+            SET quantity = @newQuantity,
+                realized_pnl = realized_pnl + @realizedPnlToAdd
+            WHERE id = @positionId AND status = 0;";
+        await connection.ExecuteAsync(sql, new { positionId, newQuantity, realizedPnlToAdd });
+    }
+
     public async Task<IEnumerable<RealOrder>> GetRecentOrdersAsync(int userId = 1, int limit = 50)
     {
         using var connection = _connectionFactory.CreateConnection();

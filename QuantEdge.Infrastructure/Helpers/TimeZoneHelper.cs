@@ -39,4 +39,14 @@ public static class TimeZoneHelper
     /// Gets the Indian Standard Time (IST) TimeZoneInfo instance safely on any OS.
     /// </summary>
     public static TimeZoneInfo IndianTimeZone => _indianTimeZone.Value;
+
+    /// <summary>
+    /// Start of today's IST trading day as UTC (18:30 UTC the previous day). Use this, not DateTime.UtcNow.Date,
+    /// for "today's candles": Kite stamps daily candles 00:00 IST, which UtcNow.Date (05:30 IST) misses.
+    /// </summary>
+    public static DateTime IstTodayStartUtc()
+    {
+        DateTime todayIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, IndianTimeZone).Date;
+        return TimeZoneInfo.ConvertTimeToUtc(todayIst, IndianTimeZone);
+    }
 }

@@ -53,7 +53,9 @@ public class TodayHistoryResetWorker : BackgroundService
         {
             await Task.Delay(2000, stoppingToken);
 
-            DateTime todayStartUtc = DateTime.UtcNow.Date;
+            // Today = the IST trading day. UtcNow.Date (05:30 IST) missed today's daily candle, which Kite stamps
+            // 00:00 IST (18:30 UTC the previous day), so the frozen daily row survived every reset.
+            DateTime todayStartUtc = QuantEdge.Infrastructure.Helpers.TimeZoneHelper.IstTodayStartUtc();
             DateTime todayEndUtc = DateTime.UtcNow;
 
             var activeStocks = (await _stockMasterRepository.GetActiveStocksAsync()).ToList();

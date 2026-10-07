@@ -16,6 +16,10 @@ public class RealOrder
     public decimal? TakeProfit { get; set; } // Optional
     public PaperOrderStatus Status { get; set; } = PaperOrderStatus.Pending;
     public decimal FilledPrice { get; set; }
+    // Price the decision was made at (scan price for a BUY, live price for an exit) - FilledPrice minus this is slippage.
+    public decimal? SignalPrice { get; set; }
+    // Quantity Zerodha actually executed (filled_quantity) - can be below Quantity on a partial fill.
+    public int? FilledQuantity { get; set; }
     public DateTime? FilledAt { get; set; }
     public string? RejectionReason { get; set; }
     public TradeType TradeType { get; set; } = TradeType.Auto;

@@ -454,7 +454,9 @@ RETURNS TABLE (
     executed_at TIMESTAMP WITH TIME ZONE,
     opened_at TIMESTAMP WITH TIME ZONE,
     hold_days INT,
-    username VARCHAR(100)
+    username VARCHAR(100),
+    sell_order_id INT,   -- real trades: the order that closed the trade (real_orders.id) - for actual charges
+    buy_order_id INT     -- real trades: the BUY that opened it (latest filled BUY before the sell)
 )
 LANGUAGE plpgsql
 AS $$
@@ -479,7 +481,9 @@ BEGIN
             th.executed_at,
             NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
             0::INT AS hold_days,
-            COALESCE(a.user_id, 'default_user')::VARCHAR(100) AS username
+            COALESCE(a.user_id, 'default_user')::VARCHAR(100) AS username,
+            NULL::INT AS sell_order_id,
+            NULL::INT AS buy_order_id
         FROM paper_trade_history th
         LEFT JOIN paper_accounts a ON th.account_id = a.id
         WHERE (v_mode = 'all' OR v_mode = 'paper')
@@ -504,11 +508,25 @@ BEGIN
             rth.trade_type,
             COALESCE(rth.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
             rth.executed_at,
-            NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
+            bo.filled_at AS opened_at,    -- entry time: same-day round trips are charged at intraday rates
             0::INT AS hold_days,
-            COALESCE(u.username, 'admin')::VARCHAR(100) AS username
+            COALESCE(u.username, 'admin')::VARCHAR(100) AS username,
+            rth.order_id AS sell_order_id,
+            bo.id AS buy_order_id
         FROM real_trade_history rth
         LEFT JOIN app_users u ON rth.user_id = u.id
+        -- The BUY that opened this position: latest filled BUY of the symbol before the sell (status 1 = Filled).
+        LEFT JOIN LATERAL (
+            SELECT ro.id, COALESCE(ro.filled_at, ro.created_at) AS filled_at
+            FROM real_orders ro
+            WHERE ro.user_id = rth.user_id
+              AND UPPER(ro.symbol) = UPPER(rth.symbol)
+              AND ro.side = 0
+              AND ro.status = 1
+              AND COALESCE(ro.filled_at, ro.created_at) <= rth.executed_at
+            ORDER BY COALESCE(ro.filled_at, ro.created_at) DESC
+            LIMIT 1
+        ) bo ON rth.side = 1
         WHERE (v_mode = 'all' OR v_mode = 'real')
           AND (rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
           AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
@@ -518,7 +536,38 @@ BEGIN
 
         UNION ALL
 
-        -- 3. Swing Positions (Simulated closed swing trades - Only queried when mode is 'swing')
+        -- 3. Manual Paper Trade History (Manual Trading page; closed trades = SELL rows). Previously left out,
+        --    so report totals were missing every manual paper trade. Ids offset to stay distinct from paper/real.
+        SELECT
+            (mh.id::BIGINT + 10000000000)::BIGINT AS id,
+            'Manual Paper'::TEXT AS mode,
+            mh.symbol,
+            mh.side,
+            mh.quantity,
+            mh.entry_price,
+            mh.executed_price,
+            mh.realized_pnl,
+            0::INT AS trade_type,
+            COALESCE(mh.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
+            mh.executed_at,
+            mp.opened_at,                 -- entry time: same-day round trips are charged at intraday rates
+            0::INT AS hold_days,
+            COALESCE(mu.username, 'admin')::VARCHAR(100) AS username,
+            NULL::INT AS sell_order_id,
+            NULL::INT AS buy_order_id
+        FROM manual_paper_trade_history mh
+        LEFT JOIN app_users mu ON mh.user_id = mu.id
+        LEFT JOIN manual_paper_positions mp ON mp.id = mh.position_id
+        WHERE (v_mode = 'all' OR v_mode = 'manual_paper')
+          AND mh.side = 1
+          AND (p_start_date IS NULL OR mh.executed_at >= p_start_date)
+          AND (p_end_date IS NULL OR mh.executed_at <= p_end_date)
+          AND (v_symbol IS NULL OR mh.symbol ILIKE v_symbol)
+          AND (p_user_id IS NULL OR p_user_id = 'all' OR mu.id::TEXT = p_user_id OR mu.username = p_user_id)
+
+        UNION ALL
+
+        -- 4. Swing Positions (Simulated closed swing trades - Only queried when mode is 'swing')
         SELECT 
             (sp.id + 100000)::BIGINT AS id,
             'Swing Sim'::TEXT AS mode,
@@ -533,7 +582,9 @@ BEGIN
             COALESCE(sp.exit_date, sp.entry_date) AS executed_at,
             sp.entry_date AS opened_at,
             COALESCE((sp.exit_date - sp.entry_date), 0)::INT AS hold_days,
-            'System'::VARCHAR(100) AS username
+            'System'::VARCHAR(100) AS username,
+            NULL::INT AS sell_order_id,
+            NULL::INT AS buy_order_id
         FROM swing_positions sp
         WHERE sp.is_closed = TRUE
           AND (v_mode = 'swing')
@@ -577,7 +628,9 @@ RETURNS TABLE (
     executed_at TIMESTAMP WITH TIME ZONE,
     opened_at TIMESTAMP WITH TIME ZONE,
     hold_days INT,
-    username VARCHAR(100)
+    username VARCHAR(100),
+    sell_order_id INT,   -- real trades: the order that closed the trade (real_orders.id) - for actual charges
+    buy_order_id INT     -- real trades: the BUY that opened it (latest filled BUY before the sell)
 )
 LANGUAGE plpgsql
 AS $$
@@ -606,7 +659,9 @@ BEGIN
             th.executed_at,
             NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
             0::INT AS hold_days,
-            COALESCE(a.user_id, 'default_user')::VARCHAR(100) AS username
+            COALESCE(a.user_id, 'default_user')::VARCHAR(100) AS username,
+            NULL::INT AS sell_order_id,
+            NULL::INT AS buy_order_id
         FROM paper_trade_history th
         LEFT JOIN paper_accounts a ON th.account_id = a.id
         WHERE (v_mode = 'all' OR v_mode = 'paper')
@@ -631,11 +686,25 @@ BEGIN
             rth.trade_type,
             COALESCE(rth.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
             rth.executed_at,
-            NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
+            bo.filled_at AS opened_at,    -- entry time: same-day round trips are charged at intraday rates
             0::INT AS hold_days,
-            COALESCE(u.username, 'admin')::VARCHAR(100) AS username
+            COALESCE(u.username, 'admin')::VARCHAR(100) AS username,
+            rth.order_id AS sell_order_id,
+            bo.id AS buy_order_id
         FROM real_trade_history rth
         LEFT JOIN app_users u ON rth.user_id = u.id
+        -- The BUY that opened this position: latest filled BUY of the symbol before the sell (status 1 = Filled).
+        LEFT JOIN LATERAL (
+            SELECT ro.id, COALESCE(ro.filled_at, ro.created_at) AS filled_at
+            FROM real_orders ro
+            WHERE ro.user_id = rth.user_id
+              AND UPPER(ro.symbol) = UPPER(rth.symbol)
+              AND ro.side = 0
+              AND ro.status = 1
+              AND COALESCE(ro.filled_at, ro.created_at) <= rth.executed_at
+            ORDER BY COALESCE(ro.filled_at, ro.created_at) DESC
+            LIMIT 1
+        ) bo ON rth.side = 1
         WHERE (v_mode = 'all' OR v_mode = 'real')
           AND (rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
           AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
@@ -645,7 +714,38 @@ BEGIN
 
         UNION ALL
 
-        -- 3. Swing Positions (Simulated closed swing trades - Only queried when mode is 'swing')
+        -- 3. Manual Paper Trade History (Manual Trading page; closed trades = SELL rows). Previously left out,
+        --    so report totals were missing every manual paper trade. Ids offset to stay distinct from paper/real.
+        SELECT
+            (mh.id::BIGINT + 10000000000)::BIGINT AS id,
+            'Manual Paper'::TEXT AS mode,
+            mh.symbol,
+            mh.side,
+            mh.quantity,
+            mh.entry_price,
+            mh.executed_price,
+            mh.realized_pnl,
+            0::INT AS trade_type,
+            COALESCE(mh.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
+            mh.executed_at,
+            mp.opened_at,                 -- entry time: same-day round trips are charged at intraday rates
+            0::INT AS hold_days,
+            COALESCE(mu.username, 'admin')::VARCHAR(100) AS username,
+            NULL::INT AS sell_order_id,
+            NULL::INT AS buy_order_id
+        FROM manual_paper_trade_history mh
+        LEFT JOIN app_users mu ON mh.user_id = mu.id
+        LEFT JOIN manual_paper_positions mp ON mp.id = mh.position_id
+        WHERE (v_mode = 'all' OR v_mode = 'manual_paper')
+          AND mh.side = 1
+          AND (p_start_date IS NULL OR mh.executed_at >= p_start_date)
+          AND (p_end_date IS NULL OR mh.executed_at <= p_end_date)
+          AND (v_symbol IS NULL OR mh.symbol ILIKE v_symbol)
+          AND (p_user_id IS NULL OR p_user_id = 'all' OR mu.id::TEXT = p_user_id OR mu.username = p_user_id)
+
+        UNION ALL
+
+        -- 4. Swing Positions (Simulated closed swing trades - Only queried when mode is 'swing')
         SELECT 
             (sp.id + 100000)::BIGINT AS id,
             'Swing Sim'::TEXT AS mode,
@@ -660,7 +760,9 @@ BEGIN
             COALESCE(sp.exit_date, sp.entry_date) AS executed_at,
             sp.entry_date AS opened_at,
             COALESCE((sp.exit_date - sp.entry_date), 0)::INT AS hold_days,
-            'System'::VARCHAR(100) AS username
+            'System'::VARCHAR(100) AS username,
+            NULL::INT AS sell_order_id,
+            NULL::INT AS buy_order_id
         FROM swing_positions sp
         WHERE sp.is_closed = TRUE
           AND (v_mode = 'swing')
@@ -702,7 +804,9 @@ BEGIN
         f.executed_at,
         f.opened_at,
         f.hold_days,
-        f.username
+        f.username,
+        f.sell_order_id,
+        f.buy_order_id
     FROM filtered_trades f
     ORDER BY f.executed_at DESC
     LIMIT v_limit OFFSET v_offset;

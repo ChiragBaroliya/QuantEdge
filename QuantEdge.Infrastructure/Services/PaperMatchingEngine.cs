@@ -193,6 +193,22 @@ public class PaperMatchingEngine
 
                 // Execute position update
                 var existingPos = await _repository.GetOpenPositionBySymbolAsync(account.Id, symbol);
+                if (existingPos != null && existingPos.Side != order.Side)
+                {
+                    // Opposite direction: close all or part of the position at the fill price. Use a fresh account
+                    // row (the cached one can be stale) and release the margin this order blocked when placed.
+                    var freshAccount = await _repository.GetAccountAsync("default_user") ?? account;
+                    var close = await PaperPositionCloser.CloseAsync(_repository, freshAccount, existingPos, order.Quantity, ltp,
+                        order.Id, "Limit Order Close", extraMarginToRelease: order.Quantity * order.Price);
+                    if (close.ClosedQuantity < order.Quantity)
+                    {
+                        _logger.LogWarning("Limit order {OrderId} for {Symbol} asked to close {Requested} but only {Closed} were open - the excess was not executed.",
+                            order.Id, symbol, order.Quantity, close.ClosedQuantity);
+                    }
+                    InvalidateCache();
+                    continue;
+                }
+
                 if (existingPos == null)
                 {
                     await _repository.UpsertPositionAsync(new PaperPosition

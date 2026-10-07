@@ -55,7 +55,7 @@
         nodes: [
             N("kite", 0, 1, "ext", "Zerodha Kite", "broker API · WebSocket", "The broker. It supplies the daily login, live price ticks and historical candles, and it receives the buy and sell orders."),
             N("token", 1, 0, "proc", "Token Worker", "daily login · 06:00", "Logs in to Zerodha every morning between 06:00 and 08:30 IST. Without today's token no trade is placed.", "06:00 – 08:30", "ActiveZerodhaTokenWorker"),
-            N("feed", 1, 1, "proc", "Market Data Feed", "live ticks → candles", "Streams live ticks from the Kite WebSocket, builds 1m to 1d candles and keeps the latest price of each stock in memory.", "WebSocket", "MarketDataProcessor"),
+            N("feed", 1, 1, "proc", "Market Data Feed", "live ticks → candles", "Streams live ticks from the Kite WebSocket, builds 1m to 1d candles and keeps the latest price of each stock in memory. Every 2 seconds it also saves each stock's price and previous close to live_quotes, so the website shows the same price and day change as NSE.", "WebSocket", "MarketDataProcessor · LiveQuoteRecorder"),
             N("sync", 1, 2, "proc", "Historical Sync", "fills candle gaps", "Downloads missing historical candles so the indicators always have enough history.", "", "HistoricalDataSyncWorker"),
             N("store", 2, 1, "info", "DB + RAM cache", "candles · live prices", "PostgreSQL holds candles, orders, positions and the audit log. A RAM cache holds settings, open positions and live prices for speed.", "", "RealTradeCacheService"),
             N("scan", 3, 0, "start", "Signal Scan", `every ${R.scanIntervalMinutes} min · buys`, "Scores every stock and places a BUY order when one qualifies and passes all risk guards. See the Signal scan tab.", `${R.scanIntervalMinutes} min`, "AutoRealTradeSignalScanWorker"),
@@ -90,15 +90,15 @@
         runs: `AutoRealTradeSignalScanWorker · every ${R.scanIntervalMinutes} min`,
         desc: `Every ${R.scanIntervalMinutes} minutes during market hours, ${niftyGate ? "the NIFTY 50 trend is checked first and, only if it is healthy, " : ""}each active stock is scored. Only a strong signal that also passes all 13 risk guards becomes a real order.`,
         nodes: [
-            N("wake", 0, 0, "start", "Timer fires", `every ${R.scanIntervalMinutes} min`, `The worker wakes every ${R.scanIntervalMinutes} minutes, counted from when the process started.`, `${R.scanIntervalMinutes} min`, "AutoRealTradeSignalScanWorker"),
+            N("wake", 0, 0, "start", "Timer fires", `after each ${R.scanIntervalMinutes}-min candle closes`, `The worker wakes 20 seconds after every ${R.scanIntervalMinutes}-minute candle closes (09:30:20, 09:45:20, ...), so it always scores a finished candle. A candle still forming is never scored.`, `${R.scanIntervalMinutes} min`, "AutoRealTradeSignalScanWorker"),
             N("mkt", 1, 0, "dec", "Market\nopen?", "", "Checks NSE hours, 09:15 to 15:30 IST on weekdays, and skips holidays from the holiday table.", "09:15 – 15:30", "MarketHoursService"),
             N("sleep", 1, 1, "end", "Sleep", `try again in ${R.scanIntervalMinutes} min`, "Outside market hours the worker does nothing and waits for the next cycle."),
             N("users", 2, 0, "proc", "Load active users", "bot switch ON", "Loads every user who has Auto Real Trade switched on, with their own settings."),
             ...(niftyGate ? [
-                N("nifty", 3, 0, "dec", "NIFTY 50\nhealthy?", "", "Checked once per scan on the daily chart: NIFTY Close above its 50-day average and EMA20 above EMA50. Missing or short NIFTY data counts as not healthy.", "Close > SMA50 · EMA20 > EMA50", "SwingDecisionEngine"),
+                N("nifty", 3, 0, "dec", "NIFTY 50\nhealthy?", "", "Checked once per scan on the daily chart: NIFTY Close above its 50-day average and EMA20 above EMA50. Missing or short NIFTY data counts as not healthy. If Swing settings → Market gate is set to Regime, this step is the market regime instead (see Sector Dashboard): the regime policy sets the minimum stock score, must-beat-NIFTY rule and max positions, so strong stocks can still be bought in a weak market.", "Close > SMA50 · EMA20 > EMA50 (or regime policy)", "SwingDecisionEngine"),
                 N("nobuy", 4, 0, "bad", "No new buys", "whole scan skipped", "The market is weak, so no stock is scored or bought in this scan. Open positions keep their stop loss and target (see the Position monitor tab).")
             ] : []),
-            N("stock", 3, 1, "proc", "Next stock", "1d · 15m · 60m candles", `Loads the last ${R.candleHistoryCount} candles on three timeframes. Stocks with fewer than ${R.minDailyCandles} daily candles are skipped.`, `${R.candleHistoryCount} candles`),
+            N("stock", 3, 1, "proc", "Next stock", "1d · 15m · 60m candles", `Loads the last ${R.dailyCandleHistoryCount || R.candleHistoryCount} daily candles (enough for a real EMA200 and 52-week high) and ${R.candleHistoryCount} finished 15-min and 60-min candles. Stocks with fewer than ${R.minDailyCandles} daily candles are skipped.`, `${R.dailyCandleHistoryCount || R.candleHistoryCount} daily`),
             N("hard", 3, 2, "dec", "Hard filters\npass?", "", "Two must-pass rules on the daily chart: uptrend (Close > EMA20 > EMA50, both rising) and trend strength ADX ≥ 20.", "ADX ≥ 20", "SwingDecisionEngine"),
             N("reject", 4, 2, "bad", "REJECT", "score = 0", "The stock fails a hard filter, so it gets no score and is not traded in this scan."),
             N("score", 3, 3, "proc", "Score 8 factors", "max 100 pts", `Breakout 20, volume 15, relative strength 15, 60-min trend 15, RSI 10, MACD 10, candle 8, risk:reward 7.${niftyGate ? "" : ` A weak NIFTY subtracts ${R.marketContextScorePenalty}.`}`, "100 pts", "SwingDecisionEngine"),
@@ -181,26 +181,29 @@
         name: "Order lifecycle",
         title: "From accepted signal to closed position",
         runs: "Scan worker places · Monitor worker reconciles",
-        desc: `An order can fill at once, wait at the broker, or be rejected. Waiting orders are checked with Zerodha again every ${R.monitorIntervalSeconds} seconds until they settle.`,
+        desc: `An order can fill at once, wait at the broker, fill only partly, or be rejected. Quantity and price always come from Zerodha's own filled quantity and average price, never from the live price. Waiting orders are checked with Zerodha again every ${R.monitorIntervalSeconds} seconds (the same status call, no extra API use) until they settle.`,
         nodes: [
-            N("sig", 0, 1, "start", "Signal accepted", "all guards passed", "A stock passed the signal engine and all 13 risk guards."),
+            N("sig", 0, 1, "start", "Signal accepted", "all guards passed", "A stock passed the signal engine and all 13 risk guards. The decision price is saved as the order's signal price, so slippage (fill − signal) can be measured.", "", "real_orders.signal_price"),
             N("lim", 1, 1, "proc", "LIMIT order sent", `price +${buffer} buffer`, `Sent to Zerodha as a LIMIT order at live price + ${buffer}, rounded to the ₹0.05 tick. Product is ${R.productType}.`, `+${buffer}`, "ZerodhaKiteBrokerService.PlaceLiveOrderAsync"),
-            N("filled", 2, 0, "ok", "Filled", "broker: COMPLETE", "Zerodha filled the order. Stop loss and target are recalculated from the real fill price."),
-            N("open", 2, 1, "warn", "Open (resting)", "waiting at the broker", "The order is on Zerodha's book but not filled yet. No position exists yet."),
-            N("rej", 2, 2, "bad", "Rejected", "logged, no position", "Zerodha rejected or cancelled the order. It is logged as ORDER_REJECTED and nothing is held."),
+            N("filled", 2, 0, "ok", "Filled", "broker qty · broker avg price", "Zerodha filled the whole order and reported its average price. The position uses Zerodha's filled quantity and average price; stop loss and target are re-anchored to that fill price.", "", "RealFillResolver"),
+            N("open", 2, 1, "warn", "Open (waiting)", "resting · or no avg price yet", "Still on Zerodha's book, partly filled, or finished without an average price yet. No position or P&L is recorded on a guessed price - the reconcile pass settles it from Zerodha's numbers."),
+            N("rej", 2, 2, "bad", "Rejected", "nothing filled", "Zerodha rejected or cancelled the order before any share traded. It is logged as ORDER_REJECTED and nothing is held."),
+            N("part", 3, 2, "warn", "Partly filled", "rest cancelled", "Zerodha filled only part of the order, then cancelled the rest. Shares did change hands: a BUY opens the position for the filled quantity; a SELL closes or shrinks the position by the sold quantity.", "", "FinalizeFilledOrderAsync"),
             N("pos", 3, 0, "info", "Position OPEN", "SL · target saved", `The position is tracked in memory and in the database. The monitor checks it every ${R.monitorIntervalSeconds} seconds.`, "", "real_positions"),
             N("sell", 4, 0, "proc", "SELL order", `LTP −${buffer} (gap −${gapBuffer})`, `An exit rule was hit. A LIMIT sell is sent at live price − ${buffer}, or − ${gapBuffer} after a big gap down.`, `−${buffer} / −${gapBuffer}`, "ExecuteRealSellOrderCoreAsync"),
-            N("closed", 4, 1, "end", "Position CLOSED", "P&L + exit reason", "The SELL filled. P&L = (fill − entry) × qty is saved with the exit reason, and an alert goes to the dashboard.", "", "real_trade_history")
+            N("closed", 4, 1, "end", "Position CLOSED", "P&L on sold qty", "The SELL filled. P&L = (Zerodha average sell price − entry) × sold quantity is saved with the exit reason. If only part sold, the position shrinks and stays monitored for the rest.", "", "real_trade_history")
         ],
         edges: [
-            E("sig", "lim", "r", "l"), E("lim", "filled", "t", "l", "COMPLETE"), E("lim", "open", "r", "l", "OPEN"), E("lim", "rej", "b", "l", "REJECTED"),
-            E("open", "filled", "t", "b", `reconcile · ${R.monitorIntervalSeconds} s`), E("open", "rej", "b", "t", "broker rejects"),
+            E("sig", "lim", "r", "l"), E("lim", "filled", "t", "l", "COMPLETE + price"), E("lim", "open", "r", "l", "OPEN / no price"), E("lim", "rej", "b", "l", "REJECTED"),
+            E("open", "filled", "t", "b", `reconcile · ${R.monitorIntervalSeconds} s`), E("open", "rej", "b", "t", "nothing filled"),
+            E("open", "part", "r", "l", "part filled"), E("part", "pos", "t", "b", "filled qty"),
             E("filled", "pos", "r", "l", "fill"), E("pos", "sell", "r", "l", "exit", { fo: -10, to: -10 }),
             E("sell", "pos", "l", "r", "retry", { fo: 10, to: 10, lp: "b" }), E("sell", "closed", "b", "t", "SELL fill")
         ],
         scenarios: [
             { name: "Fills at once", path: ["sig", "lim", "filled", "pos", "sell", "closed"] },
             { name: "Rests, then fills", path: ["sig", "lim", "open", "filled", "pos"] },
+            { name: "Partly fills, rest cancelled", path: ["sig", "lim", "open", "part", "pos"] },
             { name: "Broker rejects", path: ["sig", "lim", "rej"] }
         ]
     };
@@ -217,7 +220,7 @@
             N("wake", 2, 0, "start", "Timer fires", `every ${R.monitorIntervalSeconds} s`, `The monitor wakes every ${R.monitorIntervalSeconds} seconds.`, `${R.monitorIntervalSeconds} s`, "AutoRealPositionMonitorWorker"),
             N("mkt", 2, 1, "dec", "Market\nopen?", "", "Only runs during market hours."),
             N("sleep", 1, 1, "end", "Release cache", "sleep till market open", "Outside market hours the RAM cache is released and the worker waits."),
-            N("rec", 2, 2, "proc", "Reconcile orders", "settle waiting orders", "Asks Zerodha about every order still resting. Filled BUYs become positions and filled SELLs close them.", "", "ReconcilePendingRealOrdersAsync"),
+            N("rec", 2, 2, "proc", "Reconcile orders", "settle waiting orders", "Asks Zerodha about every order still waiting (one status call each). Filled BUYs become positions for Zerodha's filled quantity at its average price; filled SELLs close the position, or shrink it if only part sold. Nothing is settled until Zerodha reports an average price.", "", "ReconcilePendingRealOrdersAsync"),
             N("pos", 2, 3, "proc", "Next open position", "from RAM cache", "Takes each open position in turn. If the stock dropped off the live feed, it is re-subscribed (WS_RESUBSCRIBED)."),
             N("fresh", 2, 4, "dec", `Live tick\n< ${R.ltpFreshnessSeconds} s old?`, "", `Uses the WebSocket price only if it is less than ${R.ltpFreshnessSeconds} seconds old.`, `${R.ltpFreshnessSeconds} s`),
             N("miss", 3, 4, "dec", `Missed\n≥ ${R.restFallbackMissThreshold} times?`, "", "Counts how many cycles in a row had no fresh price.", `${R.restFallbackMissThreshold} misses`),

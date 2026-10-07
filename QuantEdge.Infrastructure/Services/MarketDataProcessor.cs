@@ -34,6 +34,7 @@ public class MarketDataProcessor : IMarketDataProcessor
     private readonly IRealTradeCacheService? _realTradeCacheService;
     private readonly IMarketDataCacheService? _cacheService;
     private readonly IHubContext<MarketDataHub>? _hubContext;
+    private readonly LiveQuoteRecorder? _liveQuoteRecorder;
     private readonly BrokerConfig _config;
     private readonly ILogger<MarketDataProcessor> _logger;
 
@@ -55,7 +56,8 @@ public class MarketDataProcessor : IMarketDataProcessor
         IHubContext<MarketDataHub>? hubContext = null,
         IMarketDataCacheService? cacheService = null,
         IPaperTradingService? paperTradingService = null,
-        IRealTradeCacheService? realTradeCacheService = null)
+        IRealTradeCacheService? realTradeCacheService = null,
+        LiveQuoteRecorder? liveQuoteRecorder = null)
     {
         _webSocketService = webSocketService ?? throw new ArgumentNullException(nameof(webSocketService));
         _candleBuilder = candleBuilder ?? throw new ArgumentNullException(nameof(candleBuilder));
@@ -71,6 +73,7 @@ public class MarketDataProcessor : IMarketDataProcessor
         _cacheService = cacheService;
         _paperTradingService = paperTradingService;
         _realTradeCacheService = realTradeCacheService;
+        _liveQuoteRecorder = liveQuoteRecorder;
     }
 
     /// <summary>
@@ -141,6 +144,9 @@ public class MarketDataProcessor : IMarketDataProcessor
             // exits - this is the ONLY writer of that cache, so a real position's exit check is only ever
             // as fresh as this tick stream (never a REST poll or a value frozen on the RealPosition row).
             _realTradeCacheService?.UpdateLiveLtp(tick.Symbol, tick.LTP);
+
+            // Shared live price + previous close for the API's day-change figures (live_quotes).
+            _liveQuoteRecorder?.Record(tick);
         }
         catch (Exception ex)
         {

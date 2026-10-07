@@ -58,6 +58,13 @@ try
         else if (actualJobType.Equals("marketdatafeed", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddHostedService<MarketDataFeedWorker>();
+            // Official NSE end-of-day prices - only in the plain "marketdatafeed" process, not the per-timeframe ones,
+            // so the file is downloaded once a day.
+            if (!jobType.Contains(":"))
+            {
+                builder.Services.AddHostedService<NseBhavcopyWorker>();
+                builder.Services.AddHostedService<BacktestWorker>();   // queued backtests (Plan Phase 7) - stored candles only
+            }
         }
         else if (actualJobType.Equals("activezerodhatoken", StringComparison.OrdinalIgnoreCase))
         {
@@ -77,11 +84,13 @@ try
             builder.Services.AddHostedService<AutoTradePositionMonitorWorker>();
             builder.Services.AddHostedService<AutoRealTradeSignalScanWorker>();
             builder.Services.AddHostedService<AutoRealPositionMonitorWorker>();
+            builder.Services.AddHostedService<RealOrderChargesWorker>();
         }
         else if (actualJobType.Equals("realtrade", StringComparison.OrdinalIgnoreCase) || actualJobType.Equals("autorealtrade", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddHostedService<AutoRealTradeSignalScanWorker>();
             builder.Services.AddHostedService<AutoRealPositionMonitorWorker>();
+            builder.Services.AddHostedService<RealOrderChargesWorker>();
         }
         else if (actualJobType.Equals("clearcache", StringComparison.OrdinalIgnoreCase))
         {
@@ -102,6 +111,7 @@ try
         builder.Services.AddHostedService<AutoTradePositionMonitorWorker>();
         builder.Services.AddHostedService<AutoRealTradeSignalScanWorker>();
         builder.Services.AddHostedService<AutoRealPositionMonitorWorker>();
+        builder.Services.AddHostedService<RealOrderChargesWorker>();
     }
 
 

@@ -108,6 +108,8 @@ public class ManualPaperDashboardDto
     public decimal ManualCapital { get; set; }
     public decimal ManualUsedMargin { get; set; }
     public decimal ManualUnrealizedPnl { get; set; }
+    /// <summary>Estimated round-trip charges of the open positions if sold now; net = ManualUnrealizedPnl − this.</summary>
+    public decimal ManualEstimatedCharges { get; set; }
     public decimal ManualRealizedPnl { get; set; }
     public decimal ManualTodayRealizedPnl { get; set; }
     public decimal ManualEquity => ManualCapital + ManualRealizedPnl + ManualUnrealizedPnl;

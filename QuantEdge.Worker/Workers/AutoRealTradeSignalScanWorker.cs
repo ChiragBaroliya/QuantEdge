@@ -82,7 +82,8 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
                 _logger.LogError(ex, "Error occurred in AutoRealTradeSignalScanWorker cycle.");
             }
 
-            await Task.Delay(RealTradeSchedule.ScanInterval, stoppingToken);
+            // Next scan just after the next 15m candle close (Plan D2), not 15 min after this one started.
+            await Task.Delay(RealTradeSchedule.DelayUntilNextScan(DateTime.UtcNow), stoppingToken);
         }
     }
 
@@ -104,13 +105,13 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
             return;
         }
 
-        var niftyCandles = (await candleRepo.GetHistoryAsync("NIFTY 50", "1d", 100))
+        var niftyCandles = (await candleRepo.GetHistoryAsync("NIFTY 50", "1d", RealTradeSchedule.DailyCandleHistoryCount))
             .OrderBy(c => c.CandleTime)
             .ToList();
 
         if (!niftyCandles.Any())
         {
-            niftyCandles = (await candleRepo.GetHistoryAsync("NIFTYBEES", "1d", 100))
+            niftyCandles = (await candleRepo.GetHistoryAsync("NIFTYBEES", "1d", RealTradeSchedule.DailyCandleHistoryCount))
                 .OrderBy(c => c.CandleTime)
                 .ToList();
         }
@@ -118,7 +119,23 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
         // Mandatory market gate (checked once per scan): when the NIFTY filter fails - or its data is
         // missing - no new REAL entry is taken, including via the MinConditionsMatch path below.
         // Exits / SL / targets on open positions are handled elsewhere and are unaffected.
-        if (strategySettings.RequireNiftyMarketFilter && !SwingDecisionEngine.IsNiftyMarketFilterPassed(niftyCandles, strategySettings))
+        // REGIME mode (swing_strategy_settings.market_gate_mode): the daily market regime + regime_policy decide instead
+        // of the all-or-nothing NIFTY filter - strong stocks can still qualify in a weak market, with a higher score bar,
+        // a relative-strength requirement and fewer positions. NIFTY_FILTER mode keeps the previous behaviour.
+        MarketGateDecision? regimeGate = null;
+        var engineSettings = strategySettings;
+        if (strategySettings.UsesRegimeGate)
+        {
+            regimeGate = await provider.GetRequiredService<IMarketRegimeService>().GetRegimeGateAsync();
+            if (!regimeGate.AllowsEntries)
+            {
+                _logger.LogWarning("⛔ Market regime gate: {Reason} - no new REAL entries this scan.", regimeGate.Reason);
+                return;
+            }
+            _logger.LogInformation("Market regime gate: {Reason}", regimeGate.Reason);
+            engineSettings = RegimeGate.WithoutNiftyGate(strategySettings);
+        }
+        else if (strategySettings.RequireNiftyMarketFilter && !SwingDecisionEngine.IsNiftyMarketFilterPassed(niftyCandles, strategySettings))
         {
             _logger.LogWarning("⛔ NIFTY Market Filter FAILED (Close <= 50 DMA / EMA20 <= EMA50 or {Count} daily candles available) - no new REAL entries this scan.",
                 niftyCandles.Count);
@@ -141,7 +158,7 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
 
             try
             {
-                var stockCandles1d = (await candleRepo.GetHistoryAsync(stock.Symbol, "1d", RealTradeSchedule.CandleHistoryCount))
+                var stockCandles1d = (await candleRepo.GetHistoryAsync(stock.Symbol, "1d", RealTradeSchedule.DailyCandleHistoryCount))
                     .OrderBy(c => c.CandleTime)
                     .ToList();
                 var stockCandles15m = (await candleRepo.GetHistoryAsync(stock.Symbol, "15m", RealTradeSchedule.CandleHistoryCount))
@@ -153,10 +170,21 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
 
                 if (stockCandles1d.Count < RealTradeSchedule.MinDailyCandles) continue;
 
-                var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, strategySettings);
+                var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, engineSettings);
                 if (evalResult == null || evalResult.Checklist == null) continue;
 
                 int metCount = evalResult.Checklist.MetCount;
+
+                if (regimeGate?.Policy != null)
+                {
+                    // Regime mode: only the regime policy decides (the MinConditionsMatch path doesn't apply).
+                    var (allowed, _) = RegimeGate.Evaluate(evalResult, regimeGate.Policy);
+                    if (allowed)
+                    {
+                        candidateStocks.Add((stock, evalResult.EntryPrice, metCount, evalResult.Score, true, evalResult.StopLoss, evalResult.Target1, evalResult.DailyAtr));
+                    }
+                    continue;
+                }
 
                 // Threshold filter: Collect candidate if confirmed Buy or meets the most lenient active user's threshold
                 if (evalResult.IsBuySignal || metCount >= candidateMetCountThreshold)
@@ -179,8 +207,24 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
             if (stoppingToken.IsCancellationRequested) break;
 
             int executedOrdersCount = 0;
-            foreach (var candidate in candidateStocks)
+
+            // Regime mode: at most policy.MaxPositions open positions per user (stronger regimes allow more).
+            int positionRoom = int.MaxValue;
+            if (regimeGate?.Policy != null)
             {
+                int open = (await provider.GetRequiredService<IRealTradingRepository>().GetOpenPositionsAsync(userSettings.UserId)).Count();
+                positionRoom = regimeGate.Policy.MaxPositions - open;
+                if (positionRoom <= 0)
+                {
+                    _logger.LogInformation("User {UserId}: {Open} open positions - {Regime} allows {Max}; no new REAL entries.",
+                        userSettings.UserId, open, regimeGate.Policy.Regime, regimeGate.Policy.MaxPositions);
+                    continue;
+                }
+            }
+
+            foreach (var candidate in candidateStocks.OrderByDescending(c => c.Score))
+            {
+                if (executedOrdersCount >= positionRoom) break;
                 if (candidate.IsBuySignal || candidate.MetCount >= userSettings.MinConditionsMatch)
                 {
                     bool executed = await realTradeService.EvaluateAndExecuteRealBuyAsync(

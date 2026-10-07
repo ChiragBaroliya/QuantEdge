@@ -12,6 +12,14 @@ public class RealPosition
     public decimal AverageEntryPrice { get; set; }
     public decimal CurrentPrice { get; set; }
     public decimal UnrealizedPnl { get; set; }
+    // Display only (never stored): estimated round-trip charges if closed now at CurrentPrice (ChargesCalculator), and the
+    // resulting net. Set by the services that build position lists for the trading pages.
+    public decimal EstimatedCharges { get; set; }
+    public decimal NetUnrealizedPnl => UnrealizedPnl - EstimatedCharges;
+    // Display only: where CurrentPrice came from - LIVE (fresh tick), BROKER (REST quote now), STORED (DB value or last
+    // stored candle, may be old) or NONE (no price: P&L is not meaningful) - and when it was observed, if known.
+    public string? PriceSource { get; set; }
+    public DateTime? PriceAsOfUtc { get; set; }
     public decimal? StopLoss { get; set; } // Optional
     public decimal? TakeProfit { get; set; } // Optional
     public decimal? TrailingStopLoss { get; set; } // Optional Trailing SL value

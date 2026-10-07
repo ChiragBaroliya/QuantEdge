@@ -56,6 +56,8 @@ public class PaperTradingService : IPaperTradingService
         foreach (var pos in openPositions)
         {
             decimal ltp = _matchingEngine.GetLtp(pos.Symbol);
+            pos.PriceSource = ltp > 0m ? "LIVE" : pos.CurrentPrice > 0m ? "STORED" : "NONE";
+            pos.PriceAsOfUtc = ltp > 0m ? DateTime.UtcNow : null;
             if (ltp <= 0m) ltp = pos.CurrentPrice > 0m ? pos.CurrentPrice : pos.AverageEntryPrice;
 
             decimal pnl = pos.Side == TradeSide.BUY
@@ -64,6 +66,7 @@ public class PaperTradingService : IPaperTradingService
 
             pos.CurrentPrice = ltp;
             pos.UnrealizedPnl = pnl;
+            pos.EstimatedCharges = EstimateCharges(pos);
             totalUnrealizedPnl += pnl;
         }
 
@@ -71,6 +74,7 @@ public class PaperTradingService : IPaperTradingService
         {
             Account = account,
             TotalUnrealizedPnl = totalUnrealizedPnl,
+            TotalEstimatedCharges = Math.Round(openPositions.Sum(p => p.EstimatedCharges), 2),
             AutoTradeEnabled = _autoTradeEnabled
         };
     }
@@ -90,6 +94,20 @@ public class PaperTradingService : IPaperTradingService
         decimal executionPrice = dto.OrderType == PaperOrderType.Market ? currentLtp : dto.Price;
         decimal requiredMargin = dto.Quantity * executionPrice;
 
+        // A market order against an open position in the opposite direction closes (part of) it. Selling more
+        // than is held would need a reversal into a short, which paper trading doesn't model - reject it
+        // instead of silently dropping the excess quantity.
+        var existingPosition = dto.OrderType == PaperOrderType.Market
+            ? await _repository.GetOpenPositionBySymbolAsync(account.Id, dto.Symbol)
+            : null;
+        bool isClosingOrder = existingPosition != null && existingPosition.Side != dto.Side;
+        if (isClosingOrder && dto.Quantity > existingPosition!.Quantity)
+        {
+            throw new InvalidOrderException(
+                $"Quantity {dto.Quantity} exceeds the open position of {existingPosition.Quantity} {existingPosition.Symbol}. Close at most {existingPosition.Quantity}.",
+                "QUANTITY_EXCEEDS_POSITION");
+        }
+
         var newOrder = new PaperOrder
         {
             AccountId = account.Id,
@@ -108,71 +126,68 @@ public class PaperTradingService : IPaperTradingService
 
         var createdOrder = await _repository.CreateOrderAsync(newOrder);
 
-        // Deduct margin from account
-        decimal newUsedMargin = account.UsedMargin + requiredMargin;
-        await _repository.UpdateAccountBalanceAndMarginAsync(account.Id, account.CurrentBalance, newUsedMargin, account.RealizedPnl);
+        // Block margin for orders that open or add to a position (a closing order releases margin below instead).
+        if (!isClosingOrder)
+        {
+            await _repository.UpdateAccountBalanceAndMarginAsync(account.Id, account.CurrentBalance, account.UsedMargin + requiredMargin, account.RealizedPnl);
+        }
 
         // If Market Order, update or open position immediately
         if (dto.OrderType == PaperOrderType.Market)
         {
-            var existingPosition = await _repository.GetOpenPositionBySymbolAsync(account.Id, dto.Symbol);
-            if (existingPosition == null)
+            if (isClosingOrder)
             {
-                await _repository.UpsertPositionAsync(new PaperPosition
-                {
-                    AccountId = account.Id,
-                    Symbol = dto.Symbol.ToUpper().Trim(),
-                    Side = dto.Side,
-                    Quantity = dto.Quantity,
-                    AverageEntryPrice = executionPrice,
-                    CurrentPrice = executionPrice,
-                    UnrealizedPnl = 0m,
-                    StopLoss = dto.StopLoss,
-                    TakeProfit = dto.TakeProfit,
-                    Status = PositionStatus.OPEN,
-                    RealizedPnl = 0m
-                });
-            }
-            else if (existingPosition.Side == dto.Side)
-            {
-                int totalQty = existingPosition.Quantity + dto.Quantity;
-                decimal avgPrice = ((existingPosition.Quantity * existingPosition.AverageEntryPrice) + (dto.Quantity * executionPrice)) / totalQty;
-                existingPosition.Quantity = totalQty;
-                existingPosition.AverageEntryPrice = avgPrice;
-                existingPosition.CurrentPrice = executionPrice;
-                existingPosition.StopLoss = dto.StopLoss ?? existingPosition.StopLoss;
-                existingPosition.TakeProfit = dto.TakeProfit ?? existingPosition.TakeProfit;
-                await _repository.UpsertPositionAsync(existingPosition);
+                // Opposite direction: full or partial close (quantity validated above). Books the P&L into the
+                // history row too - Reports read history, so a 0 there used to drop the trade's profit.
+                await PaperPositionCloser.CloseAsync(_repository, account, existingPosition!, dto.Quantity, executionPrice,
+                    createdOrder.Id, "Manual Close");
             }
             else
             {
-                // Opposite direction - partial or full close
-                if (dto.Quantity >= existingPosition.Quantity)
+                if (existingPosition == null)
                 {
-                    decimal realizedPnl = existingPosition.Side == TradeSide.BUY
-                        ? (executionPrice - existingPosition.AverageEntryPrice) * existingPosition.Quantity
-                        : (existingPosition.AverageEntryPrice - executionPrice) * existingPosition.Quantity;
-
-                    await _repository.ClosePositionAsync(existingPosition.Id, executionPrice, realizedPnl);
-                    decimal updatedBalance = account.CurrentBalance + realizedPnl;
-                    decimal updatedMargin = Math.Max(0m, newUsedMargin - (existingPosition.Quantity * existingPosition.AverageEntryPrice) - requiredMargin);
-                    await _repository.UpdateAccountBalanceAndMarginAsync(account.Id, updatedBalance, updatedMargin, account.RealizedPnl + realizedPnl);
+                    await _repository.UpsertPositionAsync(new PaperPosition
+                    {
+                        AccountId = account.Id,
+                        Symbol = dto.Symbol.ToUpper().Trim(),
+                        Side = dto.Side,
+                        Quantity = dto.Quantity,
+                        AverageEntryPrice = executionPrice,
+                        CurrentPrice = executionPrice,
+                        UnrealizedPnl = 0m,
+                        StopLoss = dto.StopLoss,
+                        TakeProfit = dto.TakeProfit,
+                        Status = PositionStatus.OPEN,
+                        RealizedPnl = 0m
+                    });
                 }
-            }
+                else
+                {
+                    int totalQty = existingPosition.Quantity + dto.Quantity;
+                    decimal avgPrice = ((existingPosition.Quantity * existingPosition.AverageEntryPrice) + (dto.Quantity * executionPrice)) / totalQty;
+                    existingPosition.Quantity = totalQty;
+                    existingPosition.AverageEntryPrice = avgPrice;
+                    existingPosition.CurrentPrice = executionPrice;
+                    existingPosition.StopLoss = dto.StopLoss ?? existingPosition.StopLoss;
+                    existingPosition.TakeProfit = dto.TakeProfit ?? existingPosition.TakeProfit;
+                    await _repository.UpsertPositionAsync(existingPosition);
+                }
 
-            // Record Trade History
-            await _repository.RecordTradeHistoryAsync(new PaperTradeHistory
-            {
-                AccountId = account.Id,
-                OrderId = createdOrder.Id,
-                Symbol = dto.Symbol.ToUpper().Trim(),
-                Side = dto.Side,
-                Quantity = dto.Quantity,
-                EntryPrice = executionPrice,
-                ExecutedPrice = executionPrice,
-                RealizedPnl = 0m,
-                Remarks = "Market Order Executed"
-            });
+                // Record Trade History
+                await _repository.RecordTradeHistoryAsync(new PaperTradeHistory
+                {
+                    AccountId = account.Id,
+                    OrderId = createdOrder.Id,
+                    Symbol = dto.Symbol.ToUpper().Trim(),
+                    Side = dto.Side,
+                    Quantity = dto.Quantity,
+                    EntryPrice = executionPrice,
+                    ExecutedPrice = executionPrice,
+                    RealizedPnl = 0m,
+                    TradeType = existingPosition?.TradeType ?? TradeType.Manual,
+                    Remarks = "Market Order Executed"
+                });
+            }
         }
 
         // Invalidate matching engine cache so new order is monitored immediately
@@ -423,10 +438,23 @@ public class PaperTradingService : IPaperTradingService
                 pos.UnrealizedPnl = pos.Side == TradeSide.BUY
                     ? (ltp - pos.AverageEntryPrice) * pos.Quantity
                     : (pos.AverageEntryPrice - ltp) * pos.Quantity;
+                pos.PriceSource = "LIVE";
+                pos.PriceAsOfUtc = DateTime.UtcNow;
             }
+            else
+            {
+                // No tick in this process: the stored current_price (written by the feed worker) - age unknown.
+                pos.PriceSource = pos.CurrentPrice > 0m ? "STORED" : "NONE";
+            }
+            pos.EstimatedCharges = EstimateCharges(pos);
         }
         return positions;
     }
+
+    // "Net if sold now" for a paper position: round-trip charges at its current price (display only).
+    internal static decimal EstimateCharges(PaperPosition pos) =>
+        Math.Round(ChargesCalculator.EstimateOpenPosition(pos.AverageEntryPrice, pos.CurrentPrice, pos.Quantity,
+            pos.Side == TradeSide.SELL, pos.OpenedAt), 2);
 
     public async Task<IEnumerable<PaperOrder>> GetOrdersAsync(string userId = "default_user", bool activeOnly = false)
     {

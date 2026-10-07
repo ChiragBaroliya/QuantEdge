@@ -22,8 +22,8 @@
         "HOLDING_MONITOR_ENABLED", "ORDER_REJECTED", "SELL_FAILED", "SYSTEM_ERROR", "LIVE_ENABLE_FAILED",
         "TOKEN_EXPIRED", "KILL_SWITCH_ACTIVE", "CIRCUIT_BREAKER"
     ]);
-    const CATEGORY_LINKS = { "real-trade": "/RealTrading", "swing": "/SwingTrading", "nifty": "/" };
-    const CATEGORY_LABELS = { "real-trade": "Real Trade", "swing": "Swing", "nifty": "NIFTY" };
+    const CATEGORY_LINKS = { "real-trade": "/RealTrading", "swing": "/SwingTrading", "nifty": "/", "zerodha": "/Token" };
+    const CATEGORY_LABELS = { "real-trade": "Real Trade", "swing": "Swing", "nifty": "NIFTY", "zerodha": "Zerodha/NSE" };
 
     const els = {
         btn: document.getElementById("qeNotifBtn"),
@@ -157,6 +157,8 @@
             if (log && forMe(log) && NOTIFY_ACTIONS.has(String(log.actionType || "").toUpperCase())) scheduleRefresh(false);
         });
         conn.on("ReceiveRealTradeAlert", (d) => { if (forMe(d)) scheduleRefresh(false); });
+        // A failed / rate-limited / skipped Zerodha call (BrokerApiEventRecorder) - show it right away.
+        conn.on("ReceiveBrokerApiAlert", () => scheduleRefresh(false));
         conn.on("ReceiveSwingSlotUpdate", () => scheduleRefresh(true));
         conn.on("ReceiveSwingDashboardUpdate", () => scheduleRefresh(true)); // NIFTY status rides along
         conn.onreconnected(() => scheduleRefresh(false));

@@ -64,6 +64,8 @@ public class AutoTradeDashboardDto
     public int MaxTradesPerDay => Settings.MaxTradesPerDay;
     public int ActivePositionsCount { get; set; }
     public decimal TotalUnrealizedPnl { get; set; }
+    /// <summary>Estimated round-trip charges of the open positions if sold now; net = TotalUnrealizedPnl − this.</summary>
+    public decimal TotalEstimatedCharges { get; set; }
     public decimal TotalRealizedPnlToday { get; set; }
     public decimal AvailableMargin { get; set; }
     public decimal UsedMargin { get; set; }

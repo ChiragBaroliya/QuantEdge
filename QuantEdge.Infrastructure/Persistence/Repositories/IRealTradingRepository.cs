@@ -18,6 +18,12 @@ public interface IRealTradingRepository
     Task<RealOrder?> GetOrderByIdAsync(int orderId);
     Task<RealOrder?> GetOrderByBrokerOrderIdAsync(string brokerOrderId);
     Task UpdateOrderStatusAsync(int orderId, PaperOrderStatus status, decimal filledPrice, string? brokerOrderId = null, string? rejectionReason = null);
+
+    /// <summary>Stores the decision (signal) price and/or the broker's filled quantity on an order; null leaves a value unchanged.</summary>
+    Task RecordOrderFillDetailsAsync(int orderId, decimal? signalPrice, int? filledQuantity);
+
+    /// <summary>Partial exit: shrinks an OPEN position to <paramref name="newQuantity"/> and adds the realized P&amp;L of the part sold.</summary>
+    Task ReducePositionQuantityAsync(int positionId, int newQuantity, decimal realizedPnlToAdd);
     Task<IEnumerable<RealOrder>> GetRecentOrdersAsync(int userId = 1, int limit = 50);
 
     /// <summary>

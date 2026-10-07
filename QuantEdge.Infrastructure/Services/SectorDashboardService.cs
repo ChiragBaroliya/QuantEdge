@@ -62,6 +62,8 @@ public class SectorDashboardService : ISectorDashboardService
     private readonly ISwingStrategySettingsRepository _strategySettingsRepository;
     private readonly IAutoRealTradeService _realTradeService;
     private readonly ICacheService _cache;
+    private readonly ILiveQuoteRepository _liveQuoteRepository;
+    private readonly IMarketRegimeService _regimeService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SectorDashboardService> _logger;
 
@@ -71,9 +73,13 @@ public class SectorDashboardService : ISectorDashboardService
         ISwingStrategySettingsRepository strategySettingsRepository,
         IAutoRealTradeService realTradeService,
         ICacheService cache,
+        ILiveQuoteRepository liveQuoteRepository,
+        IMarketRegimeService regimeService,
         IServiceScopeFactory scopeFactory,
         ILogger<SectorDashboardService> logger)
     {
+        _liveQuoteRepository = liveQuoteRepository ?? throw new ArgumentNullException(nameof(liveQuoteRepository));
+        _regimeService = regimeService ?? throw new ArgumentNullException(nameof(regimeService));
         _sectorRepository = sectorRepository ?? throw new ArgumentNullException(nameof(sectorRepository));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _strategySettingsRepository = strategySettingsRepository ?? throw new ArgumentNullException(nameof(strategySettingsRepository));
@@ -91,6 +97,8 @@ public class SectorDashboardService : ISectorDashboardService
             AsOfUtc = snapshot.AsOfUtc,
             MarketPassed = snapshot.MarketPassed,
             MarketRequired = snapshot.MarketRequired,
+            MarketGateMode = snapshot.MarketGateMode,
+            MarketReason = snapshot.MarketReason,
             Sectors = snapshot.Sectors.Select(s => s.Summary).ToList()
         };
     }
@@ -106,6 +114,8 @@ public class SectorDashboardService : ISectorDashboardService
             AsOfUtc = snapshot.AsOfUtc,
             MarketPassed = snapshot.MarketPassed,
             MarketRequired = snapshot.MarketRequired,
+            MarketGateMode = snapshot.MarketGateMode,
+            MarketReason = snapshot.MarketReason,
             BuyThreshold = snapshot.BuyThreshold,
             WatchThreshold = snapshot.WatchThreshold,
             MinConditionsMatch = snapshot.MinConditionsMatch,
@@ -196,27 +206,39 @@ public class SectorDashboardService : ISectorDashboardService
         var dailyTask = LoadBatchAsync(symbols.Concat(sectorNames).Concat(new[] { "NIFTY 50", "NIFTYBEES" }).Distinct().ToList(), "1d");
         var m15Task = LoadBatchAsync(symbols, "15m");
         var m60Task = LoadBatchAsync(symbols, "60m");
-        await Task.WhenAll(strategyTask, settingsTask, dailyTask, m15Task, m60Task);
+        var liveTask = _liveQuoteRepository.GetAsync(symbols.Concat(sectorNames).Distinct().ToList());
+        await Task.WhenAll(strategyTask, settingsTask, dailyTask, m15Task, m60Task, liveTask);
 
         var strategy = strategyTask.Result ?? SwingStrategySettings.Default;
         var settings = settingsTask.Result;
         var daily = dailyTask.Result;
         var m15 = m15Task.Result;
         var m60 = m60Task.Result;
+        var live = liveTask.Result;
 
         var nifty = Candles(daily, "NIFTY 50");
         if (!nifty.Any()) nifty = Candles(daily, "NIFTYBEES");
 
+        var tradeParams = SwingTradeParams.From(settings);
+
+        // Same market gate as the bot (Plan Phase 1): REGIME mode scores without the NIFTY hard gate and lets the
+        // regime policy decide which stocks are bot candidates; NIFTY_FILTER mode is unchanged.
+        MarketGateDecision? regimeGate = strategy.UsesRegimeGate ? await _regimeService.GetRegimeGateAsync() : null;
+        var engineStrategy = regimeGate != null ? RegimeGate.WithoutNiftyGate(strategy) : strategy;
+
         // Each stock is scored once, even when it sits in several sectors. Pure CPU from here on.
         var bySymbol = symbols.AsParallel()
-            .Select(s => EvaluateStock(s, Candles(daily, s), Candles(m15, s), Candles(m60, s), nifty, strategy, settings.MinConditionsMatch))
+            .Select(s => EvaluateStock(s, Candles(daily, s), Candles(m15, s), Candles(m60, s), nifty, engineStrategy, settings.MinConditionsMatch,
+                live.TryGetValue(s, out var q) ? q : null, tradeParams, regimeGate))
             .ToDictionary(e => e.Symbol, StringComparer.OrdinalIgnoreCase);
 
         var snapshot = new Snapshot
         {
             AsOfUtc = DateTime.UtcNow,
-            MarketPassed = SwingDecisionEngine.IsNiftyMarketFilterPassed(nifty, strategy),
-            MarketRequired = strategy.RequireNiftyMarketFilter,
+            MarketPassed = regimeGate?.AllowsEntries ?? SwingDecisionEngine.IsNiftyMarketFilterPassed(nifty, strategy),
+            MarketRequired = regimeGate != null || strategy.RequireNiftyMarketFilter,
+            MarketGateMode = regimeGate != null ? SwingStrategySettings.GateModeRegime : SwingStrategySettings.GateModeNiftyFilter,
+            MarketReason = regimeGate?.Reason,
             BuyThreshold = strategy.BuyScoreThreshold,
             WatchThreshold = strategy.WatchScoreThreshold,
             MinConditionsMatch = settings.MinConditionsMatch
@@ -228,8 +250,10 @@ public class SectorDashboardService : ISectorDashboardService
                 .Select(r => (Row: r, Eval: bySymbol[r.Symbol!.Trim().ToUpperInvariant()]))
                 .ToList();
 
-            var index = Candles(daily, group.Key.SectorName.Trim().ToUpperInvariant());
-            var summary = BuildSectorSummary(group.Key.SectorId, group.Key.SectorName, members.Select(m => m.Eval).ToList(), index);
+            string indexSymbol = group.Key.SectorName.Trim().ToUpperInvariant();
+            var index = Candles(daily, indexSymbol);
+            var summary = BuildSectorSummary(group.Key.SectorId, group.Key.SectorName, members.Select(m => m.Eval).ToList(), index,
+                live.TryGetValue(indexSymbol, out var indexLive) ? indexLive : null);
             var stocks = members.Select(m => BuildStockSignal(m.Row, m.Eval, summary)).ToList();
 
             summary.BuyCount = stocks.Count(s => s.Signal == "BUY");
@@ -247,19 +271,18 @@ public class SectorDashboardService : ISectorDashboardService
 
     // Same candle set, engine call and bot-candidate rule as StockVerdictService.GetVerdictAsync.
     private static StockEvaluation EvaluateStock(string symbol, List<MarketCandle> candles1d, List<MarketCandle> candles15m, List<MarketCandle> candles60m,
-        List<MarketCandle> nifty, SwingStrategySettings strategy, int minConditionsMatch)
+        List<MarketCandle> nifty, SwingStrategySettings strategy, int minConditionsMatch, LiveQuote? live, SwingTradeParams tradeParams,
+        MarketGateDecision? regimeGate)
     {
+        // Price and day change exactly as NSE shows them (Ltp vs previous session close) - see DayChangeCalculator.
+        var quote = DayChangeCalculator.Resolve(symbol, live, candles1d, candles15m);
         var eval = new StockEvaluation
         {
             Symbol = symbol,
-            LastPrice = candles15m.LastOrDefault()?.Close ?? candles1d.LastOrDefault()?.Close ?? 0m
+            LastPrice = candles15m.LastOrDefault()?.Close ?? candles1d.LastOrDefault()?.Close ?? 0m,
+            Quote = quote,
+            DayChangePct = quote?.ChangePct
         };
-
-        if (candles1d.Count >= 2)
-        {
-            decimal prevClose = candles1d[^2].Close;
-            eval.DayChangePct = prevClose > 0m ? Math.Round((candles1d[^1].Close - prevClose) / prevClose * 100m, 2) : null;
-        }
 
         if (candles1d.Count < RealTradeSchedule.MinDailyCandles)
         {
@@ -275,11 +298,15 @@ public class SectorDashboardService : ISectorDashboardService
 
         eval.Result = result;
         eval.LastPrice = result.EntryPrice;
-        eval.IsBotCandidate = result.HardFiltersPassed && (result.IsBuySignal || metCount >= minConditionsMatch);
+        eval.IsBotCandidate = regimeGate?.Policy != null
+            ? regimeGate.AllowsEntries && RegimeGate.Evaluate(result, regimeGate.Policy).Allowed   // regime mode: the policy decides, as in the scan workers
+            : result.HardFiltersPassed && (result.IsBuySignal || metCount >= minConditionsMatch);
+        // The stop / target the bot would place with these settings (Plan D6), not the engine's 15m-ATR levels.
+        eval.BotLevels = SwingTradeRules.BotLevelsFor(result, tradeParams);
         return eval;
     }
 
-    private static SectorSummaryDto BuildSectorSummary(int sectorId, string name, List<StockEvaluation> stocks, List<MarketCandle> indexCandles)
+    private static SectorSummaryDto BuildSectorSummary(int sectorId, string name, List<StockEvaluation> stocks, List<MarketCandle> indexCandles, LiveQuote? indexLive)
     {
         var scored = stocks.Where(s => s.Result != null).ToList();
         var withChange = stocks.Where(s => s.DayChangePct.HasValue).ToList();
@@ -300,11 +327,11 @@ public class SectorDashboardService : ISectorDashboardService
         };
 
         // The sector index itself when its candles are stored under the sector name (e.g. "NIFTY BANK").
-        var index = indexCandles.Skip(Math.Max(0, indexCandles.Count - 2)).ToList();
-        if (index.Count >= 2 && index[0].Close > 0m)
+        var indexQuote = DayChangeCalculator.Resolve(name, indexLive, indexCandles);
+        if (indexQuote?.ChangePct != null)
         {
-            summary.IndexValue = index[1].Close;
-            summary.ChangePct = Math.Round((index[1].Close - index[0].Close) / index[0].Close * 100m, 2);
+            summary.IndexValue = indexQuote.Ltp;
+            summary.ChangePct = indexQuote.ChangePct;
             summary.ChangeSource = "INDEX";
         }
         else if (withChange.Any())
@@ -342,8 +369,11 @@ public class SectorDashboardService : ISectorDashboardService
         {
             Symbol = eval.Symbol,
             Name = row.StockName,
-            LastPrice = eval.LastPrice,
-            DayChangePct = eval.DayChangePct
+            LastPrice = eval.Quote?.Ltp ?? eval.LastPrice,
+            DayChangePct = eval.DayChangePct,
+            PrevClose = eval.Quote?.PrevClose,
+            PriceAsOfUtc = eval.Quote?.AsOfUtc,
+            PriceSource = eval.Quote?.Source
         };
 
         var r = eval.Result;
@@ -371,9 +401,9 @@ public class SectorDashboardService : ISectorDashboardService
         dto.TimingPoints = r.Factors.Where(f => TimingFactors.Contains(f.Code)).Sum(f => f.Points);
         dto.TimingMaxPoints = r.Factors.Where(f => TimingFactors.Contains(f.Code)).Sum(f => f.MaxPoints);
         dto.Entry = r.EntryPrice;
-        dto.StopLoss = rejected ? 0m : r.StopLoss;
-        dto.Target1 = rejected ? 0m : r.Target1;
-        dto.RiskReward = rejected ? 0m : r.RiskRewardRatio;
+        dto.StopLoss = rejected ? 0m : eval.BotLevels.StopLoss;
+        dto.Target1 = rejected ? 0m : eval.BotLevels.Target;
+        dto.RiskReward = rejected ? 0m : eval.BotLevels.RiskReward;
 
         dto.Conditions.Add(new SectorConditionDto
         {
@@ -506,7 +536,7 @@ public class SectorDashboardService : ISectorDashboardService
 
     // Latest CandleHistoryCount candles per symbol (the scan worker's window), oldest first, keyed by upper-case symbol.
     private async Task<Dictionary<string, List<MarketCandle>>> LoadBatchAsync(IReadOnlyCollection<string> symbols, string timeframe) =>
-        (await _candleRepository.GetRecentHistoryBatchAsync(symbols, timeframe, RealTradeSchedule.CandleHistoryCount))
+        (await _candleRepository.GetRecentHistoryBatchAsync(symbols, timeframe, RealTradeSchedule.HistoryCountFor(timeframe)))
             .GroupBy(c => c.Symbol.ToUpperInvariant())
             .ToDictionary(g => g.Key, g => g.OrderBy(c => c.CandleTime).ToList());
 
@@ -518,8 +548,10 @@ public class SectorDashboardService : ISectorDashboardService
         public string Symbol { get; set; } = string.Empty;
         public decimal LastPrice { get; set; }
         public decimal? DayChangePct { get; set; }
+        public DayQuoteDto? Quote { get; set; }
         public SwingEvaluationResult? Result { get; set; }
         public bool IsBotCandidate { get; set; }
+        public (decimal StopLoss, decimal Target, decimal RiskReward) BotLevels { get; set; }
         public string NoDataReason { get; set; } = string.Empty;
     }
 
@@ -527,6 +559,8 @@ public class SectorDashboardService : ISectorDashboardService
     {
         public DateTime AsOfUtc { get; set; }
         public bool MarketPassed { get; set; }
+        public string MarketGateMode { get; set; } = "NIFTY_FILTER";
+        public string? MarketReason { get; set; }
         public bool MarketRequired { get; set; }
         public int BuyThreshold { get; set; }
         public int WatchThreshold { get; set; }

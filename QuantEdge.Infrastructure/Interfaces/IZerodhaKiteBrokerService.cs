@@ -73,6 +73,13 @@ public interface IZerodhaKiteBrokerService
     Task<(bool Success, List<ZerodhaHoldingDto>? Holdings, string? Message)> GetLiveHoldingsAsync(int userId = 1);
 
     /// <summary>
+    /// Kite virtual contract note (POST /charges/orders): Zerodha's own brokerage, STT, exchange, SEBI, stamp and GST
+    /// for executed orders. ONE call for the whole batch. Results come back in request order (no order_id is echoed).
+    /// </summary>
+    Task<(bool Success, List<KiteOrderCharges>? Charges, string? Message)> GetOrderChargesAsync(
+        IReadOnlyList<KiteChargesOrderRequest> orders, int userId = 1);
+
+    /// <summary>
     /// Retrieves live last-traded price for a batch of instruments directly from Zerodha (GET /quote/ltp).
     /// Returned dictionary is keyed by trading symbol (case-insensitive).
     /// </summary>

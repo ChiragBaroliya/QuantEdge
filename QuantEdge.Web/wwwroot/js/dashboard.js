@@ -30,7 +30,9 @@ let chartDataCache = [];
 
 // Real-time stock price (LTP) & active timeframe candle open price tracking
 let currentLivePrice = null;
-let currentCandleOpenPrice = null;
+// Previous session close from /api/marketdata/day-quote - the header's % is (LTP - prev close) / prev close,
+// the same day change NSE and TradingView show.
+let currentPrevClose = null;
 
 // Auto Refresh (1m / 60 seconds) Tracking
 let autoRefreshTicker = null;
@@ -159,6 +161,7 @@ async function triggerDashboardRefresh(isManual = true) {
         if (activeSymbol) {
             await fetchChartHistory();
             await fetchInitialLastPrice(activeSymbol);
+            await fetchDayQuote(activeSymbol);
             fetchWeeklyPnl(activeSymbol);
         }
     } catch (ex) {
@@ -573,7 +576,7 @@ function renderWeeklyPnlChart(data) {
 // Switch viewed stock symbol
 async function switchSymbol(symbol) {
     currentLivePrice = null;
-    currentCandleOpenPrice = null;
+    currentPrevClose = null;
     const oldSymbol = activeSymbol;
     activeSymbol = symbol;
     updateFavoriteButton();
@@ -587,6 +590,7 @@ async function switchSymbol(symbol) {
 
     await fetchChartHistory();
     await fetchInitialLastPrice(symbol);
+    await fetchDayQuote(symbol);
     fetchWeeklyPnl(symbol, 0); // reset to the current week whenever a different stock is selected
 
     // Re-subscribe to SignalR groups
@@ -660,17 +664,38 @@ function refreshLivePriceHeader() {
     // Real-time stock price (LTP) - independent of timeframe
     $("#widgetLTP").text(parseFloat(currentLivePrice).toFixed(2));
 
-    // Percentage change - calculated based on selected timeframe's open price
-    if (currentCandleOpenPrice && currentCandleOpenPrice > 0) {
-        const changePct = ((currentLivePrice - currentCandleOpenPrice) / currentCandleOpenPrice) * 100;
-        const changeStr = (changePct >= 0 ? "+" : "") + changePct.toFixed(2) + "%";
-        const badgeClass = changePct >= 0 ? "bullish" : "bearish";
+    // Day change vs the previous session close (independent of the selected timeframe), as on NSE / TradingView.
+    const widgetChangeEl = $("#widgetChange");
+    if (!widgetChangeEl.length) return;
+    if (currentPrevClose && currentPrevClose > 0) {
+        const change = currentLivePrice - currentPrevClose;
+        const changePct = (change / currentPrevClose) * 100;
+        const sign = changePct >= 0 ? "+" : "";
+        widgetChangeEl.text(`${sign}${change.toFixed(2)} (${sign}${changePct.toFixed(2)}%)`);
+        widgetChangeEl.attr("class", `w-change ${changePct >= 0 ? "bullish" : "bearish"}`);
+        widgetChangeEl.attr("title", `Day change vs previous close ₹${currentPrevClose.toFixed(2)}`);
+    } else {
+        widgetChangeEl.text("—");
+        widgetChangeEl.attr("class", "w-change neutral");
+        widgetChangeEl.attr("title", "Previous close not available yet");
+    }
+}
 
-        const widgetChangeEl = $("#widgetChange");
-        if (widgetChangeEl.length) {
-            widgetChangeEl.text(changeStr);
-            widgetChangeEl.attr("class", `w-change ${badgeClass}`);
+// Previous close (and a fallback price until the first live tick) for the day-change badge.
+async function fetchDayQuote(symbol) {
+    if (!symbol) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/marketdata/day-quote/${encodeURIComponent(symbol)}`);
+        if (!response.ok) return;
+        const quote = await response.json();
+        if (symbol !== activeSymbol) return;
+        currentPrevClose = quote.prevClose > 0 ? parseFloat(quote.prevClose) : null;
+        if ((currentLivePrice === null || currentLivePrice === 0) && quote.ltp > 0) {
+            currentLivePrice = parseFloat(quote.ltp);
         }
+        refreshLivePriceHeader();
+    } catch (ex) {
+        console.error("Failed to load day quote:", ex);
     }
 }
 
@@ -678,7 +703,6 @@ function bindChartData(dataList) {
     if (!dataList || dataList.length === 0) return;
 
     const latest = dataList[dataList.length - 1];
-    currentCandleOpenPrice = latest.open;
     if (currentLivePrice === null || currentLivePrice === undefined || currentLivePrice === 0) {
         currentLivePrice = latest.close;
     }
@@ -940,11 +964,10 @@ function connectSignalR() {
         // Ignore ticks from other symbols/timeframes
         if (!activeSymbol) return;
 
-        // Real-time stock price is the latest live tick price; timeframe candle open is for timeframe % change.
+        // Real-time stock price is the latest live tick price; the % badge compares it with the previous close.
         // The Trading Indicators mini-charts/signals only update on candle close (ReceiveClosedCandle) -
         // they're meant to reflect the latest COMPLETED candle, not every intra-candle tick.
         currentLivePrice = candleUpdate.close;
-        currentCandleOpenPrice = candleUpdate.open;
         refreshLivePriceHeader();
     });
 
@@ -1040,7 +1063,6 @@ function updateSignalUi(data) {
     const reason = data.signalReason || data.reason || "No signal generated for current active candle.";
     
     const priceVal = data.close !== undefined ? data.close : (data.latestPrice !== undefined ? data.latestPrice : 0);
-    const openVal = data.open !== undefined ? data.open : (data.latestOpen !== undefined ? data.latestOpen : priceVal);
     const timeVal = data.time || data.evaluatedAt || new Date();
 
     // 1. Update glowing signal card class and badge
@@ -1120,9 +1142,6 @@ function updateSignalUi(data) {
     if (priceVal) {
         if (currentLivePrice === null || currentLivePrice === undefined || currentLivePrice === 0) {
             currentLivePrice = priceVal;
-        }
-        if (openVal && (currentCandleOpenPrice === null || currentCandleOpenPrice === undefined || currentCandleOpenPrice === 0)) {
-            currentCandleOpenPrice = openVal;
         }
         refreshLivePriceHeader();
     }

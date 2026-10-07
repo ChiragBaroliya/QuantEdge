@@ -29,6 +29,7 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
 
     private readonly BrokerConfig _config;
     private readonly ILogger<ZerodhaWebSocketMarketDataService> _logger;
+    private readonly IBrokerApiEventRecorder? _apiEventRecorder;
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IStockMasterRepository _stockMasterRepository;
     private readonly ICacheService _cacheService;
@@ -46,6 +47,9 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
     // Kite's ticker protocol gives us for "is this specific subscription still alive" (there is no
     // per-token subscribe ack/nack from Kite).
     private readonly ConcurrentDictionary<uint, DateTime> _lastTickUtc = new();
+    // Kite quote/full ticks carry the day's CUMULATIVE traded volume. Candles need the volume traded since the
+    // previous tick, so the last cumulative value per instrument is kept here (Plan L.1 P7).
+    private readonly ConcurrentDictionary<uint, long> _lastCumulativeVolume = new();
 
     private static readonly TimeSpan InstrumentMappingRefreshInterval = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan TickWatchdogInterval = TimeSpan.FromSeconds(30);
@@ -64,8 +68,10 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
         IDbConnectionFactory connectionFactory,
         IStockMasterRepository stockMasterRepository,
         ICacheService cacheService,
-        ILogger<ZerodhaWebSocketMarketDataService> logger)
+        ILogger<ZerodhaWebSocketMarketDataService> logger,
+        IBrokerApiEventRecorder? apiEventRecorder = null)
     {
+        _apiEventRecorder = apiEventRecorder;
         _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
@@ -330,6 +336,8 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
     {
         _logger.LogDebug("Received Zerodha Kite tick for token: {Token} | LTP: {Ltp}", tick.InstrumentToken, tick.LastPrice);
         _lastTickUtc[tick.InstrumentToken] = DateTime.UtcNow;
+        // Computed here, in Kite's delivery order - the handler below runs on the thread pool and may reorder ticks.
+        long volumeSinceLastTick = VolumeSinceLastTick(tick.InstrumentToken, (long)tick.Volume);
 
         if (OnTickReceived != null)
         {
@@ -347,8 +355,12 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
                     var tickDto = new TickDataDto(
                         Symbol: symbol,
                         LTP: tick.LastPrice,
-                        Volume: (long)tick.Volume,
-                        Timestamp: tick.Timestamp ?? DateTime.UtcNow
+                        Volume: volumeSinceLastTick,
+                        Timestamp: tick.Timestamp ?? DateTime.UtcNow,
+                        PrevClose: tick.Close,
+                        DayOpen: tick.Open,
+                        DayHigh: tick.High,
+                        DayLow: tick.Low
                     );
 
                     await OnTickReceived.Invoke(tickDto);
@@ -421,11 +433,60 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
     private void OnKiteClose()
     {
         _logger.LogWarning("Zerodha Kite Ticker WebSocket connection closed.");
+        if (IsMarketHoursIst())
+        {
+            _apiEventRecorder?.RecordFailure(BrokerApiSource.WebSocket, "live feed",
+                "Zerodha live price feed disconnected during market hours - prices may be stale until it reconnects (stop-loss checks fall back to REST quotes).",
+                level: "warning");
+        }
     }
 
     private void OnKiteError(string message)
     {
         _logger.LogError("Zerodha Kite Ticker WebSocket error occurred: {Message}", message);
+        if (IsMarketHoursIst())
+        {
+            _apiEventRecorder?.RecordFailure(BrokerApiSource.WebSocket, "live feed", $"Zerodha live price feed error: {message}");
+        }
+    }
+
+    /// <summary>
+    /// Volume traded since this instrument's previous tick, from Kite's cumulative day volume. The first tick seen
+    /// by this process counts 0 (everything before it happened before we were listening - summing it into the
+    /// current candle was the old bug that inflated live candle volumes many times over). A drop in the
+    /// cumulative figure means a new trading day, so the new figure counts in full.
+    /// </summary>
+    public long VolumeSinceLastTick(uint instrumentToken, long cumulativeVolume)
+    {
+        if (cumulativeVolume <= 0) return 0;
+        long delta = 0;
+        _lastCumulativeVolume.AddOrUpdate(instrumentToken,
+            _ => cumulativeVolume,
+            (_, previous) =>
+            {
+                if (cumulativeVolume >= previous)
+                {
+                    delta = cumulativeVolume - previous;
+                    return cumulativeVolume;
+                }
+                // Below half of the last figure = the day rolled over; a small step back is just an older tick
+                // arriving late - count nothing and keep the higher figure.
+                if (cumulativeVolume < previous / 2)
+                {
+                    delta = cumulativeVolume;
+                    return cumulativeVolume;
+                }
+                return previous;
+            });
+        return delta;
+    }
+
+    // A closed feed outside trading hours (shutdown, nightly disconnect) is normal - only report it while the market is open.
+    private static bool IsMarketHoursIst()
+    {
+        var nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, QuantEdge.Infrastructure.Helpers.TimeZoneHelper.IndianTimeZone);
+        return nowIst.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)
+            && nowIst.TimeOfDay >= new TimeSpan(9, 15, 0) && nowIst.TimeOfDay <= new TimeSpan(15, 30, 0);
     }
 
     private void OnKiteReconnect()

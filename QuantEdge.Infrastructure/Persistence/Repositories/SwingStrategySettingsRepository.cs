@@ -51,6 +51,7 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
                     );
                     ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS market_protection_buffer_pct NUMERIC(6, 4) NOT NULL DEFAULT 0.005;
                     ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS require_nifty_market_filter BOOLEAN NOT NULL DEFAULT TRUE;
+                    ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS market_gate_mode VARCHAR(20) NOT NULL DEFAULT 'NIFTY_FILTER';
                     INSERT INTO swing_strategy_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
                 ");
                 _tableEnsured = true;
@@ -93,9 +94,9 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
         using var conn = _connectionFactory.CreateConnection();
         await conn.ExecuteAsync(@"
             INSERT INTO swing_strategy_settings
-                (id, buy_score_threshold, watch_score_threshold, market_context_score_penalty, market_context_position_size_factor, market_protection_buffer_pct, require_nifty_market_filter, updated_at)
+                (id, buy_score_threshold, watch_score_threshold, market_context_score_penalty, market_context_position_size_factor, market_protection_buffer_pct, require_nifty_market_filter, market_gate_mode, updated_at)
             VALUES
-                (1, @BuyScoreThreshold, @WatchScoreThreshold, @MarketContextScorePenalty, @MarketContextPositionSizeFactor, @MarketProtectionBufferPct, @RequireNiftyMarketFilter, NOW())
+                (1, @BuyScoreThreshold, @WatchScoreThreshold, @MarketContextScorePenalty, @MarketContextPositionSizeFactor, @MarketProtectionBufferPct, @RequireNiftyMarketFilter, COALESCE(@MarketGateMode, 'NIFTY_FILTER'), NOW())
             ON CONFLICT (id) DO UPDATE SET
                 buy_score_threshold = EXCLUDED.buy_score_threshold,
                 watch_score_threshold = EXCLUDED.watch_score_threshold,
@@ -103,6 +104,7 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
                 market_context_position_size_factor = EXCLUDED.market_context_position_size_factor,
                 market_protection_buffer_pct = EXCLUDED.market_protection_buffer_pct,
                 require_nifty_market_filter = EXCLUDED.require_nifty_market_filter,
+                market_gate_mode = COALESCE(@MarketGateMode, swing_strategy_settings.market_gate_mode),
                 updated_at = NOW();",
             settings);
 
@@ -123,6 +125,7 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
         public decimal MarketContextPositionSizeFactor { get; set; }
         public decimal MarketProtectionBufferPct { get; set; }
         public bool RequireNiftyMarketFilter { get; set; } = true;
+        public string? MarketGateMode { get; set; }
         public DateTime UpdatedAt { get; set; }
 
         public SwingStrategySettings ToDomain() => new()
@@ -134,6 +137,7 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
             MarketContextPositionSizeFactor = MarketContextPositionSizeFactor,
             MarketProtectionBufferPct = MarketProtectionBufferPct,
             RequireNiftyMarketFilter = RequireNiftyMarketFilter,
+            MarketGateMode = string.IsNullOrWhiteSpace(MarketGateMode) ? SwingStrategySettings.GateModeNiftyFilter : MarketGateMode.Trim().ToUpperInvariant(),
             UpdatedAt = UpdatedAt
         };
     }

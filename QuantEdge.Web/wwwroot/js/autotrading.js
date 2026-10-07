@@ -200,7 +200,7 @@ function updateDashboardUI(data) {
         const unPctSign = unPnlPct > 0 ? "+" : "";
         const unPctStr = `${unPctSign}${unPnlPct.toFixed(2)}%`;
         const unSign = unPnl > 0 ? "+" : (unPnl < 0 ? "-" : "");
-        unPnlElem.innerText = `${unSign}₹${formatNumber(Math.abs(unPnl))} (${unPctStr})`;
+        unPnlElem.innerHTML = `${unSign}₹${formatNumber(Math.abs(unPnl))} (${unPctStr})${netAfterChargesHtml(unPnl, data.totalEstimatedCharges ?? data.TotalEstimatedCharges)}`;
         unPnlElem.className = `stat-value ${unPnl >= 0 ? "positive" : "negative"}`;
     }
 
@@ -316,7 +316,7 @@ function renderOpenPositionsTable(positions) {
                 <td>${tpText}</td>
                 <td>${slText}</td>
                 <td>${tslText}</td>
-                <td class="${pnlClass} font-weight-bold">${unPnlSign}₹${formatNumber(Math.abs(unPnl))} (${unPnlPctSign}${unPnlPct}%)</td>
+                <td class="${pnlClass} font-weight-bold">${(p.priceSource ?? p.PriceSource) === "NONE" ? "—" : `${unPnlSign}₹${formatNumber(Math.abs(unPnl))} (${unPnlPctSign}${unPnlPct}%)${netAfterChargesHtml(unPnl, p.estimatedCharges ?? p.EstimatedCharges)}`}${priceAgeHtml(p.priceSource ?? p.PriceSource, p.priceAsOfUtc ?? p.PriceAsOfUtc)}</td>
             </tr>
         `;
     });
@@ -955,6 +955,25 @@ function setupSignalRHub() {
     connection.start()
         .then(() => console.log("SignalR MarketDataHub connected for Auto Trading."))
         .catch(err => console.error("SignalR connection error:", err));
+}
+
+// Where a position's price came from (server PriceSource): nothing for a live tick, a muted / amber tag otherwise.
+function priceAgeHtml(src, asOf) {
+    if (!src || src === "LIVE") return "";
+    if (src === "NONE") return `<small class="d-block fw-normal" style="color:#f59e0b;" title="No live tick or stored price - P&L can't be calculated">no price</small>`;
+    const ageSec = asOf ? Math.max(0, Math.round((Date.now() - new Date(asOf).getTime()) / 1000)) : null;
+    const ageText = ageSec == null ? "age unknown" : ageSec < 90 ? `${ageSec}s old` : `${Math.round(ageSec / 60)}m old`;
+    const stale = ageSec == null || ageSec > 60;
+    const label = src === "BROKER" ? "broker quote" : "stored price";
+    return `<small class="d-block fw-normal" style="color:${stale ? "#f59e0b" : "#94a3b8"};" title="Not a live tick: ${label}">${label} · ${ageText}</small>`;
+}
+
+// "Net if sold now" line under a gross P&L figure: gross minus the server's estimated round-trip charges.
+function netAfterChargesHtml(gross, charges) {
+    if (!charges || charges <= 0) return "";
+    const net = (gross || 0) - charges;
+    const sign = net > 0 ? "+" : (net < 0 ? "-" : "");
+    return `<small class="d-block fw-normal" style="color:#94a3b8;" title="Estimated charges if sold now (STT, stamp, exchange, SEBI, GST, DP): -₹${formatNumber(charges)}">net ${sign}₹${formatNumber(Math.abs(net))} after charges</small>`;
 }
 
 function formatNumber(num) {

@@ -63,6 +63,26 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ISwingStrategySettingsRepository, SwingStrategySettingsRepository>();
         services.AddTransient<IFavoriteSymbolRepository, FavoriteSymbolRepository>();
         services.AddTransient<ISectorRepository, SectorRepository>();
+        services.AddTransient<ILiveQuoteRepository, LiveQuoteRepository>();
+        services.AddSingleton<LiveQuoteRecorder>();
+        services.AddTransient<IDayQuoteService, DayQuoteService>();
+        services.AddTransient<IBrokerApiEventRepository, BrokerApiEventRepository>();
+        services.AddSingleton<IBrokerApiEventRecorder, BrokerApiEventRecorder>();
+        services.AddTransient<KiteApiFailureHandler>();
+
+        // NSE archives (official bhavcopy). NSE rejects requests without a browser-like User-Agent.
+        services.AddHttpClient(NseBhavcopyService.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/zip,*/*");
+        });
+        services.AddTransient<INseBhavcopyService, NseBhavcopyService>();
+        services.AddTransient<ICorporateActionService, CorporateActionService>();
+        services.AddTransient<IDataQualityRepository, DataQualityRepository>();
+        services.AddTransient<IPositionReconciliationService, PositionReconciliationService>();
+        services.AddTransient<IMarketRegimeService, MarketRegimeService>();
+        services.AddTransient<QuantEdge.Infrastructure.Services.Backtest.IBacktestService, QuantEdge.Infrastructure.Services.Backtest.BacktestService>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
 
         services.AddTransient<IIndicatorService, IndicatorService>();
@@ -159,7 +179,9 @@ public static class ServiceCollectionExtensions
                         throw;
                     }
                 }
-            });
+            })
+            // Every failed / rate-limited Kite REST call is reported to the header bell (broker_api_events).
+            .AddHttpMessageHandler<KiteApiFailureHandler>();
         services.AddSingleton<IZerodhaKiteBrokerService, ZerodhaKiteBrokerService>();
         services.AddSingleton<ITradingBrokerService, ZerodhaKiteBrokerService>();
         services.AddSingleton<IPaperTradingService, PaperTradingService>();
@@ -172,6 +194,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAutoRealTradeService, AutoRealTradeService>();
 
         // Register Trading Reports & Performance Analytics
+        services.AddTransient<IChargeRatesRepository, ChargeRatesRepository>();
+        services.AddTransient<IRealOrderChargesRepository, RealOrderChargesRepository>();
+        services.AddTransient<IRealOrderChargesService, RealOrderChargesService>();
         services.AddTransient<ITradingReportRepository, TradingReportRepository>();
         services.AddTransient<ITradingReportService, TradingReportService>();
 

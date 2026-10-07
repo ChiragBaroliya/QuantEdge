@@ -26,6 +26,7 @@ public class SwingTradingService : ISwingTradingService
     private readonly ISwingStrategySettingsRepository _strategySettingsRepository;
     private readonly IHubContext<MarketDataHub>? _hubContext;
     private readonly ICacheService? _cacheService;
+    private readonly ISectorRepository? _sectorRepository;
     private readonly ILogger<SwingTradingService> _logger;
 
     public SwingTradingService(
@@ -37,8 +38,10 @@ public class SwingTradingService : ISwingTradingService
         ISwingStrategySettingsRepository strategySettingsRepository,
         ILogger<SwingTradingService> logger,
         IHubContext<MarketDataHub>? hubContext = null,
-        ICacheService? cacheService = null)
+        ICacheService? cacheService = null,
+        ISectorRepository? sectorRepository = null)
     {
+        _sectorRepository = sectorRepository;
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _historicalDataService = historicalDataService ?? throw new ArgumentNullException(nameof(historicalDataService));
@@ -117,7 +120,7 @@ public class SwingTradingService : ISwingTradingService
 
         if (niftyStatus == null)
         {
-            var niftyCandles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
+            var niftyCandles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: QuantEdge.Infrastructure.Constants.RealTradeSchedule.DailyCandleHistoryCount))
                 .OrderBy(c => c.CandleTime)
                 .ToList();
 
@@ -303,7 +306,7 @@ public class SwingTradingService : ISwingTradingService
         using (var conn = _connectionFactory.CreateConnection())
         {
             // Load Nifty daily candles
-            var niftyCandles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
+            var niftyCandles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: QuantEdge.Infrastructure.Constants.RealTradeSchedule.DailyCandleHistoryCount))
                 .OrderBy(c => c.CandleTime)
                 .ToList();
 
@@ -447,9 +450,14 @@ public class SwingTradingService : ISwingTradingService
             // Step 2: Evaluate 3-Timeframe Hard Filters & 100-Point Scoring Matrix
             UpdateJobProgress("intraday30m", true, 60, $"Evaluating 3-Timeframe Matrix for slot {slotLabel}...");
 
-            var niftyCandlesGlobal = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
+            var niftyCandlesGlobal = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: QuantEdge.Infrastructure.Constants.RealTradeSchedule.DailyCandleHistoryCount))
                 .OrderBy(c => c.CandleTime)
                 .ToList();
+
+            // Sector names from stock_sectors (the engine's old hard-coded 25-symbol map is gone), and the stop / target
+            // the bot would place with default exit settings (Plan D6) instead of the engine's 15m-ATR levels.
+            var sectorBySymbol = await LoadSectorNamesAsync();
+            var defaultTradeParams = SwingTradeParams.From(new RealTradeSettings());
 
             NiftyStatusDto? niftyStatus = null;
             if (niftyCandlesGlobal.Count >= 50)
@@ -555,6 +563,7 @@ public class SwingTradingService : ISwingTradingService
                             bool is52W = c.Close >= 0.90m * high52W[idx];
 
                             decimal executionPrice = evalResult.EntryPrice > 0m ? evalResult.EntryPrice : c.Close;
+                            var botLevels = SwingTradeRules.BotLevelsFor(evalResult, defaultTradeParams);
 
                             evaluatedSlotSignals.Add(new SwingStockSignalDto(
                                 Symbol: stock.Symbol,
@@ -585,13 +594,13 @@ public class SwingTradingService : ISwingTradingService
                                 Score: evalResult.Score,
                                 ConfidencePct: evalResult.ConfidencePct,
                                 EntryPrice: executionPrice,
-                                StopLoss: evalResult.StopLoss,
-                                Target1: evalResult.Target1,
+                                StopLoss: botLevels.StopLoss,
+                                Target1: botLevels.Target,
                                 Target2: evalResult.Target2,
-                                RiskRewardRatio: evalResult.RiskRewardRatio,
+                                RiskRewardRatio: botLevels.RiskReward,
                                 PassedRules: evalResult.PassedRules,
                                 FailedRules: evalResult.FailedRules,
-                                Sector: evalResult.Sector,
+                                Sector: sectorBySymbol.TryGetValue(stock.Symbol, out var sectorName) ? sectorName : string.Empty,
                                 HardFiltersPassed: evalResult.HardFiltersPassed,
                                 IsAlreadyOpen: isAlreadyOpen,
                                 RecommendedQty: evalResult.RecommendedQty,
@@ -665,6 +674,25 @@ public class SwingTradingService : ISwingTradingService
             UpdateJobProgress("intraday30m", false, 0, "30-minute Swing Trading job failed.", ex.Message);
             throw;
         }
+    }
+
+    // Symbol -> sector name from stock_sectors (first sector when a stock is in several). Empty when unavailable.
+    private async Task<Dictionary<string, string>> LoadSectorNamesAsync()
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (_sectorRepository == null) return map;
+        try
+        {
+            foreach (var row in await _sectorRepository.GetSectorStocksAsync())
+            {
+                if (!string.IsNullOrWhiteSpace(row.Symbol)) map.TryAdd(row.Symbol.Trim(), row.SectorName);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not load sector names for the swing scan.");
+        }
+        return map;
     }
 
     public static string ComputeSlotLabel(DateTime istTime)
@@ -746,7 +774,7 @@ public class SwingTradingService : ISwingTradingService
             return;
         }
 
-        var niftyCandles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
+        var niftyCandles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: QuantEdge.Infrastructure.Constants.RealTradeSchedule.DailyCandleHistoryCount))
             .OrderBy(c => c.CandleTime)
             .ToList();
 

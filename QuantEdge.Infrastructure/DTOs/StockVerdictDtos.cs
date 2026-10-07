@@ -25,8 +25,14 @@ public class StockVerdictDto
     public int TotalConditions { get; set; }
     public int MinConditionsMatch { get; set; }
 
+    /// <summary>Live price (DayChangeCalculator), falling back to the newest stored close.</summary>
     public decimal LastPrice { get; set; }
+    /// <summary>(LastPrice - PrevClose) / PrevClose x 100 - the same figure NSE / TradingView show.</summary>
     public decimal? DayChangePct { get; set; }
+    public decimal? PrevClose { get; set; }
+    public DateTime? PriceAsOfUtc { get; set; }
+    /// <summary>LIVE (feed tick) or CANDLES (stored candles).</summary>
+    public string? PriceSource { get; set; }
     public decimal StopLoss { get; set; }
     public decimal Target1 { get; set; }
 
@@ -34,6 +40,10 @@ public class StockVerdictDto
     public bool MarketPassed { get; set; }
     /// <summary>True when the NIFTY filter is mandatory: a failed market blocks every new buy (no penalty is used).</summary>
     public bool MarketRequired { get; set; }
+    /// <summary>NIFTY_FILTER or REGIME - which gate MarketPassed reflects.</summary>
+    public string MarketGateMode { get; set; } = "NIFTY_FILTER";
+    /// <summary>Regime mode: the regime and policy in force, in one line.</summary>
+    public string? MarketReason { get; set; }
     public int MarketPenalty { get; set; }
     public bool TrendPassed { get; set; }
     public bool EmaTrendPassed { get; set; }

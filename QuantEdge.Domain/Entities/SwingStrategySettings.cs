@@ -34,6 +34,19 @@ public class SwingStrategySettings
     /// </summary>
     public decimal MarketProtectionBufferPct { get; set; } = 0.005m;
 
+    /// <summary>
+    /// How the scan workers gate new entries on market conditions:
+    /// <see cref="GateModeNiftyFilter"/> (default, previous behaviour: <see cref="RequireNiftyMarketFilter"/> decides,
+    /// all-or-nothing) or <see cref="GateModeRegime"/> (the daily market regime + regime_policy decide - strong stocks
+    /// can still be bought in a weak market, with a higher score bar, fewer positions and less risk).
+    /// </summary>
+    public string? MarketGateMode { get; set; }   // null on a save = keep the stored mode; reads always fill it
+
+    public const string GateModeNiftyFilter = "NIFTY_FILTER";
+    public const string GateModeRegime = "REGIME";
+
+    public bool UsesRegimeGate => string.Equals(MarketGateMode, GateModeRegime, StringComparison.OrdinalIgnoreCase);
+
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public static SwingStrategySettings Default => new();

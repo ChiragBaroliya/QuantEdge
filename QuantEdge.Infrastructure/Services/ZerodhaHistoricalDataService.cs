@@ -30,6 +30,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
     private readonly ICacheService? _cacheService;
     private readonly ILogger<ZerodhaHistoricalDataService> _logger;
     private readonly TimeZoneInfo _indianTimeZone;
+    private readonly IBrokerApiEventRecorder? _apiEventRecorder;
 
     public ZerodhaHistoricalDataService(
         IOptions<BrokerConfig> config,
@@ -38,8 +39,10 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         IStockMasterRepository stockMasterRepository,
         IIndicatorService indicatorService,
         ICacheService? cacheService = null,
-        ILogger<ZerodhaHistoricalDataService> logger = null!)
+        ILogger<ZerodhaHistoricalDataService> logger = null!,
+        IBrokerApiEventRecorder? apiEventRecorder = null)
     {
+        _apiEventRecorder = apiEventRecorder;
         _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
@@ -104,6 +107,8 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         if (string.IsNullOrWhiteSpace(token))
         {
             _logger.LogError("Zerodha AccessToken is missing. Cannot fetch historical data.");
+            _apiEventRecorder?.RecordFailure(BrokerApiSource.Session, $"historical {timeframe}",
+                "Historical candle sync skipped: no Zerodha access token. Log in to Zerodha (Token page).", symbol: symbol, level: "warning");
             throw new InvalidOperationException("Zerodha AccessToken is missing.");
         }
 
@@ -168,7 +173,8 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
                 _logger.LogInformation("Requesting chunk: {Symbol} from {FromIst:yyyy-MM-dd HH:mm} to {ToIst:yyyy-MM-dd HH:mm} IST", 
                     symbol, currentStartIst, currentEndIst);
 
-                List<Historical> historicalList = await Task.Run(() => 
+                await WaitForHistoricalRateSlotAsync(cancellationToken);
+                List<Historical> historicalList = await Task.Run(() =>
                     kite.GetHistoricalData(
                         InstrumentToken: instrumentToken.ToString(),
                         FromDate: currentStartIst,
@@ -253,6 +259,16 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error occurred while fetching or saving Zerodha historical candles for {Symbol} at chunk range starting {CurrentStart}.", symbol, currentStart);
+            if (ex is not OperationCanceledException)
+            {
+                bool rateLimited = ex.Message.Contains("Too many requests", StringComparison.OrdinalIgnoreCase)
+                    || ex.Message.Contains("429", StringComparison.Ordinal);
+                _apiEventRecorder?.RecordFailure(BrokerApiSource.Historical, $"historical {timeframe}",
+                    rateLimited
+                        ? $"RATE LIMITED by Zerodha while syncing {timeframe} candles: {ex.Message}"
+                        : $"Candle sync failed ({timeframe}) - this stock's data may be out of date: {ex.Message}",
+                    httpStatus: rateLimited ? 429 : null, symbol: symbol);
+            }
             throw;
         }
     }
@@ -288,7 +304,26 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         if (lastCandle != null)
         {
             var interval = ParseTimeframe(timeframe);
-            fromTime = lastCandle.CandleTime.Add(interval);
+            if (string.Equals(timeframe, "1d", StringComparison.OrdinalIgnoreCase))
+            {
+                // A daily candle synced during the session is a partial snapshot (e.g. the 09:45 price).
+                // Keep it current WITHOUT extra Kite calls (historical API limit: 3 req/s):
+                //  - today's row already stored -> rebuild it from today's stored 15m candles (DB only);
+                //  - last row is an earlier day   -> one fetch starting AT that day, so a partial earlier
+                //    day is corrected in the same single call the old "last + 1 day" start already made.
+                if (DayChangeCalculator.IstDate(lastCandle.CandleTime) >= DayChangeCalculator.IstDate(DateTime.UtcNow))
+                {
+                    await RefreshTodayDailyFromIntradayAsync(symbol, lastCandle);
+                    return;
+                }
+                fromTime = lastCandle.CandleTime;
+            }
+            else
+            {
+                // Intraday timeframes re-fetch the whole session from 09:15 (FetchHistoricalCandlesAsync
+                // snaps the start to the market open), so the forming candle is refreshed too.
+                fromTime = lastCandle.CandleTime.Add(interval);
+            }
             _logger.LogInformation("Database has existing records. Last record time: {LastTime}. Backfilling starting from {FromTime}", lastCandle.CandleTime, fromTime);
         }
         else
@@ -306,7 +341,8 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to fetch historical candles from Zerodha API for {Symbol} ({Timeframe}). Running mock daily data generator fallback...", symbol, timeframe);
+                // Already reported to the bell inside FetchHistoricalCandlesAsync. (No mock data is generated.)
+                _logger.LogWarning(ex, "Failed to fetch historical candles from Zerodha API for {Symbol} ({Timeframe}).", symbol, timeframe);
             }
             
             // Calculate indicators for backfilled historical data
@@ -316,6 +352,69 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         {
             _logger.LogInformation("No historical gap sync required for Zerodha symbol {Symbol}.", symbol);
         }
+    }
+
+    // Kite's historical API allows 3 requests/second. The chunk delay above only spaces chunks of ONE fetch;
+    // this gate spaces EVERY historical request in this process (sequential stock loops and the today-reset
+    // worker's 5 parallel fetches alike) to at most one per HistoricalMinSpacing.
+    private static readonly TimeSpan HistoricalMinSpacing = TimeSpan.FromMilliseconds(350);
+    private static readonly SemaphoreSlim HistoricalRateGate = new(1, 1);
+    private static DateTime _lastHistoricalRequestUtc = DateTime.MinValue;
+
+    private static async Task WaitForHistoricalRateSlotAsync(CancellationToken cancellationToken)
+    {
+        await HistoricalRateGate.WaitAsync(cancellationToken);
+        try
+        {
+            var wait = _lastHistoricalRequestUtc + HistoricalMinSpacing - DateTime.UtcNow;
+            if (wait > TimeSpan.Zero) await Task.Delay(wait, cancellationToken);
+            _lastHistoricalRequestUtc = DateTime.UtcNow;
+        }
+        finally
+        {
+            HistoricalRateGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds today's stored daily candle from today's stored 15m candles - no Kite call. The 30-minute job
+    /// syncs 15m right before 1d, so this keeps the daily row as fresh as the 15m data. Skipped when the
+    /// 15m session isn't complete from 09:15 (open/high/low would be wrong); the next day's daily fetch
+    /// replaces the row with Kite's final candle either way.
+    /// </summary>
+    private async Task RefreshTodayDailyFromIntradayAsync(string symbol, MarketCandle todayDaily)
+    {
+        DateTime todayIst = DayChangeCalculator.IstDate(DateTime.UtcNow);
+        var today15m = (await _candleRepository.GetHistoryAsync(symbol, "15m", limit: 40))
+            .Where(c => DayChangeCalculator.IstDate(c.CandleTime) == todayIst)
+            .OrderBy(c => c.CandleTime)
+            .ToList();
+
+        if (today15m.Count == 0) return;
+        var firstIst = TimeZoneInfo.ConvertTimeFromUtc(
+            today15m[0].CandleTime.Kind == DateTimeKind.Utc ? today15m[0].CandleTime : DateTime.SpecifyKind(today15m[0].CandleTime, DateTimeKind.Utc),
+            _indianTimeZone);
+        if (firstIst.TimeOfDay != new TimeSpan(9, 15, 0))
+        {
+            _logger.LogDebug("Today's 15m candles for {Symbol} don't start at 09:15 IST - daily row left as is.", symbol);
+            return;
+        }
+
+        var refreshed = new MarketCandle
+        {
+            Id = todayDaily.Id,                 // same row (PK id + candle_time) - the upsert updates it in place
+            Symbol = todayDaily.Symbol,
+            Timeframe = "1d",
+            Open = today15m[0].Open,
+            High = today15m.Max(c => c.High),
+            Low = today15m.Min(c => c.Low),
+            Close = today15m[^1].Close,
+            Volume = today15m.Sum(c => c.Volume),
+            CandleTime = todayDaily.CandleTime,
+            CreatedAt = todayDaily.CreatedAt
+        };
+        await _candleRepository.InsertBatchAsync(new[] { refreshed });
+        await _indicatorService.BackfillHistoricalIndicatorsAsync(symbol, "1d", Helpers.TimeZoneHelper.IstTodayStartUtc(), DateTime.UtcNow);
     }
 
     private static string MapTimeframeToKite(string timeframe)

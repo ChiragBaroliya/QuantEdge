@@ -181,6 +181,34 @@ public static class SwingTradeRules
     }
 
     // ------------------------------------------------------------------------------------------
+    // Position size
+    // ------------------------------------------------------------------------------------------
+
+    /// <summary>Most of the capital a single trade may lose if its stop loss is hit (Plan D5 / E.5).</summary>
+    public const decimal DefaultRiskPerTradePct = 1.0m;
+
+    /// <summary>
+    /// Shares to buy: the smaller of (a) the fixed rupee cap per trade and (b) the risk budget (capital x risk %)
+    /// divided by the per-share risk (entry - stop). It can only ever be smaller than the old fixed-amount size, never
+    /// larger. Reason explains which limit decided it.
+    /// </summary>
+    public static (int Quantity, string Reason) RiskSizedQuantity(decimal entryPrice, decimal stopLoss, decimal capital,
+        decimal maxPositionValue, decimal riskPct = DefaultRiskPerTradePct)
+    {
+        if (entryPrice <= 0m) return (0, "no entry price");
+        int byAmount = (int)Math.Floor(maxPositionValue / entryPrice);
+        decimal riskPerShare = entryPrice - stopLoss;
+        if (riskPerShare <= 0m || capital <= 0m)
+            return (byAmount, $"fixed amount ₹{maxPositionValue:N0} (no risk limit: stop ≥ entry or no capital set)");
+
+        decimal riskBudget = capital * riskPct / 100m;
+        int byRisk = (int)Math.Floor(riskBudget / riskPerShare);
+        return byRisk < byAmount
+            ? (byRisk, $"risk limit: {riskPct:0.##}% of ₹{capital:N0} = ₹{riskBudget:N0} ÷ ₹{riskPerShare:N2} risk/share")
+            : (byAmount, $"fixed amount ₹{maxPositionValue:N0} (risk ₹{byAmount * riskPerShare:N0} ≤ ₹{riskBudget:N0} budget)");
+    }
+
+    // ------------------------------------------------------------------------------------------
     // Entry levels
     // ------------------------------------------------------------------------------------------
 
@@ -243,6 +271,21 @@ public static class SwingTradeRules
         decimal intradayTrail = Math.Round(entryPrice * (1m - trailPct / 100m), 2);
 
         return new EntryLevels(intradayStop, intradayTarget, intradayTrail);
+    }
+
+    /// <summary>
+    /// The stop loss / target the bot would actually place for this evaluation with these settings (Plan D6) - the
+    /// same ComputeEntryLevels call the buy path makes (SWING_CLOSE: daily ATR; INTRADAY: the engine's levels).
+    /// Dashboards show these, not the engine's own 15-minute-ATR levels, so what you see is what gets traded.
+    /// </summary>
+    public static (decimal StopLoss, decimal Target, decimal RiskReward) BotLevelsFor(SwingEvaluationResult r, SwingTradeParams p)
+    {
+        if (r.EntryPrice <= 0m) return (0m, 0m, 0m);
+        var levels = ComputeEntryLevels(r.EntryPrice, r.DailyAtr > 0m ? r.DailyAtr : null,
+            r.StopLoss > 0m ? r.StopLoss : null, r.Target1 > 0m ? r.Target1 : null, null, null, p);
+        decimal risk = r.EntryPrice - levels.StopLoss;
+        decimal rr = risk > 0m ? Math.Round((levels.TakeProfit - r.EntryPrice) / risk, 2) : 0m;
+        return (levels.StopLoss, levels.TakeProfit, rr);
     }
 
     // ------------------------------------------------------------------------------------------

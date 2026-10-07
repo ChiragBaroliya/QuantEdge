@@ -46,6 +46,7 @@ public class NotificationService : INotificationService
     private readonly ISwingStrategySettingsRepository _strategySettingsRepository;
     private readonly ILogger<NotificationService> _logger;
     private readonly ICacheService? _cacheService;
+    private readonly IBrokerApiEventRepository? _brokerApiEventRepository;
 
     public NotificationService(
         IRealTradingRepository realTradingRepository,
@@ -53,8 +54,10 @@ public class NotificationService : INotificationService
         IMarketCandleRepository candleRepository,
         ISwingStrategySettingsRepository strategySettingsRepository,
         ILogger<NotificationService> logger,
-        ICacheService? cacheService = null)
+        ICacheService? cacheService = null,
+        IBrokerApiEventRepository? brokerApiEventRepository = null)
     {
+        _brokerApiEventRepository = brokerApiEventRepository;
         _realTradingRepository = realTradingRepository ?? throw new ArgumentNullException(nameof(realTradingRepository));
         _slotRepository = slotRepository ?? throw new ArgumentNullException(nameof(slotRepository));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
@@ -72,6 +75,7 @@ public class NotificationService : INotificationService
         var items = new List<NotificationItemDto>();
         items.AddRange(await GetRealTradeItemsAsync(userId, todayStartUtc));
         items.AddRange(await GetMarketItemsAsync(todayIst, istZone, cancellationToken));
+        items.AddRange(await GetBrokerApiItemsAsync(userId, todayStartUtc));
 
         return new TodayNotificationsDto(
             todayIst,
@@ -103,6 +107,51 @@ public class NotificationService : INotificationService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load real trade notifications for user {UserId}.", userId);
+            return Array.Empty<NotificationItemDto>();
+        }
+    }
+
+    /// <summary>
+    /// Failed, rate-limited or skipped Zerodha calls from any process (broker_api_events). Events without a user
+    /// (historical sync, live feed) are shown to everyone; user-specific ones only to that user.
+    /// </summary>
+    private async Task<IEnumerable<NotificationItemDto>> GetBrokerApiItemsAsync(int userId, DateTime todayStartUtc)
+    {
+        if (_brokerApiEventRepository == null) return Array.Empty<NotificationItemDto>();
+        try
+        {
+            var events = await _brokerApiEventRepository.GetSinceAsync(todayStartUtc);
+            return events
+                .Where(e => e.UserId == null || e.UserId == userId)
+                .Select(e =>
+                {
+                    string title = e.HttpStatus == 429
+                        ? "Zerodha rate limit hit"
+                        : e.Source switch
+                        {
+                            BrokerApiSource.Session => "Zerodha call skipped",
+                            BrokerApiSource.WebSocket => "Zerodha live feed problem",
+                            BrokerApiSource.Historical => "Zerodha candle sync failed",
+                            BrokerApiSource.Job => "Zerodha job failed",
+                            BrokerApiSource.Nse => "NSE data download problem",
+                            _ => "Zerodha API call failed"
+                        };
+                    if (!string.IsNullOrWhiteSpace(e.Symbol)) title += $": {e.Symbol}";
+                    string repeats = e.RepeatCount > 1 ? $" (+{e.RepeatCount - 1} more like this in the previous 5 min)" : string.Empty;
+                    return new NotificationItemDto(
+                        Id: $"zapi-{e.Id}",
+                        Category: "zerodha",
+                        Level: e.Level,
+                        Title: title,
+                        Message: $"{e.Operation} — {e.Message}{repeats}",
+                        Symbol: e.Symbol,
+                        TimeUtc: AsUtc(e.OccurredAt));
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load Zerodha API notifications (apply broker_api_events in schema.sql).");
             return Array.Empty<NotificationItemDto>();
         }
     }
@@ -174,7 +223,7 @@ public class NotificationService : INotificationService
     {
         try
         {
-            var candles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: 100))
+            var candles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: QuantEdge.Infrastructure.Constants.RealTradeSchedule.DailyCandleHistoryCount))
                 .OrderBy(c => c.CandleTime)
                 .ToList();
             if (candles.Count < 51 || candles[^1].CandleTime.Date != todayIst) return null;

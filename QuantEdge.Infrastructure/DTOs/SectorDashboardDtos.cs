@@ -10,6 +10,10 @@ public class SectorOverviewDto
     /// <summary>NIFTY 50 market filter (Close > SMA50 and EMA20 > EMA50) - the bot buys nothing while it fails.</summary>
     public bool MarketPassed { get; set; }
     public bool MarketRequired { get; set; }
+    /// <summary>NIFTY_FILTER or REGIME (swing_strategy_settings.market_gate_mode) - which gate MarketPassed reflects.</summary>
+    public string MarketGateMode { get; set; } = "NIFTY_FILTER";
+    /// <summary>Regime mode: the regime and the policy in force, in one line (e.g. "BEARISH (score 34): score ≥ 82, must beat NIFTY, max 3 positions").</summary>
+    public string? MarketReason { get; set; }
     public List<SectorSummaryDto> Sectors { get; set; } = new();
 }
 
@@ -45,6 +49,10 @@ public class SectorDetailDto
     public DateTime AsOfUtc { get; set; } = DateTime.UtcNow;
     public bool MarketPassed { get; set; }
     public bool MarketRequired { get; set; }
+    /// <summary>NIFTY_FILTER or REGIME (swing_strategy_settings.market_gate_mode) - which gate MarketPassed reflects.</summary>
+    public string MarketGateMode { get; set; } = "NIFTY_FILTER";
+    /// <summary>Regime mode: the regime and the policy in force, in one line (e.g. "BEARISH (score 34): score ≥ 82, must beat NIFTY, max 3 positions").</summary>
+    public string? MarketReason { get; set; }
     public int BuyThreshold { get; set; }
     public int WatchThreshold { get; set; }
     public int MinConditionsMatch { get; set; }
@@ -71,8 +79,14 @@ public class SectorStockSignalDto
     public int MetCount { get; set; }
     public int TotalConditions { get; set; }
 
+    /// <summary>Live price (DayChangeCalculator), falling back to the newest stored close.</summary>
     public decimal LastPrice { get; set; }
+    /// <summary>(LastPrice - PrevClose) / PrevClose x 100 - the same figure NSE / TradingView show.</summary>
     public decimal? DayChangePct { get; set; }
+    public decimal? PrevClose { get; set; }
+    public DateTime? PriceAsOfUtc { get; set; }
+    /// <summary>LIVE (feed tick) or CANDLES (stored candles).</summary>
+    public string? PriceSource { get; set; }
     public decimal VolumeMultiple { get; set; }
     public decimal Rsi15m { get; set; }
     public decimal? Rsi60m { get; set; }

@@ -575,6 +575,16 @@
                             OFF: legacy soft mode - the penalty and size factor below are applied instead.
                         </p>
 
+                        <label style="display:block; margin-bottom:4px;">Market gate for new entries</label>
+                        <select id="setMarketGateMode" class="swal2-input" style="margin:0 0 4px 0;">
+                            <option value="NIFTY_FILTER" ${s.marketGateMode !== 'REGIME' ? 'selected' : ''}>NIFTY filter (all-or-nothing, previous behaviour)</option>
+                            <option value="REGIME" ${s.marketGateMode === 'REGIME' ? 'selected' : ''}>Market regime (strong stocks allowed in weak markets, stricter)</option>
+                        </select>
+                        <p style="color:#94a3b8; margin:0 0 12px 0; font-size:12px;">
+                            Market regime: the daily regime (Bullish → Strong Bearish, Sector Dashboard card) sets the minimum score, whether the stock must beat NIFTY,
+                            and the maximum open positions (table regime_policy). The NIFTY checkbox above is ignored in this mode.
+                        </p>
+
                         <label style="display:block; margin-bottom:4px;">NIFTY Filter Score Penalty (soft mode only - applied when Nifty is below its 50 DMA / EMA bullish cross)</label>
                         <input type="number" id="setPenalty" class="swal2-input" style="margin:0 0 10px 0;" value="${s.marketContextScorePenalty}" min="0" max="100">
 
@@ -616,6 +626,7 @@
                         buyScoreThreshold: buy,
                         watchScoreThreshold: watch,
                         requireNiftyMarketFilter: $("#setRequireNifty").is(":checked"),
+                        marketGateMode: $("#setMarketGateMode").val(),
                         marketContextScorePenalty: penalty,
                         marketContextPositionSizeFactor: factor,
                         marketProtectionBufferPct: protectionPctInput / 100

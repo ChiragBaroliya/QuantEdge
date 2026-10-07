@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
+using QuantEdge.Infrastructure.Services;
 
 namespace QuantEdge.API.Controllers;
 
@@ -89,6 +90,28 @@ public class MarketDataController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch stock details for symbol {Symbol}.", symbol);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Live price and day change exactly as NSE / TradingView show them:
+    /// Change = Ltp - previous session close, ChangePct = Change / previous close x 100.
+    /// Source is LIVE (market-data feed tick) or CANDLES (stored candles when the feed isn't running).
+    /// </summary>
+    [HttpGet("day-quote/{symbol}")]
+    public async Task<IActionResult> GetDayQuote(string symbol, [FromServices] IDayQuoteService dayQuoteService)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest("Symbol parameter is required.");
+
+        try
+        {
+            var quote = await dayQuoteService.GetAsync(symbol);
+            return quote == null ? NotFound($"No price data stored for {symbol}.") : Ok(quote);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to build day quote for symbol {Symbol}.", symbol);
             return StatusCode(500, $"Internal server error: {ex.Message}");
         }
     }
@@ -244,7 +267,7 @@ public class MarketDataController : ControllerBase
     /// both backed by IMarketCandleRepository) as the main price chart.
     /// </summary>
     [HttpGet("weekly-pnl")]
-    public async Task<IActionResult> GetWeeklyPnl([FromQuery] string symbol, [FromQuery] int weekOffset = 0)
+    public async Task<IActionResult> GetWeeklyPnl([FromQuery] string symbol, [FromServices] IDayQuoteService dayQuoteService, [FromQuery] int weekOffset = 0)
     {
         if (string.IsNullOrWhiteSpace(symbol)) return BadRequest("Symbol parameter is required.");
         if (weekOffset > 0) weekOffset = 0;
@@ -298,7 +321,17 @@ public class MarketDataController : ControllerBase
             // live-updated source that drives the real-time price shown elsewhere on the dashboard) so today's
             // bar reflects the current in-progress price instead of being omitted until market close.
             // Only relevant for the current week - past weeks are always fully finalized.
-            if (isCurrentWeek && !dailyCloses.Any(d => d.Date == todayIst))
+            // Today's stored daily row (when one exists) is a snapshot from whenever it was last synced, so the
+            // live price wins: the same DayQuoteService figure the dashboard header and Sector pages show.
+            var todayQuote = isCurrentWeek ? await dayQuoteService.GetAsync(symbol) : null;
+            if (todayQuote != null && todayQuote.Ltp > 0m && DayChangeCalculator.IstDate(todayQuote.AsOfUtc) == todayIst)
+            {
+                dailyCloses = dailyCloses.Where(d => d.Date != todayIst)
+                    .Append(new { Date = todayIst, Close = todayQuote.Ltp })
+                    .OrderBy(x => x.Date)
+                    .ToList();
+            }
+            else if (isCurrentWeek && !dailyCloses.Any(d => d.Date == todayIst))
             {
                 decimal? todaysLiveClose = await GetLatestIntradayCloseForDateAsync(symbol, todayIst, indianTz);
                 if (todaysLiveClose.HasValue && todaysLiveClose.Value > 0m)
@@ -461,7 +494,7 @@ public class MarketDataController : ControllerBase
         if (string.IsNullOrWhiteSpace(timeframe)) return BadRequest("Timeframe parameter is required.");
         try
         {
-            DateTime fromTime = DateTime.UtcNow.Date; // Start of today (UTC)
+            DateTime fromTime = QuantEdge.Infrastructure.Helpers.TimeZoneHelper.IstTodayStartUtc(); // Start of today (IST)
             DateTime toTime = DateTime.UtcNow;
 
             // Fetch from Zerodha using the service

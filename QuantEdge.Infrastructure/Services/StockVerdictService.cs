@@ -29,6 +29,8 @@ public class StockVerdictService : IStockVerdictService
     private readonly IRealTradingRepository _realTradingRepository;
     private readonly IAutoRealTradeService _realTradeService;
     private readonly IZerodhaKiteBrokerService _brokerService;
+    private readonly ILiveQuoteRepository _liveQuoteRepository;
+    private readonly IMarketRegimeService _regimeService;
 
     public StockVerdictService(
         IMarketCandleRepository candleRepository,
@@ -36,8 +38,12 @@ public class StockVerdictService : IStockVerdictService
         ISwingStrategySettingsRepository strategySettingsRepository,
         IRealTradingRepository realTradingRepository,
         IAutoRealTradeService realTradeService,
-        IZerodhaKiteBrokerService brokerService)
+        IZerodhaKiteBrokerService brokerService,
+        ILiveQuoteRepository liveQuoteRepository,
+        IMarketRegimeService regimeService)
     {
+        _liveQuoteRepository = liveQuoteRepository ?? throw new ArgumentNullException(nameof(liveQuoteRepository));
+        _regimeService = regimeService ?? throw new ArgumentNullException(nameof(regimeService));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _stockRepository = stockRepository ?? throw new ArgumentNullException(nameof(stockRepository));
         _strategySettingsRepository = strategySettingsRepository ?? throw new ArgumentNullException(nameof(strategySettingsRepository));
@@ -68,36 +74,45 @@ public class StockVerdictService : IStockVerdictService
         var nifty = await LoadAsync("NIFTY 50", "1d");
         if (!nifty.Any()) nifty = await LoadAsync("NIFTYBEES", "1d");
 
-        if (candles1d.Count >= 2)
-        {
-            decimal prevClose = candles1d[^2].Close;
-            dto.DayChangePct = prevClose > 0m ? Math.Round((candles1d[^1].Close - prevClose) / prevClose * 100m, 2) : null;
-        }
+        // Price and day change exactly as NSE shows them (Ltp vs previous session close) - see DayChangeCalculator.
+        var live = await _liveQuoteRepository.GetAsync(new[] { symbol });
+        var quote = DayChangeCalculator.Resolve(symbol, live.TryGetValue(symbol, out var q) ? q : null, candles1d, candles15m);
+        dto.DayChangePct = quote?.ChangePct;
+        dto.PrevClose = quote?.PrevClose;
+        dto.PriceAsOfUtc = quote?.AsOfUtc;
+        dto.PriceSource = quote?.Source;
 
         dto.Holding = await FindHoldingAsync(symbol, userId);
 
         if (candles1d.Count < RealTradeSchedule.MinDailyCandles)
         {
             dto.Verdict = "NO_DATA";
-            dto.LastPrice = candles15m.LastOrDefault()?.Close ?? candles1d.LastOrDefault()?.Close ?? 0m;
+            dto.LastPrice = quote?.Ltp ?? candles15m.LastOrDefault()?.Close ?? candles1d.LastOrDefault()?.Close ?? 0m;
             dto.EngineReason = $"Only {candles1d.Count} daily candles - the bot needs at least {RealTradeSchedule.MinDailyCandles} to score a stock.";
             return dto;
         }
 
         var stock = await _stockRepository.GetBySymbolAsync(symbol) ?? new StockMaster { Symbol = symbol };
-        var result = SwingDecisionEngine.Evaluate(stock, candles1d, candles15m, candles60m, nifty, strategy);
+        // Same market gate as the bot (Plan Phase 1): REGIME mode scores without the NIFTY hard gate.
+        MarketGateDecision? regimeGate = strategy.UsesRegimeGate ? await _regimeService.GetRegimeGateAsync() : null;
+        var result = SwingDecisionEngine.Evaluate(stock, candles1d, candles15m, candles60m, nifty,
+            regimeGate != null ? RegimeGate.WithoutNiftyGate(strategy) : strategy);
 
         dto.EngineDecision = result.Decision;
         dto.Score = result.Score;
         dto.EngineReason = result.Reason;
-        dto.LastPrice = result.EntryPrice;
-        dto.StopLoss = result.StopLoss;
-        dto.Target1 = result.Target1;
+        dto.LastPrice = quote?.Ltp ?? result.EntryPrice;
+        // The stop / target the bot would actually place with these settings (Plan D6), not the engine's 15m-ATR levels.
+        var botLevels = SwingTradeRules.BotLevelsFor(result, SwingTradeParams.From(settings));
+        dto.StopLoss = botLevels.StopLoss;
+        dto.Target1 = botLevels.Target;
         dto.MetCount = result.Checklist?.MetCount ?? 0;
         dto.TotalConditions = result.Checklist?.TotalCount ?? 11;
 
-        dto.MarketPassed = result.IsMarketFilterPassed;
-        dto.MarketRequired = strategy.RequireNiftyMarketFilter;
+        dto.MarketPassed = regimeGate?.AllowsEntries ?? result.IsMarketFilterPassed;
+        dto.MarketRequired = regimeGate != null || strategy.RequireNiftyMarketFilter;
+        dto.MarketGateMode = regimeGate != null ? SwingStrategySettings.GateModeRegime : SwingStrategySettings.GateModeNiftyFilter;
+        dto.MarketReason = regimeGate?.Reason;
         dto.MarketPenalty = result.MarketPenaltyApplied;
         // Daily-trend rules only; a failed mandatory NIFTY filter is reported separately via MarketPassed.
         dto.TrendPassed = result.EmaTrendPassed && result.AdxPassed;
@@ -117,7 +132,14 @@ public class StockVerdictService : IStockVerdictService
 
         // The scan worker hands a stock to the buy guards when it is a BUY signal OR meets the user's
         // MinConditionsMatch - so "BUY" here means exactly "the bot will try to buy it".
-        dto.IsBotCandidate = result.HardFiltersPassed && (result.IsBuySignal || dto.MetCount >= settings.MinConditionsMatch);
+        // In REGIME mode the regime policy decides instead (score bar, must-beat-NIFTY), exactly as in the scan workers.
+        dto.IsBotCandidate = regimeGate?.Policy != null
+            ? regimeGate.AllowsEntries && RegimeGate.Evaluate(result, regimeGate.Policy).Allowed
+            : result.HardFiltersPassed && (result.IsBuySignal || dto.MetCount >= settings.MinConditionsMatch);
+        if (regimeGate?.Policy != null && !dto.IsBotCandidate && result.HardFiltersPassed)
+        {
+            dto.EngineReason = $"{result.Reason} Market regime: {RegimeGate.Evaluate(result, regimeGate.Policy).Reason}.";
+        }
 
         if (dto.Holding != null)
         {
@@ -170,7 +192,7 @@ public class StockVerdictService : IStockVerdictService
     };
 
     private async Task<List<MarketCandle>> LoadAsync(string symbol, string timeframe) =>
-        (await _candleRepository.GetHistoryAsync(symbol, timeframe, RealTradeSchedule.CandleHistoryCount))
+        (await _candleRepository.GetHistoryAsync(symbol, timeframe, RealTradeSchedule.HistoryCountFor(timeframe)))
             .OrderBy(c => c.CandleTime)
             .ToList();
 

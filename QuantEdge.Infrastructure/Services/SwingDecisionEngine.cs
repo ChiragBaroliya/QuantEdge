@@ -48,6 +48,8 @@ public class SwingEvaluationResult
     public bool? Is60mAboveEma20 { get; set; }
     public decimal Rsi15m { get; set; }
     public decimal VolumeMultiple { get; set; }
+    /// <summary>False when fewer than MinBarsForEma200 daily candles were given - the EMA200 check was skipped.</summary>
+    public bool HasEma200History { get; set; }
 }
 
 /// <summary>Points one scoring factor earned (0..MaxPoints) and the timeframe it was measured on.</summary>
@@ -79,7 +81,14 @@ public static class SwingDecisionEngine
 
         var result = new SwingEvaluationResult();
         string symbol = stock?.Symbol ?? "UNKNOWN";
-        result.Sector = GetSectorForSymbol(symbol);
+        // Sector comes from stock_sectors (callers that show it fill it in); the old hard-coded 25-symbol map is gone.
+        result.Sector = string.Empty;
+
+        // Score finished candles only (Plan D2): a still-forming 15m / 60m bar repaints - its volume, candle shape,
+        // RSI and MACD change until it closes, so a BUY scored on it could vanish by the bar's close.
+        DateTime nowUtc = DateTime.UtcNow;
+        stockCandles15m = ClosedCandlesOnly(stockCandles15m, TimeSpan.FromMinutes(15), nowUtc);
+        stockCandles60m = ClosedCandlesOnly(stockCandles60m, TimeSpan.FromMinutes(60), nowUtc);
 
         if (stockCandles1d == null || stockCandles1d.Count < 50)
         {
@@ -134,7 +143,12 @@ public static class SwingDecisionEngine
         // Hard Filter 2 (Stock-Level): EMA_TREND (Price > EMA20 > EMA50, rising slopes, stable EMA200)
         bool ema20Rising = idx1d >= 2 && ema20_1d[idx1d] > ema20_1d[idx1d - 2];
         bool ema50Rising = idx1d >= 2 && ema50_1d[idx1d] > ema50_1d[idx1d - 2];
-        bool ema200Stable = idx1d >= 5 && (ema200_1d[idx1d] >= ema200_1d[idx1d - 5] * 0.995m);
+        // EMA200 is only meaningful with enough history (Plan D1): with fewer bars CalculateEma returns a running
+        // average, not an EMA200. Callers now load 300 daily candles; a newer listing skips this check rather than
+        // being judged on a fake EMA200.
+        bool hasEma200History = closes1d.Count >= MinBarsForEma200;
+        result.HasEma200History = hasEma200History;
+        bool ema200Stable = !hasEma200History || (idx1d >= 5 && ema200_1d[idx1d] >= ema200_1d[idx1d - 5] * 0.995m);
         bool emaTrendPassed = price1d > curEma20_1d && curEma20_1d > curEma50_1d && ema20Rising && ema50Rising && ema200Stable;
 
         // Hard Filter 3 (Stock-Level): ADX_STRENGTH (ADX 14 >= 20.0 - Filters out choppy markets)
@@ -234,10 +248,13 @@ public static class SwingDecisionEngine
         AddFactor("BREAKOUT_GROUP", "Breakout", 20, "15m");
 
         // Rule 5: VOL_CONFIRMATION (15 Pts Max)
-        // Volume >= 2.5x 20-period Average Volume AND Volume > Prev Volume
-        var prev20Vol = refVolumes.Skip(Math.Max(0, refIdx - 20)).Take(Math.Min(20, refIdx)).ToList();
-        decimal avgVol20 = prev20Vol.Any() ? (decimal)prev20Vol.Average(v => (double)v) : 0m;
+        // Volume >= 2.5x the usual volume for this bar AND Volume > Prev Volume.
+        // "Usual" = the same IST time slot on earlier days (Plan D3): intraday volume is U-shaped, so comparing the
+        // 09:15 bar with the previous afternoon's bars handed the opening scans this score almost for free. Falls back
+        // to the previous 20 bars when there are fewer than 3 earlier same-slot bars (or on daily candles).
         long curVol = refVolumes[refIdx];
+        decimal avgVol20 = SameSlotAverageVolume(refCandles, refIdx)
+            ?? (refIdx > 0 ? (decimal)refVolumes.Skip(Math.Max(0, refIdx - 20)).Take(Math.Min(20, refIdx)).Average(v => (double)v) : 0m);
         decimal volMult = avgVol20 > 0m ? Math.Round((decimal)curVol / avgVol20, 2) : 0m;
         bool volSpikePassed = volMult >= 1.5m; // 1.5x minimum, bonus 2.5x
         bool volGreaterPrev = refIdx >= 1 && curVol > refVolumes[refIdx - 1];
@@ -261,13 +278,19 @@ public static class SwingDecisionEngine
 
         // Rule 6: RELATIVE_STRENGTH (15 Pts Max)
         // Stock 1M or 3M return > NIFTY 50 return
+        // Both returns are measured over the SAME dates (Plan D11): NIFTY's close is looked up on the stock's start and
+        // end dates (latest NIFTY close on or before each), so a stale or extra NIFTY row can't skew the comparison.
         bool rsPassed = false;
         if (idx1d >= 20 && niftyCandles1d != null && niftyCandles1d.Count >= 21)
         {
-            int nIdx = niftyCandles1d.Count - 1;
             decimal stockRet1M = (price1d - closes1d[idx1d - 20]) / closes1d[idx1d - 20];
-            decimal niftyRet1M = (niftyCandles1d[nIdx].Close - niftyCandles1d[nIdx - 20].Close) / niftyCandles1d[nIdx - 20].Close;
-            rsPassed = stockRet1M > niftyRet1M;
+            decimal? niftyStart = NiftyCloseOnOrBefore(niftyCandles1d, stockCandles1d[idx1d - 20].CandleTime);
+            decimal? niftyEnd = NiftyCloseOnOrBefore(niftyCandles1d, stockCandles1d[idx1d].CandleTime);
+            if (niftyStart > 0m && niftyEnd > 0m)
+            {
+                decimal niftyRet1M = (niftyEnd.Value - niftyStart.Value) / niftyStart.Value;
+                rsPassed = stockRet1M > niftyRet1M;
+            }
         }
         if (rsPassed)
         {
@@ -521,7 +544,7 @@ public static class SwingDecisionEngine
             new("BREAKOUT_GROUP", "4. Breakout Group (20 Pts)", "15m Close > Previous Day High / Consolidation / 52W High",
                 breakoutPassed ? "Passed (Breakout Confirmed)" : "Inside Range", "Breakout Confirmed", breakoutPassed),
 
-            new("VOL_CONFIRMATION", "5. Volume Confirmation (15 Pts)", "15m Volume >= 1.5x 20-period Avg & > Prev Vol",
+            new("VOL_CONFIRMATION", "5. Volume Confirmation (15 Pts)", "15m Volume >= 1.5x the usual volume for this time of day (same slot on earlier days) & > Prev Vol",
                 volSpikePassed ? $"Passed ({volMult:F1}x Avg Vol)" : $"{volMult:F1}x Avg Vol", ">= 1.5x Avg Vol", volSpikePassed),
 
             new("RELATIVE_STRENGTH", "6. Relative Strength vs Nifty (15 Pts)", "Stock 1M / 3M Return > Nifty 50 Return",
@@ -556,15 +579,51 @@ public static class SwingDecisionEngine
         return new ConditionChecklistDto(0, 1, conditions);
     }
 
-    private static string GetSectorForSymbol(string symbol) => symbol.ToUpperInvariant() switch
+    /// <summary>Daily bars needed before EMA200 is trusted (200 + warm-up).</summary>
+    public const int MinBarsForEma200 = 220;
+
+    /// <summary>The candles without the last one when that one hasn't closed yet (start + interval is in the future).</summary>
+    public static List<MarketCandle> ClosedCandlesOnly(List<MarketCandle>? candles, TimeSpan interval, DateTime nowUtc)
     {
-        "INFY" or "TCS" or "WIPRO" or "TECHM" or "HCLTECH" => "IT & Technology",
-        "HDFCBANK" or "ICICIBANK" or "AXISBANK" or "SBIN" or "KOTAKBANK" => "Banking & Financials",
-        "RELIANCE" or "ONGC" or "BPCL" or "IOC" => "Energy & Oil",
-        "TATAMOTORS" or "MARUTI" or "M&M" or "HEROMOTOCO" => "Automobile",
-        "LT" or "ULTRACEMCO" or "GRASIM" => "Infrastructure & Capital Goods",
-        "ITC" or "HUNVR" or "NESTLEIND" or "BRITANNIA" => "FMCG",
-        "NIFTYBEES" or "NIFTY 50" => "Index ETF",
-        _ => "General Equities"
-    };
+        if (candles == null || candles.Count == 0) return candles ?? new List<MarketCandle>();
+        var last = candles[^1];
+        DateTime lastStartUtc = last.CandleTime.Kind == DateTimeKind.Local ? last.CandleTime.ToUniversalTime()
+            : DateTime.SpecifyKind(last.CandleTime, DateTimeKind.Utc);
+        return lastStartUtc + interval > nowUtc ? candles.Take(candles.Count - 1).ToList() : candles;
+    }
+
+    /// <summary>
+    /// Average volume of the bars at the same IST time of day as candles[index] on earlier days (intraday only);
+    /// null when there are fewer than 3 such bars or the candles are daily.
+    /// </summary>
+    public static decimal? SameSlotAverageVolume(IReadOnlyList<MarketCandle> candles, int index)
+    {
+        if (index < 1 || candles[index].Timeframe == "1d") return null;
+        TimeSpan slot = IstTimeOfDay(candles[index].CandleTime);
+        DateTime day = DayChangeCalculator.IstDate(candles[index].CandleTime);
+        var sameSlot = new List<long>();
+        for (int i = index - 1; i >= 0 && sameSlot.Count < 20; i--)
+        {
+            if (IstTimeOfDay(candles[i].CandleTime) == slot && DayChangeCalculator.IstDate(candles[i].CandleTime) < day)
+                sameSlot.Add(candles[i].Volume);
+        }
+        return sameSlot.Count >= 3 ? (decimal)sameSlot.Average(v => (double)v) : null;
+    }
+
+    /// <summary>NIFTY's close on the stock candle's IST date, or the latest one before it.</summary>
+    public static decimal? NiftyCloseOnOrBefore(IReadOnlyList<MarketCandle> nifty, DateTime candleTime)
+    {
+        DateTime date = DayChangeCalculator.IstDate(candleTime);
+        for (int i = nifty.Count - 1; i >= 0; i--)
+        {
+            if (DayChangeCalculator.IstDate(nifty[i].CandleTime) <= date) return nifty[i].Close;
+        }
+        return null;
+    }
+
+    private static TimeSpan IstTimeOfDay(DateTime time)
+    {
+        var utc = time.Kind == DateTimeKind.Local ? time.ToUniversalTime() : DateTime.SpecifyKind(time, DateTimeKind.Utc);
+        return TimeZoneInfo.ConvertTimeFromUtc(utc, Helpers.TimeZoneHelper.IndianTimeZone).TimeOfDay;
+    }
 }

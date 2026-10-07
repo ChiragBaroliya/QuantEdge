@@ -1074,3 +1074,281 @@ CREATE TABLE IF NOT EXISTS stock_sectors (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stock_sectors_sector_id ON stock_sectors (sector_id);
+
+-- ----------------------------------------------------------------------------
+-- Table: live_quotes
+-- Latest tick per symbol, written every ~2 s by the market-data feed (LiveQuoteRecorder) so the API - a
+-- different process - shows the same live price. prev_close is Kite's ohlc.close from the quote tick (the
+-- previous session's close), the reference NSE / TradingView use for the day change (DayChangeCalculator).
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS live_quotes (
+    symbol VARCHAR(50) PRIMARY KEY,
+    ltp NUMERIC(18, 4) NOT NULL,
+    prev_close NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    day_open NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    day_high NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    day_low NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    as_of TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- ----------------------------------------------------------------------------
+-- real_orders: signal price + broker filled quantity (Plan L.1 P4/P5)
+-- signal_price    = price the BUY/exit decision was made at; filled_price - signal_price = slippage.
+-- filled_quantity = Zerodha's filled_quantity; below quantity when an order partly filled then cancelled.
+-- Written best-effort by AutoRealTradeService; orders keep working if this hasn't been applied yet.
+-- ----------------------------------------------------------------------------
+ALTER TABLE real_orders ADD COLUMN IF NOT EXISTS signal_price NUMERIC(18, 4);
+ALTER TABLE real_orders ADD COLUMN IF NOT EXISTS filled_quantity INT;
+
+-- ----------------------------------------------------------------------------
+-- Table: charge_rates (Plan L.1 P6 - Gross / Charges / Net P&L)
+-- Dated brokerage + statutory rates per product. Percent columns are in percent (0.1 = 0.1%).
+-- When Zerodha / NSE / SEBI revise a rate, INSERT a new row with the new effective_from - older trades keep the
+-- rates that applied on their date. Seed values are Zerodha's published equity rates: verify at
+-- https://zerodha.com/charges before relying on them. ChargesCalculator falls back to the same values in code.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS charge_rates (
+    id SERIAL PRIMARY KEY,
+    product VARCHAR(10) NOT NULL,                   -- CNC (delivery) / MIS (intraday; also same-day CNC round trips)
+    effective_from DATE NOT NULL,
+    brokerage_pct NUMERIC(9, 6) NOT NULL,           -- per executed order, % of order value
+    brokerage_max_per_order NUMERIC(12, 2),         -- cap per executed order (NULL = no cap)
+    stt_buy_pct NUMERIC(9, 6) NOT NULL,
+    stt_sell_pct NUMERIC(9, 6) NOT NULL,
+    exchange_txn_pct NUMERIC(9, 6) NOT NULL,        -- NSE transaction charge, both sides
+    sebi_per_crore NUMERIC(12, 2) NOT NULL,         -- ₹ per ₹1 crore turnover, both sides
+    stamp_buy_pct NUMERIC(9, 6) NOT NULL,           -- buy side only
+    gst_pct NUMERIC(9, 4) NOT NULL,                 -- on brokerage + exchange + SEBI
+    dp_per_sell NUMERIC(12, 2) NOT NULL,            -- ₹ per scrip per sell day incl. GST (delivery only)
+    CONSTRAINT uq_charge_rates_product_date UNIQUE (product, effective_from)
+);
+
+INSERT INTO charge_rates (product, effective_from, brokerage_pct, brokerage_max_per_order, stt_buy_pct, stt_sell_pct,
+                          exchange_txn_pct, sebi_per_crore, stamp_buy_pct, gst_pct, dp_per_sell)
+VALUES ('CNC', DATE '2024-10-01', 0,    NULL, 0.1, 0.1,   0.00307, 10, 0.015, 18, 15.34),
+       ('MIS', DATE '2024-10-01', 0.03, 20,   0,   0.025, 0.00307, 10, 0.003, 18, 0)
+ON CONFLICT (product, effective_from) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- Table: broker_api_events
+-- Every failed, rate-limited or skipped Zerodha call (REST, historical, WebSocket, session), from any process.
+-- Feeds the header bell (category "zerodha"). Repeats of the same failure within 5 minutes are folded into one
+-- row's repeat_count so an outage can't flood the table (BrokerApiEventRecorder).
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS broker_api_events (
+    id BIGSERIAL PRIMARY KEY,
+    occurred_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    source VARCHAR(20) NOT NULL,          -- REST / HISTORICAL / WEBSOCKET / SESSION / JOB
+    operation VARCHAR(120) NOT NULL,      -- e.g. "GET /orders/{id}", "historical 15m", "connect"
+    level VARCHAR(10) NOT NULL,           -- error / warning
+    http_status INT,
+    symbol VARCHAR(50),
+    user_id INT,
+    message VARCHAR(500),
+    repeat_count INT NOT NULL DEFAULT 1,  -- this failure plus the repeats folded into it
+    process_name VARCHAR(60)
+);
+CREATE INDEX IF NOT EXISTS ix_broker_api_events_time ON broker_api_events (occurred_at DESC);
+
+-- ----------------------------------------------------------------------------
+-- Table: real_order_charges (Plan L.1 P6 - actual charges for real trades)
+-- Zerodha's own per-order charges from the Kite virtual contract note (POST /charges/orders), fetched once a day
+-- after the close for every filled real order (RealOrderChargesWorker - one batched Kite call per user per day).
+-- dp is not part of Kite's response: ₹ per scrip per sell day for delivery sells, added from charge_rates.
+-- Reports use these instead of the ChargesCalculator estimate when both legs of a trade have a row.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS real_order_charges (
+    order_id INT PRIMARY KEY REFERENCES real_orders(id) ON DELETE CASCADE,
+    broker_order_id VARCHAR(100),
+    brokerage NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    stt NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    exchange_txn NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    sebi NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    stamp NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    gst NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    dp NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    total NUMERIC(14, 4) NOT NULL DEFAULT 0,  -- Kite total + dp
+    fetched_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- ----------------------------------------------------------------------------
+-- Table: nse_bhavcopy (Plan L.1 P9 - official NSE end-of-day prices)
+-- NSE's CM bhavcopy (UDiFF: BhavCopy_NSE_CM_0_0_0_YYYYMMDD_F_0000.csv.zip from nsearchives.nseindia.com),
+-- downloaded once a day after the close by NseBhavcopyWorker - no Zerodha call. close = NSE's official closing
+-- price (the weighted average of the last 30 minutes), which is what TradingView / NSE show as the day's close.
+-- After loading, the day's market_candles_1d rows for EQ-series stocks are overwritten with these official values.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS nse_bhavcopy (
+    trade_date DATE NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    series VARCHAR(10) NOT NULL,
+    isin VARCHAR(20),
+    open NUMERIC(18, 4) NOT NULL,
+    high NUMERIC(18, 4) NOT NULL,
+    low NUMERIC(18, 4) NOT NULL,
+    close NUMERIC(18, 4) NOT NULL,      -- official closing price
+    last NUMERIC(18, 4),                -- last traded price
+    prev_close NUMERIC(18, 4),
+    volume BIGINT NOT NULL DEFAULT 0,
+    turnover NUMERIC(22, 2),
+    loaded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (trade_date, symbol, series)
+);
+
+-- ----------------------------------------------------------------------------
+-- Table: corporate_actions (Plan L.1 P10 - splits / bonuses)
+-- Detected from NSE's own bhavcopy: on an ex-date NSE publishes an ADJUSTED previous close, so
+-- factor = today's prev_close / the previous day's close (e.g. 0.5 for a 1:2 split or a 1:1 bonus).
+-- A factor matching a simple ratio p/q (p, q <= 10) is APPLIED automatically: candles before the ex-date get
+-- price x factor and volume / factor; open paper / manual / real positions get price x factor and quantity / factor.
+-- Anything else (rights issues, unusual ratios) is left NEEDS_REVIEW and shown in the header bell.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS corporate_actions (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(50) NOT NULL,
+    ex_date DATE NOT NULL,
+    factor NUMERIC(18, 8) NOT NULL,       -- multiply old prices by this; divide old quantities / volumes by it
+    ratio_text VARCHAR(30),               -- e.g. "price x 1/2"
+    source VARCHAR(30) NOT NULL DEFAULT 'BHAVCOPY_PREVCLOSE',
+    status VARCHAR(20) NOT NULL,          -- APPLIED / NEEDS_REVIEW
+    details VARCHAR(500),
+    detected_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    applied_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT uq_corporate_actions_symbol_date UNIQUE (symbol, ex_date)
+);
+
+-- ----------------------------------------------------------------------------
+-- Table: data_quality_issues (Plan L.7 - daily reconciliation)
+-- Every mismatch found by the daily checks: our daily close vs NSE's official close (before the bhavcopy
+-- overwrites it), and our open real positions vs Zerodha holdings/positions (quantity, average price).
+-- Shown on the Reconciliation page; a summary goes to the header bell.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS data_quality_issues (
+    id BIGSERIAL PRIMARY KEY,
+    check_date DATE NOT NULL,
+    check_type VARCHAR(40) NOT NULL,       -- DAILY_CLOSE_VS_BHAVCOPY / POSITION_QTY_VS_ZERODHA / POSITION_AVG_VS_ZERODHA / POSITION_MISSING_AT_ZERODHA
+    symbol VARCHAR(50),
+    user_id INT,
+    ours NUMERIC(18, 4),
+    external NUMERIC(18, 4),
+    diff_pct NUMERIC(12, 4),
+    details VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_data_quality_issues_date ON data_quality_issues (check_date DESC);
+
+-- ----------------------------------------------------------------------------
+-- Table: market_regime_daily (Plan Phase 1 / H - market regime)
+-- One reading per trading day, computed after the close from stored data only (NIFTY + active-stock daily candles,
+-- India VIX when stored) by MarketRegimeService - no Zerodha call. regime = the regime in force (changes only after two
+-- days in a new band, STRONG_BEARISH at once); raw_regime = the band today's score falls in.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS market_regime_daily (
+    trade_date DATE PRIMARY KEY,
+    nifty_close NUMERIC(18, 4) NOT NULL,
+    ema50 NUMERIC(18, 4),
+    ema200 NUMERIC(18, 4),
+    day_change_pct NUMERIC(9, 4),
+    drawdown_pct NUMERIC(9, 4),
+    vix NUMERIC(9, 4),
+    vol_source VARCHAR(20),
+    vol_percentile NUMERIC(6, 2),
+    pct_above_ema50 NUMERIC(6, 2),
+    pct_above_ema200 NUMERIC(6, 2),
+    net_advances_10 INT,
+    breadth_stocks INT,
+    trend_pts INT NOT NULL,
+    breadth_pts INT NOT NULL,
+    vol_pts INT NOT NULL,
+    drawdown_pts INT NOT NULL,
+    score INT NOT NULL,
+    raw_regime VARCHAR(20) NOT NULL,
+    regime VARCHAR(20) NOT NULL,
+    regime_streak INT NOT NULL DEFAULT 1,
+    notes VARCHAR(500),
+    computed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- ----------------------------------------------------------------------------
+-- Table: regime_policy (Plan H) - how new entries are allowed in each regime. Edit rows to tune without a redeploy.
+-- Used by the scan workers only when swing_strategy_settings.market_gate_mode = 'REGIME'.
+--   min_stock_score          engine score needed for a BUY in this regime (replaces buy_score_threshold)
+--   require_relative_strength the stock must be outperforming NIFTY (engine RELATIVE_STRENGTH rule)
+--   max_positions            open positions allowed per user (0 = no new entries)
+--   risk_pct                 % of capital risked per trade (Auto Paper sizing)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS regime_policy (
+    regime VARCHAR(20) PRIMARY KEY,
+    min_stock_score INT NOT NULL,
+    require_relative_strength BOOLEAN NOT NULL,
+    max_positions INT NOT NULL,
+    risk_pct NUMERIC(6, 3) NOT NULL,
+    max_exposure_pct NUMERIC(6, 2) NOT NULL,
+    description VARCHAR(300)
+);
+INSERT INTO regime_policy (regime, min_stock_score, require_relative_strength, max_positions, risk_pct, max_exposure_pct, description) VALUES
+    ('BULLISH',           70, FALSE, 10, 1.000, 100, 'Normal trading'),
+    ('BULLISH_WEAKENING', 75, TRUE,   7, 0.750,  70, 'Fewer, stronger trades; only stocks beating NIFTY'),
+    ('SIDEWAYS',          78, TRUE,   5, 0.750,  50, 'High-quality setups only'),
+    ('BEARISH',           82, TRUE,   3, 0.500,  30, 'Only leaders that keep rising while NIFTY falls; half risk'),
+    ('STRONG_BEARISH',    88, TRUE,   1, 0.250,  15, 'Exceptional strength only, quarter risk (set max_positions = 0 to stop new entries)')
+ON CONFLICT (regime) DO NOTHING;
+
+-- How the scan workers gate new entries on market conditions:
+--   NIFTY_FILTER (default, previous behaviour) - require_nifty_market_filter decides (all-or-nothing)
+--   REGIME - market_regime_daily + regime_policy decide (strong stocks may still be bought in a weak market)
+ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS market_gate_mode VARCHAR(20) NOT NULL DEFAULT 'NIFTY_FILTER';
+
+-- ----------------------------------------------------------------------------
+-- Tables: backtest_runs / backtest_trades (Plan Phase 7 - backtesting)
+-- A run is queued from the Backtest page (status QUEUED), picked up by BacktestWorker in the plain "marketdatafeed"
+-- worker process, replayed on stored candles only (no Zerodha calls) and finished as DONE / FAILED / CANCELLED.
+--   params   the fully resolved inputs (blank fields filled from the live settings at queue time)
+--   summary  KPIs, equity curve, breakdowns, threshold sweep, factor edge, data coverage, assumptions
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    label VARCHAR(200),
+    status VARCHAR(20) NOT NULL DEFAULT 'QUEUED',
+    progress_pct INT NOT NULL DEFAULT 0,
+    message TEXT,
+    params JSONB NOT NULL,
+    summary JSONB,
+    error TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMP WITH TIME ZONE,
+    finished_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_backtest_runs_status ON backtest_runs (status, id);
+
+CREATE TABLE IF NOT EXISTS backtest_trades (
+    id BIGSERIAL PRIMARY KEY,
+    run_id INT NOT NULL REFERENCES backtest_runs(id) ON DELETE CASCADE,
+    symbol VARCHAR(50) NOT NULL,
+    sector VARCHAR(100),
+    regime VARCHAR(30),
+    signal_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    entry_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    entry_price NUMERIC(18, 4) NOT NULL,
+    exit_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    exit_price NUMERIC(18, 4) NOT NULL,
+    exit_reason VARCHAR(200),
+    exit_category VARCHAR(30),
+    quantity INT NOT NULL,
+    stop_loss NUMERIC(18, 4),
+    target NUMERIC(18, 4),
+    score INT,
+    met_count INT,
+    sessions_held INT,
+    gross_pnl NUMERIC(18, 2),
+    charges NUMERIC(18, 2),
+    net_pnl NUMERIC(18, 2),
+    r_multiple NUMERIC(10, 3),
+    mfe_pct NUMERIC(10, 2),
+    mae_pct NUMERIC(10, 2),
+    factors VARCHAR(400),
+    end_of_data BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_backtest_trades_run ON backtest_trades (run_id, entry_time);

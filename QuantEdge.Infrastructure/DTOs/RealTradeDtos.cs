@@ -68,6 +68,8 @@ public class RealTradeDashboardDto
     public int MaxTradesPerDay => Settings.MaxTradesPerDay;
     public int ActivePositionsCount { get; set; }
     public decimal TotalUnrealizedPnl { get; set; }
+    /// <summary>Estimated round-trip charges of the open positions if sold now; net = TotalUnrealizedPnl − this.</summary>
+    public decimal TotalEstimatedCharges { get; set; }
     public decimal TotalRealizedPnlToday { get; set; }
     public decimal AvailableBrokerMargin { get; set; }
     public decimal UsedBrokerMargin { get; set; }
@@ -245,6 +247,8 @@ public class RealTradeLivePositionsFastDto
     public decimal ZerodhaRealizedPnl { get; set; }
     public decimal ZerodhaUnrealizedPnl { get; set; }
     public decimal TotalUnrealizedPnl { get; set; }
+    /// <summary>Estimated round-trip charges of the open positions if sold now; net = TotalUnrealizedPnl − this.</summary>
+    public decimal TotalEstimatedCharges { get; set; }
     public decimal TotalRealizedPnlToday { get; set; }
     public ZerodhaPositionsDto? BrokerPositions { get; set; }
     public List<ZerodhaHoldingDto>? BrokerHoldings { get; set; }
@@ -327,4 +331,33 @@ public class SymbolJourneySkipDto
     public int? GuardNumber { get; set; }
     public string? GuardName { get; set; }
     public int TotalGuards { get; set; } = 13;
+}
+
+/// <summary>One executed order sent to Kite's virtual contract note (POST /charges/orders).</summary>
+public sealed class KiteChargesOrderRequest
+{
+    public string OrderId { get; set; } = string.Empty;
+    public string Exchange { get; set; } = "NSE";
+    public string TradingSymbol { get; set; } = string.Empty;
+    public string TransactionType { get; set; } = "BUY";   // BUY / SELL
+    public string Variety { get; set; } = "regular";
+    public string Product { get; set; } = "CNC";
+    public string OrderType { get; set; } = "LIMIT";
+    public int Quantity { get; set; }
+    public decimal AveragePrice { get; set; }
+}
+
+/// <summary>Zerodha's charges for one order, as returned by POST /charges/orders.</summary>
+public sealed class KiteOrderCharges
+{
+    public string TradingSymbol { get; set; } = string.Empty;
+    public string TransactionType { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    public decimal Brokerage { get; set; }
+    public decimal TransactionTax { get; set; }          // STT (or CTT)
+    public decimal ExchangeTurnoverCharge { get; set; }
+    public decimal SebiTurnoverCharge { get; set; }
+    public decimal StampDuty { get; set; }
+    public decimal Gst { get; set; }                     // gst.total
+    public decimal Total { get; set; }
 }

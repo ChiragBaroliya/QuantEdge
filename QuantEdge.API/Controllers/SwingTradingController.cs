@@ -119,6 +119,14 @@ public class SwingTradingController : ControllerBase
         {
             return BadRequest("MarketProtectionBufferPct must be between 0 (exclusive) and 0.05 (5%) inclusive.");
         }
+        if (!string.IsNullOrWhiteSpace(settings.MarketGateMode))
+        {
+            settings.MarketGateMode = settings.MarketGateMode.Trim().ToUpperInvariant();
+            if (settings.MarketGateMode != SwingStrategySettings.GateModeNiftyFilter && settings.MarketGateMode != SwingStrategySettings.GateModeRegime)
+            {
+                return BadRequest($"MarketGateMode must be {SwingStrategySettings.GateModeNiftyFilter} or {SwingStrategySettings.GateModeRegime}.");
+            }
+        }
 
         try
         {

@@ -29,6 +29,8 @@ public class PaperPortfolioDto
 {
     public PaperAccount Account { get; set; } = new();
     public decimal TotalUnrealizedPnl { get; set; }
+    /// <summary>Estimated round-trip charges of the open positions if sold now; net = TotalUnrealizedPnl − this.</summary>
+    public decimal TotalEstimatedCharges { get; set; }
     public decimal TotalEquity => Account.CurrentBalance + TotalUnrealizedPnl;
     public bool AutoTradeEnabled { get; set; }
 }

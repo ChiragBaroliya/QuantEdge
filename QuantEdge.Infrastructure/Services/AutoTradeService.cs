@@ -152,6 +152,7 @@ public class AutoTradeService : IAutoTradeService
         int todayCount = await GetTodayAutoTradeCountAsync(userId);
 
         decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
+        decimal estimatedCharges = Math.Round(positions.Sum(p => p.EstimatedCharges), 2);
 
         DateTime nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneHelper.IndianTimeZone);
         DateTime todayStartIst = nowIst.Date;
@@ -183,6 +184,7 @@ public class AutoTradeService : IAutoTradeService
             TodayTradeAmount = todayTradeAmount,
             ActivePositionsCount = positions.Count,
             TotalUnrealizedPnl = unrealizedPnl,
+            TotalEstimatedCharges = estimatedCharges,
             TotalRealizedPnlToday = todayRealizedPnl,
             AvailableMargin = paperAccount?.AvailableMargin ?? 0m,
             UsedMargin = paperAccount?.UsedMargin ?? 0m,
@@ -286,7 +288,7 @@ public class AutoTradeService : IAutoTradeService
     // EvaluateAndExecuteRealBuyCoreAsync - only broker-specific steps (token check, pending broker
     // orders, broker margin) are replaced by their paper-account equivalents.
     public async Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
-        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null)
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null)
     {
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
@@ -401,20 +403,25 @@ public class AutoTradeService : IAutoTradeService
             entryPrice = liveLtp;
         }
 
-        int quantity = (int)Math.Floor(settings.FixedAmountPerTrade / entryPrice);
-        if (quantity < 1)
-        {
-            await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
-                $"Calculated quantity 0 for entry price ₹{entryPrice:N2} with fixed trade amount ₹{settings.FixedAmountPerTrade:N2}", userId);
-            return false;
-        }
-
         // 8. Target, Stop Loss & initial Trailing SL - shared SwingTradeRules levels.
         var levels = SwingTradeRules.ComputeEntryLevels(entryPrice, dailyAtr, engineStopLoss, engineTarget, null, null, SwingTradeParams.From(settings));
         decimal takeProfit = levels.TakeProfit;
         decimal stopLoss = levels.StopLoss;
         decimal? trailingSl = levels.TrailingStopLoss;
         string tslText = trailingSl.HasValue ? $"₹{trailingSl.Value:F2}" : "activates after +1 ATR";
+
+        // Risk-based size (Plan D5): at most FixedAmountPerTrade of stock AND at most DefaultRiskPerTradePct of capital
+        // lost if the stop is hit - a volatile stock (wide stop) gets fewer shares instead of 3-4x the rupee risk.
+        // riskPct: the market regime's risk per trade in REGIME mode (smaller in weak markets), else the default 1%.
+        var sizing = SwingTradeRules.RiskSizedQuantity(entryPrice, stopLoss, settings.AvailableCapital, settings.FixedAmountPerTrade,
+            riskPct ?? SwingTradeRules.DefaultRiskPerTradePct);
+        int quantity = sizing.Quantity;
+        if (quantity < 1)
+        {
+            await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
+                $"Calculated quantity 0 for entry price ₹{entryPrice:N2} ({sizing.Reason})", userId);
+            return false;
+        }
 
         try
         {
@@ -482,7 +489,7 @@ public class AutoTradeService : IAutoTradeService
 
             // Log Audit Event
             await LogAuditAsync(symbol, "AUTO_BUY", entryPrice, quantity,
-                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity}, Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {tslText})", userId);
+                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity} - {sizing.Reason}; Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {tslText})", userId);
 
             // Broadcast SignalR Toast Alert
             if (_hubContext != null)

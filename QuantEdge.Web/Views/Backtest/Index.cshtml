@@ -1,0 +1,172 @@
+@{
+    ViewData["Title"] = "Backtest";
+    ViewData["PageTitle"] = "Backtest";
+}
+
+<style>
+    .bt-page { display: flex; flex-direction: column; gap: 20px; --bt-green: var(--accent-green, #34d399); --bt-red: var(--accent-red, #f87171); --bt-amber: var(--accent-amber, #fbbf24); }
+    .bt-card { background: var(--card-bg, #111827); border: 1px solid var(--border-color, #1f2937); border-radius: 12px; padding: 16px; }
+    .bt-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .bt-head h2 { font-size: 16px; margin: 0 0 4px; color: #fff; }
+    .bt-head p, .bt-note { font-size: 12px; margin: 0; color: #94a3b8; max-width: 860px; line-height: 1.5; }
+
+    /* How it works - node-and-arrow strip */
+    .bt-flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin-top: 4px; }
+    .bt-node { flex: 1 1 140px; min-width: 130px; border: 1px solid #334155; border-radius: 10px; padding: 8px 10px; background: rgba(148, 163, 184, .06); }
+    .bt-node b { display: block; font-size: 12px; color: #e5e7eb; margin-bottom: 2px; }
+    .bt-node span { font-size: 11px; color: #94a3b8; line-height: 1.35; display: block; }
+    .bt-node.same { border-color: rgba(52, 211, 153, .45); }
+    .bt-arrow { align-self: center; color: #64748b; padding: 0 6px; font-size: 16px; }
+
+    /* Form */
+    .bt-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px 14px; }
+    .bt-field label { display: block; font-size: 11.5px; color: #94a3b8; margin-bottom: 4px; }
+    .bt-field input, .bt-field select { width: 100%; box-sizing: border-box; background: #0b1220; color: #e5e7eb; border: 1px solid #1f2937; border-radius: 8px; padding: 7px 9px; font-size: 13px; }
+    .bt-field small { display: block; font-size: 10.5px; color: #64748b; margin-top: 3px; }
+    .bt-wide { grid-column: 1 / -1; }
+    .bt-details summary { cursor: pointer; font-size: 12.5px; color: #cbd5e1; margin: 12px 0 10px; }
+    .bt-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+    .bt-msg { font-size: 12.5px; color: #94a3b8; }
+    .bt-msg.err { color: var(--bt-red); }
+
+    /* Tables */
+    .bt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .bt-table th { text-align: left; color: #94a3b8; font-weight: 600; border-bottom: 1px solid #1f2937; padding: 7px 8px; white-space: nowrap; }
+    .bt-table td { border-bottom: 1px solid #1f2937; padding: 7px 8px; color: #e5e7eb; vertical-align: top; }
+    .bt-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .bt-table tr.hl td { background: rgba(167, 139, 250, .08); }
+    .bt-table tr.click { cursor: pointer; }
+    .bt-table tr.click:hover td { background: rgba(148, 163, 184, .06); }
+    /* width 0 + min-width 100%: fills the card but adds nothing to the page's intrinsic width, so wide tables scroll inside their card instead of widening the page on phones. */
+    .bt-wrap { overflow-x: auto; width: 0; min-width: 100%; }
+    .bt-empty { color: #94a3b8; padding: 14px 8px; }
+    .bt-pos { color: var(--bt-green); }
+    .bt-neg { color: var(--bt-red); }
+    .bt-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .bt-PASS, .bt-DONE { background: rgba(52, 211, 153, .15); color: var(--bt-green); }
+    .bt-FAIL, .bt-FAILED { background: rgba(248, 113, 113, .15); color: var(--bt-red); }
+    .bt-NOT_PROVEN, .bt-RUNNING, .bt-QUEUED, .bt-CANCEL_REQUESTED { background: rgba(251, 191, 36, .15); color: var(--bt-amber); }
+    .bt-CANCELLED { background: rgba(148, 163, 184, .15); color: #94a3b8; }
+    .bt-bar { height: 5px; border-radius: 3px; background: rgba(148, 163, 184, .2); overflow: hidden; margin-top: 5px; min-width: 90px; }
+    .bt-bar i { display: block; height: 100%; background: var(--bt-amber); }
+    .bt-link { background: none; border: none; color: #a78bfa; cursor: pointer; font-size: 12px; padding: 0 4px; }
+
+    /* Result */
+    .bt-verdict { border-radius: 12px; padding: 14px 16px; font-size: 13.5px; line-height: 1.5; border: 1px solid; }
+    .bt-verdict b { font-size: 15px; display: block; margin-bottom: 2px; }
+    .bt-verdict.PASS { border-color: rgba(52, 211, 153, .45); background: rgba(52, 211, 153, .08); }
+    .bt-verdict.PASS b { color: var(--bt-green); }
+    .bt-verdict.FAIL { border-color: rgba(248, 113, 113, .45); background: rgba(248, 113, 113, .08); }
+    .bt-verdict.FAIL b { color: var(--bt-red); }
+    .bt-verdict.NOT_PROVEN { border-color: rgba(251, 191, 36, .45); background: rgba(251, 191, 36, .08); }
+    .bt-verdict.NOT_PROVEN b { color: var(--bt-amber); }
+    .bt-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .bt-kpi { border: 1px solid #1f2937; border-radius: 10px; padding: 10px 12px; }
+    .bt-kpi span { display: block; font-size: 11px; color: #94a3b8; }
+    .bt-kpi b { display: block; font-size: 18px; color: #f1f5f9; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .bt-kpi small { display: block; font-size: 10.5px; color: #64748b; margin-top: 2px; }
+    .bt-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 20px; }
+    .bt-grid2 > div, .bt-card { min-width: 0; }
+    .bt-page { min-width: 0; max-width: 100%; }
+    .bt-chart { position: relative; height: 280px; width: 0; min-width: 100%; }
+    .bt-list { margin: 0; padding-left: 18px; font-size: 12px; color: #94a3b8; line-height: 1.6; }
+    .bt-sub { font-size: 13.5px; margin: 0 0 8px; color: #e5e7eb; }
+    .bt-sub small { color: #94a3b8; font-weight: 400; font-size: 11.5px; }
+</style>
+
+<div class="bt-page" id="backtestPage" data-api="@ViewBag.ApiBaseUrl" data-user="@ViewBag.UserId">
+
+    <section class="bt-card">
+        <div class="bt-head">
+            <div>
+                <h2>Backtest the swing strategy</h2>
+                <p>
+                    Replays the <b>live</b> strategy over past days, 15 minutes at a time, using only candles already stored in QuantEdge
+                    (<b>no Zerodha calls</b>). Every scan sees only what existed at that moment, so the result is what the bot would really have done.
+                    Blank fields use your current Swing and Real-trade settings.
+                </p>
+            </div>
+        </div>
+        <div class="bt-flow">
+            <div class="bt-node"><b>Stored candles</b><span>15m · 60m · daily · NIFTY, from the database</span></div>
+            <div class="bt-arrow">→</div>
+            <div class="bt-node same"><b>Same scan</b><span>SwingDecisionEngine at every 15m close, point in time</span></div>
+            <div class="bt-arrow">→</div>
+            <div class="bt-node same"><b>Same market gate</b><span>NIFTY filter or market regime + policy</span></div>
+            <div class="bt-arrow">→</div>
+            <div class="bt-node same"><b>Same guards</b><span>held? trade cap · loss limit · max positions · cash · size</span></div>
+            <div class="bt-arrow">→</div>
+            <div class="bt-node"><b>Buy next bar</b><span>next 15m open + slippage; skipped if moved ≥2%</span></div>
+            <div class="bt-arrow">→</div>
+            <div class="bt-node same"><b>Same exits</b><span>target · emergency · closing stop · trail · max days</span></div>
+            <div class="bt-arrow">→</div>
+            <div class="bt-node"><b>Net result</b><span>Zerodha charges + slippage → R, drawdown, verdict</span></div>
+        </div>
+    </section>
+
+    <section class="bt-card">
+        <div class="bt-head"><div><h2>New run</h2><p>A 2-year run over ~150 stocks takes a few minutes outside market hours (it runs slower during market hours so the live feed isn't affected).</p></div></div>
+        <form id="btForm" autocomplete="off">
+            <div class="bt-form">
+                <div class="bt-field"><label for="btFrom">From</label><input type="date" id="btFrom" required></div>
+                <div class="bt-field"><label for="btTo">To</label><input type="date" id="btTo" required></div>
+                <div class="bt-field">
+                    <label for="btGate">Market gate</label>
+                    <select id="btGate">
+                        <option value="">Current setting</option>
+                        <option value="NIFTY_FILTER">NIFTY trend filter</option>
+                        <option value="REGIME">Market regime</option>
+                    </select>
+                </div>
+                <div class="bt-field"><label for="btBuy">BUY score threshold</label><input type="number" id="btBuy" min="40" max="100" placeholder="current"><small>NIFTY-filter mode</small></div>
+                <div class="bt-field"><label for="btMin">Min conditions met</label><input type="number" id="btMin" min="1" max="11" placeholder="current"><small>live rule: BUY or ≥ this many of 11</small></div>
+                <div class="bt-field"><label for="btCapital">Capital (₹)</label><input type="number" id="btCapital" min="1000" step="1000" value="100000"></div>
+                <div class="bt-field"><label for="btAmount">Max per trade (₹)</label><input type="number" id="btAmount" min="100" step="100" value="10000"></div>
+                <div class="bt-field">
+                    <label for="btSizing">Position size</label>
+                    <select id="btSizing"><option value="RISK">Risk-based (≤ max per trade)</option><option value="FIXED">Fixed amount</option></select>
+                </div>
+                <div class="bt-field"><label for="btRisk">Risk per trade (%)</label><input type="number" id="btRisk" min="0.1" max="5" step="0.1" value="1"></div>
+                <div class="bt-field"><label for="btMaxPos">Max open positions</label><input type="number" id="btMaxPos" min="1" max="50" value="10"></div>
+                <div class="bt-field"><label for="btSlip">Slippage per side (%)</label><input type="number" id="btSlip" min="0" max="2" step="0.01" value="0.10"></div>
+            </div>
+            <details class="bt-details">
+                <summary>Advanced: exits, limits, stock list</summary>
+                <div class="bt-form">
+                    <div class="bt-field"><label for="btExit">Exit mode</label><select id="btExit"><option value="">Current</option><option value="SWING_CLOSE">Swing close</option><option value="INTRADAY">Intraday</option></select></div>
+                    <div class="bt-field"><label for="btSl">Stop loss (× ATR)</label><input type="number" id="btSl" min="0.5" max="5" step="0.1" placeholder="current"></div>
+                    <div class="bt-field"><label for="btTgt">Target (× ATR)</label><input type="number" id="btTgt" min="0.5" max="10" step="0.1" placeholder="current"></div>
+                    <div class="bt-field"><label for="btTrail">Trail (× ATR)</label><input type="number" id="btTrail" min="0.5" max="10" step="0.1" placeholder="current"></div>
+                    <div class="bt-field"><label for="btDays">Max days held</label><input type="number" id="btDays" min="0" max="120" placeholder="current"></div>
+                    <div class="bt-field"><label for="btTradesDay">Max trades per day</label><input type="number" id="btTradesDay" min="1" max="50" placeholder="current"></div>
+                    <div class="bt-field"><label for="btLoss">Daily loss limit (₹)</label><input type="number" id="btLoss" min="0" placeholder="10% of capital"></div>
+                    <div class="bt-field bt-wide"><label for="btSymbols">Only these stocks (comma separated, blank = all active)</label><input type="text" id="btSymbols" placeholder="e.g. RELIANCE, TCS, INFY"></div>
+                    <div class="bt-field bt-wide"><label for="btLabel">Label</label><input type="text" id="btLabel" maxlength="200" placeholder="optional, e.g. Regime · score 75"></div>
+                </div>
+            </details>
+            <div class="bt-actions">
+                <button type="submit" class="btn-trigger" id="btRun">Run backtest</button>
+                <span class="bt-msg" id="btMsg"></span>
+            </div>
+        </form>
+    </section>
+
+    <section class="bt-card">
+        <div class="bt-head"><div><h2>Runs</h2><p>Click a finished run to see its result. Progress refreshes by itself while a run is going.</p></div></div>
+        <div class="bt-wrap">
+            <table class="bt-table">
+                <thead>
+                    <tr><th>#</th><th>Run</th><th>Status</th><th class="num">Trades</th><th class="num">Expectancy</th><th class="num">Win rate</th><th class="num">Net P&amp;L</th><th class="num">Max DD</th><th>Verdict</th><th></th></tr>
+                </thead>
+                <tbody id="btRuns"><tr><td colspan="10" class="bt-empty">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </section>
+
+    <div id="btResult"></div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="~/js/backtest.js" asp-append-version="true"></script>
+}

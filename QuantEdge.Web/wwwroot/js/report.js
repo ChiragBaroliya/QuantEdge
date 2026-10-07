@@ -248,7 +248,7 @@ $(document).ready(function () {
             pageSize: tradesPageState.pageSize
         };
 
-        $('#tableRecentTradesBody').html(`<tr><td colspan="10" class="text-center py-4 text-muted">Loading page ${tradesPageState.page}...</td></tr>`);
+        $('#tableRecentTradesBody').html(`<tr><td colspan="12" class="text-center py-4 text-muted">Loading page ${tradesPageState.page}...</td></tr>`);
 
         $.ajax({
             url: '/reports/trades/paged',
@@ -276,7 +276,8 @@ $(document).ready(function () {
         const netPnlEl = $('#kpiNetRealizedPnl');
         const pnlBadgeEl = $('#kpiPnlBadge');
         netPnlEl.text(formatCurrency(summary.netRealizedPnl));
-        
+        $('#kpiPnlBreakdown').text(`Gross ${formatCurrency(summary.grossRealizedPnl || 0)} − charges ${formatCurrency(summary.totalCharges || 0)}`);
+
         if (summary.netRealizedPnl > 0) {
             netPnlEl.css('color', '#34d399');
             pnlBadgeEl.removeClass('negative').addClass('positive').text('PROFIT');
@@ -560,7 +561,7 @@ $(document).ready(function () {
         if (!trades || trades.length === 0) {
             tbody.html(`
                 <tr>
-                    <td colspan="10" class="text-center py-4 text-muted">
+                    <td colspan="12" class="text-center py-4 text-muted">
                         No closed trade records found matching current filters.
                     </td>
                 </tr>
@@ -570,15 +571,25 @@ $(document).ready(function () {
 
         trades.forEach(t => {
             const pnlClass = t.realizedPnl > 0 ? 'pnl-text-pos' : (t.realizedPnl < 0 ? 'pnl-text-neg' : '');
+            const netClass = t.netPnl > 0 ? 'pnl-text-pos' : (t.netPnl < 0 ? 'pnl-text-neg' : '');
+            const isActualCharges = t.chargeSource === 'ACTUAL';
+            const chargeTitle = isActualCharges
+                ? "Actual charges from Zerodha's contract note (both legs) + DP"
+                : (t.chargeProduct === 'MIS' ? 'Estimated at intraday (MIS) rates - same-day round trip' : 'Estimated at delivery (CNC) rates');
+            const chargeTag = isActualCharges
+                ? '<span class="badge bg-success ms-1" style="font-size:9px;">actual</span>'
+                : '<span class="badge bg-secondary ms-1" style="font-size:9px;">est.</span>';
             const roiClass = t.returnPct > 0 ? 'pos' : (t.returnPct < 0 ? 'neg' : 'zero');
             const roiSign = t.returnPct > 0 ? '+' : '';
             const execDate = new Date(t.executedAt).toLocaleString('en-IN', {
                 day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
             });
 
-            const modeBadge = t.mode === 'Real' 
-                ? '<span class="badge bg-danger text-white" style="font-size:10px;">REAL</span>' 
-                : '<span class="badge bg-primary text-white" style="font-size:10px;">PAPER</span>';
+            const modeBadge = t.mode === 'Real'
+                ? '<span class="badge bg-danger text-white" style="font-size:10px;">REAL</span>'
+                : t.mode === 'Manual Paper'
+                    ? '<span class="badge bg-info text-dark" style="font-size:10px;">MANUAL PAPER</span>'
+                    : '<span class="badge bg-primary text-white" style="font-size:10px;">PAPER</span>';
 
             const tr = $(`
                 <tr>
@@ -588,8 +599,14 @@ $(document).ready(function () {
                     <td class="text-end" style="font-family: monospace;">₹${t.entryPrice.toFixed(2)}</td>
                     <td class="text-end" style="font-family: monospace;">₹${t.executedPrice.toFixed(2)}</td>
                     <td class="text-end" style="font-family: monospace;">${formatCurrency(t.investedAmount)}</td>
-                    <td class="text-end ${pnlClass}" style="font-family: monospace; font-weight:700;">
+                    <td class="text-end ${pnlClass}" style="font-family: monospace;">
                         ${t.realizedPnl > 0 ? '+' : ''}${formatCurrency(t.realizedPnl)}
+                    </td>
+                    <td class="text-end text-muted" style="font-family: monospace;" title="${chargeTitle}">
+                        −${formatCurrency(t.charges || 0)}${chargeTag}
+                    </td>
+                    <td class="text-end ${netClass}" style="font-family: monospace; font-weight:700;">
+                        ${t.netPnl > 0 ? '+' : ''}${formatCurrency(t.netPnl)}
                     </td>
                     <td class="text-end">
                         <span class="pnl-badge ${roiClass}">${roiSign}${t.returnPct.toFixed(2)}%</span>

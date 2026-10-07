@@ -108,6 +108,7 @@ public class ManualPaperTradeService : IManualPaperTradeService
 
         var positions = await GetOpenPositionsAsync(userId);
         dashboard.ManualUnrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
+        dashboard.ManualEstimatedCharges = Math.Round(positions.Sum(p => p.EstimatedCharges), 2);
         dashboard.ManualCapital = settings.AvailableCapital;
         dashboard.IsManualTradeEnabled = settings.IsManualTradeEnabled;
         dashboard.MaxTradesPerDay = settings.MaxTradesPerDay;
@@ -127,8 +128,17 @@ public class ManualPaperTradeService : IManualPaperTradeService
             if (prices.TryGetValue(pos.Symbol, out var price) && price.Ltp > 0m)
             {
                 pos.CurrentPrice = price.Ltp;
+                pos.PriceSource = "STORED";     // last stored 1-minute candle close
+                pos.PriceAsOfUtc = price.PriceTime.Kind == DateTimeKind.Utc ? price.PriceTime : price.PriceTime.ToUniversalTime();
+            }
+            else
+            {
+                // No stored candle: CurrentPrice falls back to the entry price, so the ₹0 P&L would be fake.
+                pos.PriceSource = "NONE";
+                pos.PriceAsOfUtc = null;
             }
             pos.UnrealizedPnl = (pos.CurrentPrice - pos.AverageEntryPrice) * pos.Quantity;
+            pos.EstimatedCharges = PaperTradingService.EstimateCharges(pos);
         }
         return positions;
     }

@@ -163,10 +163,52 @@ public class CandleBuilderService : ICandleBuilderService
         }
     }
 
-    private static DateTime GetIntervalStart(DateTime dateTime, TimeSpan interval)
+    private static readonly TimeSpan SessionOpenIst = new(9, 15, 0);
+
+    /// <summary>
+    /// Candle start for a tick, matching NSE / Kite / TradingView (Plan L.1 P8): buckets are counted in IST from the
+    /// 09:15 session open (60m = 09:15, 10:15, ...; 30m = 09:15, 09:45, ...), and a daily candle starts at 00:00 IST -
+    /// the same timestamp Kite's historical API uses, so live and synced candles land on the same row. The old version
+    /// floored the raw UTC ticks, which put hourly candles at 09:30/10:30 IST and daily candles at 05:30 IST.
+    /// Returned as UTC.
+    /// </summary>
+    public static DateTime GetIntervalStart(DateTime dateTime, TimeSpan interval)
     {
-        var ticks = dateTime.Ticks / interval.Ticks;
-        return new DateTime(ticks * interval.Ticks, dateTime.Kind);
+        var utc = dateTime.Kind switch
+        {
+            DateTimeKind.Utc => dateTime,
+            DateTimeKind.Local => dateTime.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+        };
+
+        // Sub-minute buckets (1s / 5s) don't need session alignment.
+        if (interval < TimeSpan.FromMinutes(1))
+        {
+            return new DateTime(utc.Ticks / interval.Ticks * interval.Ticks, DateTimeKind.Utc);
+        }
+
+        var ist = TimeZoneInfo.ConvertTimeFromUtc(utc, Helpers.TimeZoneHelper.IndianTimeZone);
+        DateTime startIst;
+        if (interval >= TimeSpan.FromDays(1))
+        {
+            startIst = ist.Date;
+        }
+        else
+        {
+            DateTime sessionOpen = ist.Date + SessionOpenIst;
+            if (ist < sessionOpen)
+            {
+                // Pre-open ticks (normally filtered out upstream): plain clock alignment.
+                startIst = ist.Date + TimeSpan.FromTicks((ist.TimeOfDay.Ticks / interval.Ticks) * interval.Ticks);
+            }
+            else
+            {
+                long buckets = (ist - sessionOpen).Ticks / interval.Ticks;
+                startIst = sessionOpen + TimeSpan.FromTicks(buckets * interval.Ticks);
+            }
+        }
+
+        return TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(startIst, DateTimeKind.Unspecified), Helpers.TimeZoneHelper.IndianTimeZone);
     }
 
     private class CandleBuilderState

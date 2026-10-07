@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -27,6 +28,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
     private readonly ISwingStrategySettingsRepository? _strategySettingsRepository;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ZerodhaKiteBrokerService> _logger;
+    private readonly IBrokerApiEventRecorder? _apiEventRecorder;
 
     public string Mode => "Live";
 
@@ -35,8 +37,10 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         IHttpClientFactory httpClientFactory,
         ILogger<ZerodhaKiteBrokerService> logger,
         IRealTradeCacheService? cacheService = null,
-        ISwingStrategySettingsRepository? strategySettingsRepository = null)
+        ISwingStrategySettingsRepository? strategySettingsRepository = null,
+        IBrokerApiEventRecorder? apiEventRecorder = null)
     {
+        _apiEventRecorder = apiEventRecorder;
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -62,7 +66,9 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         if (session == null || string.IsNullOrWhiteSpace(session.AccessToken))
         {
-            return (false, null, null, $"No active Zerodha session token found for user {userId}. Please click 'Connect Zerodha' on Auto Real Trade page.");
+            string noSession = $"No active Zerodha session token found for user {userId}. Please click 'Connect Zerodha' on Auto Real Trade page.";
+            ReportSkippedCall(userId, noSession);
+            return (false, null, null, noSession);
         }
 
         // Validate token was created after 6:00 AM IST on the current trading day.
@@ -78,10 +84,25 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
         if (indianTime.Date != nowIst.Date || indianTime < cutoff)
         {
-            return (false, null, null, $"Zerodha session token for user {userId} is stale (created {indianTime:yyyy-MM-dd hh:mm tt} IST, checked at {nowIst:yyyy-MM-dd hh:mm tt} IST, cutoff {cutoff:yyyy-MM-dd hh:mm tt} IST). Fresh token post 6:00 AM IST required.");
+            string stale = $"Zerodha session token for user {userId} is stale (created {indianTime:yyyy-MM-dd hh:mm tt} IST, checked at {nowIst:yyyy-MM-dd hh:mm tt} IST, cutoff {cutoff:yyyy-MM-dd hh:mm tt} IST). Fresh token post 6:00 AM IST required.";
+            ReportSkippedCall(userId, stale);
+            return (false, null, null, stale);
         }
 
         return (true, session.AccessToken, session.ApiKey, "Active Zerodha session is valid.");
+    }
+
+    // A call that needed Zerodha but was skipped for lack of a valid session is a MISSED call. Only reported in
+    // market hours (Mon-Fri 09:00-15:30 IST): outside them a missing/stale token is normal (login runs at 06:00).
+    private void ReportSkippedCall(int userId, string reason)
+    {
+        if (_apiEventRecorder == null) return;
+        var nowIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneHelper.IndianTimeZone);
+        bool marketHours = nowIst.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)
+            && nowIst.TimeOfDay >= new TimeSpan(9, 0, 0) && nowIst.TimeOfDay <= new TimeSpan(15, 30, 0);
+        if (!marketHours) return;
+        _apiEventRecorder.RecordFailure(BrokerApiSource.Session, "session check",
+            $"Zerodha calls skipped (orders, quotes, holdings): {reason}", userId: userId, level: "warning");
     }
 
     public async Task<(bool Success, string? BrokerOrderId, decimal ExecutedPrice, string? Message)> PlaceLiveOrderAsync(
@@ -508,6 +529,87 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exception fetching live holdings from Zerodha for User {UserId}", userId);
+            return (false, null, ex.Message);
+        }
+    }
+
+    public async Task<(bool Success, List<KiteOrderCharges>? Charges, string? Message)> GetOrderChargesAsync(
+        IReadOnlyList<KiteChargesOrderRequest> orders, int userId = 1)
+    {
+        if (orders == null || orders.Count == 0) return (true, new List<KiteOrderCharges>(), null);
+
+        var tokenValidation = await ValidateSessionTokenAsync(userId);
+        if (!tokenValidation.IsValid)
+        {
+            return (false, null, tokenValidation.Message);
+        }
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("X-Kite-Version", "3");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", $"{tokenValidation.ApiKey}:{tokenValidation.AccessToken}");
+
+            var payload = orders.Select(o => new Dictionary<string, object>
+            {
+                ["order_id"] = o.OrderId,
+                ["exchange"] = o.Exchange,
+                ["tradingsymbol"] = o.TradingSymbol,
+                ["transaction_type"] = o.TransactionType,
+                ["variety"] = o.Variety,
+                ["product"] = o.Product,
+                ["order_type"] = o.OrderType,
+                ["quantity"] = o.Quantity,
+                ["average_price"] = o.AveragePrice
+            }).ToList();
+
+            using var content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("https://api.kite.trade/charges/orders", content);
+            var responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                // The Kite HttpClient's failure handler has already reported this to the bell.
+                _logger.LogWarning("Zerodha charges/orders failed for User {UserId}: {Status} {Body}", userId, response.StatusCode, responseJson);
+                return (false, null, $"Zerodha Error: {response.StatusCode}");
+            }
+
+            using var doc = JsonDocument.Parse(responseJson);
+            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+            {
+                return (false, null, "Could not find 'data' in Zerodha charges response.");
+            }
+
+            static decimal Num(JsonElement parent, string name) =>
+                parent.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.Number && el.TryGetDecimal(out var v) ? v : 0m;
+
+            var result = new List<KiteOrderCharges>();
+            foreach (var item in data.EnumerateArray())
+            {
+                var charges = item.TryGetProperty("charges", out var c) ? c : default;
+                bool hasCharges = charges.ValueKind == JsonValueKind.Object;
+                decimal gst = hasCharges && charges.TryGetProperty("gst", out var g) && g.ValueKind == JsonValueKind.Object ? Num(g, "total") : 0m;
+                result.Add(new KiteOrderCharges
+                {
+                    TradingSymbol = item.TryGetProperty("tradingsymbol", out var ts) ? ts.GetString() ?? string.Empty : string.Empty,
+                    TransactionType = item.TryGetProperty("transaction_type", out var tt) ? tt.GetString() ?? string.Empty : string.Empty,
+                    Quantity = item.TryGetProperty("quantity", out var q) && q.TryGetInt32(out var qv) ? qv : 0,
+                    Brokerage = hasCharges ? Num(charges, "brokerage") : 0m,
+                    TransactionTax = hasCharges ? Num(charges, "transaction_tax") : 0m,
+                    ExchangeTurnoverCharge = hasCharges ? Num(charges, "exchange_turnover_charge") : 0m,
+                    SebiTurnoverCharge = hasCharges ? Num(charges, "sebi_turnover_charge") : 0m,
+                    StampDuty = hasCharges ? Num(charges, "stamp_duty") : 0m,
+                    Gst = gst,
+                    Total = hasCharges ? Num(charges, "total") : 0m
+                });
+            }
+
+            return (true, result, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Zerodha charges/orders call failed for User {UserId}", userId);
             return (false, null, ex.Message);
         }
     }

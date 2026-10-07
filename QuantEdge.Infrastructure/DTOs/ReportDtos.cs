@@ -71,6 +71,7 @@ public record ReportPeriodsFilterDto(
 /// </summary>
 public record TradingReportSummaryDto(
     decimal TotalInvestedCapital,
+    // Net P&L after estimated charges (GrossRealizedPnl − TotalCharges). All win/loss/drawdown stats use net.
     decimal NetRealizedPnl,
     decimal TotalRoiPct,
     int TotalTrades,
@@ -84,7 +85,11 @@ public record TradingReportSummaryDto(
     decimal AvgTradeRoiPct,
     decimal MaxDrawdownPct,
     decimal BestTradePnl,
-    decimal WorstTradePnl
+    decimal WorstTradePnl,
+    // Price-difference P&L before any charges.
+    decimal GrossRealizedPnl = 0m,
+    // Estimated brokerage + STT + exchange + SEBI + stamp + GST + DP for the closed trades (ChargesCalculator).
+    decimal TotalCharges = 0m
 );
 
 /// <summary>
@@ -131,13 +136,23 @@ public record TradingReportTradeDto(
     decimal EntryPrice,
     decimal ExecutedPrice,
     decimal InvestedAmount,
+    // Gross P&L: (exit − entry) × qty, before charges.
     decimal RealizedPnl,
+    // Net return % (NetPnl ÷ InvestedAmount).
     decimal ReturnPct,
     string TradeType,            // "Swing", "Intraday", "Auto"
     string ExitReason,
     DateTime ExecutedAt,
     int HoldDays,
-    string? Username = null
+    string? Username = null,
+    // Estimated round-trip charges (ChargesCalculator) - CNC delivery rates, or MIS for a same-day round trip.
+    decimal Charges = 0m,
+    // RealizedPnl − Charges.
+    decimal NetPnl = 0m,
+    // Rate set used: CNC or MIS.
+    string ChargeProduct = "CNC",
+    // ACTUAL = Zerodha's contract-note charges for both legs (real trades); ESTIMATED = ChargesCalculator.
+    string ChargeSource = "ESTIMATED"
 );
 
 /// <summary>

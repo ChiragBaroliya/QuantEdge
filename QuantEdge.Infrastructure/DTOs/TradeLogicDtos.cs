@@ -19,6 +19,7 @@ public class TradeLogicRulesDto
     public int ScanIntervalMinutes { get; set; }
     public int MonitorIntervalSeconds { get; set; }
     public int CandleHistoryCount { get; set; }
+    public int DailyCandleHistoryCount { get; set; }
     public int MinDailyCandles { get; set; }
     public int LtpFreshnessSeconds { get; set; }
     public int RestFallbackMissThreshold { get; set; }
@@ -71,6 +72,7 @@ public class TradeLogicRulesDto
             ScanIntervalMinutes = (int)RealTradeSchedule.ScanInterval.TotalMinutes,
             MonitorIntervalSeconds = (int)RealTradeSchedule.MonitorInterval.TotalSeconds,
             CandleHistoryCount = RealTradeSchedule.CandleHistoryCount,
+            DailyCandleHistoryCount = RealTradeSchedule.DailyCandleHistoryCount,
             MinDailyCandles = RealTradeSchedule.MinDailyCandles,
             LtpFreshnessSeconds = (int)RealTradeSchedule.LtpFreshnessWindow.TotalSeconds,
             RestFallbackMissThreshold = RealTradeSchedule.RestFallbackMissThreshold,

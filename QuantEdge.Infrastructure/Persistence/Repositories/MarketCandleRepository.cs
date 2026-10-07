@@ -162,7 +162,7 @@ public class MarketCandleRepository : IMarketCandleRepository
 
     public async Task DeleteTodayHistoryAsync(string symbol, string timeframe)
     {
-        DateTime todayStart = DateTime.UtcNow.Date;
+        DateTime todayStart = QuantEdge.Infrastructure.Helpers.TimeZoneHelper.IstTodayStartUtc(); // IST day, so the 00:00 IST daily candle is included
         DateTime todayEnd = todayStart.AddDays(1).AddTicks(-1);
         await DeleteHistoryRangeAsync(symbol, timeframe, todayStart, todayEnd);
     }

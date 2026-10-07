@@ -661,6 +661,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${v >= 0 ? '+' : '-'}${formatInr(Math.abs(v))}`;
     }
 
+    // Where a position's price came from (server PriceSource): the stored 1-minute candle's age, or "no price".
+    function priceAgeHtml(src, asOf) {
+        if (!src || src === 'LIVE') return '';
+        if (src === 'NONE') return `<small class="d-block fw-normal text-warning" title="No stored price for this stock - P&L can't be calculated">no price</small>`;
+        const ageSec = asOf ? Math.max(0, Math.round((Date.now() - new Date(asOf).getTime()) / 1000)) : null;
+        const ageText = ageSec == null ? 'age unknown' : ageSec < 90 ? `${ageSec}s old` : `${Math.round(ageSec / 60)}m old`;
+        const stale = ageSec == null || ageSec > 120;
+        return `<small class="d-block fw-normal ${stale ? 'text-warning' : 'text-secondary'}" title="Price = last stored 1-minute candle close">stored price · ${ageText}</small>`;
+    }
+
+    // "Net if sold now" line under a gross P&L figure: gross minus the server's estimated round-trip charges.
+    function netAfterChargesHtml(gross, charges) {
+        if (!charges || charges <= 0) return '';
+        const net = (gross || 0) - charges;
+        return `<small class="d-block fw-normal text-secondary" title="Estimated charges if sold now (STT, stamp, exchange, SEBI, GST, DP): -${formatInr(charges)}">net ${formatSignedInr(net)} after charges</small>`;
+    }
+
     function updatePortfolioUi(data) {
         if (!data) return;
 
@@ -675,7 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statUsedMargin.innerText = `Manual Used Margin: ${formatInr(data.manualUsedMargin)}`;
 
         const unPnl = data.manualUnrealizedPnl || 0;
-        statUnrealizedPnl.innerText = formatSignedInr(unPnl);
+        statUnrealizedPnl.innerHTML = formatSignedInr(unPnl) + netAfterChargesHtml(unPnl, data.manualEstimatedCharges);
         statUnrealizedPnl.className = `fw-bold mb-0 mt-1 ${unPnl >= 0 ? 'text-success' : 'text-danger'}`;
         const openEl = document.getElementById('statOpenPositions');
         if (openEl) openEl.innerText = `${data.openPositionsCount || 0} Open Manual Position${data.openPositionsCount === 1 ? '' : 's'}`;
@@ -762,7 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="text-danger fw-semibold">${slText}</td>
                 <td class="text-warning fw-semibold">${tslText}</td>
                 <td class="text-success fw-bold">${tpText}${toTargetText}</td>
-                <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}</td>
+                <td class="${pos.priceSource === 'NONE' ? 'text-white' : pnlClass}">${pos.priceSource === 'NONE' ? '—' : `${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}${netAfterChargesHtml(pnl, pos.estimatedCharges)}`}${priceAgeHtml(pos.priceSource, pos.priceAsOfUtc)}</td>
                 <td class="text-end text-nowrap">
                     ${tslPct > 0 ? `<button class="btn btn-outline-primary btn-sm rounded-2 me-1 edit-pos-btn" data-id="${pos.id}" title="Edit Stop Loss / Trailing SL / Target">✏️ Edit</button>` : ''}
                     <button class="btn btn-outline-danger btn-sm rounded-2 close-pos-btn" data-id="${pos.id}">Close</button>

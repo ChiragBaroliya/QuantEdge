@@ -20,7 +20,7 @@ public interface IAutoTradeService
     /// passes - the same gates and entry levels as Auto Real Trading (<see cref="Services.SwingTradeRules"/>).
     /// </summary>
     Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
-        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null);
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null);
 
     /// <summary>
     /// Evaluates exit conditions via the shared swing exit policy (<see cref="Services.SwingTradeRules"/>)

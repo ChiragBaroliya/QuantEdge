@@ -146,7 +146,7 @@ function updateFastPositionsUI(data) {
         const unPct = usedMargin > 0 ? (unPnl / usedMargin) * 100 : 0;
         const unPctSign = unPct > 0 ? "+" : "";
         const unPctStr = `${unPctSign}${unPct.toFixed(2)}%`;
-        unrealPnlEl.innerText = `${formatCurrencyWithSign(unPnl)} (${unPctStr})`;
+        unrealPnlEl.innerHTML = `${formatCurrencyWithSign(unPnl)} (${unPctStr})${netAfterChargesHtml(unPnl, data.totalEstimatedCharges)}`;
         unrealPnlEl.style.color = unPnl >= 0 ? "#34d399" : "#f87171";
     }
 
@@ -314,7 +314,7 @@ function updateDashboardUI(data) {
         const unPct = baseCap > 0 ? (unPnl / baseCap) * 100 : 0;
         const unPctSign = unPct > 0 ? "+" : "";
         const unPctStr = `${unPctSign}${unPct.toFixed(2)}%`;
-        unrealPnlEl.innerText = `${formatCurrencyWithSign(unPnl)} (${unPctStr})`;
+        unrealPnlEl.innerHTML = `${formatCurrencyWithSign(unPnl)} (${unPctStr})${netAfterChargesHtml(unPnl, data.totalEstimatedCharges)}`;
         unrealPnlEl.style.color = data.totalUnrealizedPnl >= 0 ? "#34d399" : "#f87171";
     }
 
@@ -535,7 +535,7 @@ function renderFilteredOpenPositions(positions) {
                 <td class="text-info fw-semibold">${targetText}</td>
                 <td class="text-white">${slText}</td>
                 <td class="text-white">${tslText}</td>
-                <td class="${pnlClass}">${formatCurrencyWithSign(pnl)} (${pnlPctSign}${pnlPct}%)</td>
+                <td class="${p.priceSource === "NONE" ? "text-white" : pnlClass}">${p.priceSource === "NONE" ? "—" : `${formatCurrencyWithSign(pnl)} (${pnlPctSign}${pnlPct}%)${netAfterChargesHtml(pnl, p.estimatedCharges)}`}${priceAgeHtml(p.priceSource, p.priceAsOfUtc)}</td>
                 <td class="text-nowrap">
                     ${journeyButton(p.symbol)}
                     <button class="btn-square-off" onclick="openSquareOffModal(${p.id}, '${p.symbol}')" title="Square off this real position">
@@ -1472,6 +1472,24 @@ function startNextScanCountdownTimer(nextRunTimeStr, runTextFormatted, isMarketO
 function formatCurrency(val) {
     const num = parseFloat(val || 0);
     return '₹' + num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Where a position's price came from (server PriceSource): nothing for a live tick, a muted / amber tag otherwise.
+function priceAgeHtml(src, asOf) {
+    if (!src || src === "LIVE") return "";
+    if (src === "NONE") return `<small class="d-block fw-normal" style="color:#f59e0b;" title="No live tick, broker quote or stored price - P&L can't be calculated">no price</small>`;
+    const ageSec = asOf ? Math.max(0, Math.round((Date.now() - new Date(asOf).getTime()) / 1000)) : null;
+    const ageText = ageSec == null ? "age unknown" : ageSec < 90 ? `${ageSec}s old` : `${Math.round(ageSec / 60)}m old`;
+    const stale = ageSec == null || ageSec > 60;
+    const label = src === "BROKER" ? "broker quote" : "stored price";
+    return `<small class="d-block fw-normal" style="color:${stale ? "#f59e0b" : "#94a3b8"};" title="Not a live tick: ${label}">${label} · ${ageText}</small>`;
+}
+
+// "Net if sold now" line under a gross P&L figure: gross minus the server's estimated round-trip charges.
+function netAfterChargesHtml(gross, charges) {
+    if (!charges || charges <= 0) return "";
+    const net = (gross || 0) - charges;
+    return `<small class="d-block fw-normal" style="color:#94a3b8;" title="Estimated charges if sold now (STT, stamp, exchange, SEBI, GST, DP): ${formatCurrencyWithSign(-charges)}">net ${formatCurrencyWithSign(net)} after charges</small>`;
 }
 
 function formatCurrencyWithSign(val) {

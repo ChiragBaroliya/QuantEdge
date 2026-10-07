@@ -1,0 +1,93 @@
+@{
+    ViewData["Title"] = "Reconciliation";
+    ViewData["PageTitle"] = "Reconciliation";
+}
+
+<style>
+    .rc-page { display: flex; flex-direction: column; gap: 20px; }
+    .rc-card { background: var(--card-bg, #111827); border: 1px solid var(--border-color, #1f2937); border-radius: 12px; padding: 16px; }
+    .rc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .rc-head h2 { font-size: 16px; margin: 0 0 4px; color: #fff; }
+    .rc-head p { font-size: 12px; margin: 0; color: #94a3b8; max-width: 760px; }
+    .rc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .rc-table th { text-align: left; color: #94a3b8; font-weight: 600; border-bottom: 1px solid #1f2937; padding: 8px; white-space: nowrap; }
+    .rc-table td { border-bottom: 1px solid #1f2937; padding: 8px; color: #e5e7eb; vertical-align: top; }
+    .rc-table .num { text-align: right; font-family: monospace; white-space: nowrap; }
+    .rc-wrap { overflow-x: auto; }
+    .rc-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .rc-ok { background: rgba(52, 211, 153, .15); color: #34d399; }
+    .rc-bad { background: rgba(248, 113, 113, .15); color: #f87171; }
+    .rc-warn { background: rgba(245, 158, 11, .15); color: #f59e0b; }
+    .rc-cell-bad { color: #f87171; font-weight: 700; }
+    .rc-empty { color: #94a3b8; padding: 16px 8px; }
+    .rc-meta { font-size: 12px; color: #94a3b8; }
+</style>
+
+<div class="rc-page" id="reconciliationPage" data-api="@ViewBag.ApiBaseUrl" data-user="@ViewBag.UserId">
+    <section class="rc-card">
+        <div class="rc-head">
+            <div>
+                <h2>Open real positions vs Zerodha</h2>
+                <p>
+                    QuantEdge's record of each open position next to what Zerodha actually holds (holdings + T1 + today's CNC position).
+                    The first field that differs is marked as the cause. One check uses 2 Zerodha calls and is reused for 60 seconds.
+                </p>
+            </div>
+            <div>
+                <button type="button" class="btn-trigger" id="rcCompare">Compare now</button>
+                <div class="rc-meta" id="rcCheckedAt"></div>
+            </div>
+        </div>
+        <div class="rc-wrap">
+            <table class="rc-table">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Status</th>
+                        <th class="num">Qty (ours / Zerodha)</th>
+                        <th class="num">Avg price (ours / Zerodha)</th>
+                        <th class="num">LTP</th>
+                        <th class="num">Gross P&L (ours)</th>
+                        <th class="num">Zerodha P&L</th>
+                        <th class="num">Est. charges</th>
+                        <th class="num">Net P&L (ours)</th>
+                        <th>Why</th>
+                    </tr>
+                </thead>
+                <tbody id="rcPositions"><tr><td colspan="10" class="rc-empty">Click "Compare now" to check against Zerodha.</td></tr></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="rc-card">
+        <div class="rc-head">
+            <div>
+                <h2>Data-quality issues (last 7 days)</h2>
+                <p>
+                    Found by the daily checks: stored daily closes more than 0.5% away from NSE's official close (replaced with the official value
+                    when the bhavcopy loads, ~18:30 IST), and open positions that didn't match Zerodha at the after-close check (~15:45 IST).
+                </p>
+            </div>
+        </div>
+        <div class="rc-wrap">
+            <table class="rc-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Check</th>
+                        <th>Symbol</th>
+                        <th class="num">Ours</th>
+                        <th class="num">External</th>
+                        <th class="num">Diff %</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="rcIssues"><tr><td colspan="7" class="rc-empty">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@section Scripts {
+    <script src="~/js/reconciliation.js" asp-append-version="true"></script>
+}

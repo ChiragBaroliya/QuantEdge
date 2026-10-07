@@ -1,4 +1,5 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -18,7 +19,6 @@ public class AutoTradeSignalScanWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AutoTradeSignalScanWorker> _logger;
-    private readonly TimeSpan _scanInterval = TimeSpan.FromMinutes(15);
 
     public AutoTradeSignalScanWorker(
         IServiceProvider serviceProvider,
@@ -80,7 +80,8 @@ public class AutoTradeSignalScanWorker : BackgroundService
                 _logger.LogError(ex, "Error occurred in AutoTradeSignalScanWorker cycle.");
             }
 
-            await Task.Delay(_scanInterval, stoppingToken);
+            // Next scan just after the next 15m candle close (Plan D2), not 15 min after this one started.
+            await Task.Delay(RealTradeSchedule.DelayUntilNextScan(DateTime.UtcNow), stoppingToken);
         }
     }
 
@@ -118,13 +119,13 @@ public class AutoTradeSignalScanWorker : BackgroundService
         }
 
         // Fetch Nifty 50 candles for Market Filter (matching SwingTradingService)
-        var niftyCandles = (await candleRepo.GetHistoryAsync("NIFTY 50", "1d", 100))
+        var niftyCandles = (await candleRepo.GetHistoryAsync("NIFTY 50", "1d", RealTradeSchedule.DailyCandleHistoryCount))
             .OrderBy(c => c.CandleTime)
             .ToList();
 
         if (!niftyCandles.Any())
         {
-            niftyCandles = (await candleRepo.GetHistoryAsync("NIFTYBEES", "1d", 100))
+            niftyCandles = (await candleRepo.GetHistoryAsync("NIFTYBEES", "1d", RealTradeSchedule.DailyCandleHistoryCount))
                 .OrderBy(c => c.CandleTime)
                 .ToList();
         }
@@ -132,7 +133,33 @@ public class AutoTradeSignalScanWorker : BackgroundService
         // Mandatory market gate (checked once per scan): when the NIFTY filter fails - or its data is
         // missing - no new entry is taken, including via the MinConditionsMatch path below.
         // Exits / SL / targets on open positions are handled elsewhere and are unaffected.
-        if (strategySettings.RequireNiftyMarketFilter && !SwingDecisionEngine.IsNiftyMarketFilterPassed(niftyCandles, strategySettings))
+        // REGIME mode: the daily market regime + regime_policy decide (see AutoRealTradeSignalScanWorker); NIFTY_FILTER
+        // mode keeps the previous all-or-nothing NIFTY check.
+        MarketGateDecision? regimeGate = null;
+        var engineSettings = strategySettings;
+        int positionRoom = int.MaxValue;
+        if (strategySettings.UsesRegimeGate)
+        {
+            regimeGate = await provider.GetRequiredService<IMarketRegimeService>().GetRegimeGateAsync();
+            if (!regimeGate.AllowsEntries || regimeGate.Policy == null)
+            {
+                _logger.LogWarning("⛔ Market regime gate: {Reason} - no new Auto Paper entries for User '{UserId}' this scan.", regimeGate.Reason, settings.UserId);
+                return;
+            }
+            engineSettings = RegimeGate.WithoutNiftyGate(strategySettings);
+
+            int open = (await provider.GetRequiredService<IPaperTradingService>().GetOpenPositionsAsync(settings.UserId))
+                .Count(p => p.TradeType == TradeType.Auto);
+            positionRoom = regimeGate.Policy.MaxPositions - open;
+            if (positionRoom <= 0)
+            {
+                _logger.LogInformation("User '{UserId}': {Open} open Auto Paper positions - {Regime} allows {Max}; no new entries.",
+                    settings.UserId, open, regimeGate.Policy.Regime, regimeGate.Policy.MaxPositions);
+                return;
+            }
+            _logger.LogInformation("Market regime gate: {Reason}", regimeGate.Reason);
+        }
+        else if (strategySettings.RequireNiftyMarketFilter && !SwingDecisionEngine.IsNiftyMarketFilterPassed(niftyCandles, strategySettings))
         {
             _logger.LogWarning("⛔ NIFTY Market Filter FAILED (Close <= 50 DMA / EMA20 <= EMA50 or {Count} daily candles available) - no new Auto Paper entries for User '{UserId}' this scan.",
                 niftyCandles.Count, settings.UserId);
@@ -150,33 +177,38 @@ public class AutoTradeSignalScanWorker : BackgroundService
             try
             {
                 // Fetch 1d, 15m, and 60m candle history for accurate multi-timeframe indicator calculations
-                var stockCandles1d = (await candleRepo.GetHistoryAsync(stock.Symbol, "1d", 100))
+                var stockCandles1d = (await candleRepo.GetHistoryAsync(stock.Symbol, "1d", RealTradeSchedule.DailyCandleHistoryCount))
                     .OrderBy(c => c.CandleTime)
                     .ToList();
-                var stockCandles15m = (await candleRepo.GetHistoryAsync(stock.Symbol, "15m", 100))
+                var stockCandles15m = (await candleRepo.GetHistoryAsync(stock.Symbol, "15m", RealTradeSchedule.CandleHistoryCount))
                     .OrderBy(c => c.CandleTime)
                     .ToList();
-                var stockCandles60m = (await candleRepo.GetHistoryAsync(stock.Symbol, "60m", 100))
+                var stockCandles60m = (await candleRepo.GetHistoryAsync(stock.Symbol, "60m", RealTradeSchedule.CandleHistoryCount))
                     .OrderBy(c => c.CandleTime)
                     .ToList();
 
                 if (stockCandles1d.Count < 50) continue;
 
                 // Evaluate stock using SwingDecisionEngine with all 3 timeframe candles
-                var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, strategySettings);
+                var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, engineSettings);
                 if (evalResult == null || evalResult.Checklist == null) continue;
 
                 int metCount = evalResult.Checklist.MetCount;
 
-                if (evalResult.IsBuySignal || metCount >= settings.MinConditionsMatch)
+                bool qualifies = regimeGate?.Policy != null
+                    ? RegimeGate.Evaluate(evalResult, regimeGate.Policy).Allowed   // regime mode: only the policy decides
+                    : evalResult.IsBuySignal || metCount >= settings.MinConditionsMatch;
+                if (executedOrdersCount >= positionRoom) break;
+
+                if (qualifies)
                 {
                     buySignalsFound++;
                     _logger.LogInformation("BUY Signal detected for {Symbol} for User '{UserId}' (Score: {Score}/100, Met: {MetCount}/{TotalCount}, Entry: ₹{Price:F2})",
                         stock.Symbol, settings.UserId, evalResult.Score, metCount, evalResult.Checklist.TotalCount, evalResult.EntryPrice);
 
                     bool executed = await autoTradeService.EvaluateAndExecuteAutoBuyAsync(
-                        stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId, evalResult.IsBuySignal,
-                        evalResult.StopLoss, evalResult.Target1, evalResult.DailyAtr);
+                        stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId, evalResult.IsBuySignal || regimeGate?.Policy != null,
+                        evalResult.StopLoss, evalResult.Target1, evalResult.DailyAtr, regimeGate?.Policy?.RiskPct);
 
                     if (executed)
                     {
