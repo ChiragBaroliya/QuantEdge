@@ -675,6 +675,29 @@
                             <small class="form-hint">ATR = the stock's daily Average True Range (14). Defaults: SL 1.5, Trail 3, Target 3. The Stop Loss is capped at 8% below entry.</small>
                         </div>
 
+                        <div class="mt-3">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="chkAutoShortEnabled" name="IsAutoShortEnabled" />
+                                <label class="form-check-label form-label" for="chkAutoShortEnabled">⚠️ Auto Short Selling (Intraday, MIS) - REAL MONEY</label>
+                            </div>
+                            <div class="row">
+                                <div class="col-6 mb-2">
+                                    <label class="form-label" for="inpShortEntryCutoff">Short Entry Cut-off</label>
+                                    <input type="time" class="form-control qe-input" id="inpShortEntryCutoff" name="ShortEntryCutoff" />
+                                </div>
+                                <div class="col-6 mb-2">
+                                    <label class="form-label" for="inpShortSquareOffTime">Short Square-off</label>
+                                    <input type="time" class="form-control qe-input" id="inpShortSquareOffTime" name="ShortSquareOffTime" max="15:20" />
+                                </div>
+                            </div>
+                            <small class="form-hint">
+                                OFF by default, and only active while the Real Auto Trade master switch is ON. When ON, the bot may place
+                                real Zerodha SELL orders (product MIS) on bearish setups - NIFTY below its 50 DMA with EMA20 &lt; EMA50 and
+                                the stock in a daily downtrend - with the same guards and limits as a BUY. No new short after the cut-off;
+                                every open short is bought back at the Square-off time (15:20 at the latest, before Zerodha's own MIS square-off).
+                            </small>
+                        </div>
+
                         <div class="settings-actions mt-3">
                             @if (User.IsInRole("Admin"))
                             {

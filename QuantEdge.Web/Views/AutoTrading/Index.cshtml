@@ -353,6 +353,28 @@
                         <small class="form-help-text">ATR = the stock's daily Average True Range (14). Defaults: SL 1.5, Trail 3, Target 3.</small>
                     </div>
 
+                    <div class="form-group col-full">
+                        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="chkAutoShortEnabled" style="cursor: pointer; width: 14px; height: 14px;" disabled="@readOnly" />
+                            Auto Short Selling (Intraday)
+                        </label>
+                        <small class="form-help-text">
+                            OFF by default. When ON, the scan may also SELL first and buy back later on bearish setups (NIFTY below its
+                            50 DMA with EMA20 &lt; EMA50, stock in a daily downtrend) - same entry gates, limits and capital as a BUY,
+                            with Stop Loss above the entry and Target below. Paper only: no broker order is placed.
+                        </small>
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="No new short at or after this time (IST).">Short Entry Cut-off</label>
+                        <input type="time" id="txtShortEntryCutoff" class="form-input" value="15:00" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Every open short is bought back at this time (IST). 15:20 at the latest.">Short Square-off</label>
+                        <input type="time" id="txtShortSquareOffTime" class="form-input" value="15:15" max="15:20" disabled="@readOnly" />
+                    </div>
+
                     @if (!readOnly)
                     {
                         <button type="button" class="btn-save-settings col-full" id="btnSaveSettings">💾 Save Auto Settings</button>

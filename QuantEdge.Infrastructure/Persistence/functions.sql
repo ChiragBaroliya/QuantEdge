@@ -1482,7 +1482,10 @@ CREATE OR REPLACE FUNCTION fn_upsert_auto_trade_settings(
     p_close_check_time VARCHAR DEFAULT '15:15',
     p_stop_loss_atr_mult NUMERIC DEFAULT 1.50,
     p_trail_atr_mult NUMERIC DEFAULT 3.00,
-    p_target_atr_mult NUMERIC DEFAULT 3.00
+    p_target_atr_mult NUMERIC DEFAULT 3.00,
+    p_is_auto_short_enabled BOOLEAN DEFAULT FALSE,
+    p_short_entry_cutoff VARCHAR DEFAULT '15:00',
+    p_short_square_off_time VARCHAR DEFAULT '15:15'
 )
 RETURNS TABLE (
     Id INT,
@@ -1505,6 +1508,9 @@ RETURNS TABLE (
     StopLossAtrMult NUMERIC,
     TrailAtrMult NUMERIC,
     TargetAtrMult NUMERIC,
+    IsAutoShortEnabled BOOLEAN,
+    ShortEntryCutoff VARCHAR,
+    ShortSquareOffTime VARCHAR,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1516,14 +1522,16 @@ BEGIN
         max_duration_days, max_trades_per_day, fixed_amount_per_trade, min_conditions_match,
         trading_window_start, trading_window_end, trailing_sl_pct,
         entry_delay_minutes, max_daily_loss_limit, exit_mode, close_check_time,
-        stop_loss_atr_mult, trail_atr_mult, target_atr_mult, updated_at
+        stop_loss_atr_mult, trail_atr_mult, target_atr_mult,
+        is_auto_short_enabled, short_entry_cutoff, short_square_off_time, updated_at
     )
     VALUES (
         p_user_id, p_is_auto_trade_enabled, p_available_capital, p_profit_target_pct, p_stop_loss_pct,
         p_max_duration_days, p_max_trades_per_day, p_fixed_amount_per_trade, p_min_conditions_match,
         p_trading_window_start, p_trading_window_end, p_trailing_sl_pct,
         p_entry_delay_minutes, p_max_daily_loss_limit, p_exit_mode, p_close_check_time,
-        p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult, NOW()
+        p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult,
+        COALESCE(p_is_auto_short_enabled, FALSE), COALESCE(p_short_entry_cutoff, '15:00'), COALESCE(p_short_square_off_time, '15:15'), NOW()
     )
     ON CONFLICT (user_id) DO UPDATE
     SET is_auto_trade_enabled = EXCLUDED.is_auto_trade_enabled,
@@ -1544,6 +1552,9 @@ BEGIN
         stop_loss_atr_mult = EXCLUDED.stop_loss_atr_mult,
         trail_atr_mult = EXCLUDED.trail_atr_mult,
         target_atr_mult = EXCLUDED.target_atr_mult,
+        is_auto_short_enabled = EXCLUDED.is_auto_short_enabled,
+        short_entry_cutoff = EXCLUDED.short_entry_cutoff,
+        short_square_off_time = EXCLUDED.short_square_off_time,
         updated_at = NOW()
     RETURNING
         auto_trade_settings.id AS Id,
@@ -1566,6 +1577,9 @@ BEGIN
         auto_trade_settings.stop_loss_atr_mult AS StopLossAtrMult,
         auto_trade_settings.trail_atr_mult AS TrailAtrMult,
         auto_trade_settings.target_atr_mult AS TargetAtrMult,
+        auto_trade_settings.is_auto_short_enabled AS IsAutoShortEnabled,
+        auto_trade_settings.short_entry_cutoff AS ShortEntryCutoff,
+        auto_trade_settings.short_square_off_time AS ShortSquareOffTime,
         auto_trade_settings.updated_at AS UpdatedAt;
 END;
 $$;
@@ -1598,6 +1612,9 @@ RETURNS TABLE (
     StopLossAtrMult NUMERIC,
     TrailAtrMult NUMERIC,
     TargetAtrMult NUMERIC,
+    IsAutoShortEnabled BOOLEAN,
+    ShortEntryCutoff VARCHAR,
+    ShortSquareOffTime VARCHAR,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1625,6 +1642,9 @@ BEGIN
         s.stop_loss_atr_mult AS StopLossAtrMult,
         s.trail_atr_mult AS TrailAtrMult,
         s.target_atr_mult AS TargetAtrMult,
+        s.is_auto_short_enabled AS IsAutoShortEnabled,
+        s.short_entry_cutoff AS ShortEntryCutoff,
+        s.short_square_off_time AS ShortSquareOffTime,
         s.updated_at AS UpdatedAt
     FROM auto_trade_settings s
     WHERE s.user_id = p_user_id;
@@ -1659,6 +1679,9 @@ RETURNS TABLE (
     StopLossAtrMult NUMERIC,
     TrailAtrMult NUMERIC,
     TargetAtrMult NUMERIC,
+    IsAutoShortEnabled BOOLEAN,
+    ShortEntryCutoff VARCHAR,
+    ShortSquareOffTime VARCHAR,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1686,6 +1709,9 @@ BEGIN
         s.stop_loss_atr_mult AS StopLossAtrMult,
         s.trail_atr_mult AS TrailAtrMult,
         s.target_atr_mult AS TargetAtrMult,
+        s.is_auto_short_enabled AS IsAutoShortEnabled,
+        s.short_entry_cutoff AS ShortEntryCutoff,
+        s.short_square_off_time AS ShortSquareOffTime,
         s.updated_at AS UpdatedAt
     FROM auto_trade_settings s
     WHERE s.is_auto_trade_enabled = TRUE;
@@ -1726,7 +1752,7 @@ BEGIN
     SELECT COUNT(*) INTO v_count
     FROM auto_trade_execution_logs
     WHERE user_id = p_user_id
-      AND action_type = 'AUTO_BUY'
+      AND action_type IN ('AUTO_BUY', 'AUTO_SHORT')   -- entries: a long BUY or an Auto Short SELL
       AND executed_at >= p_today_start;
 
     RETURN v_count;
@@ -1830,6 +1856,9 @@ RETURNS TABLE (
     StopLossAtrMult NUMERIC,
     TrailAtrMult NUMERIC,
     TargetAtrMult NUMERIC,
+    IsAutoShortEnabled BOOLEAN,
+    ShortEntryCutoff VARCHAR,
+    ShortSquareOffTime VARCHAR,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1859,6 +1888,9 @@ BEGIN
         s.stop_loss_atr_mult AS StopLossAtrMult,
         s.trail_atr_mult AS TrailAtrMult,
         s.target_atr_mult AS TargetAtrMult,
+        s.is_auto_short_enabled AS IsAutoShortEnabled,
+        s.short_entry_cutoff AS ShortEntryCutoff,
+        s.short_square_off_time AS ShortSquareOffTime,
         s.updated_at AS UpdatedAt
     FROM real_trade_settings s
     WHERE s.user_id = p_user_id;
@@ -1893,6 +1925,9 @@ RETURNS TABLE (
     StopLossAtrMult NUMERIC,
     TrailAtrMult NUMERIC,
     TargetAtrMult NUMERIC,
+    IsAutoShortEnabled BOOLEAN,
+    ShortEntryCutoff VARCHAR,
+    ShortSquareOffTime VARCHAR,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1922,6 +1957,9 @@ BEGIN
         s.stop_loss_atr_mult AS StopLossAtrMult,
         s.trail_atr_mult AS TrailAtrMult,
         s.target_atr_mult AS TargetAtrMult,
+        s.is_auto_short_enabled AS IsAutoShortEnabled,
+        s.short_entry_cutoff AS ShortEntryCutoff,
+        s.short_square_off_time AS ShortSquareOffTime,
         s.updated_at AS UpdatedAt
     FROM real_trade_settings s
     WHERE s.is_real_trade_enabled = TRUE;
@@ -1956,7 +1994,10 @@ CREATE OR REPLACE FUNCTION fn_upsert_real_trade_settings(
     p_close_check_time VARCHAR,
     p_stop_loss_atr_mult NUMERIC,
     p_trail_atr_mult NUMERIC,
-    p_target_atr_mult NUMERIC
+    p_target_atr_mult NUMERIC,
+    p_is_auto_short_enabled BOOLEAN DEFAULT FALSE,
+    p_short_entry_cutoff VARCHAR DEFAULT '15:00',
+    p_short_square_off_time VARCHAR DEFAULT '15:15'
 )
 RETURNS TABLE (
     Id INT,
@@ -1981,6 +2022,9 @@ RETURNS TABLE (
     StopLossAtrMult NUMERIC,
     TrailAtrMult NUMERIC,
     TargetAtrMult NUMERIC,
+    IsAutoShortEnabled BOOLEAN,
+    ShortEntryCutoff VARCHAR,
+    ShortSquareOffTime VARCHAR,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1992,14 +2036,16 @@ BEGIN
         stop_loss_pct, trailing_sl_enabled, trailing_sl_pct, max_duration_days,
         max_trades_per_day, fixed_amount_per_trade, max_daily_loss_limit, product_type,
         min_conditions_match, trading_window_start, trading_window_end, entry_delay_minutes,
-        exit_mode, close_check_time, stop_loss_atr_mult, trail_atr_mult, target_atr_mult, updated_at
+        exit_mode, close_check_time, stop_loss_atr_mult, trail_atr_mult, target_atr_mult,
+        is_auto_short_enabled, short_entry_cutoff, short_square_off_time, updated_at
     )
     VALUES (
         p_user_id, p_is_real_trade_enabled, p_available_capital, p_profit_target_pct,
         p_stop_loss_pct, p_trailing_sl_enabled, p_trailing_sl_pct, p_max_duration_days,
         p_max_trades_per_day, p_fixed_amount_per_trade, p_max_daily_loss_limit, p_product_type,
         p_min_conditions_match, p_trading_window_start, p_trading_window_end, p_entry_delay_minutes,
-        p_exit_mode, p_close_check_time, p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult, NOW()
+        p_exit_mode, p_close_check_time, p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult,
+        COALESCE(p_is_auto_short_enabled, FALSE), COALESCE(p_short_entry_cutoff, '15:00'), COALESCE(p_short_square_off_time, '15:15'), NOW()
     )
     ON CONFLICT (user_id) DO UPDATE SET
         is_real_trade_enabled = EXCLUDED.is_real_trade_enabled,
@@ -2022,6 +2068,9 @@ BEGIN
         stop_loss_atr_mult = EXCLUDED.stop_loss_atr_mult,
         trail_atr_mult = EXCLUDED.trail_atr_mult,
         target_atr_mult = EXCLUDED.target_atr_mult,
+        is_auto_short_enabled = EXCLUDED.is_auto_short_enabled,
+        short_entry_cutoff = EXCLUDED.short_entry_cutoff,
+        short_square_off_time = EXCLUDED.short_square_off_time,
         updated_at = NOW()
     RETURNING
         real_trade_settings.id AS Id,
@@ -2046,6 +2095,9 @@ BEGIN
         real_trade_settings.stop_loss_atr_mult AS StopLossAtrMult,
         real_trade_settings.trail_atr_mult AS TrailAtrMult,
         real_trade_settings.target_atr_mult AS TargetAtrMult,
+        real_trade_settings.is_auto_short_enabled AS IsAutoShortEnabled,
+        real_trade_settings.short_entry_cutoff AS ShortEntryCutoff,
+        real_trade_settings.short_square_off_time AS ShortSquareOffTime,
         real_trade_settings.updated_at AS UpdatedAt;
 END;
 $$;
@@ -2072,6 +2124,7 @@ $$;
 -- Function: fn_create_real_order
 DROP FUNCTION IF EXISTS fn_create_real_order(INT, VARCHAR, VARCHAR, INT, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, NUMERIC, TIMESTAMP WITH TIME ZONE, VARCHAR, INT, VARCHAR);
 DROP FUNCTION IF EXISTS fn_create_real_order(VARCHAR, VARCHAR, VARCHAR, INT, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, NUMERIC, TIMESTAMP WITH TIME ZONE, VARCHAR, INT, VARCHAR);
+DROP FUNCTION IF EXISTS fn_create_real_order(INT, VARCHAR, VARCHAR, INT, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, NUMERIC, TIMESTAMP WITH TIME ZONE, VARCHAR, INT, VARCHAR, BOOLEAN);
 
 CREATE OR REPLACE FUNCTION fn_create_real_order(
     p_user_id INT,
@@ -2088,7 +2141,8 @@ CREATE OR REPLACE FUNCTION fn_create_real_order(
     p_filled_at TIMESTAMP WITH TIME ZONE,
     p_rejection_reason VARCHAR,
     p_trade_type INT,
-    p_remarks VARCHAR
+    p_remarks VARCHAR,
+    p_is_short BOOLEAN DEFAULT FALSE
 )
 RETURNS TABLE (
     Id INT,
@@ -2107,7 +2161,8 @@ RETURNS TABLE (
     RejectionReason VARCHAR,
     TradeType INT,
     Remarks VARCHAR,
-    CreatedAt TIMESTAMP WITH TIME ZONE
+    CreatedAt TIMESTAMP WITH TIME ZONE,
+    IsShort BOOLEAN
 )
 LANGUAGE plpgsql
 AS $$
@@ -2116,11 +2171,11 @@ BEGIN
     INSERT INTO real_orders (
         user_id, broker_order_id, symbol, side, quantity, order_type,
         price, stop_loss, take_profit, status, filled_price, filled_at,
-        rejection_reason, trade_type, remarks, created_at
+        rejection_reason, trade_type, remarks, created_at, is_short
     ) VALUES (
         p_user_id, p_broker_order_id, p_symbol, p_side, p_quantity, p_order_type,
         p_price, p_stop_loss, p_take_profit, p_status, p_filled_price, p_filled_at,
-        p_rejection_reason, p_trade_type, p_remarks, NOW()
+        p_rejection_reason, p_trade_type, p_remarks, NOW(), COALESCE(p_is_short, FALSE)
     )
     RETURNING 
         real_orders.id AS Id,
@@ -2139,7 +2194,8 @@ BEGIN
         real_orders.rejection_reason AS RejectionReason,
         real_orders.trade_type AS TradeType,
         real_orders.remarks AS Remarks,
-        real_orders.created_at AS CreatedAt;
+        real_orders.created_at AS CreatedAt,
+        real_orders.is_short AS IsShort;
 END;
 $$;
 
@@ -2165,7 +2221,8 @@ RETURNS TABLE (
     RejectionReason VARCHAR,
     TradeType INT,
     Remarks VARCHAR,
-    CreatedAt TIMESTAMP WITH TIME ZONE
+    CreatedAt TIMESTAMP WITH TIME ZONE,
+    IsShort BOOLEAN
 )
 LANGUAGE plpgsql
 AS $$
@@ -2188,7 +2245,8 @@ BEGIN
         o.rejection_reason AS RejectionReason,
         o.trade_type AS TradeType,
         o.remarks AS Remarks,
-        o.created_at AS CreatedAt
+        o.created_at AS CreatedAt,
+        o.is_short AS IsShort
     FROM real_orders o
     WHERE o.id = p_order_id;
 END;
@@ -2216,7 +2274,8 @@ RETURNS TABLE (
     RejectionReason VARCHAR,
     TradeType INT,
     Remarks VARCHAR,
-    CreatedAt TIMESTAMP WITH TIME ZONE
+    CreatedAt TIMESTAMP WITH TIME ZONE,
+    IsShort BOOLEAN
 )
 LANGUAGE plpgsql
 AS $$
@@ -2239,7 +2298,8 @@ BEGIN
         o.rejection_reason AS RejectionReason,
         o.trade_type AS TradeType,
         o.remarks AS Remarks,
-        o.created_at AS CreatedAt
+        o.created_at AS CreatedAt,
+        o.is_short AS IsShort
     FROM real_orders o
     WHERE o.broker_order_id = p_broker_order_id;
 END;
@@ -2268,7 +2328,8 @@ RETURNS TABLE (
     RejectionReason VARCHAR,
     TradeType INT,
     Remarks VARCHAR,
-    CreatedAt TIMESTAMP WITH TIME ZONE
+    CreatedAt TIMESTAMP WITH TIME ZONE,
+    IsShort BOOLEAN
 )
 LANGUAGE plpgsql
 AS $$
@@ -2291,7 +2352,8 @@ BEGIN
         o.rejection_reason AS RejectionReason,
         o.trade_type AS TradeType,
         o.remarks AS Remarks,
-        o.created_at AS CreatedAt
+        o.created_at AS CreatedAt,
+        o.is_short AS IsShort
     FROM real_orders o
     WHERE o.user_id = p_user_id
     ORDER BY o.created_at DESC
@@ -2323,7 +2385,8 @@ RETURNS TABLE (
     RejectionReason VARCHAR,
     TradeType INT,
     Remarks VARCHAR,
-    CreatedAt TIMESTAMP WITH TIME ZONE
+    CreatedAt TIMESTAMP WITH TIME ZONE,
+    IsShort BOOLEAN
 )
 LANGUAGE plpgsql
 AS $$
@@ -2346,7 +2409,8 @@ BEGIN
         o.rejection_reason AS RejectionReason,
         o.trade_type AS TradeType,
         o.remarks AS Remarks,
-        o.created_at AS CreatedAt
+        o.created_at AS CreatedAt,
+        o.is_short AS IsShort
     FROM real_orders o
     WHERE o.user_id = p_user_id AND o.symbol = p_symbol AND o.side = p_side AND o.status = 4
     ORDER BY o.created_at DESC
@@ -2378,7 +2442,8 @@ RETURNS TABLE (
     RejectionReason VARCHAR,
     TradeType INT,
     Remarks VARCHAR,
-    CreatedAt TIMESTAMP WITH TIME ZONE
+    CreatedAt TIMESTAMP WITH TIME ZONE,
+    IsShort BOOLEAN
 )
 LANGUAGE plpgsql
 AS $$
@@ -2401,7 +2466,8 @@ BEGIN
         o.rejection_reason AS RejectionReason,
         o.trade_type AS TradeType,
         o.remarks AS Remarks,
-        o.created_at AS CreatedAt
+        o.created_at AS CreatedAt,
+        o.is_short AS IsShort
     FROM real_orders o
     WHERE o.status = 4
     ORDER BY o.created_at ASC;
@@ -2662,7 +2728,10 @@ $$;
 -- Function: fn_record_real_trade_history
 DROP FUNCTION IF EXISTS fn_record_real_trade_history(INT, INT, VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, VARCHAR, VARCHAR);
 DROP FUNCTION IF EXISTS fn_record_real_trade_history(VARCHAR, INT, VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, VARCHAR, VARCHAR);
+DROP FUNCTION IF EXISTS fn_record_real_trade_history(INT, INT, VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, VARCHAR, VARCHAR, BOOLEAN);
 
+-- p_is_exit: TRUE = the row closes a trade (SELL a long / BUY to cover a short), FALSE = it opens one, NULL = not
+-- stated (readers fall back to "SELL = exit").
 CREATE OR REPLACE FUNCTION fn_record_real_trade_history(
     p_user_id INT,
     p_order_id INT,
@@ -2675,7 +2744,8 @@ CREATE OR REPLACE FUNCTION fn_record_real_trade_history(
     p_realized_pnl NUMERIC,
     p_trade_type INT,
     p_exit_reason VARCHAR,
-    p_remarks VARCHAR
+    p_remarks VARCHAR,
+    p_is_exit BOOLEAN DEFAULT NULL
 )
 RETURNS TABLE (
     Id INT,
@@ -2700,11 +2770,11 @@ BEGIN
     INSERT INTO real_trade_history (
         user_id, order_id, broker_order_id, symbol, side,
         quantity, entry_price, executed_price, realized_pnl,
-        trade_type, exit_reason, executed_at, remarks
+        trade_type, exit_reason, executed_at, remarks, is_exit
     ) VALUES (
         p_user_id, p_order_id, p_broker_order_id, p_symbol, p_side,
         p_quantity, p_entry_price, p_executed_price, p_realized_pnl,
-        p_trade_type, p_exit_reason, NOW(), p_remarks
+        p_trade_type, p_exit_reason, NOW(), p_remarks, p_is_exit
     )
     RETURNING 
         real_trade_history.id AS Id,
@@ -2798,9 +2868,10 @@ DECLARE
 BEGIN
     SELECT COUNT(*) INTO v_count
     FROM real_orders
-    WHERE user_id = p_user_id 
-      AND status = 1 
-      AND side = 0 
+    WHERE user_id = p_user_id
+      AND status = 1
+      -- Filled entries: a long BUY, or the SELL that opened an Auto Short (its covering BUY is an exit, not a trade).
+      AND ((side = 0 AND NOT is_short) OR (side = 1 AND is_short))
       AND created_at >= p_today_start;
 
     RETURN v_count;
@@ -2821,8 +2892,8 @@ DECLARE
 BEGIN
     SELECT COALESCE(SUM(realized_pnl), 0.00) INTO v_pnl
     FROM real_trade_history
-    WHERE user_id = p_user_id 
-      AND side = 1 
+    WHERE user_id = p_user_id
+      AND COALESCE(is_exit, side = 1)   -- exits: SELL of a long, or BUY covering a short
       AND executed_at >= p_today_start;
 
     RETURN v_pnl;

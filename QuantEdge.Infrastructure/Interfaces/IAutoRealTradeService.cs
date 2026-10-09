@@ -40,8 +40,18 @@ public interface IAutoRealTradeService
         decimal? dailyAtr = null);
 
     /// <summary>
+    /// Auto Short Selling (real money, intraday MIS): runs the same pre-trade guards as
+    /// <see cref="EvaluateAndExecuteRealBuyAsync"/> plus the Auto Short switch (OFF by default), the short entry cut-off and
+    /// a pending-order check on both sides, then places a Zerodha SELL (product MIS). The position is bought back by the
+    /// monitor (target / stop / trailing SL / auto square-off at the Short Square-off Time).
+    /// </summary>
+    Task<bool> EvaluateAndExecuteRealShortAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1,
+        bool isSellSignal = false, decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null);
+
+    /// <summary>
     /// Evaluates exit conditions via the shared swing exit policy (<see cref="Services.SwingTradeRules"/>)
-    /// and executes a Real-Money Market Sell order with Zerodha when triggered.
+    /// and executes a Real-Money Market Sell order with Zerodha when triggered. An open short is bought back instead
+    /// (intraday short exit policy, incl. the auto square-off).
     /// </summary>
     Task<bool> EvaluateAndExecuteRealSellAsync(RealPosition position, decimal currentLtp, int userId = 1);
 

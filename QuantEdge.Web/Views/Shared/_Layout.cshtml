@@ -323,6 +323,15 @@
                 </svg>
                 <span class="nav-label">Reconciliation</span>
             </a>
+            <a asp-controller="Notifications" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Notifications" ? "active" : "")"
+               data-tooltip="🔔 **Notifications**: Every bell notification for any date range - trades, swing picks, NIFTY flips and Zerodha/NSE problems.">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <span class="nav-label">Notifications</span>
+            </a>
             <a asp-controller="Backtest" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Backtest" ? "active" : "")"
                data-tooltip="🧪 **Backtest**: Would the bot's rules have made money? Replays the live strategy on stored candles - no Zerodha calls.">
@@ -649,6 +658,7 @@
                             <div class="qe-notif-list" id="qeNotifList" aria-live="polite">
                                 <div class="qe-notif-empty">Loading…</div>
                             </div>
+                            <a class="qe-notif-footer" id="qeNotifViewAll" href="/Notifications">View all notifications →</a>
                         </div>
                     </div>
 

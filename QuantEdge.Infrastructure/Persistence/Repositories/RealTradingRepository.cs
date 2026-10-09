@@ -72,7 +72,10 @@ public class RealTradingRepository : IRealTradingRepository
                 @CloseCheckTime,
                 @StopLossAtrMult,
                 @TrailAtrMult,
-                @TargetAtrMult
+                @TargetAtrMult,
+                @IsAutoShortEnabled,
+                @ShortEntryCutoff,
+                @ShortSquareOffTime
             );";
 
         return await connection.QuerySingleAsync<RealTradeSettings>(sql, settings);
@@ -110,7 +113,8 @@ public class RealTradingRepository : IRealTradingRepository
                 @FilledAt,
                 @RejectionReason,
                 @TradeType,
-                @Remarks
+                @Remarks,
+                @IsShort
             );";
 
         return await connection.QuerySingleAsync<RealOrder>(sql, order);
@@ -291,7 +295,8 @@ public class RealTradingRepository : IRealTradingRepository
                 @RealizedPnl,
                 @TradeType,
                 @ExitReason,
-                @Remarks
+                @Remarks,
+                @IsExit
             );";
 
         return await connection.QuerySingleAsync<RealTradeHistory>(sql, history);
@@ -335,6 +340,13 @@ public class RealTradingRepository : IRealTradingRepository
         string sql = "CALL sp_log_real_trade_execution(@UserId, @Symbol, @ActionType, @Price, @Quantity, @Reason);";
 
         await connection.ExecuteAsync(sql, log);
+    }
+
+    public async Task<IEnumerable<RealTradeExecutionLog>> GetLogsSinceAsync(int userId, DateTime sinceUtc, int limit)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = "SELECT * FROM fn_get_today_real_trade_logs(@userId, @sinceUtc, @limit);";
+        return await connection.QueryAsync<RealTradeExecutionLog>(sql, new { userId, sinceUtc, limit });
     }
 
     public async Task<IEnumerable<RealTradeExecutionLog>> GetTodayLogsAsync(int userId = 1, int limit = 50)

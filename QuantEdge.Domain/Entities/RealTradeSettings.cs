@@ -40,5 +40,11 @@ public class RealTradeSettings
     public decimal StopLossAtrMult { get; set; } = 1.5m;
     public decimal TrailAtrMult { get; set; } = 3.0m;
     public decimal TargetAtrMult { get; set; } = 3.0m;
+    // Auto Short Selling (intraday only, always MIS) - OFF by default and only active while the real master switch
+    // is ON too. No new short at/after ShortEntryCutoff; every open short is bought back (auto square-off) at
+    // ShortSquareOffTime IST, before Zerodha's own MIS square-off. Same entry gates and risk limits as a BUY.
+    public bool IsAutoShortEnabled { get; set; } = false;
+    public string ShortEntryCutoff { get; set; } = "15:00";
+    public string ShortSquareOffTime { get; set; } = "15:15";
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

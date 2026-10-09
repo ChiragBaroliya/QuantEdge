@@ -399,6 +399,10 @@ function populateSettingsForm(s) {
     setVal("inpSlAtrMult", s.stopLossAtrMult);
     setVal("inpTrailAtrMult", s.trailAtrMult);
     setVal("inpTargetAtrMult", s.targetAtrMult);
+    setVal("inpShortEntryCutoff", s.shortEntryCutoff || "15:00");
+    setVal("inpShortSquareOffTime", s.shortSquareOffTime || "15:15");
+    const chkShort = document.getElementById("chkAutoShortEnabled");
+    if (chkShort) chkShort.checked = s.isAutoShortEnabled === true;
     currentExitMode = s.exitMode || "SWING_CLOSE";
 
     // Stop Loss % / Trailing Stop Loss % are no longer settings-page fields - they're configured
@@ -514,16 +518,22 @@ function renderFilteredOpenPositions(positions) {
         const entryVal = p.quantity * p.averageEntryPrice;
         const pnlPct = entryVal > 0 ? (pnl / entryVal * 100).toFixed(2) : '0.00';
         const pnlPctSign = pnl > 0 ? '+' : '';
-        const sideText = p.side === 0 ? '<span class="text-success fw-bold">BUY</span>' : '<span class="text-danger fw-bold">SELL</span>';
+        // side 1 = an Auto Short (MIS, intraday): Stop Loss above the entry, Target below, bought back at the square-off time.
+        const isShort = p.side === 1;
+        const sideText = isShort
+            ? '<span class="text-danger fw-bold" title="Auto Short (MIS) - bought back automatically at the Short Square-off time">SHORT</span>'
+            : '<span class="text-success fw-bold">BUY</span>';
         const targetText = p.takeProfit ? `₹${p.takeProfit.toFixed(2)}` : '-';
         const slText = p.stopLoss ? `₹${p.stopLoss.toFixed(2)}` : '-';
-        // Swing exit mode: the trailing SL only exists once the trade has moved +1 ATR in our favor
-        // (and a value below entry is an ignored leftover from INTRADAY mode).
+        // Swing exit mode: the trailing SL only exists once the trade has moved 1 ATR in our favor
+        // (and a value on the wrong side of entry is an ignored leftover from INTRADAY mode).
         const isSwingClose = (currentExitMode || "SWING_CLOSE") === "SWING_CLOSE";
-        const tslActive = p.trailingStopLoss && (!isSwingClose || p.trailingStopLoss >= p.averageEntryPrice);
+        const tslActive = p.trailingStopLoss && (!isSwingClose
+            || (isShort ? p.trailingStopLoss <= p.averageEntryPrice : p.trailingStopLoss >= p.averageEntryPrice));
+        const tslHint = isShort ? "Activates once price falls to entry - 1 ATR" : "Activates once price reaches entry + 1 ATR (never on the entry day)";
         const tslText = tslActive
             ? `₹${p.trailingStopLoss.toFixed(2)}`
-            : (isSwingClose ? '<span class="text-white small" title="Activates once price reaches entry + 1 ATR (never on the entry day)">Not active yet</span>' : '-');
+            : (isSwingClose ? `<span class="text-white small" title="${tslHint}">Not active yet</span>` : '-');
 
         html += `
             <tr>
@@ -825,10 +835,18 @@ function getExitReasonRowClass(exitReason) {
     return "";
 }
 
+// A history row that closed a trade: any row with an exit reason (incl. a BUY covering an Auto Short), or a SELL that
+// isn't an Auto Short's entry (older SELL rows may lack an exit reason).
+function isExitHistoryRow(h) {
+    if (h.exitReason) return true;
+    return h.side === 1 && !/SHORT SELL/i.test(h.remarks || "");
+}
+
 function renderTradeHistory(history) {
-    // Realized P&L is only meaningful on the SELL leg (the BUY leg is always recorded at 0) -
-    // filtering to SELL avoids double-counting a trade and understating the average P&L per trade.
-    const closedTrades = (history || []).filter(h => h.side === 1);
+    // Realized P&L is only meaningful on the exit leg (the entry leg is always recorded at 0) - filtering to
+    // exits avoids double-counting a trade and understating the average P&L per trade. Exit = a SELL of a long,
+    // or the BUY covering an Auto Short; every exit row carries an exit reason, a short's entry SELL doesn't.
+    const closedTrades = (history || []).filter(isExitHistoryRow);
 
     const totalTradesEl = document.getElementById("th-total-trades");
     const winRateEl = document.getElementById("th-win-rate");
@@ -871,10 +889,11 @@ function renderTradeHistory(history) {
         const timeStr = new Date(h.executedAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' });
         const sideText = h.side === 0 ? '<span class="text-success fw-bold">BUY</span>' : '<span class="text-danger fw-bold">SELL</span>';
         const pnl = h.realizedPnl || 0;
-        const pnlText = h.side === 1
+        const isExitRow = isExitHistoryRow(h);
+        const pnlText = isExitRow
             ? `<span style="color: ${pnl >= 0 ? '#34d399' : '#f87171'};">${formatCurrencyWithSign(pnl)}</span>`
             : '-';
-        const rowClass = h.side === 1 ? getExitReasonRowClass(h.exitReason) : "";
+        const rowClass = isExitRow ? getExitReasonRowClass(h.exitReason) : "";
 
         html += `
             <tr class="${rowClass}">
@@ -1087,7 +1106,10 @@ function setupEventListeners() {
                 CloseCheckTime: document.getElementById("inpCloseCheckTime")?.value || "15:15",
                 StopLossAtrMult: parseFloat(document.getElementById("inpSlAtrMult")?.value || "1.5"),
                 TrailAtrMult: parseFloat(document.getElementById("inpTrailAtrMult")?.value || "3"),
-                TargetAtrMult: parseFloat(document.getElementById("inpTargetAtrMult")?.value || "3")
+                TargetAtrMult: parseFloat(document.getElementById("inpTargetAtrMult")?.value || "3"),
+                IsAutoShortEnabled: document.getElementById("chkAutoShortEnabled")?.checked === true,
+                ShortEntryCutoff: document.getElementById("inpShortEntryCutoff")?.value || "15:00",
+                ShortSquareOffTime: document.getElementById("inpShortSquareOffTime")?.value || "15:15"
             };
 
             try {

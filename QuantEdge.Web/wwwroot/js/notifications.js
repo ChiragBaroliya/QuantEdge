@@ -31,6 +31,7 @@
         list: document.getElementById("qeNotifList"),
         date: document.getElementById("qeNotifDate"),
         markAll: document.getElementById("qeNotifMarkAll"),
+        viewAll: document.getElementById("qeNotifViewAll"),
         filters: root.querySelectorAll(".qe-notif-filters button")
     };
 
@@ -181,6 +182,8 @@
     els.filters.forEach(b => b.addEventListener("click", () => {
         els.filters.forEach(x => x.classList.toggle("active", x === b));
         filter = b.dataset.filter;
+        // "View all" opens the full history on the same category.
+        if (els.viewAll) els.viewAll.href = filter === "all" ? "/Notifications" : `/Notifications?category=${encodeURIComponent(filter)}`;
         render();
     }));
 

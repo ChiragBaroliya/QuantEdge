@@ -122,28 +122,51 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
         // REGIME mode (swing_strategy_settings.market_gate_mode): the daily market regime + regime_policy decide instead
         // of the all-or-nothing NIFTY filter - strong stocks can still qualify in a weak market, with a higher score bar,
         // a relative-strength requirement and fewer positions. NIFTY_FILTER mode keeps the previous behaviour.
+        // Auto Short Selling (OFF by default, per user) has its own, mirrored market gate: shorts only while NIFTY is
+        // bearish (Close < 50 DMA & EMA20 < EMA50; missing data = no shorts), and only before each user's entry cut-off.
+        var nowIst = SwingTradeRules.NowIst();
+        var shortUsers = activeUserSettings
+            .Where(u => u.IsAutoShortEnabled && SwingTradeRules.IsBeforeShortEntryCutoff(u.ShortEntryCutoff, nowIst))
+            .ToList();
+        bool shortGateOpen = shortUsers.Count > 0 && SwingShortDecisionEngine.IsNiftyBearishFilterPassed(niftyCandles);
+
         MarketGateDecision? regimeGate = null;
         var engineSettings = strategySettings;
+        bool longGateOpen = true;
         if (strategySettings.UsesRegimeGate)
         {
             regimeGate = await provider.GetRequiredService<IMarketRegimeService>().GetRegimeGateAsync();
             if (!regimeGate.AllowsEntries)
             {
                 _logger.LogWarning("⛔ Market regime gate: {Reason} - no new REAL entries this scan.", regimeGate.Reason);
-                return;
+                longGateOpen = false;
             }
-            _logger.LogInformation("Market regime gate: {Reason}", regimeGate.Reason);
-            engineSettings = RegimeGate.WithoutNiftyGate(strategySettings);
+            else
+            {
+                _logger.LogInformation("Market regime gate: {Reason}", regimeGate.Reason);
+                engineSettings = RegimeGate.WithoutNiftyGate(strategySettings);
+            }
         }
         else if (strategySettings.RequireNiftyMarketFilter && !SwingDecisionEngine.IsNiftyMarketFilterPassed(niftyCandles, strategySettings))
         {
             _logger.LogWarning("⛔ NIFTY Market Filter FAILED (Close <= 50 DMA / EMA20 <= EMA50 or {Count} daily candles available) - no new REAL entries this scan.",
                 niftyCandles.Count);
+            longGateOpen = false;
+        }
+
+        if (!longGateOpen && !shortGateOpen)
+        {
             return;
+        }
+        if (shortGateOpen)
+        {
+            _logger.LogInformation("NIFTY bearish filter passed - REAL SHORT scan active for {Count} user(s) with Auto Short enabled.", shortUsers.Count);
         }
 
         // Single pass: collect candidate stocks
         var candidateStocks = new List<(Domain.Entities.StockMaster Stock, decimal EntryPrice, int MetCount, int Score, bool IsBuySignal, decimal EngineStopLoss, decimal EngineTarget, decimal DailyAtr)>();
+        var shortCandidates = new List<(Domain.Entities.StockMaster Stock, decimal EntryPrice, int MetCount, int Score, bool IsSellSignal, decimal EngineStopLoss, decimal EngineTarget, decimal DailyAtr)>();
+        int shortMetCountThreshold = shortUsers.Count > 0 ? shortUsers.Min(u => u.MinConditionsMatch) : int.MaxValue;
 
         // The per-user filter below only re-checks candidates already collected here, so this
         // pre-filter must never be stricter than the most lenient active user's MinConditionsMatch
@@ -169,6 +192,20 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
                     .ToList();
 
                 if (stockCandles1d.Count < RealTradeSchedule.MinDailyCandles) continue;
+
+                // Auto Short candidates - the mirrored engine on the same candles.
+                if (shortGateOpen)
+                {
+                    var shortResult = SwingShortDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, strategySettings);
+                    int shortMetCount = shortResult.Checklist?.MetCount ?? 0;
+                    if (shortResult.HardFiltersPassed && (shortResult.IsSellSignal || shortMetCount >= shortMetCountThreshold))
+                    {
+                        shortCandidates.Add((stock, shortResult.EntryPrice, shortMetCount, shortResult.Score, shortResult.IsSellSignal,
+                            shortResult.StopLoss, shortResult.Target1, shortResult.DailyAtr));
+                    }
+                }
+
+                if (!longGateOpen) continue;
 
                 var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, engineSettings);
                 if (evalResult == null || evalResult.Checklist == null) continue;
@@ -198,45 +235,76 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
             }
         }
 
-        _logger.LogInformation("Single-Pass Scan identified {CandidateCount} candidate stocks. Distributing to {UserCount} active user(s)...",
-            candidateStocks.Count, activeUserSettings.Count);
+        _logger.LogInformation("Single-Pass Scan identified {CandidateCount} candidate stocks ({ShortCount} short candidates). Distributing to {UserCount} active user(s)...",
+            candidateStocks.Count, shortCandidates.Count, activeUserSettings.Count);
 
         // Distribute candidate signals to each active user based on their specific settings
         foreach (var userSettings in activeUserSettings)
         {
             if (stoppingToken.IsCancellationRequested) break;
 
-            int executedOrdersCount = 0;
+            await DistributeLongCandidatesAsync(provider, realTradeService, userSettings, candidateStocks, regimeGate);
 
-            // Regime mode: at most policy.MaxPositions open positions per user (stronger regimes allow more).
-            int positionRoom = int.MaxValue;
-            if (regimeGate?.Policy != null)
+            // Auto Short - only for users who switched it on (and are still before their short entry cut-off).
+            if (shortGateOpen && shortUsers.Any(u => u.UserId == userSettings.UserId))
             {
-                int open = (await provider.GetRequiredService<IRealTradingRepository>().GetOpenPositionsAsync(userSettings.UserId)).Count();
-                positionRoom = regimeGate.Policy.MaxPositions - open;
-                if (positionRoom <= 0)
+                foreach (var candidate in shortCandidates.OrderByDescending(c => c.Score))
                 {
-                    _logger.LogInformation("User {UserId}: {Open} open positions - {Regime} allows {Max}; no new REAL entries.",
-                        userSettings.UserId, open, regimeGate.Policy.Regime, regimeGate.Policy.MaxPositions);
-                    continue;
-                }
-            }
+                    if (stoppingToken.IsCancellationRequested) break;
+                    if (!candidate.IsSellSignal && candidate.MetCount < userSettings.MinConditionsMatch) continue;
 
-            foreach (var candidate in candidateStocks.OrderByDescending(c => c.Score))
-            {
-                if (executedOrdersCount >= positionRoom) break;
-                if (candidate.IsBuySignal || candidate.MetCount >= userSettings.MinConditionsMatch)
-                {
-                    bool executed = await realTradeService.EvaluateAndExecuteRealBuyAsync(
-                        candidate.Stock.Symbol, candidate.EntryPrice, candidate.MetCount, userSettings.UserId, candidate.IsBuySignal,
-                        candidate.EngineStopLoss, candidate.EngineTarget, dailyAtr: candidate.DailyAtr);
+                    bool executed = await realTradeService.EvaluateAndExecuteRealShortAsync(
+                        candidate.Stock.Symbol, candidate.EntryPrice, candidate.MetCount, userSettings.UserId, candidate.IsSellSignal,
+                        candidate.EngineStopLoss, candidate.EngineTarget, candidate.DailyAtr);
 
                     if (executed)
                     {
-                        executedOrdersCount++;
-                        _logger.LogInformation("✅ Live BUY Executed for User {UserId}: {Symbol} @ ₹{Price:F2} (Score {Score}/100, Met {MetCount}/11)",
+                        _logger.LogInformation("✅ Live SHORT Executed for User {UserId}: {Symbol} @ ₹{Price:F2} (Score {Score}/100, Met {MetCount}/11)",
                             userSettings.UserId, candidate.Stock.Symbol, candidate.EntryPrice, candidate.Score, candidate.MetCount);
                     }
+                }
+            }
+        }
+    }
+
+    // The long (BUY) part of the per-user distribution - unchanged from before Auto Short existed.
+    private async Task DistributeLongCandidatesAsync(
+        IServiceProvider provider,
+        IAutoRealTradeService realTradeService,
+        RealTradeSettings userSettings,
+        List<(Domain.Entities.StockMaster Stock, decimal EntryPrice, int MetCount, int Score, bool IsBuySignal, decimal EngineStopLoss, decimal EngineTarget, decimal DailyAtr)> candidateStocks,
+        MarketGateDecision? regimeGate)
+    {
+        int executedOrdersCount = 0;
+
+        // Regime mode: at most policy.MaxPositions open positions per user (stronger regimes allow more).
+        int positionRoom = int.MaxValue;
+        if (regimeGate?.Policy != null)
+        {
+            int open = (await provider.GetRequiredService<IRealTradingRepository>().GetOpenPositionsAsync(userSettings.UserId)).Count();
+            positionRoom = regimeGate.Policy.MaxPositions - open;
+            if (positionRoom <= 0)
+            {
+                _logger.LogInformation("User {UserId}: {Open} open positions - {Regime} allows {Max}; no new REAL entries.",
+                    userSettings.UserId, open, regimeGate.Policy.Regime, regimeGate.Policy.MaxPositions);
+                return;
+            }
+        }
+
+        foreach (var candidate in candidateStocks.OrderByDescending(c => c.Score))
+        {
+            if (executedOrdersCount >= positionRoom) break;
+            if (candidate.IsBuySignal || candidate.MetCount >= userSettings.MinConditionsMatch)
+            {
+                bool executed = await realTradeService.EvaluateAndExecuteRealBuyAsync(
+                    candidate.Stock.Symbol, candidate.EntryPrice, candidate.MetCount, userSettings.UserId, candidate.IsBuySignal,
+                    candidate.EngineStopLoss, candidate.EngineTarget, dailyAtr: candidate.DailyAtr);
+
+                if (executed)
+                {
+                    executedOrdersCount++;
+                    _logger.LogInformation("✅ Live BUY Executed for User {UserId}: {Symbol} @ ₹{Price:F2} (Score {Score}/100, Met {MetCount}/11)",
+                        userSettings.UserId, candidate.Stock.Symbol, candidate.EntryPrice, candidate.Score, candidate.MetCount);
                 }
             }
         }

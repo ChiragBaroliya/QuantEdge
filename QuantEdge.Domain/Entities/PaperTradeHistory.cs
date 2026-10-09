@@ -15,6 +15,9 @@ public class PaperTradeHistory
     public decimal RealizedPnl { get; set; }
     public TradeType TradeType { get; set; } = TradeType.Manual;
     public string? ExitReason { get; set; }
+    // True = this row closed a trade (SELL a long / BUY to cover a short), false = it opened one. Null on rows
+    // written without it - readers then fall back to the old "SELL = exit" rule.
+    public bool? IsExit { get; set; }
     public DateTime ExecutedAt { get; set; } = DateTime.UtcNow;
     public string Remarks { get; set; } = string.Empty;
 }

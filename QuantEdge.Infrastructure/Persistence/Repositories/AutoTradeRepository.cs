@@ -60,7 +60,10 @@ public class AutoTradeRepository : IAutoTradeRepository
                 @CloseCheckTime,
                 @StopLossAtrMult,
                 @TrailAtrMult,
-                @TargetAtrMult
+                @TargetAtrMult,
+                @IsAutoShortEnabled,
+                @ShortEntryCutoff,
+                @ShortSquareOffTime
             );";
 
         return await connection.QuerySingleAsync<AutoTradeSettings>(sql, settings);

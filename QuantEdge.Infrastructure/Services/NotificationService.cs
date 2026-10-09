@@ -37,7 +37,12 @@ public class NotificationService : INotificationService
     };
 
     private const int MaxRealTradeLogs = 500;
+    private const int MaxBrokerEvents = 200;
     private const int MaxSymbolsInSwingMessage = 5;
+
+    // View All Notifications page: at most this many IST days per request, and this many rows per source.
+    public const int MaxHistoryDays = 31;
+    private const int MaxHistoryRowsPerSource = 5000;
     private static readonly TimeSpan MarketFeedCacheTtl = TimeSpan.FromSeconds(30);
 
     private readonly IRealTradingRepository _realTradingRepository;
@@ -73,23 +78,60 @@ public class NotificationService : INotificationService
         DateTime todayStartUtc = TimeZoneInfo.ConvertTimeToUtc(todayIst, istZone);
 
         var items = new List<NotificationItemDto>();
-        items.AddRange(await GetRealTradeItemsAsync(userId, todayStartUtc));
+        items.AddRange((await GetRealTradeItemsAsync(userId, todayStartUtc, MaxRealTradeLogs)).Items);
         items.AddRange(await GetMarketItemsAsync(todayIst, istZone, cancellationToken));
-        items.AddRange(await GetBrokerApiItemsAsync(userId, todayStartUtc));
+        items.AddRange((await GetBrokerApiItemsAsync(userId, todayStartUtc, MaxBrokerEvents)).Items);
 
         return new TodayNotificationsDto(
             todayIst,
             items.Where(i => i.TimeUtc >= todayStartUtc).OrderByDescending(i => i.TimeUtc).ToList());
     }
 
-    private async Task<IEnumerable<NotificationItemDto>> GetRealTradeItemsAsync(int userId, DateTime todayStartUtc)
+    public async Task<NotificationHistoryDto> GetHistoryAsync(int userId, DateTime fromDateIst, DateTime toDateIst,
+        CancellationToken cancellationToken = default)
+    {
+        var istZone = GetIstZone();
+        DateTime todayIst = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, istZone).Date;
+
+        // Normalise the range: whole IST days, oldest first, never past today, at most MaxHistoryDays.
+        DateTime from = fromDateIst.Date, to = toDateIst.Date;
+        if (from > to) (from, to) = (to, from);
+        if (to > todayIst) to = todayIst;
+        if (from > to) from = to;
+        if ((to - from).TotalDays >= MaxHistoryDays) from = to.AddDays(-(MaxHistoryDays - 1));
+
+        DateTime fromUtc = TimeZoneInfo.ConvertTimeToUtc(from, istZone);
+        DateTime toUtcExclusive = TimeZoneInfo.ConvertTimeToUtc(to.AddDays(1), istZone);
+
+        var items = new List<NotificationItemDto>();
+        var realTrade = await GetRealTradeItemsAsync(userId, fromUtc, MaxHistoryRowsPerSource);
+        var broker = await GetBrokerApiItemsAsync(userId, fromUtc, MaxHistoryRowsPerSource);
+        items.AddRange(realTrade.Items);
+        items.AddRange(broker.Items);
+        for (DateTime day = from; day <= to; day = day.AddDays(1))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            // Today's swing/NIFTY items come through the bell's cached path, so both screens show the same entries.
+            items.AddRange(day == todayIst
+                ? await GetMarketItemsAsync(day, istZone, cancellationToken)
+                : await GetSwingItemsAsync(day, istZone, cancellationToken));
+        }
+        items.AddRange(await GetPastNiftyFlipItemsAsync(from, to < todayIst ? to : todayIst.AddDays(-1), istZone));
+
+        return new NotificationHistoryDto(
+            from,
+            to,
+            items.Where(i => i.TimeUtc >= fromUtc && i.TimeUtc < toUtcExclusive).OrderByDescending(i => i.TimeUtc).ToList(),
+            realTrade.Truncated || broker.Truncated);
+    }
+
+    private async Task<(IEnumerable<NotificationItemDto> Items, bool Truncated)> GetRealTradeItemsAsync(int userId, DateTime sinceUtc, int limit)
     {
         try
         {
-            // The repository's "today" starts at UTC midnight, so re-filter to the IST day.
-            var logs = await _realTradingRepository.GetTodayLogsAsync(userId, MaxRealTradeLogs);
-            return logs
-                .Where(l => RealTradeActions.ContainsKey(l.ActionType) && AsUtc(l.ExecutedAt) >= todayStartUtc)
+            var logs = (await _realTradingRepository.GetLogsSinceAsync(userId, sinceUtc, limit)).ToList();
+            var items = logs
+                .Where(l => RealTradeActions.ContainsKey(l.ActionType) && AsUtc(l.ExecutedAt) >= sinceUtc)
                 .Select(l =>
                 {
                     var (level, title) = RealTradeActions[l.ActionType];
@@ -103,11 +145,12 @@ public class NotificationService : INotificationService
                         TimeUtc: AsUtc(l.ExecutedAt));
                 })
                 .ToList();
+            return (items, logs.Count >= limit);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load real trade notifications for user {UserId}.", userId);
-            return Array.Empty<NotificationItemDto>();
+            return (Array.Empty<NotificationItemDto>(), false);
         }
     }
 
@@ -115,13 +158,13 @@ public class NotificationService : INotificationService
     /// Failed, rate-limited or skipped Zerodha calls from any process (broker_api_events). Events without a user
     /// (historical sync, live feed) are shown to everyone; user-specific ones only to that user.
     /// </summary>
-    private async Task<IEnumerable<NotificationItemDto>> GetBrokerApiItemsAsync(int userId, DateTime todayStartUtc)
+    private async Task<(IEnumerable<NotificationItemDto> Items, bool Truncated)> GetBrokerApiItemsAsync(int userId, DateTime sinceUtc, int limit)
     {
-        if (_brokerApiEventRepository == null) return Array.Empty<NotificationItemDto>();
+        if (_brokerApiEventRepository == null) return (Array.Empty<NotificationItemDto>(), false);
         try
         {
-            var events = await _brokerApiEventRepository.GetSinceAsync(todayStartUtc);
-            return events
+            var events = await _brokerApiEventRepository.GetSinceAsync(sinceUtc, limit);
+            var items = events
                 .Where(e => e.UserId == null || e.UserId == userId)
                 .Select(e =>
                 {
@@ -148,11 +191,12 @@ public class NotificationService : INotificationService
                         TimeUtc: AsUtc(e.OccurredAt));
                 })
                 .ToList();
+            return (items, events.Count >= limit);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to load Zerodha API notifications (apply broker_api_events in schema.sql).");
-            return Array.Empty<NotificationItemDto>();
+            return (Array.Empty<NotificationItemDto>(), false);
         }
     }
 
@@ -254,6 +298,50 @@ public class NotificationService : INotificationService
             _logger.LogError(ex, "Failed to evaluate NIFTY market filter flip notification.");
             return null;
         }
+    }
+
+    /// <summary>
+    /// NIFTY market filter flips on finished past days (<paramref name="fromIst"/>..<paramref name="toIst"/>), for the
+    /// history page - same rule and texts as <see cref="GetNiftyFlipItemAsync"/>, stamped at that day's close (15:30 IST).
+    /// </summary>
+    private async Task<IEnumerable<NotificationItemDto>> GetPastNiftyFlipItemsAsync(DateTime fromIst, DateTime toIst, TimeZoneInfo istZone)
+    {
+        var items = new List<NotificationItemDto>();
+        if (toIst < fromIst) return items;
+        try
+        {
+            int limit = QuantEdge.Infrastructure.Constants.RealTradeSchedule.DailyCandleHistoryCount + MaxHistoryDays + 5;
+            var candles = (await _candleRepository.GetHistoryAsync("NIFTY 50", "1d", limit: limit))
+                .OrderBy(c => c.CandleTime)
+                .ToList();
+            var settings = await _strategySettingsRepository.GetSettingsAsync() ?? SwingStrategySettings.Default;
+
+            for (int i = 51; i < candles.Count; i++)
+            {
+                DateTime day = candles[i].CandleTime.Date;
+                if (day < fromIst || day > toIst) continue;
+
+                bool passedNow = SwingDecisionEngine.IsNiftyMarketFilterPassed(candles.Take(i + 1).ToList(), settings);
+                bool passedBefore = SwingDecisionEngine.IsNiftyMarketFilterPassed(candles.Take(i).ToList(), settings);
+                if (passedNow == passedBefore) continue;
+
+                items.Add(new NotificationItemDto(
+                    Id: $"nifty-{day:yyyyMMdd}-{(passedNow ? "passed" : "failed")}",
+                    Category: "nifty",
+                    Level: passedNow ? "success" : "warning",
+                    Title: passedNow ? "NIFTY market filter passed" : "NIFTY market filter failed",
+                    Message: passedNow
+                        ? "NIFTY 50 closed back above its 50 DMA with EMA20 above EMA50."
+                        : "NIFTY 50 closed below its 50 DMA or its EMA20 dropped under EMA50.",
+                    Symbol: "NIFTY 50",
+                    TimeUtc: TimeZoneInfo.ConvertTimeToUtc(day.Add(new TimeSpan(15, 30, 0)), istZone)));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to evaluate past NIFTY market filter flips for {From:yyyy-MM-dd}..{To:yyyy-MM-dd}.", fromIst, toIst);
+        }
+        return items;
     }
 
     // Daily candles carry no intraday timestamp, so a flip is stamped with the time it was first seen.

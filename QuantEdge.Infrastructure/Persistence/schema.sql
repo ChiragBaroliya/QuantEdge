@@ -1040,6 +1040,25 @@ ALTER TABLE manual_paper_trade_settings ADD COLUMN IF NOT EXISTS short_entry_cut
 ALTER TABLE manual_paper_trade_settings ADD COLUMN IF NOT EXISTS short_square_off_time VARCHAR(10) NOT NULL DEFAULT '15:15';
 CREATE INDEX IF NOT EXISTS ix_manual_paper_positions_open_side ON manual_paper_positions(status, side);
 
+-- Auto Short Selling (Auto Paper + Auto Real). OFF by default for every user: an existing settings row gets
+-- is_auto_short_enabled = FALSE, so nothing shorts until a user turns it on. Intraday only - no new short at/after
+-- short_entry_cutoff, every open short is bought back (auto square-off) at short_square_off_time IST.
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS is_auto_short_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS short_entry_cutoff VARCHAR(10) NOT NULL DEFAULT '15:00';
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS short_square_off_time VARCHAR(10) NOT NULL DEFAULT '15:15';
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS is_auto_short_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_entry_cutoff VARCHAR(10) NOT NULL DEFAULT '15:00';
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_square_off_time VARCHAR(10) NOT NULL DEFAULT '15:15';
+
+-- real_orders.is_short marks both legs of a short (entry SELL, covering BUY): with shorts, the side alone no longer
+-- says whether a fill opens or closes a position. Existing rows are all longs (FALSE).
+ALTER TABLE real_orders ADD COLUMN IF NOT EXISTS is_short BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- History rows: is_exit says whether a row closed a trade. Left NULL (no default) for every writer that doesn't set
+-- it, so readers keep the old rule for those rows: COALESCE(is_exit, side = 1 ...).
+ALTER TABLE paper_trade_history ADD COLUMN IF NOT EXISTS is_exit BOOLEAN;
+ALTER TABLE real_trade_history ADD COLUMN IF NOT EXISTS is_exit BOOLEAN;
+
 -- ----------------------------------------------------------------------------
 -- Sector Master
 -- NSE sectoral indices used to group stocks by sector.

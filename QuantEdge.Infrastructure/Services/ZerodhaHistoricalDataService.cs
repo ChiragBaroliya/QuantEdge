@@ -75,41 +75,16 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         uint instrumentToken = (uint)stock.InstrumentToken;
 
         _logger.LogInformation("Resolving active Zerodha session token...");
-        string? token = null;
-        string cacheKey = $"zerodha_session_token_{_config.ApiKey}";
+        string? token = await ResolveAccessTokenAsync();
 
-        if (_cacheService != null)
+        // A token Kite already rejected is not tried again for every remaining stock - that only produced one failed
+        // call and one bell notification per stock. It is retried as soon as zerodha_sessions holds a different token.
+        if (token != null && token == _rejectedToken)
         {
-            token = await _cacheService.GetAsync<string>(cacheKey);
-        }
-
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            try
-            {
-                using var conn = _connectionFactory.CreateConnection();
-                token = await conn.QueryFirstOrDefaultAsync<string?>(
-                    "SELECT access_token FROM zerodha_sessions WHERE api_key = @ApiKey AND is_active = TRUE LIMIT 1;",
-                    new { ApiKey = _config.ApiKey }
-                );
-
-                if (!string.IsNullOrWhiteSpace(token) && _cacheService != null)
-                {
-                    await _cacheService.SetAsync(cacheKey, token, TimeSpan.FromHours(24));
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to resolve active AccessToken from the database.");
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            _logger.LogError("Zerodha AccessToken is missing. Cannot fetch historical data.");
-            _apiEventRecorder?.RecordFailure(BrokerApiSource.Session, $"historical {timeframe}",
-                "Historical candle sync skipped: no Zerodha access token. Log in to Zerodha (Token page).", symbol: symbol, level: "warning");
-            throw new InvalidOperationException("Zerodha AccessToken is missing.");
+            _apiEventRecorder?.RecordFailure(BrokerApiSource.Session, "historical sync",
+                "Candle sync paused: Zerodha rejected the access token (invalid / expired). Log in to Zerodha again (Token page) - sync resumes automatically with the new token.",
+                level: "warning");
+            throw new InvalidOperationException("Zerodha access token was rejected - waiting for a new login.");
         }
 
         string intervalStr = MapTimeframeToKite(timeframe);
@@ -259,7 +234,17 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error occurred while fetching or saving Zerodha historical candles for {Symbol} at chunk range starting {CurrentStart}.", symbol, currentStart);
-            if (ex is not OperationCanceledException)
+            if (IsTokenRejected(ex))
+            {
+                // Not a problem with this stock: the token itself is bad. Forget it (so the next call re-reads
+                // zerodha_sessions) and raise ONE notification for the whole sync instead of one per stock.
+                _rejectedToken = token;
+                if (_cacheService != null) await _cacheService.RemoveAsync(TokenCacheKey);
+                _apiEventRecorder?.RecordFailure(BrokerApiSource.Session, "historical sync",
+                    $"Candle sync paused: Zerodha rejected the access token ({ex.Message}). Log in to Zerodha again (Token page) - sync resumes automatically with the new token.",
+                    level: "warning");
+            }
+            else if (ex is not OperationCanceledException)
             {
                 bool rateLimited = ex.Message.Contains("Too many requests", StringComparison.OrdinalIgnoreCase)
                     || ex.Message.Contains("429", StringComparison.Ordinal);
@@ -272,6 +257,89 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
             throw;
         }
     }
+
+    // The access token changes every day: Zerodha expires it at 06:00 IST and a new login stores a new one in
+    // zerodha_sessions. This service runs inside long-lived workers (e.g. the swing intraday job), so the token is only
+    // cached for a few minutes - it used to be cached for 24 hours, which kept yesterday's token after the morning login
+    // and failed every candle sync of the day with "invalid token".
+    private static readonly TimeSpan TokenCacheTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DailyTokenExpiryIst = new(6, 0, 0);
+
+    // The last token Kite rejected (per process) - see FetchHistoricalCandlesAsync.
+    private static string? _rejectedToken;
+
+    private string TokenCacheKey => $"zerodha_session_token_{_config.ApiKey}";
+
+    /// <summary>
+    /// The newest active token for the configured API key, if it is still within Zerodha's validity window (created
+    /// after the most recent 06:00 IST). Records one warning and throws when there is none.
+    /// </summary>
+    private async Task<string> ResolveAccessTokenAsync()
+    {
+        if (_cacheService != null)
+        {
+            string? cached = await _cacheService.GetAsync<string>(TokenCacheKey);
+            if (!string.IsNullOrWhiteSpace(cached)) return cached;
+        }
+
+        SessionTokenRow? session = null;
+        try
+        {
+            using var conn = _connectionFactory.CreateConnection();
+            session = await conn.QueryFirstOrDefaultAsync<SessionTokenRow>(
+                "SELECT access_token AS AccessToken, created_at AS CreatedAt FROM zerodha_sessions WHERE api_key = @ApiKey AND is_active = TRUE ORDER BY created_at DESC LIMIT 1;",
+                new { ApiKey = _config.ApiKey });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to resolve active AccessToken from the database.");
+        }
+
+        if (session == null || string.IsNullOrWhiteSpace(session.AccessToken))
+        {
+            _logger.LogError("Zerodha AccessToken is missing. Cannot fetch historical data.");
+            _apiEventRecorder?.RecordFailure(BrokerApiSource.Session, "historical sync",
+                "Historical candle sync skipped: no Zerodha access token. Log in to Zerodha (Token page).", level: "warning");
+            throw new InvalidOperationException("Zerodha AccessToken is missing.");
+        }
+
+        DateTime createdIst = TimeZoneInfo.ConvertTimeFromUtc(
+            session.CreatedAt.Kind == DateTimeKind.Local ? session.CreatedAt.ToUniversalTime() : DateTime.SpecifyKind(session.CreatedAt, DateTimeKind.Utc),
+            _indianTimeZone);
+        if (!IsTokenFromCurrentSession(createdIst, TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _indianTimeZone)))
+        {
+            _logger.LogWarning("Zerodha AccessToken was created {CreatedIst:dd-MMM HH:mm} IST and has expired (06:00 IST). Cannot fetch historical data.", createdIst);
+            _apiEventRecorder?.RecordFailure(BrokerApiSource.Session, "historical sync",
+                $"Historical candle sync skipped: the Zerodha token is from {createdIst:dd-MMM HH:mm} IST and expired at 06:00 IST. Log in to Zerodha (Token page).",
+                level: "warning");
+            throw new InvalidOperationException("Zerodha AccessToken has expired.");
+        }
+
+        if (_cacheService != null)
+        {
+            await _cacheService.SetAsync(TokenCacheKey, session.AccessToken, TokenCacheTtl);
+        }
+        return session.AccessToken!;
+    }
+
+    private sealed class SessionTokenRow
+    {
+        public string? AccessToken { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    /// <summary>A Zerodha token is valid until the next 06:00 IST after it was created.</summary>
+    internal static bool IsTokenFromCurrentSession(DateTime createdIst, DateTime nowIst)
+    {
+        DateTime lastExpiry = nowIst.Date.Add(DailyTokenExpiryIst);
+        if (nowIst < lastExpiry) lastExpiry = lastExpiry.AddDays(-1);
+        return createdIst >= lastExpiry;
+    }
+
+    private static bool IsTokenRejected(Exception ex) =>
+        ex is TokenException
+        || ex.Message.Contains("invalid token", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("Incorrect `api_key` or `access_token`", StringComparison.OrdinalIgnoreCase);
 
     private static int GetMaxDaysForInterval(string timeframe)
     {

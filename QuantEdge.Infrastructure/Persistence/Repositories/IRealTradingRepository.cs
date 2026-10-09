@@ -58,4 +58,7 @@ public interface IRealTradingRepository
     Task<decimal> GetTodayRealizedPnlAsync(int userId = 1);
     Task LogExecutionAsync(RealTradeExecutionLog log);
     Task<IEnumerable<RealTradeExecutionLog>> GetTodayLogsAsync(int userId = 1, int limit = 50);
+
+    /// <summary>Execution logs at/after <paramref name="sinceUtc"/>, newest first (notification history).</summary>
+    Task<IEnumerable<RealTradeExecutionLog>> GetLogsSinceAsync(int userId, DateTime sinceUtc, int limit);
 }

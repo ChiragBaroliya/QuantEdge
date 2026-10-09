@@ -39,6 +39,7 @@ public static class RealTradeGuards
         ("Zerodha Token Invalid", 2),
         ("Outside Market Hours", 3),
         ("Outside trading window", 3),
+        ("Short selling closed", 3),
         ("Opening entry delay", 4),
         ("Condition score", 5),
         ("Daily limit of", 6),

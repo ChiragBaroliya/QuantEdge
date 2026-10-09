@@ -19,6 +19,11 @@ public class InstrumentSyncService : IInstrumentSyncService
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ILogger<InstrumentSyncService> _logger;
+    private readonly IBrokerApiEventRecorder? _apiEventRecorder;
+
+    // A real NSE instruments file has thousands of rows. Fewer than this means a partial / broken download, and then
+    // existing instruments are neither updated nor reported as missing (that would flag every stock).
+    private const int MinNseRowsForReconcile = 1000;
 
     private static readonly string[] ExcludedNameKeywords = 
     {
@@ -35,32 +40,35 @@ public class InstrumentSyncService : IInstrumentSyncService
 
     public InstrumentSyncService(
         IDbConnectionFactory connectionFactory,
-        ILogger<InstrumentSyncService> logger)
+        ILogger<InstrumentSyncService> logger,
+        IBrokerApiEventRecorder? apiEventRecorder = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _apiEventRecorder = apiEventRecorder;
     }
 
     public async Task SyncInstrumentsAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Starting instruments sync from Zerodha...");
-        
-        // 0. Query all existing symbols from stock_master to skip them during sync
+
+        // 0. Query all existing symbols from stock_master: new instruments skip them, and their tokens are re-checked
+        // against Zerodha's current list after the download (see ReconcileExistingAsync).
         var existingSymbolsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var existingInstruments = new List<ExistingInstrument>();
         try
         {
             using var conn = _connectionFactory.CreateConnection();
             try
             {
-                var existingSymbols = await conn.QueryAsync<string>("SELECT symbol FROM stock_master;");
-                if (existingSymbols != null)
+                var existing = await conn.QueryAsync<ExistingInstrument>(
+                    "SELECT symbol AS Symbol, instrument_token AS InstrumentToken, is_active AS IsActive FROM stock_master;");
+                foreach (var row in existing)
                 {
-                    foreach (var sym in existingSymbols)
+                    if (!string.IsNullOrWhiteSpace(row.Symbol))
                     {
-                        if (!string.IsNullOrWhiteSpace(sym))
-                        {
-                            existingSymbolsSet.Add(sym);
-                        }
+                        existingSymbolsSet.Add(row.Symbol);
+                        existingInstruments.Add(row);
                     }
                 }
             }
@@ -94,6 +102,8 @@ public class InstrumentSyncService : IInstrumentSyncService
         }
 
         var rawInstruments = new List<StockMaster>();
+        // Every NSE instrument in today's file (symbol -> token), before any filtering - used to re-check existing rows.
+        var zerodhaNseTokens = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         string? line;
         int lineNumber = 1;
 
@@ -120,13 +130,14 @@ public class InstrumentSyncService : IInstrumentSyncService
                 var symbol = cols[2].Trim();
                 if (string.IsNullOrEmpty(symbol)) continue;
 
-                // Skip existing stocks (both active and inactive) — do not overwrite existing instruments
+                var instToken = int.Parse(cols[0].Trim());
+                zerodhaNseTokens[symbol] = instToken;
+
+                // Existing stocks (active and inactive) are not re-inserted; their token is re-checked after the loop.
                 if (existingSymbolsSet.Contains(symbol))
                 {
                     continue;
                 }
-
-                var instToken = int.Parse(cols[0].Trim());
                 var exchangeToken = cols[1].Trim();
                 var name = cols[3].Trim().Replace("\"", "");
                 
@@ -327,6 +338,8 @@ public class InstrumentSyncService : IInstrumentSyncService
             }
         }
 
+        await ReconcileExistingAsync(zerodhaNseTokens, existingInstruments);
+
         //var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "instruments_output.csv");
         //_logger.LogInformation("Writing {Count} instruments to CSV for testing at {Path}", instrumentsToSave.Count, csvPath);
 
@@ -348,6 +361,122 @@ public class InstrumentSyncService : IInstrumentSyncService
         //}
         //await File.WriteAllLinesAsync(csvPath, csvLines, cancellationToken);
         _logger.LogInformation("Successfully cleared old file and wrote new instruments to CSV.");
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Existing instruments: keep their Zerodha token current
+    // ------------------------------------------------------------------------------------------
+
+    public sealed class ExistingInstrument
+    {
+        public string Symbol { get; set; } = string.Empty;
+        public int InstrumentToken { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    public sealed record TokenChange(string Symbol, int OldToken, int NewToken);
+
+    /// <summary>An active stock Zerodha no longer lists under its symbol, with any same-name listings (e.g. HFCL-BE).</summary>
+    public sealed record MissingInstrument(string Symbol, IReadOnlyList<string> ListedAs);
+
+    public sealed record InstrumentReconciliation(IReadOnlyList<TokenChange> TokenChanges, IReadOnlyList<MissingInstrument> MissingActive);
+
+    /// <summary>
+    /// Compares stock_master with today's Zerodha NSE list. A symbol still listed with a different token gets the new
+    /// token (Zerodha re-issues tokens, e.g. after a series move; candles are keyed by symbol, so history is unaffected).
+    /// An ACTIVE symbol no longer listed is reported - never deactivated automatically - with any "SYMBOL-xx" listings.
+    /// Indices and ETFs ride along: they are in the same file.
+    /// </summary>
+    public static InstrumentReconciliation ReconcileExisting(IReadOnlyDictionary<string, int> zerodhaNseTokens, IEnumerable<ExistingInstrument> existing)
+    {
+        var changes = new List<TokenChange>();
+        var missing = new List<MissingInstrument>();
+
+        foreach (var row in existing)
+        {
+            if (zerodhaNseTokens.TryGetValue(row.Symbol, out int token))
+            {
+                if (token != row.InstrumentToken) changes.Add(new TokenChange(row.Symbol, row.InstrumentToken, token));
+            }
+            else if (row.IsActive)
+            {
+                string baseSymbol = row.Symbol.Split('-')[0];
+                var listedAs = zerodhaNseTokens.Keys
+                    .Where(k => !k.Equals(row.Symbol, StringComparison.OrdinalIgnoreCase)
+                        && (k.Equals(baseSymbol, StringComparison.OrdinalIgnoreCase) || k.StartsWith(baseSymbol + "-", StringComparison.OrdinalIgnoreCase)))
+                    .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                missing.Add(new MissingInstrument(row.Symbol, listedAs));
+            }
+        }
+
+        return new InstrumentReconciliation(changes, missing);
+    }
+
+    private async Task ReconcileExistingAsync(Dictionary<string, int> zerodhaNseTokens, List<ExistingInstrument> existing)
+    {
+        if (existing.Count == 0) return;
+        if (zerodhaNseTokens.Count < MinNseRowsForReconcile)
+        {
+            _logger.LogWarning("Zerodha instruments file has only {Count} NSE rows - looks incomplete, existing instrument tokens left unchanged.", zerodhaNseTokens.Count);
+            return;
+        }
+
+        var result = ReconcileExisting(zerodhaNseTokens, existing);
+
+        if (result.TokenChanges.Count > 0)
+        {
+            try
+            {
+                using var connection = _connectionFactory.CreateConnection();
+                await connection.ExecuteAsync(@"
+                    UPDATE stock_master m
+                    SET instrument_token = u.token
+                    FROM UNNEST(@Symbols::VARCHAR[], @Tokens::INT[]) AS u(symbol, token)
+                    WHERE m.symbol = u.symbol;",
+                    new
+                    {
+                        Symbols = result.TokenChanges.Select(c => c.Symbol).ToArray(),
+                        Tokens = result.TokenChanges.Select(c => c.NewToken).ToArray()
+                    });
+
+                foreach (var c in result.TokenChanges)
+                {
+                    _logger.LogWarning("Instrument token changed for {Symbol}: {Old} -> {New} (updated in stock_master).", c.Symbol, c.OldToken, c.NewToken);
+                }
+                _apiEventRecorder?.RecordFailure(BrokerApiSource.Job, "instrument sync",
+                    $"Zerodha instrument token updated for {result.TokenChanges.Count} stock(s): {Summarise(result.TokenChanges.Select(c => c.Symbol))}. " +
+                    "Their candle sync uses the new token from now on - backfill any gap from the Data Coverage page.",
+                    level: "info");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update {Count} changed instrument tokens in stock_master.", result.TokenChanges.Count);
+            }
+        }
+
+        if (result.MissingActive.Count > 0)
+        {
+            foreach (var m in result.MissingActive)
+            {
+                _logger.LogWarning("Active stock {Symbol} is not in Zerodha's NSE instrument list{ListedAs} - no new candles will arrive for it.",
+                    m.Symbol, m.ListedAs.Count > 0 ? $" (now listed as {string.Join(", ", m.ListedAs)})" : string.Empty);
+            }
+            _apiEventRecorder?.RecordFailure(BrokerApiSource.Job, "instrument sync",
+                $"{result.MissingActive.Count} active stock(s) are no longer listed by Zerodha (suspended, delisted or moved series) and get no new candles: " +
+                Summarise(result.MissingActive.Select(m => m.ListedAs.Count > 0 ? $"{m.Symbol} → {string.Join("/", m.ListedAs)}" : m.Symbol)) +
+                ". Review them on the Data Coverage page and deactivate or replace them.",
+                level: "warning");
+        }
+
+        _logger.LogInformation("Instrument reconcile: {Changed} token(s) updated, {Missing} active stock(s) no longer listed by Zerodha.",
+            result.TokenChanges.Count, result.MissingActive.Count);
+    }
+
+    private static string Summarise(IEnumerable<string> items, int max = 15)
+    {
+        var list = items.ToList();
+        return list.Count <= max ? string.Join(", ", list) : $"{string.Join(", ", list.Take(max))} +{list.Count - max} more";
     }
 
     private static string[] SplitCsvLine(string line)

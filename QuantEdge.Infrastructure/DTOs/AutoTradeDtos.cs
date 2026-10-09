@@ -5,7 +5,7 @@ using QuantEdge.Domain.Entities;
 
 namespace QuantEdge.Infrastructure.DTOs;
 
-public class AutoTradeSettingsUpdateDto
+public class AutoTradeSettingsUpdateDto : IValidatableObject
 {
     public bool IsAutoTradeEnabled { get; set; } = false;
 
@@ -54,6 +54,43 @@ public class AutoTradeSettingsUpdateDto
 
     public string TradingWindowStart { get; set; } = "09:15";
     public string TradingWindowEnd { get; set; } = "15:30";
+
+    // Auto Short Selling (intraday only) - OFF unless explicitly turned on.
+    public bool IsAutoShortEnabled { get; set; } = false;
+
+    [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Entry Cut-off must be HH:mm.")]
+    public string ShortEntryCutoff { get; set; } = "15:00";
+
+    [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Square-off Time must be HH:mm.")]
+    public string ShortSquareOffTime { get; set; } = "15:15";
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext) =>
+        ShortSellingSettingsValidator.Validate(ShortEntryCutoff, ShortSquareOffTime);
+}
+
+/// <summary>Shared checks for the Auto Short Selling times (Auto Paper and Auto Real settings).</summary>
+public static class ShortSellingSettingsValidator
+{
+    // Zerodha starts squaring off open MIS (intraday) positions itself at about 15:20 IST, so our own square-off
+    // must be earlier - a short then always gets closed by QuantEdge, at its own price check, not by the broker.
+    public static readonly TimeSpan LatestSquareOffTime = new(15, 20, 0);
+
+    public static IEnumerable<ValidationResult> Validate(string? entryCutoff, string? squareOffTime)
+    {
+        if (!TimeSpan.TryParse(entryCutoff, out var cutoff) || !TimeSpan.TryParse(squareOffTime, out var squareOff))
+            yield break; // the format attributes report bad values
+
+        if (cutoff >= squareOff)
+        {
+            yield return new ValidationResult("Short Entry Cut-off must be earlier than the Short Square-off Time.",
+                new[] { "ShortEntryCutoff" });
+        }
+        if (squareOff > LatestSquareOffTime)
+        {
+            yield return new ValidationResult($"Short Square-off Time must be {LatestSquareOffTime:hh\\:mm} IST or earlier (before the broker's own intraday square-off).",
+                new[] { "ShortSquareOffTime" });
+        }
+    }
 }
 
 public class AutoTradeDashboardDto

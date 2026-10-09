@@ -487,7 +487,9 @@ BEGIN
         FROM paper_trade_history th
         LEFT JOIN paper_accounts a ON th.account_id = a.id
         WHERE (v_mode = 'all' OR v_mode = 'paper')
-          AND (th.side = 1 OR th.exit_reason IS NOT NULL OR th.realized_pnl <> 0)
+          -- Exit rows only: is_exit when the writer set it (Auto Paper - covers a short's BUY, skips its entry SELL),
+          -- else the old rule.
+          AND COALESCE(th.is_exit, th.side = 1 OR th.exit_reason IS NOT NULL OR th.realized_pnl <> 0)
           AND (p_start_date IS NULL OR th.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR th.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR th.symbol ILIKE v_symbol)
@@ -515,20 +517,22 @@ BEGIN
             bo.id AS buy_order_id
         FROM real_trade_history rth
         LEFT JOIN app_users u ON rth.user_id = u.id
-        -- The BUY that opened this position: latest filled BUY of the symbol before the sell (status 1 = Filled).
+        -- The order that opened this position: latest filled entry of the symbol before the exit (status 1 = Filled) -
+        -- a long BUY for a SELL exit, the short's SELL (is_short) for a BUY-to-cover exit.
         LEFT JOIN LATERAL (
             SELECT ro.id, COALESCE(ro.filled_at, ro.created_at) AS filled_at
             FROM real_orders ro
             WHERE ro.user_id = rth.user_id
               AND UPPER(ro.symbol) = UPPER(rth.symbol)
-              AND ro.side = 0
+              AND ro.side = 1 - rth.side
+              AND ro.is_short = (rth.side = 0)
               AND ro.status = 1
               AND COALESCE(ro.filled_at, ro.created_at) <= rth.executed_at
             ORDER BY COALESCE(ro.filled_at, ro.created_at) DESC
             LIMIT 1
-        ) bo ON rth.side = 1
+        ) bo ON COALESCE(rth.is_exit, rth.side = 1)
         WHERE (v_mode = 'all' OR v_mode = 'real')
-          AND (rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
+          AND COALESCE(rth.is_exit, rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
           AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR rth.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR rth.symbol ILIKE v_symbol)
@@ -665,7 +669,9 @@ BEGIN
         FROM paper_trade_history th
         LEFT JOIN paper_accounts a ON th.account_id = a.id
         WHERE (v_mode = 'all' OR v_mode = 'paper')
-          AND (th.side = 1 OR th.exit_reason IS NOT NULL OR th.realized_pnl <> 0)
+          -- Exit rows only: is_exit when the writer set it (Auto Paper - covers a short's BUY, skips its entry SELL),
+          -- else the old rule.
+          AND COALESCE(th.is_exit, th.side = 1 OR th.exit_reason IS NOT NULL OR th.realized_pnl <> 0)
           AND (p_start_date IS NULL OR th.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR th.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR th.symbol ILIKE v_symbol)
@@ -693,20 +699,22 @@ BEGIN
             bo.id AS buy_order_id
         FROM real_trade_history rth
         LEFT JOIN app_users u ON rth.user_id = u.id
-        -- The BUY that opened this position: latest filled BUY of the symbol before the sell (status 1 = Filled).
+        -- The order that opened this position: latest filled entry of the symbol before the exit (status 1 = Filled) -
+        -- a long BUY for a SELL exit, the short's SELL (is_short) for a BUY-to-cover exit.
         LEFT JOIN LATERAL (
             SELECT ro.id, COALESCE(ro.filled_at, ro.created_at) AS filled_at
             FROM real_orders ro
             WHERE ro.user_id = rth.user_id
               AND UPPER(ro.symbol) = UPPER(rth.symbol)
-              AND ro.side = 0
+              AND ro.side = 1 - rth.side
+              AND ro.is_short = (rth.side = 0)
               AND ro.status = 1
               AND COALESCE(ro.filled_at, ro.created_at) <= rth.executed_at
             ORDER BY COALESCE(ro.filled_at, ro.created_at) DESC
             LIMIT 1
-        ) bo ON rth.side = 1
+        ) bo ON COALESCE(rth.is_exit, rth.side = 1)
         WHERE (v_mode = 'all' OR v_mode = 'real')
-          AND (rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
+          AND COALESCE(rth.is_exit, rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
           AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
           AND (p_end_date IS NULL OR rth.executed_at <= p_end_date)
           AND (v_symbol IS NULL OR rth.symbol ILIKE v_symbol)

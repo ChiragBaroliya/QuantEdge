@@ -5,7 +5,7 @@ using QuantEdge.Domain.Entities;
 
 namespace QuantEdge.Infrastructure.DTOs;
 
-public class RealTradeSettingsUpdateDto
+public class RealTradeSettingsUpdateDto : IValidatableObject
 {
     public bool IsRealTradeEnabled { get; set; } = false;
 
@@ -58,6 +58,18 @@ public class RealTradeSettingsUpdateDto
 
     [Range(typeof(decimal), "0.5", "20.0", ErrorMessage = "Target ATR multiple must be between 0.5 and 20.")]
     public decimal TargetAtrMult { get; set; } = 3.0m;
+
+    // Auto Short Selling (intraday, MIS) - OFF unless explicitly turned on; also needs the real master switch.
+    public bool IsAutoShortEnabled { get; set; } = false;
+
+    [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Entry Cut-off must be HH:mm.")]
+    public string ShortEntryCutoff { get; set; } = "15:00";
+
+    [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Square-off Time must be HH:mm.")]
+    public string ShortSquareOffTime { get; set; } = "15:15";
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext) =>
+        ShortSellingSettingsValidator.Validate(ShortEntryCutoff, ShortSquareOffTime);
 }
 
 public class RealTradeDashboardDto

@@ -133,6 +133,9 @@ public class AutoRealTradeService : IAutoRealTradeService
         existing.StopLossAtrMult = updateDto.StopLossAtrMult;
         existing.TrailAtrMult = updateDto.TrailAtrMult;
         existing.TargetAtrMult = updateDto.TargetAtrMult;
+        existing.IsAutoShortEnabled = updateDto.IsAutoShortEnabled;
+        existing.ShortEntryCutoff = string.IsNullOrWhiteSpace(updateDto.ShortEntryCutoff) ? "15:00" : updateDto.ShortEntryCutoff;
+        existing.ShortSquareOffTime = string.IsNullOrWhiteSpace(updateDto.ShortSquareOffTime) ? "15:15" : updateDto.ShortSquareOffTime;
 
         var updated = await _repository.UpsertSettingsAsync(existing);
 
@@ -198,7 +201,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
 
         decimal todayTradeAmount = recentOrders
-            .Where(o => o.Side == TradeSide.BUY && o.Status == PaperOrderStatus.Filled && o.CreatedAt >= DateTime.UtcNow.Date)
+            // Filled entries: a long BUY, or the SELL that opened an Auto Short (a short's covering BUY is an exit).
+            .Where(o => (o.IsShort ? o.Side == TradeSide.SELL : o.Side == TradeSide.BUY) && o.Status == PaperOrderStatus.Filled && o.CreatedAt >= DateTime.UtcNow.Date)
             .Sum(o => o.Quantity * o.FilledPrice);
 
         if (todayTradeAmount == 0 && todayCount > 0)
@@ -491,6 +495,16 @@ public class AutoRealTradeService : IAutoRealTradeService
         {
             _logger.LogInformation("Skipping BUY for {Symbol} (User {UserId}): order #{OrderId} is still OPEN at the broker awaiting fill.",
                 symbol, userId, existingPendingBuy.BrokerOrderId);
+            return false;
+        }
+
+        // ...and the same for a SELL still resting for this symbol - e.g. an Auto Short entry not filled yet (no position
+        // exists for it until it fills). Buying now could leave the account both long and short in one stock.
+        var existingPendingSell = await _repository.GetOpenBrokerOrderAsync(userId, symbol, TradeSide.SELL);
+        if (existingPendingSell != null)
+        {
+            _logger.LogInformation("Skipping BUY for {Symbol} (User {UserId}): SELL order #{OrderId} is still OPEN at the broker awaiting fill.",
+                symbol, userId, existingPendingSell.BrokerOrderId);
             return false;
         }
 
@@ -791,6 +805,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 ExecutedPrice = executedPrice,
                 RealizedPnl = 0m,
                 TradeType = tradeType,
+                IsExit = false,
                 Remarks = $"Real BUY Executed @ ₹{executedPrice:F2} (Broker ID: {brokerOrderId})"
             });
 
@@ -829,6 +844,381 @@ public class AutoRealTradeService : IAutoRealTradeService
         {
             _logger.LogError(ex, "Failed to execute real buy order for {Symbol} (User {UserId})", symbol, userId);
             await LogAuditAsync(symbol, "SYSTEM_ERROR", entryPrice, quantity, $"Real BUY execution failed: {ex.Message}", userId);
+            return false;
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Auto Short Selling (real money) - intraday only, always product MIS
+    // ------------------------------------------------------------------------------------------
+
+    // Zerodha only allows a cash-segment short as an intraday (MIS) position, whatever ProductType the longs use.
+    public const string ShortProductType = "MIS";
+
+    // Per-(user, symbol) guard against two short entries racing in this process (scan + a retry). Cross-process
+    // duplicates are blocked by the open-position / pending-order checks below.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _shortEntryLocks = new();
+
+    public async Task<bool> EvaluateAndExecuteRealShortAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1,
+        bool isSellSignal = false, decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null)
+    {
+        var entryLock = _shortEntryLocks.GetOrAdd($"{userId}:{symbol.ToUpper().Trim()}", _ => new SemaphoreSlim(1, 1));
+        if (!await entryLock.WaitAsync(TimeSpan.Zero))
+        {
+            _logger.LogInformation("Rejecting duplicate Auto Short request for {Symbol} (User {UserId}) - a previous request is still in flight.", symbol, userId);
+            return false;
+        }
+
+        try
+        {
+            return await EvaluateAndExecuteRealShortCoreAsync(symbol, entryPrice, metConditionsCount, userId, isSellSignal,
+                engineStopLoss, engineTarget, dailyAtr);
+        }
+        finally
+        {
+            entryLock.Release();
+        }
+    }
+
+    // Same guards, in the same order and with the same reason texts, as EvaluateAndExecuteRealBuyCoreAsync - plus the
+    // Auto Short switch (OFF by default), the short entry cut-off and a pending-order check on both sides.
+    private async Task<bool> EvaluateAndExecuteRealShortCoreAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId,
+        bool isSellSignal, decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr)
+    {
+        symbol = symbol.ToUpper().Trim();
+        var settings = await GetSettingsAsync(userId);
+
+        // 1. Master Switch + Auto Short switch - both must be ON for a real short.
+        if (!settings.IsRealTradeEnabled || !settings.IsAutoShortEnabled)
+        {
+            return false;
+        }
+
+        // 2. Token Active & Health Check
+        var tokenCheck = await _brokerService.ValidateSessionTokenAsync(userId);
+        if (!tokenCheck.IsValid)
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0, $"Zerodha Token Invalid: {tokenCheck.Message}", userId);
+            return false;
+        }
+
+        // 3. Market Hours & Trading Window Check
+        if (!await _marketHoursService.IsWithinMarketHoursAsync())
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0, "Outside Market Hours or Holiday", userId);
+            return false;
+        }
+
+        if (!IsWithinTradingWindow(settings.TradingWindowStart, settings.TradingWindowEnd))
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Outside trading window ({settings.TradingWindowStart} - {settings.TradingWindowEnd})", userId);
+            return false;
+        }
+
+        // 3b. Opening Entry Delay
+        if (!IsPastEntryDelay(settings.TradingWindowStart, settings.EntryDelayMinutes))
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Opening entry delay active - new SHORT signals held back for {settings.EntryDelayMinutes} min after {settings.TradingWindowStart}", userId);
+            return false;
+        }
+
+        // 3c. Short entry cut-off - intraday only, so every short has time to be bought back before the square-off.
+        if (!SwingTradeRules.IsBeforeShortEntryCutoff(settings.ShortEntryCutoff, SwingTradeRules.NowIst()))
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Short selling closed for today - no new shorts at/after {settings.ShortEntryCutoff} IST (open shorts are squared off at {settings.ShortSquareOffTime} IST)", userId);
+            return false;
+        }
+
+        // 4. Condition Match Check
+        if (!isSellSignal && metConditionsCount < settings.MinConditionsMatch)
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Condition score {metConditionsCount}/11 below required {settings.MinConditionsMatch}/11", userId);
+            return false;
+        }
+
+        // 5. Daily Trade Limit Check (longs and shorts share it)
+        int todayCount = await GetTodayRealTradeCountAsync(userId);
+        if (todayCount >= settings.MaxTradesPerDay)
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Daily limit of {settings.MaxTradesPerDay} real trades reached ({todayCount}/{settings.MaxTradesPerDay})", userId);
+            return false;
+        }
+
+        // 6. Daily Loss Circuit Breaker
+        decimal effectiveDailyLossLimit = SwingTradeRules.EffectiveDailyLossLimit(settings.MaxDailyLossLimit, settings.AvailableCapital);
+        decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
+        var openPositions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
+        decimal totalLoss = todayRealizedPnl + openPositions.Sum(p => p.UnrealizedPnl);
+        if (totalLoss <= -effectiveDailyLossLimit)
+        {
+            await LogAuditAsync(symbol, "CIRCUIT_BREAKER", entryPrice, 0,
+                $"Daily loss limit ₹{effectiveDailyLossLimit:N2} breached (Total Loss: ₹{totalLoss:N2}). Pausing live bot.", userId);
+            await ToggleRealTradeAsync(false, userId);
+            return false;
+        }
+
+        // 6b. Portfolio-Level Exposure Cap (longs and shorts together)
+        if (openPositions.Count >= SwingTradeRules.MaxConcurrentPositions)
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Portfolio exposure cap reached ({openPositions.Count}/{SwingTradeRules.MaxConcurrentPositions} concurrent open positions)", userId);
+            return false;
+        }
+
+        // 7. Duplicate Open Position Check - any open position in the symbol, long or short.
+        var existingOpenPos = await _repository.GetOpenPositionBySymbolAsync(userId, symbol);
+        if (existingOpenPos != null)
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Symbol already has an OPEN real position (Position #{existingOpenPos.Id})", userId);
+            return false;
+        }
+
+        // 7b. Duplicate Pending Order Check - any order for the symbol still resting at the broker, BUY or SELL.
+        var pendingOrder = await _repository.GetOpenBrokerOrderAsync(userId, symbol, TradeSide.SELL)
+            ?? await _repository.GetOpenBrokerOrderAsync(userId, symbol, TradeSide.BUY);
+        if (pendingOrder != null)
+        {
+            _logger.LogInformation("Skipping SHORT for {Symbol} (User {UserId}): order #{OrderId} is still OPEN at the broker awaiting fill.",
+                symbol, userId, pendingOrder.BrokerOrderId);
+            return false;
+        }
+
+        // 8. Capital & Margin Validation - the full trade amount must be free (MIS needs less, so this is conservative).
+        var marginResult = await _brokerService.GetEquityMarginsAsync(userId);
+        decimal availableMargin = marginResult.Success ? marginResult.AvailableCash : settings.AvailableCapital;
+        if (availableMargin < settings.FixedAmountPerTrade)
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Insufficient Broker Capital (₹{availableMargin:N2} < Trade Amount ₹{settings.FixedAmountPerTrade:N2})", userId);
+            return false;
+        }
+
+        // 8b. Live Quote Re-check - short drift guard (bounced up = stale, already fallen = too extended to chase).
+        decimal preLiveEntryPrice = entryPrice;
+        var ltpResult = await _brokerService.GetLtpQuotesAsync(new[] { (symbol, "NSE") }, userId);
+        if (ltpResult.Success && ltpResult.Ltps != null && ltpResult.Ltps.TryGetValue(symbol, out var liveLtp) && liveLtp > 0m)
+        {
+            string? driftReason = SwingTradeRules.CheckShortSignalDrift(preLiveEntryPrice, liveLtp);
+            if (driftReason != null)
+            {
+                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", preLiveEntryPrice, 0, driftReason, userId);
+                return false;
+            }
+
+            decimal priceDelta = liveLtp - preLiveEntryPrice;
+            if (engineStopLoss.HasValue) engineStopLoss = engineStopLoss.Value + priceDelta;
+            if (engineTarget.HasValue) engineTarget = engineTarget.Value + priceDelta;
+            entryPrice = liveLtp;
+        }
+
+        int quantity = (int)Math.Floor(settings.FixedAmountPerTrade / entryPrice);
+        if (quantity < 1)
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Calculated quantity 0 for entry price ₹{entryPrice:N2}", userId);
+            return false;
+        }
+
+        // 9. Mirrored levels: Stop Loss above the entry, Target below.
+        var tradeParams = SwingTradeParams.From(settings);
+        var levels = SwingTradeRules.ComputeShortEntryLevels(entryPrice, dailyAtr, engineStopLoss, engineTarget, tradeParams);
+        decimal takeProfit = levels.TakeProfit;
+        decimal stopLoss = levels.StopLoss;
+        decimal? trailingSl = levels.TrailingStopLoss;
+
+        try
+        {
+            var brokerResult = await _brokerService.PlaceLiveOrderAsync(symbol, TradeSide.SELL, quantity, PaperOrderType.Market,
+                entryPrice, ShortProductType, userId);
+
+            if (!brokerResult.Success)
+            {
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    Symbol = symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = entryPrice,
+                    StopLoss = stopLoss,
+                    TakeProfit = takeProfit,
+                    Status = PaperOrderStatus.Rejected,
+                    RejectionReason = brokerResult.Message,
+                    TradeType = TradeType.Auto,
+                    IsShort = true,
+                    Remarks = $"Real SHORT SELL Rejected by Zerodha: {brokerResult.Message}"
+                });
+
+                await LogAuditAsync(symbol, "ORDER_REJECTED", entryPrice, quantity,
+                    $"Zerodha Short Order Placement Failed: {brokerResult.Message}", userId);
+                return false;
+            }
+
+            string brokerOrderId = brokerResult.BrokerOrderId ?? $"KITE-{DateTime.UtcNow.Ticks}";
+
+            // Accepted is not traded - confirm the fill with the broker before recording a position.
+            var statusCheck = await _brokerService.GetOrderStatusAsync(brokerOrderId, userId);
+            var fill = ResolveFill(statusCheck, quantity);
+
+            if (fill.Outcome == RealFillOutcome.Rejected)
+            {
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = entryPrice,
+                    StopLoss = stopLoss,
+                    TakeProfit = takeProfit,
+                    Status = PaperOrderStatus.Rejected,
+                    FilledPrice = 0m,
+                    RejectionReason = statusCheck.Message,
+                    TradeType = TradeType.Auto,
+                    IsShort = true,
+                    Remarks = $"[LIVE REAL MONEY] Zerodha SHORT Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                });
+
+                await LogAuditAsync(symbol, "ORDER_REJECTED", entryPrice, quantity,
+                    $"Zerodha SHORT Order {statusCheck.BrokerStatus}: {statusCheck.Message} (Order #{brokerOrderId})", userId);
+                return false;
+            }
+
+            if (!(fill.Outcome == RealFillOutcome.Filled && fill.Quantity == quantity))
+            {
+                // Resting or not yet confirmed - recorded Open; ReconcilePendingRealOrdersAsync opens the short on the fill.
+                var openShortOrder = await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = symbol,
+                    Side = TradeSide.SELL,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = entryPrice,
+                    StopLoss = stopLoss,
+                    TakeProfit = takeProfit,
+                    Status = PaperOrderStatus.Open,
+                    FilledPrice = 0m,
+                    TradeType = TradeType.Auto,
+                    IsShort = true,
+                    Remarks = $"[LIVE REAL MONEY] Zerodha SHORT Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                });
+
+                await TryRecordFillDetailsAsync(openShortOrder.Id, entryPrice, null);
+                await LogAuditAsync(symbol, "SHORT_ORDER_OPEN", entryPrice, quantity,
+                    $"🕓 SHORT SELL order placed for {symbol} — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
+                await BroadcastDashboardUpdateAsync(userId);
+                return true;
+            }
+
+            decimal executedPrice = fill.Price;
+            if (executedPrice != entryPrice)
+            {
+                decimal fillDelta = executedPrice - entryPrice;
+                levels = SwingTradeRules.ComputeShortEntryLevels(executedPrice, dailyAtr,
+                    engineStopLoss.HasValue ? engineStopLoss.Value + fillDelta : null,
+                    engineTarget.HasValue ? engineTarget.Value + fillDelta : null, tradeParams);
+                takeProfit = levels.TakeProfit;
+                stopLoss = levels.StopLoss;
+                trailingSl = levels.TrailingStopLoss;
+            }
+
+            var order = await _repository.CreateOrderAsync(new RealOrder
+            {
+                UserId = userId,
+                BrokerOrderId = brokerOrderId,
+                Symbol = symbol,
+                Side = TradeSide.SELL,
+                Quantity = quantity,
+                OrderType = PaperOrderType.Market,
+                Price = executedPrice,
+                StopLoss = stopLoss,
+                TakeProfit = takeProfit,
+                Status = PaperOrderStatus.Filled,
+                FilledPrice = executedPrice,
+                FilledAt = DateTime.UtcNow,
+                TradeType = TradeType.Auto,
+                IsShort = true,
+                Remarks = $"[LIVE REAL MONEY] Zerodha SHORT Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+            });
+            await TryRecordFillDetailsAsync(order.Id, entryPrice, fill.Quantity);
+
+            var newPosition = await _repository.UpsertPositionAsync(new RealPosition
+            {
+                UserId = userId,
+                Symbol = symbol,
+                Side = TradeSide.SELL,
+                Quantity = quantity,
+                AverageEntryPrice = executedPrice,
+                CurrentPrice = executedPrice,
+                UnrealizedPnl = 0m,
+                StopLoss = stopLoss,
+                TakeProfit = takeProfit,
+                TrailingStopLoss = trailingSl,
+                Status = PositionStatus.OPEN,
+                TradeType = TradeType.Auto,
+                RealizedPnl = 0m
+            });
+
+            _realTradeCache?.AddOrUpdatePosition(newPosition);
+            await EnsureSubscribedForExitMonitoringAsync(symbol);
+
+            await _repository.RecordTradeHistoryAsync(new RealTradeHistory
+            {
+                UserId = userId,
+                OrderId = order.Id,
+                BrokerOrderId = brokerOrderId,
+                Symbol = symbol,
+                Side = TradeSide.SELL,
+                Quantity = quantity,
+                EntryPrice = executedPrice,
+                ExecutedPrice = executedPrice,
+                RealizedPnl = 0m,
+                TradeType = TradeType.Auto,
+                IsExit = false,
+                Remarks = $"Real SHORT SELL Executed @ ₹{executedPrice:F2} (Broker ID: {brokerOrderId})"
+            });
+
+            await _cacheService.RemoveAsync($"realtrade:today_count:{userId}:{DateTime.UtcNow:yyyyMMdd}");
+
+            string tslText = trailingSl.HasValue ? $"₹{trailingSl.Value:F2}" : "activates after -1 ATR";
+            await LogAuditAsync(symbol, "REAL_SHORT", executedPrice, quantity,
+                $"⚡ Live SHORT SELL Executed @ ₹{executedPrice:F2} (Qty: {quantity}, MIS, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {tslText}, Order #{brokerOrderId}) - auto square-off at {settings.ShortSquareOffTime} IST", userId);
+
+            if (_hubBroadcast != null)
+            {
+                await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
+                {
+                    symbol,
+                    side = "SELL",
+                    quantity,
+                    price = executedPrice,
+                    target = takeProfit,
+                    stopLoss,
+                    trailingSl,
+                    brokerOrderId,
+                    userId,
+                    message = $"⚡ LIVE REAL SHORT: {quantity} shares of {symbol} @ ₹{executedPrice:N2} (Target ₹{takeProfit:N2})"
+                });
+            }
+
+            await BroadcastDashboardUpdateAsync(userId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute real short order for {Symbol} (User {UserId})", symbol, userId);
+            await LogAuditAsync(symbol, "SYSTEM_ERROR", entryPrice, quantity, $"Real SHORT execution failed: {ex.Message}", userId);
             return false;
         }
     }
@@ -920,10 +1310,12 @@ public class AutoRealTradeService : IAutoRealTradeService
         var trackedPosition = await _repository.GetOpenPositionBySymbolAsync(userId, symbol);
         if (trackedPosition != null)
         {
+            // Side-aware: a tracked short is bought back (covered), not sold again.
+            string exitLabel = trackedPosition.Side == TradeSide.SELL ? "BUY TO COVER" : "SELL";
             bool closed = await SquareOffSinglePositionAsync(trackedPosition.Id, reason, userId);
             return (closed, closed
-                ? $"SELL order submitted for {symbol}."
-                : $"SELL order for {symbol} was not placed — it may already have an order resting OPEN at the broker. Check the Real Orders Book.");
+                ? $"{exitLabel} order submitted for {symbol}."
+                : $"{exitLabel} order for {symbol} was not placed — it may already have an order resting OPEN at the broker. Check the Real Orders Book.");
         }
 
         // Otherwise this is a plain Zerodha Holding/Position the bot isn't tracking - sell it directly.
@@ -1116,6 +1508,10 @@ public class AutoRealTradeService : IAutoRealTradeService
         if (!await _marketHoursService.IsWithinMarketHoursAsync())
             return false;
 
+        // An open short is exited by buying it back - its own intraday policy, see EvaluateAndExecuteRealCoverAsync.
+        if (position.Side == TradeSide.SELL)
+            return await EvaluateAndExecuteRealCoverAsync(position, currentLtp, userId);
+
         var settings = await GetSettingsAsync(userId);
         var nowIst = SwingTradeRules.NowIst();
         if (!SwingTradeRules.IsWithinTradingWindow(settings.TradingWindowStart, settings.TradingWindowEnd, nowIst))
@@ -1152,6 +1548,59 @@ public class AutoRealTradeService : IAutoRealTradeService
         return false;
     }
 
+    // Positions already reported as a stale short (see EvaluateAndExecuteRealCoverAsync) - one alert per position, not
+    // one per 20-second monitor cycle.
+    private static readonly ConcurrentDictionary<int, byte> _staleShortsReported = new();
+
+    // Exit for an open real SHORT: SwingTradeRules.EvaluateShortExit (auto square-off, then live target / stop /
+    // trailing SL). Not gated by the user's trading window (only market hours) - a short must always be closable today.
+    private async Task<bool> EvaluateAndExecuteRealCoverAsync(RealPosition position, decimal currentLtp, int userId)
+    {
+        var settings = await GetSettingsAsync(userId);
+        var nowIst = SwingTradeRules.NowIst();
+
+        // A short still recorded open from an earlier day was not bought back by QuantEdge - Zerodha squares off open MIS
+        // positions itself at the close, so the broker most likely holds nothing now. Buying "back" would then OPEN a new
+        // long, so no order is placed: it is flagged once for a manual check (Reconciliation page / Zerodha positions).
+        if (SwingTradeRules.ToIst(position.OpenedAt).Date < nowIst.Date)
+        {
+            if (_staleShortsReported.TryAdd(position.Id, 0))
+            {
+                _logger.LogWarning("Stale real short #{PositionId} ({Symbol}, User {UserId}) is still open from {OpenedAt:dd-MMM} - not covering automatically.",
+                    position.Id, position.Symbol, userId, SwingTradeRules.ToIst(position.OpenedAt));
+                await LogAuditAsync(position.Symbol, "SHORT_STALE", currentLtp, position.Quantity,
+                    $"⚠️ Short position #{position.Id} is still recorded OPEN from {SwingTradeRules.ToIst(position.OpenedAt):dd-MMM} (intraday shorts are squared off the same day). No order placed - check Zerodha positions and close it in QuantEdge manually.", userId);
+            }
+            return false;
+        }
+
+        var tradeParams = SwingTradeParams.From(settings);
+        var decision = SwingTradeRules.EvaluateShortExit(ExitPositionView.From(position), currentLtp, nowIst,
+            settings.ShortSquareOffTime, tradeParams);
+
+        if (decision.ShouldExit)
+        {
+            return await ExecuteRealSellOrderAsync(position, currentLtp, decision.Reason, userId,
+                decision.IsGap ? GapExitProtectionBufferPct : null);
+        }
+
+        if (decision.NewTrailingStopLoss.HasValue)
+        {
+            bool activated = !position.TrailingStopLoss.HasValue || position.TrailingStopLoss.Value > position.AverageEntryPrice;
+            await _repository.UpdateTrailingStopLossAsync(position.Id, decision.NewTrailingStopLoss.Value);
+            position.TrailingStopLoss = decision.NewTrailingStopLoss.Value;
+            _realTradeCache?.AddOrUpdatePosition(position);
+
+            if (activated && tradeParams.IsSwingClose)
+            {
+                await LogAuditAsync(position.Symbol, "TRAILING_SL_ACTIVATED", currentLtp, position.Quantity,
+                    $"Short trailing SL activated @ ₹{decision.NewTrailingStopLoss.Value:F2} (entry ₹{position.AverageEntryPrice:F2})", userId);
+            }
+        }
+
+        return false;
+    }
+
     private enum RealSellOutcome { Failed, Filled, OrderOpenPending, AlreadyPending }
 
     private async Task<bool> ExecuteRealSellOrderAsync(RealPosition position, decimal currentLtp, string exitReason, int userId, decimal? protectionBufferPctOverride = null)
@@ -1160,6 +1609,13 @@ public class AutoRealTradeService : IAutoRealTradeService
     private async Task<RealSellOutcome> ExecuteRealSellOrderCoreAsync(RealPosition position, decimal currentLtp, string exitReason, int userId, decimal? protectionBufferPctOverride = null)
     {
         var settings = await GetSettingsAsync(userId);
+
+        // A long is exited with a SELL; a short (Auto Short, always MIS) is exited by BUYING it back. Every order below
+        // is recorded on the exit side and flagged IsShort for a short, so reconciliation closes the right position.
+        bool isShort = position.Side == TradeSide.SELL;
+        TradeSide exitSide = isShort ? TradeSide.BUY : TradeSide.SELL;
+        string exitLabel = isShort ? "BUY TO COVER" : "SELL";
+        string exitProduct = isShort ? ShortProductType : settings.ProductType;
         try
         {
             // A previous exit attempt for this position may still be resting, unfilled, at the broker
@@ -1167,26 +1623,26 @@ public class AutoRealTradeService : IAutoRealTradeService
             // double-sell the same shares once both eventually fill, so skip until it resolves —
             // the reconciliation pass (ReconcilePendingRealOrdersAsync) will pick it up and either
             // finalize it as Filled or clear it as Cancelled/Rejected.
-            var existingPendingOrder = await _repository.GetOpenBrokerOrderAsync(userId, position.Symbol, TradeSide.SELL);
+            var existingPendingOrder = await _repository.GetOpenBrokerOrderAsync(userId, position.Symbol, exitSide);
             if (existingPendingOrder != null)
             {
-                _logger.LogInformation("Skipping SELL for {Symbol} (User {UserId}): order #{OrderId} is still OPEN at the broker awaiting fill.",
-                    position.Symbol, userId, existingPendingOrder.BrokerOrderId);
+                _logger.LogInformation("Skipping {ExitLabel} for {Symbol} (User {UserId}): order #{OrderId} is still OPEN at the broker awaiting fill.",
+                    exitLabel, position.Symbol, userId, existingPendingOrder.BrokerOrderId);
                 return RealSellOutcome.AlreadyPending;
             }
 
-            _logger.LogInformation("[REAL MONEY SELL TRIGGERED - User {UserId}] Position #{Id} {Symbol} Qty:{Qty} @ {Ltp}. Reason: {Reason}",
-                userId, position.Id, position.Symbol, position.Quantity, currentLtp, exitReason);
+            _logger.LogInformation("[REAL MONEY {ExitLabel} TRIGGERED - User {UserId}] Position #{Id} {Symbol} Qty:{Qty} @ {Ltp}. Reason: {Reason}",
+                exitLabel, userId, position.Id, position.Symbol, position.Quantity, currentLtp, exitReason);
 
-            // Execute Real Market Sell via Zerodha Kite API. A wider protection band is used when
-            // this exit was flagged as a gap-through (see EvaluateAndExecuteRealSellAsync) to
-            // maximize the odds of an immediate fill during a fast-moving/gapped market.
+            // Execute Real Market exit via Zerodha Kite API (SquareOffLivePositionAsync places the opposite side of
+            // the position). A wider protection band is used when this exit was flagged as a gap-through (see
+            // EvaluateAndExecuteRealSellAsync) to maximize the odds of an immediate fill during a fast-moving/gapped market.
             var brokerResult = await _brokerService.SquareOffLivePositionAsync(
                 position.Symbol,
                 position.Quantity,
                 position.Side,
                 currentLtp,
-                settings.ProductType,
+                exitProduct,
                 userId,
                 protectionBufferPctOverride);
 
@@ -1202,25 +1658,27 @@ public class AutoRealTradeService : IAutoRealTradeService
                 {
                     UserId = userId,
                     Symbol = position.Symbol,
-                    Side = TradeSide.SELL,
+                    Side = exitSide,
                     Quantity = position.Quantity,
                     OrderType = PaperOrderType.Market,
                     Price = rejectedPrice,
                     Status = PaperOrderStatus.Rejected,
                     FilledPrice = 0m,
                     RejectionReason = brokerResult.Message,
-                    Remarks = $"Real SELL ({exitReason}) Rejected by Zerodha: {brokerResult.Message}"
+                    IsShort = isShort,
+                    Remarks = $"Real {exitLabel} ({exitReason}) Rejected by Zerodha: {brokerResult.Message}"
                 });
 
-                bool isTpinError = brokerResult.Message != null &&
+                // CDSL TPIN / e-DIS only applies to selling delivery shares, never to buying back a short.
+                bool isTpinError = !isShort && brokerResult.Message != null &&
                     (brokerResult.Message.Contains("e-DIS", StringComparison.OrdinalIgnoreCase) ||
                      brokerResult.Message.Contains("TPIN", StringComparison.OrdinalIgnoreCase) ||
                      brokerResult.Message.Contains("authorization", StringComparison.OrdinalIgnoreCase));
 
-                string actionType = isTpinError ? "SELL_REJECTED_EDIS_REQUIRED" : "SELL_FAILED";
+                string actionType = isTpinError ? "SELL_REJECTED_EDIS_REQUIRED" : isShort ? "COVER_FAILED" : "SELL_FAILED";
 
                 await LogAuditAsync(position.Symbol, actionType, rejectedPrice, position.Quantity,
-                    $"Zerodha Sell Order Failed: {brokerResult.Message}", userId);
+                    isShort ? $"Zerodha Buy-to-Cover Order Failed: {brokerResult.Message}" : $"Zerodha Sell Order Failed: {brokerResult.Message}", userId);
 
                 if (_hubBroadcast != null && isTpinError)
                 {
@@ -1254,18 +1712,21 @@ public class AutoRealTradeService : IAutoRealTradeService
                     UserId = userId,
                     BrokerOrderId = brokerOrderId,
                     Symbol = position.Symbol,
-                    Side = TradeSide.SELL,
+                    Side = exitSide,
                     Quantity = position.Quantity,
                     OrderType = PaperOrderType.Market,
                     Price = currentLtp,
                     Status = PaperOrderStatus.Rejected,
                     FilledPrice = 0m,
                     RejectionReason = statusCheck.Message,
-                    Remarks = $"Real SELL ({exitReason}) - Broker ID: {brokerOrderId}"
+                    IsShort = isShort,
+                    Remarks = $"Real {exitLabel} ({exitReason}) - Broker ID: {brokerOrderId}"
                 });
 
-                await LogAuditAsync(position.Symbol, "SELL_FAILED", currentLtp, position.Quantity,
-                    $"Zerodha Sell Order {statusCheck.BrokerStatus}: {statusCheck.Message} (Order #{brokerOrderId})", userId);
+                await LogAuditAsync(position.Symbol, isShort ? "COVER_FAILED" : "SELL_FAILED", currentLtp, position.Quantity,
+                    isShort
+                        ? $"Zerodha Buy-to-Cover Order {statusCheck.BrokerStatus}: {statusCheck.Message} (Order #{brokerOrderId})"
+                        : $"Zerodha Sell Order {statusCheck.BrokerStatus}: {statusCheck.Message} (Order #{brokerOrderId})", userId);
 
                 return RealSellOutcome.Failed;
             }
@@ -1280,32 +1741,33 @@ public class AutoRealTradeService : IAutoRealTradeService
                     UserId = userId,
                     BrokerOrderId = brokerOrderId,
                     Symbol = position.Symbol,
-                    Side = TradeSide.SELL,
+                    Side = exitSide,
                     Quantity = position.Quantity,
                     OrderType = PaperOrderType.Market,
                     Price = currentLtp,
                     Status = PaperOrderStatus.Open,
                     FilledPrice = 0m,
-                    Remarks = $"Real SELL ({exitReason}) - Broker ID: {brokerOrderId}"
+                    IsShort = isShort,
+                    Remarks = $"Real {exitLabel} ({exitReason}) - Broker ID: {brokerOrderId}"
                 });
 
                 await TryRecordFillDetailsAsync(openSellOrder.Id, currentLtp, null);
 
-                await LogAuditAsync(position.Symbol, "SELL_ORDER_OPEN", currentLtp, position.Quantity,
-                    $"🕓 SELL order placed for {position.Symbol} ({exitReason}) — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
+                await LogAuditAsync(position.Symbol, isShort ? "COVER_ORDER_OPEN" : "SELL_ORDER_OPEN", currentLtp, position.Quantity,
+                    $"🕓 {exitLabel} order placed for {position.Symbol} ({exitReason}) — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
 
                 if (_hubBroadcast != null)
                 {
                     await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                     {
                         symbol = position.Symbol,
-                        side = "SELL_OPEN",
+                        side = isShort ? "BUY_OPEN" : "SELL_OPEN",
                         quantity = position.Quantity,
                         price = currentLtp,
                         exitReason,
                         brokerOrderId,
                         userId,
-                        message = $"🕓 SELL order for {position.Symbol} is OPEN at the broker (not yet filled) — Order #{brokerOrderId}"
+                        message = $"🕓 {exitLabel} order for {position.Symbol} is OPEN at the broker (not yet filled) — Order #{brokerOrderId}"
                     });
                 }
 
@@ -1314,22 +1776,26 @@ public class AutoRealTradeService : IAutoRealTradeService
             }
 
             decimal executedPrice = fill.Price;
-            decimal realizedPnl = (executedPrice - position.AverageEntryPrice) * position.Quantity;
+            // A long gains when the price rose; a short gains when it fell.
+            decimal realizedPnl = isShort
+                ? (position.AverageEntryPrice - executedPrice) * position.Quantity
+                : (executedPrice - position.AverageEntryPrice) * position.Quantity;
 
-            // Create Sell Order Record
+            // Create Sell (or Buy-to-Cover) Order Record
             var sellOrder = await _repository.CreateOrderAsync(new RealOrder
             {
                 UserId = userId,
                 BrokerOrderId = brokerOrderId,
                 Symbol = position.Symbol,
-                Side = TradeSide.SELL,
+                Side = exitSide,
                 Quantity = position.Quantity,
                 OrderType = PaperOrderType.Market,
                 Price = executedPrice,
                 Status = PaperOrderStatus.Filled,
                 FilledPrice = executedPrice,
                 FilledAt = DateTime.UtcNow,
-                Remarks = $"Real SELL ({exitReason}) - Broker ID: {brokerOrderId}"
+                IsShort = isShort,
+                Remarks = $"Real {exitLabel} ({exitReason}) - Broker ID: {brokerOrderId}"
             });
             await TryRecordFillDetailsAsync(sellOrder.Id, currentLtp, fill.Quantity);
 
@@ -1345,20 +1811,21 @@ public class AutoRealTradeService : IAutoRealTradeService
                 OrderId = sellOrder.Id,
                 BrokerOrderId = brokerOrderId,
                 Symbol = position.Symbol,
-                Side = TradeSide.SELL,
+                Side = exitSide,
                 Quantity = position.Quantity,
                 EntryPrice = position.AverageEntryPrice,
                 ExecutedPrice = executedPrice,
                 RealizedPnl = realizedPnl,
                 TradeType = TradeType.Auto,
                 ExitReason = exitReason,
-                Remarks = $"Real SELL: {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
+                IsExit = true,
+                Remarks = $"Real {exitLabel}: {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
             });
 
             // Log Audit
             string pnlSign = realizedPnl >= 0 ? "+" : "";
-            await LogAuditAsync(position.Symbol, "REAL_SELL", executedPrice, position.Quantity,
-                $"⚡ Live SELL ({exitReason}) @ ₹{executedPrice:F2} | P&L: {pnlSign}₹{realizedPnl:N2} (Order #{brokerOrderId})", userId);
+            await LogAuditAsync(position.Symbol, isShort ? "REAL_COVER" : "REAL_SELL", executedPrice, position.Quantity,
+                $"⚡ Live {exitLabel} ({exitReason}) @ ₹{executedPrice:F2} | P&L: {pnlSign}₹{realizedPnl:N2} (Order #{brokerOrderId})", userId);
 
             // Broadcast SignalR Toast
             if (_hubBroadcast != null)
@@ -1366,16 +1833,20 @@ public class AutoRealTradeService : IAutoRealTradeService
                 await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
                 {
                     symbol = position.Symbol,
-                    side = "SELL",
+                    side = isShort ? "BUY" : "SELL",
                     quantity = position.Quantity,
                     price = executedPrice,
                     realizedPnl,
                     exitReason,
                     brokerOrderId,
                     userId,
-                    message = $"⚡ LIVE REAL SELL: {position.Symbol} ({exitReason}) @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}"
+                    message = $"⚡ LIVE REAL {exitLabel}: {position.Symbol} ({exitReason}) @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}"
                 });
+            }
 
+            // "Holding sold" only means something for a long (the Holdings panel); a covered short was never a holding.
+            if (_hubBroadcast != null && !isShort)
+            {
                 await _hubBroadcast.BroadcastGroupAsync($"user-{userId}", "ReceiveHoldingSoldEvent", new
                 {
                     symbol = position.Symbol,
@@ -1393,8 +1864,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute real sell order for {Symbol} (User {UserId})", position.Symbol, userId);
-            await LogAuditAsync(position.Symbol, "SYSTEM_ERROR", currentLtp, position.Quantity, $"Real SELL execution error: {ex.Message}", userId);
+            _logger.LogError(ex, "Failed to execute real {ExitLabel} order for {Symbol} (User {UserId})", exitLabel, position.Symbol, userId);
+            await LogAuditAsync(position.Symbol, "SYSTEM_ERROR", currentLtp, position.Quantity, $"Real {exitLabel} execution error: {ex.Message}", userId);
             return RealSellOutcome.Failed;
         }
     }
@@ -1564,7 +2035,11 @@ public class AutoRealTradeService : IAutoRealTradeService
         // flagged here for manual review instead of auto-corrected.
         await _repository.UpdateOrderStatusAsync(order.Id, PaperOrderStatus.Open, 0m, order.BrokerOrderId);
 
-        string positionNote = order.Side == TradeSide.SELL
+        string positionNote = order.IsShort
+            ? (IsExitOrder(order)
+                ? " This order previously showed as FILLED and may have closed a short that Zerodha never actually confirmed bought back — check Zerodha positions."
+                : " This order previously showed as FILLED and may have opened a short that was never actually sold — check Bot Positions.")
+            : order.Side == TradeSide.SELL
             ? " This order previously showed as FILLED and may have closed a bot position that Zerodha never actually confirmed sold — check Zerodha Holdings and re-enable monitoring via 'Set Target' if the shares are still held."
             : " This order previously showed as FILLED and may have opened a bot position for shares that were never actually bought — check Bot Positions.";
 
@@ -1575,6 +2050,10 @@ public class AutoRealTradeService : IAutoRealTradeService
         return (true, true, $"Corrected: {order.Symbol} order #{order.BrokerOrderId} is actually still OPEN at the broker (was recorded {order.Status}).{positionNote}");
     }
 
+    // Does this order close a position? Long flow: a SELL. Auto Short (IsShort): the BUY that covers it - its SELL opens it.
+    private static bool IsExitOrder(RealOrder order) =>
+        order.IsShort ? order.Side == TradeSide.BUY : order.Side == TradeSide.SELL;
+
     /// <param name="executedPrice">The broker's average fill price.</param>
     /// <param name="filledQuantity">The broker's filled_quantity - below order.Quantity when the order partly filled and was then cancelled.</param>
     private async Task FinalizeFilledOrderAsync(RealOrder order, decimal executedPrice, int filledQuantity)
@@ -1583,10 +2062,17 @@ public class AutoRealTradeService : IAutoRealTradeService
         await TryRecordFillDetailsAsync(order.Id, null, filledQuantity);
         bool isPartialOrder = filledQuantity < order.Quantity;
 
+        if (order.IsShort)
+        {
+            await FinalizeFilledShortOrderAsync(order, executedPrice, filledQuantity, isPartialOrder);
+            return;
+        }
+
         if (order.Side == TradeSide.SELL)
         {
             var position = await _repository.GetOpenPositionBySymbolAsync(order.UserId, order.Symbol);
-            if (position != null)
+            // A long SELL only ever closes a long - never an open short in the same symbol.
+            if (position != null && position.Side == TradeSide.BUY)
             {
                 // P&L only on the shares that actually sold. Selling fewer than held shrinks the position,
                 // which stays open and monitored for the rest.
@@ -1622,6 +2108,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     RealizedPnl = realizedPnl,
                     TradeType = TradeType.Auto,
                     ExitReason = exitReason,
+                    IsExit = true,
                     Remarks = closesPosition
                         ? $"Real SELL: {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
                         : $"Real SELL (partial {soldQty} of {order.Quantity}, {position.Quantity} still held): {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
@@ -1708,6 +2195,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 ExecutedPrice = executedPrice,
                 RealizedPnl = 0m,
                 TradeType = order.TradeType,
+                IsExit = false,
                 Remarks = isPartialOrder
                     ? $"Real BUY PARTIALLY FILLED {filledQuantity} of {order.Quantity} @ ₹{executedPrice:F2}, rest cancelled (Broker ID: {order.BrokerOrderId})"
                     : $"Real BUY confirmed FILLED @ ₹{executedPrice:F2} (Broker ID: {order.BrokerOrderId})"
@@ -1760,12 +2248,157 @@ public class AutoRealTradeService : IAutoRealTradeService
             ? RealFillResolver.Resolve(status.BrokerStatus, status.AveragePrice, status.FilledQuantity, orderedQuantity)
             : new RealFill(RealFillOutcome.Pending, 0, 0m);
 
+    // Broker-confirmed fill of an Auto Short order: the entry SELL opens the short position (levels stored on the order,
+    // shifted to the fill price); the covering BUY closes it - or shrinks it on a partial fill.
+    private async Task FinalizeFilledShortOrderAsync(RealOrder order, decimal executedPrice, int filledQuantity, bool isPartialOrder)
+    {
+        if (IsExitOrder(order))
+        {
+            var position = await _repository.GetOpenPositionBySymbolAsync(order.UserId, order.Symbol);
+            if (position == null || position.Side != TradeSide.SELL)
+            {
+                _logger.LogWarning("Cover order #{OrderId} ({Symbol}, User {UserId}) filled but no open SHORT position was found to close.",
+                    order.Id, order.Symbol, order.UserId);
+                await LogAuditAsync(order.Symbol, "REAL_COVER", executedPrice, filledQuantity,
+                    $"⚠️ Buy-to-cover Order #{order.BrokerOrderId} FILLED @ ₹{executedPrice:F2} but no open short was found in QuantEdge - check Zerodha positions.", order.UserId);
+                return;
+            }
+
+            int coveredQty = Math.Min(filledQuantity, position.Quantity);
+            bool closesPosition = coveredQty >= position.Quantity;
+            decimal realizedPnl = (position.AverageEntryPrice - executedPrice) * coveredQty;
+            string exitReason = order.Remarks ?? "Exit";
+
+            if (closesPosition)
+            {
+                await _repository.ClosePositionAsync(position.Id, executedPrice, position.RealizedPnl + realizedPnl, exitReason);
+                _realTradeCache?.RemovePosition(position.Id);
+                _realTradeCache?.RemoveLiveLtp(position.Symbol);
+            }
+            else
+            {
+                await _repository.ReducePositionQuantityAsync(position.Id, position.Quantity - coveredQty, realizedPnl);
+                position.Quantity -= coveredQty;
+                position.RealizedPnl += realizedPnl;
+                _realTradeCache?.AddOrUpdatePosition(position);
+            }
+
+            await _repository.RecordTradeHistoryAsync(new RealTradeHistory
+            {
+                UserId = order.UserId,
+                OrderId = order.Id,
+                BrokerOrderId = order.BrokerOrderId,
+                Symbol = order.Symbol,
+                Side = TradeSide.BUY,
+                Quantity = coveredQty,
+                EntryPrice = position.AverageEntryPrice,
+                ExecutedPrice = executedPrice,
+                RealizedPnl = realizedPnl,
+                TradeType = TradeType.Auto,
+                ExitReason = exitReason,
+                IsExit = true,
+                Remarks = closesPosition
+                    ? $"Real BUY TO COVER: {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
+                    : $"Real BUY TO COVER (partial {coveredQty} of {order.Quantity}, {position.Quantity} still short): {exitReason} | Realized P&L: ₹{realizedPnl:F2}"
+            });
+
+            string pnlSign = realizedPnl >= 0 ? "+" : "";
+            string partialText = closesPosition ? string.Empty : $" — PARTIAL: {coveredQty} of {order.Quantity} covered, {position.Quantity} still short and monitored";
+            await LogAuditAsync(order.Symbol, "REAL_COVER", executedPrice, coveredQty,
+                $"⚡ Live BUY TO COVER confirmed FILLED @ ₹{executedPrice:F2} | P&L: {pnlSign}₹{realizedPnl:N2} (Order #{order.BrokerOrderId}){partialText}", order.UserId);
+
+            if (_hubBroadcast != null)
+            {
+                await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
+                {
+                    symbol = order.Symbol,
+                    side = "BUY",
+                    quantity = coveredQty,
+                    price = executedPrice,
+                    realizedPnl,
+                    exitReason,
+                    brokerOrderId = order.BrokerOrderId,
+                    userId = order.UserId,
+                    message = $"⚡ LIVE REAL COVER: {order.Symbol} confirmed FILLED @ ₹{executedPrice:N2} | P&L: {pnlSign}₹{realizedPnl:N2}{partialText}"
+                });
+            }
+
+            await BroadcastDashboardUpdateAsync(order.UserId);
+            return;
+        }
+
+        // Entry SELL of a short.
+        decimal fillDelta = order.Price > 0m ? executedPrice - order.Price : 0m;
+        var newPosition = await _repository.UpsertPositionAsync(new RealPosition
+        {
+            UserId = order.UserId,
+            Symbol = order.Symbol,
+            Side = TradeSide.SELL,
+            Quantity = filledQuantity,
+            AverageEntryPrice = executedPrice,
+            CurrentPrice = executedPrice,
+            UnrealizedPnl = 0m,
+            StopLoss = order.StopLoss.HasValue ? Math.Round(order.StopLoss.Value + fillDelta, 2) : null,
+            TakeProfit = order.TakeProfit.HasValue ? Math.Round(order.TakeProfit.Value + fillDelta, 2) : null,
+            TrailingStopLoss = null,
+            Status = PositionStatus.OPEN,
+            TradeType = order.TradeType,
+            RealizedPnl = 0m
+        });
+
+        _realTradeCache?.AddOrUpdatePosition(newPosition);
+        await EnsureSubscribedForExitMonitoringAsync(order.Symbol);
+
+        await _repository.RecordTradeHistoryAsync(new RealTradeHistory
+        {
+            UserId = order.UserId,
+            OrderId = order.Id,
+            BrokerOrderId = order.BrokerOrderId,
+            Symbol = order.Symbol,
+            Side = TradeSide.SELL,
+            Quantity = filledQuantity,
+            EntryPrice = executedPrice,
+            ExecutedPrice = executedPrice,
+            RealizedPnl = 0m,
+            TradeType = order.TradeType,
+            IsExit = false,
+            Remarks = isPartialOrder
+                ? $"Real SHORT SELL PARTIALLY FILLED {filledQuantity} of {order.Quantity} @ ₹{executedPrice:F2}, rest cancelled (Broker ID: {order.BrokerOrderId})"
+                : $"Real SHORT SELL confirmed FILLED @ ₹{executedPrice:F2} (Broker ID: {order.BrokerOrderId})"
+        });
+
+        await _cacheService.RemoveAsync($"realtrade:today_count:{order.UserId}:{DateTime.UtcNow:yyyyMMdd}");
+
+        string shortPartialText = isPartialOrder ? $" — PARTIAL: {filledQuantity} of {order.Quantity} filled, rest cancelled; short opened for {filledQuantity}" : string.Empty;
+        await LogAuditAsync(order.Symbol, "REAL_SHORT", executedPrice, filledQuantity,
+            $"⚡ Live SHORT SELL confirmed FILLED @ ₹{executedPrice:F2} (Qty: {filledQuantity}, Order #{order.BrokerOrderId}){shortPartialText}", order.UserId);
+
+        if (_hubBroadcast != null)
+        {
+            await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
+            {
+                symbol = order.Symbol,
+                side = "SELL",
+                quantity = filledQuantity,
+                price = executedPrice,
+                target = newPosition.TakeProfit,
+                stopLoss = newPosition.StopLoss,
+                brokerOrderId = order.BrokerOrderId,
+                userId = order.UserId,
+                message = $"⚡ LIVE REAL SHORT: {filledQuantity} shares of {order.Symbol} confirmed FILLED @ ₹{executedPrice:N2}{shortPartialText}"
+            });
+        }
+
+        await BroadcastDashboardUpdateAsync(order.UserId);
+    }
+
     private async Task FinalizeRejectedOrderAsync(RealOrder order, string? brokerStatus, string? message)
     {
         await _repository.UpdateOrderStatusAsync(order.Id, PaperOrderStatus.Rejected, 0m, order.BrokerOrderId, message);
 
-        string actionType = order.Side == TradeSide.SELL ? "SELL_FAILED" : "ORDER_REJECTED";
-        string followUp = order.Side == TradeSide.SELL ? "Position remains open for retry." : "No position was opened.";
+        bool isExit = IsExitOrder(order);
+        string actionType = isExit ? (order.IsShort ? "COVER_FAILED" : "SELL_FAILED") : "ORDER_REJECTED";
+        string followUp = isExit ? "Position remains open for retry." : "No position was opened.";
         await LogAuditAsync(order.Symbol, actionType, order.Price, order.Quantity,
             $"Zerodha order #{order.BrokerOrderId} for {order.Symbol} ended as {brokerStatus}: {message}. {followUp}", order.UserId);
     }
@@ -1784,9 +2417,19 @@ public class AutoRealTradeService : IAutoRealTradeService
         int filledCount = 0;
         int pendingCount = 0;
 
+        var todayIst = SwingTradeRules.NowIst().Date;
         foreach (var pos in openPositions)
         {
+            // A short still open from an earlier day was most likely squared off by Zerodha already - buying it "back"
+            // would open a new long, so it is left for a manual check (see EvaluateAndExecuteRealCoverAsync).
+            if (pos.Side == TradeSide.SELL && SwingTradeRules.ToIst(pos.OpenedAt).Date < todayIst)
+            {
+                _logger.LogWarning("Kill switch skipped stale short #{PositionId} ({Symbol}) opened on an earlier day.", pos.Id, pos.Symbol);
+                continue;
+            }
+
             decimal exitPrice = GetExitReferencePrice(pos, livePrices);
+            // Side-aware: a long is SOLD, an Auto Short is BOUGHT back (MIS).
             var outcome = await ExecuteRealSellOrderCoreAsync(pos, exitPrice, reason, userId);
             if (outcome == RealSellOutcome.Filled) filledCount++;
             else if (outcome == RealSellOutcome.OrderOpenPending) pendingCount++;
@@ -2087,9 +2730,10 @@ public class AutoRealTradeService : IAutoRealTradeService
             dto.IsEntryDay = SwingTradeRules.ToIst(position.OpenedAt).Date == nowIst.Date;
             dto.TradingDaysHeld = await _marketHoursService.CountTradingDaysElapsedAsync(position.OpenedAt, DateTime.UtcNow);
 
-            // The BUY that opened this position; none means it was enrolled from Zerodha Holdings.
+            // The order that opened this position (a BUY, or an Auto Short's SELL); none means it was enrolled from Zerodha Holdings.
+            bool isShortPosition = position.Side == TradeSide.SELL;
             dto.EntryOrder = orders
-                .Where(o => o.Side == TradeSide.BUY && o.Status == PaperOrderStatus.Filled)
+                .Where(o => o.Side == position.Side && o.IsShort == isShortPosition && o.Status == PaperOrderStatus.Filled)
                 .Select(o => (Order: o, Gap: Math.Abs(((o.FilledAt ?? o.CreatedAt) - position.OpenedAt).TotalMinutes)))
                 .Where(x => x.Gap <= 30)
                 .OrderBy(x => x.Gap)
@@ -2102,7 +2746,9 @@ public class AutoRealTradeService : IAutoRealTradeService
             // Levels exactly as the monitor derives them (SwingTradeRules infers the ATR from the SL).
             var view = ExitPositionView.From(position);
             decimal entry = position.AverageEntryPrice;
-            decimal? PnlAt(decimal? level) => level.HasValue ? Math.Round((level.Value - entry) * position.Quantity, 2) : null;
+            decimal? PnlAt(decimal? level) => level.HasValue
+                ? Math.Round((isShortPosition ? entry - level.Value : level.Value - entry) * position.Quantity, 2)
+                : null;
 
             var levels = new SymbolJourneyLevelsDto
             {
@@ -2111,12 +2757,15 @@ public class AutoRealTradeService : IAutoRealTradeService
                 StopLoss = position.StopLoss,
                 TakeProfit = position.TakeProfit,
                 TrailingStopLoss = position.TrailingStopLoss,
-                IsTrailActive = tradeParams.IsSwingClose
+                IsTrailActive = isShortPosition
+                    ? position.TrailingStopLoss.HasValue && (!tradeParams.IsSwingClose || position.TrailingStopLoss.Value <= entry)
+                    : tradeParams.IsSwingClose
                     ? position.TrailingStopLoss.HasValue && position.TrailingStopLoss.Value >= entry
                     : position.TrailingStopLoss.HasValue,
-                Atr = Math.Round(SwingTradeRules.InferAtr(view, tradeParams), 4)
+                Atr = Math.Round(isShortPosition ? SwingTradeRules.InferShortAtr(view, tradeParams) : SwingTradeRules.InferAtr(view, tradeParams), 4)
             };
-            if (tradeParams.IsSwingClose)
+            // The emergency stop / closing-basis trail activation are long (swing) concepts; a short's stops are all live.
+            if (tradeParams.IsSwingClose && !isShortPosition)
             {
                 levels.EmergencyStop = SwingTradeRules.GetEmergencyStop(view, tradeParams);
                 levels.TrailActivationPrice = Math.Round(SwingTradeRules.GetTrailActivationPrice(view, tradeParams), 2);
@@ -2129,8 +2778,10 @@ public class AutoRealTradeService : IAutoRealTradeService
 
             if (dto.Ltp.HasValue)
             {
-                var decision = SwingTradeRules.EvaluateExit(view, dto.Ltp.Value, nowIst, dto.TradingDaysHeld,
-                    settings.MaxDurationDays, tradeParams);
+                var decision = isShortPosition
+                    ? SwingTradeRules.EvaluateShortExit(view, dto.Ltp.Value, nowIst, settings.ShortSquareOffTime, tradeParams)
+                    : SwingTradeRules.EvaluateExit(view, dto.Ltp.Value, nowIst, dto.TradingDaysHeld,
+                        settings.MaxDurationDays, tradeParams);
                 dto.WouldSellNow = decision.ShouldExit;
                 dto.DecisionReason = decision.ShouldExit ? decision.Reason : null;
             }

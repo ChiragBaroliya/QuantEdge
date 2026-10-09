@@ -30,5 +30,11 @@ public class AutoTradeSettings
     public decimal StopLossAtrMult { get; set; } = 1.5m;
     public decimal TrailAtrMult { get; set; } = 3.0m;
     public decimal TargetAtrMult { get; set; } = 3.0m;
+    // Auto Short Selling (intraday only) - OFF by default. When ON, the scan may also open shorts (sell first, buy
+    // back later) on bearish setups: no new short at/after ShortEntryCutoff, and every open short is bought back
+    // (auto square-off) at ShortSquareOffTime IST. Same entry gates and risk limits as a BUY.
+    public bool IsAutoShortEnabled { get; set; } = false;
+    public string ShortEntryCutoff { get; set; } = "15:00";
+    public string ShortSquareOffTime { get; set; } = "15:15";
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

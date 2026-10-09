@@ -1,0 +1,123 @@
+@{
+    ViewData["Title"] = "Notifications";
+    ViewData["PageTitle"] = "All Notifications";
+}
+
+<style>
+    .nh-page { display: flex; flex-direction: column; gap: 16px; }
+    .nh-card { background: var(--card-bg, #111827); border: 1px solid var(--border-color, #1f2937); border-radius: 12px; padding: 16px; }
+    .nh-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .nh-head h2 { font-size: 16px; margin: 0 0 4px; color: #fff; }
+    .nh-head p { font-size: 12px; margin: 0; color: #94a3b8; max-width: 760px; }
+    .nh-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 14px; }
+    .nh-field { display: flex; flex-direction: column; gap: 4px; }
+    .nh-field label { font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .nh-input { background: #0b1220; border: 1px solid #1f2937; color: #e5e7eb; border-radius: 8px; padding: 6px 10px; font-size: 13px; min-height: 34px; }
+    .nh-input:focus { outline: none; border-color: var(--theme-accent, #8b5cf6); }
+    .nh-search { min-width: 220px; }
+    .nh-presets, .nh-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .nh-chip { border: 1px solid #1f2937; background: transparent; color: #94a3b8; border-radius: 14px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .nh-chip.active { background: var(--theme-glow, rgba(139, 92, 246, .15)); border-color: var(--theme-accent, #8b5cf6); color: #fff; }
+    .nh-chip .nh-n { opacity: .7; margin-left: 4px; font-weight: 500; }
+    .nh-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .nh-stat { border: 1px solid #1f2937; border-radius: 10px; padding: 10px 12px; }
+    .nh-stat .k { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+    .nh-stat .v { font-size: 20px; font-weight: 700; color: #fff; margin-top: 2px; }
+    .nh-stat.error .v { color: #f87171; } .nh-stat.warning .v { color: #f59e0b; } .nh-stat.success .v { color: #34d399; }
+    .nh-day { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; padding: 14px 4px 6px; border-bottom: 1px solid #1f2937; }
+    .nh-item { display: flex; gap: 12px; padding: 12px 4px; border-bottom: 1px solid #1f2937; text-decoration: none; color: inherit; }
+    .nh-item:hover { background: rgba(255, 255, 255, .03); color: inherit; }
+    .nh-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: 0 0 8px; background: #60a5fa; }
+    .nh-item.level-error .nh-dot { background: #f87171; } .nh-item.level-warning .nh-dot { background: #f59e0b; } .nh-item.level-success .nh-dot { background: #34d399; }
+    .nh-body { flex: 1; min-width: 0; }
+    .nh-row { display: flex; justify-content: space-between; gap: 12px; }
+    .nh-title { font-size: 13px; font-weight: 700; color: #f1f5f9; }
+    .nh-item.unread .nh-title::after { content: "NEW"; margin-left: 8px; font-size: 9px; padding: 1px 6px; border-radius: 8px; background: rgba(139, 92, 246, .25); color: #c4b5fd; vertical-align: middle; }
+    .nh-time { font-size: 11px; color: #94a3b8; font-family: monospace; white-space: nowrap; }
+    .nh-msg { font-size: 12.5px; color: #cbd5e1; margin-top: 3px; word-break: break-word; }
+    .nh-tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .nh-tag { font-size: 10.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: rgba(148, 163, 184, .12); color: #94a3b8; text-transform: uppercase; letter-spacing: .03em; }
+    .nh-empty { color: #94a3b8; padding: 28px 8px; text-align: center; font-size: 13px; }
+    .nh-note { font-size: 12px; color: #f59e0b; margin-top: 8px; }
+    .nh-pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 12px; font-size: 12px; color: #94a3b8; flex-wrap: wrap; }
+    .nh-pager button { min-width: 84px; }
+    .nh-pager button:disabled { opacity: .4; cursor: not-allowed; }
+</style>
+
+<div class="nh-page" id="notificationHistoryPage" data-api="@ViewBag.ApiBaseUrl" data-user="@ViewBag.UserId">
+    <section class="nh-card">
+        <div class="nh-head">
+            <div>
+                <h2>All notifications</h2>
+                <p>
+                    Everything the header bell has shown, for any date range up to 31 days: real trade events, swing scan BUY picks,
+                    NIFTY market filter flips, and failed / rate-limited / skipped Zerodha and NSE calls. Times are IST.
+                </p>
+            </div>
+            <button type="button" class="btn-trigger" id="nhRefresh">↻ Refresh</button>
+        </div>
+
+        <div class="nh-toolbar">
+            <div class="nh-field">
+                <label for="nhFrom">From</label>
+                <input type="date" class="nh-input" id="nhFrom" />
+            </div>
+            <div class="nh-field">
+                <label for="nhTo">To</label>
+                <input type="date" class="nh-input" id="nhTo" />
+            </div>
+            <div class="nh-field">
+                <label>Quick range</label>
+                <div class="nh-presets">
+                    <button type="button" class="nh-chip" data-days="1">Today</button>
+                    <button type="button" class="nh-chip active" data-days="7">7 days</button>
+                    <button type="button" class="nh-chip" data-days="31">31 days</button>
+                </div>
+            </div>
+            <div class="nh-field">
+                <label for="nhLevel">Level</label>
+                <select class="nh-input" id="nhLevel">
+                    <option value="all">All levels</option>
+                    <option value="error">Errors</option>
+                    <option value="warning">Warnings</option>
+                    <option value="info">Info</option>
+                    <option value="success">Success</option>
+                </select>
+            </div>
+            <div class="nh-field">
+                <label for="nhSearch">Search</label>
+                <input type="search" class="nh-input nh-search" id="nhSearch" placeholder="Symbol or text…" />
+            </div>
+        </div>
+
+        <div class="nh-toolbar">
+            <div class="nh-chips" id="nhCategories" role="tablist">
+                <button type="button" class="nh-chip active" data-category="all">All<span class="nh-n" data-count="all"></span></button>
+                <button type="button" class="nh-chip" data-category="real-trade">Real Trade<span class="nh-n" data-count="real-trade"></span></button>
+                <button type="button" class="nh-chip" data-category="swing">Swing<span class="nh-n" data-count="swing"></span></button>
+                <button type="button" class="nh-chip" data-category="nifty">NIFTY<span class="nh-n" data-count="nifty"></span></button>
+                <button type="button" class="nh-chip" data-category="zerodha">Zerodha/NSE<span class="nh-n" data-count="zerodha"></span></button>
+            </div>
+        </div>
+    </section>
+
+    <section class="nh-summary" id="nhSummary"></section>
+
+    <section class="nh-card">
+        <div id="nhList"><div class="nh-empty">Loading…</div></div>
+        <div class="nh-note" id="nhTruncated" hidden>
+            Some sources hit their row limit for this range, so the oldest entries may be missing - choose a shorter range to see them.
+        </div>
+        <div class="nh-pager">
+            <span id="nhPageInfo"></span>
+            <div>
+                <button type="button" class="btn-trigger" id="nhPrev">‹ Newer</button>
+                <button type="button" class="btn-trigger" id="nhNext">Older ›</button>
+            </div>
+        </div>
+    </section>
+</div>
+
+@section Scripts {
+    <script src="~/js/notifications-history.js" asp-append-version="true"></script>
+}

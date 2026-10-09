@@ -12,4 +12,11 @@ public interface INotificationService
     /// Nothing from a previous day is ever returned.
     /// </summary>
     Task<TodayNotificationsDto> GetTodayAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every notification from <paramref name="fromDateIst"/> to <paramref name="toDateIst"/> (IST calendar days,
+    /// inclusive, at most 31 days, never in the future) - same sources as the bell. For the View All Notifications page.
+    /// </summary>
+    Task<NotificationHistoryDto> GetHistoryAsync(int userId, System.DateTime fromDateIst, System.DateTime toDateIst,
+        CancellationToken cancellationToken = default);
 }

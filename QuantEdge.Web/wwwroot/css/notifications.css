@@ -87,13 +87,27 @@
 
 .qe-notif-markall:hover { text-decoration: underline; }
 
+/* Chips wrap onto a second line instead of scrolling sideways (the scrollbar cut "Zerodha/NSE" off in the 380px panel). */
 .qe-notif-filters {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     padding: 10px 16px;
     border-bottom: 1px solid var(--border-subtle);
-    overflow-x: auto;
 }
+
+.qe-notif-footer {
+    display: block;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border-subtle);
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--theme-accent);
+    text-decoration: none;
+}
+
+.qe-notif-footer:hover { background: rgba(255, 255, 255, 0.04); color: var(--text-primary); }
 
 .qe-notif-filters button {
     border: 1px solid var(--border-subtle);

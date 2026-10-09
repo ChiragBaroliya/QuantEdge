@@ -23,6 +23,9 @@ public class RealOrder
     public DateTime? FilledAt { get; set; }
     public string? RejectionReason { get; set; }
     public TradeType TradeType { get; set; } = TradeType.Auto;
+    // True for both legs of an Auto Short trade (the entry SELL and the BUY that covers it). Once shorts exist the
+    // order side alone can't say whether a fill opens or closes a position; this does (false = the long flow).
+    public bool IsShort { get; set; }
     public string? Remarks { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -373,8 +373,8 @@ public class PaperTradingRepository : IPaperTradingRepository
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
-            INSERT INTO paper_trade_history (account_id, order_id, symbol, side, quantity, entry_price, executed_price, realized_pnl, trade_type, exit_reason, executed_at, remarks)
-            VALUES (@AccountId, @OrderId, @Symbol, @Side, @Quantity, @EntryPrice, @ExecutedPrice, @RealizedPnl, @TradeType, @ExitReason, NOW(), @Remarks);";
+            INSERT INTO paper_trade_history (account_id, order_id, symbol, side, quantity, entry_price, executed_price, realized_pnl, trade_type, exit_reason, executed_at, remarks, is_exit)
+            VALUES (@AccountId, @OrderId, @Symbol, @Side, @Quantity, @EntryPrice, @ExecutedPrice, @RealizedPnl, @TradeType, @ExitReason, NOW(), @Remarks, @IsExit);";
 
         await connection.ExecuteAsync(sql, new
         {
@@ -388,7 +388,8 @@ public class PaperTradingRepository : IPaperTradingRepository
             history.RealizedPnl,
             TradeType = (int)history.TradeType,
             history.ExitReason,
-            history.Remarks
+            history.Remarks,
+            history.IsExit
         });
     }
 

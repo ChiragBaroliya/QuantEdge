@@ -135,39 +135,63 @@ public class AutoTradeSignalScanWorker : BackgroundService
         // Exits / SL / targets on open positions are handled elsewhere and are unaffected.
         // REGIME mode: the daily market regime + regime_policy decide (see AutoRealTradeSignalScanWorker); NIFTY_FILTER
         // mode keeps the previous all-or-nothing NIFTY check.
+        // Auto Short Selling (OFF by default) has its own, mirrored market gate: shorts only while NIFTY is bearish
+        // (Close < 50 DMA & EMA20 < EMA50; missing data = no shorts), and only before the user's short entry cut-off.
+        bool shortGateOpen = settings.IsAutoShortEnabled
+            && SwingTradeRules.IsBeforeShortEntryCutoff(settings.ShortEntryCutoff, SwingTradeRules.NowIst())
+            && SwingShortDecisionEngine.IsNiftyBearishFilterPassed(niftyCandles);
+
         MarketGateDecision? regimeGate = null;
         var engineSettings = strategySettings;
         int positionRoom = int.MaxValue;
+        bool longGateOpen = true;
         if (strategySettings.UsesRegimeGate)
         {
             regimeGate = await provider.GetRequiredService<IMarketRegimeService>().GetRegimeGateAsync();
             if (!regimeGate.AllowsEntries || regimeGate.Policy == null)
             {
                 _logger.LogWarning("⛔ Market regime gate: {Reason} - no new Auto Paper entries for User '{UserId}' this scan.", regimeGate.Reason, settings.UserId);
-                return;
+                longGateOpen = false;
             }
-            engineSettings = RegimeGate.WithoutNiftyGate(strategySettings);
-
-            int open = (await provider.GetRequiredService<IPaperTradingService>().GetOpenPositionsAsync(settings.UserId))
-                .Count(p => p.TradeType == TradeType.Auto);
-            positionRoom = regimeGate.Policy.MaxPositions - open;
-            if (positionRoom <= 0)
+            else
             {
-                _logger.LogInformation("User '{UserId}': {Open} open Auto Paper positions - {Regime} allows {Max}; no new entries.",
-                    settings.UserId, open, regimeGate.Policy.Regime, regimeGate.Policy.MaxPositions);
-                return;
+                engineSettings = RegimeGate.WithoutNiftyGate(strategySettings);
+
+                int open = (await provider.GetRequiredService<IPaperTradingService>().GetOpenPositionsAsync(settings.UserId))
+                    .Count(p => p.TradeType == TradeType.Auto);
+                positionRoom = regimeGate.Policy.MaxPositions - open;
+                if (positionRoom <= 0)
+                {
+                    _logger.LogInformation("User '{UserId}': {Open} open Auto Paper positions - {Regime} allows {Max}; no new entries.",
+                        settings.UserId, open, regimeGate.Policy.Regime, regimeGate.Policy.MaxPositions);
+                    longGateOpen = false;
+                }
+                else
+                {
+                    _logger.LogInformation("Market regime gate: {Reason}", regimeGate.Reason);
+                }
             }
-            _logger.LogInformation("Market regime gate: {Reason}", regimeGate.Reason);
         }
         else if (strategySettings.RequireNiftyMarketFilter && !SwingDecisionEngine.IsNiftyMarketFilterPassed(niftyCandles, strategySettings))
         {
             _logger.LogWarning("⛔ NIFTY Market Filter FAILED (Close <= 50 DMA / EMA20 <= EMA50 or {Count} daily candles available) - no new Auto Paper entries for User '{UserId}' this scan.",
                 niftyCandles.Count, settings.UserId);
+            longGateOpen = false;
+        }
+
+        if (!longGateOpen && !shortGateOpen)
+        {
             return;
+        }
+        if (shortGateOpen)
+        {
+            _logger.LogInformation("NIFTY bearish filter passed - Auto Paper SHORT scan active for User '{UserId}'.", settings.UserId);
         }
 
         int buySignalsFound = 0;
+        int shortSignalsFound = 0;
         int executedOrdersCount = 0;
+        int executedShortsCount = 0;
 
         foreach (var stock in activeStocks)
         {
@@ -189,30 +213,62 @@ public class AutoTradeSignalScanWorker : BackgroundService
 
                 if (stockCandles1d.Count < 50) continue;
 
-                // Evaluate stock using SwingDecisionEngine with all 3 timeframe candles
-                var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, engineSettings);
-                if (evalResult == null || evalResult.Checklist == null) continue;
-
-                int metCount = evalResult.Checklist.MetCount;
-
-                bool qualifies = regimeGate?.Policy != null
-                    ? RegimeGate.Evaluate(evalResult, regimeGate.Policy).Allowed   // regime mode: only the policy decides
-                    : evalResult.IsBuySignal || metCount >= settings.MinConditionsMatch;
-                if (executedOrdersCount >= positionRoom) break;
-
-                if (qualifies)
+                bool boughtThisStock = false;
+                if (longGateOpen && executedOrdersCount < positionRoom)
                 {
-                    buySignalsFound++;
-                    _logger.LogInformation("BUY Signal detected for {Symbol} for User '{UserId}' (Score: {Score}/100, Met: {MetCount}/{TotalCount}, Entry: ₹{Price:F2})",
-                        stock.Symbol, settings.UserId, evalResult.Score, metCount, evalResult.Checklist.TotalCount, evalResult.EntryPrice);
-
-                    bool executed = await autoTradeService.EvaluateAndExecuteAutoBuyAsync(
-                        stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId, evalResult.IsBuySignal || regimeGate?.Policy != null,
-                        evalResult.StopLoss, evalResult.Target1, evalResult.DailyAtr, regimeGate?.Policy?.RiskPct);
-
-                    if (executed)
+                    // Evaluate stock using SwingDecisionEngine with all 3 timeframe candles
+                    var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, engineSettings);
+                    if (evalResult != null && evalResult.Checklist != null)
                     {
-                        executedOrdersCount++;
+                        int metCount = evalResult.Checklist.MetCount;
+
+                        bool qualifies = regimeGate?.Policy != null
+                            ? RegimeGate.Evaluate(evalResult, regimeGate.Policy).Allowed   // regime mode: only the policy decides
+                            : evalResult.IsBuySignal || metCount >= settings.MinConditionsMatch;
+
+                        if (qualifies)
+                        {
+                            buySignalsFound++;
+                            _logger.LogInformation("BUY Signal detected for {Symbol} for User '{UserId}' (Score: {Score}/100, Met: {MetCount}/{TotalCount}, Entry: ₹{Price:F2})",
+                                stock.Symbol, settings.UserId, evalResult.Score, metCount, evalResult.Checklist.TotalCount, evalResult.EntryPrice);
+
+                            bool executed = await autoTradeService.EvaluateAndExecuteAutoBuyAsync(
+                                stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId, evalResult.IsBuySignal || regimeGate?.Policy != null,
+                                evalResult.StopLoss, evalResult.Target1, evalResult.DailyAtr, regimeGate?.Policy?.RiskPct);
+
+                            if (executed)
+                            {
+                                executedOrdersCount++;
+                                boughtThisStock = true;
+                            }
+                        }
+                    }
+                }
+                else if (!shortGateOpen)
+                {
+                    break; // long room used up and no short scan - nothing left to do (previous behaviour)
+                }
+
+                // Auto Short: the mirrored engine on the same candles. A stock just bought is never shorted in the same pass
+                // (the service's duplicate-position check would reject it anyway).
+                if (shortGateOpen && !boughtThisStock)
+                {
+                    var shortResult = SwingShortDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, strategySettings);
+                    int shortMetCount = shortResult.Checklist?.MetCount ?? 0;
+                    if (shortResult.HardFiltersPassed && (shortResult.IsSellSignal || shortMetCount >= settings.MinConditionsMatch))
+                    {
+                        shortSignalsFound++;
+                        _logger.LogInformation("SHORT Signal detected for {Symbol} for User '{UserId}' (Score: {Score}/100, Met: {MetCount}/11, Entry: ₹{Price:F2})",
+                            stock.Symbol, settings.UserId, shortResult.Score, shortMetCount, shortResult.EntryPrice);
+
+                        bool executedShort = await autoTradeService.EvaluateAndExecuteAutoShortAsync(
+                            stock.Symbol, shortResult.EntryPrice, shortMetCount, settings.UserId, shortResult.IsSellSignal,
+                            shortResult.StopLoss, shortResult.Target1, shortResult.DailyAtr);
+
+                        if (executedShort)
+                        {
+                            executedShortsCount++;
+                        }
                     }
                 }
             }
@@ -222,8 +278,8 @@ public class AutoTradeSignalScanWorker : BackgroundService
             }
         }
 
-        _logger.LogInformation("Auto Trade Scan completed for User '{UserId}'. Analyzed {Total} stocks. Found {Signals} BUY signals, Executed {Executed} orders.",
-            settings.UserId, activeStocks.Count, buySignalsFound, executedOrdersCount);
+        _logger.LogInformation("Auto Trade Scan completed for User '{UserId}'. Analyzed {Total} stocks. Found {Signals} BUY signals, Executed {Executed} orders. SHORT: {ShortSignals} signals, {ShortsExecuted} executed.",
+            settings.UserId, activeStocks.Count, buySignalsFound, executedOrdersCount, shortSignalsFound, executedShortsCount);
     }
 
 }

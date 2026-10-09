@@ -256,6 +256,10 @@ function populateSettingsForm(s) {
     setVal("txtSlAtrMult", s.stopLossAtrMult ?? s.StopLossAtrMult ?? 1.5);
     setVal("txtTrailAtrMult", s.trailAtrMult ?? s.TrailAtrMult ?? 3);
     setVal("txtTargetAtrMult", s.targetAtrMult ?? s.TargetAtrMult ?? 3);
+    setVal("txtShortEntryCutoff", s.shortEntryCutoff ?? s.ShortEntryCutoff ?? "15:00");
+    setVal("txtShortSquareOffTime", s.shortSquareOffTime ?? s.ShortSquareOffTime ?? "15:15");
+    const chkShort = document.getElementById("chkAutoShortEnabled");
+    if (chkShort) chkShort.checked = (s.isAutoShortEnabled ?? s.IsAutoShortEnabled) === true;
     currentExitMode = s.exitMode ?? s.ExitMode ?? "SWING_CLOSE";
 
     // Optional Daily Loss Limit override (the breaker itself is always on - 10% of capital by default)
@@ -294,22 +298,27 @@ function renderOpenPositionsTable(positions) {
         const unPnlPct = entryVal > 0 ? (unPnl / entryVal * 100).toFixed(2) : '0.00';
         const unPnlPctSign = unPnl > 0 ? '+' : '';
         const unPnlSign = unPnl > 0 ? '+' : (unPnl < 0 ? '-' : '');
-        const tpPctText = tp && avgPrice > 0 ? ((tp - avgPrice) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '';
-        const slPctText = sl && avgPrice > 0 ? ((avgPrice - sl) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '';
-        const tpText = tp && tp > 0 ? `₹${formatNumber(tp)}${tpPctText ? ' (+' + tpPctText + '%)' : ''}` : '-';
-        const slText = sl && sl > 0 ? `₹${formatNumber(sl)}${slPctText ? ' (-' + slPctText + '%)' : ''}` : '-';
-        // Swing exit mode: the trailing SL only exists once the trade has moved +1 ATR in our favor
-        // (a value below entry is an ignored leftover from INTRADAY mode) - same display as Real Trade.
+        // Auto Short (side SELL): Target below the entry, Stop Loss above it - the % shown is the move in the trade's favor / against it.
+        const side = p.side ?? p.Side;
+        const isShort = side === 1 || side === 'SELL';
+        const tpPctText = tp && avgPrice > 0 ? (Math.abs(tp - avgPrice) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '';
+        const slPctText = sl && avgPrice > 0 ? (Math.abs(avgPrice - sl) / avgPrice * 100).toFixed(2).replace(/\.?0+$/, '') : '';
+        const tpText = tp && tp > 0 ? `₹${formatNumber(tp)}${tpPctText ? (isShort ? ' (-' : ' (+') + tpPctText + '%)' : ''}` : '-';
+        const slText = sl && sl > 0 ? `₹${formatNumber(sl)}${slPctText ? (isShort ? ' (+' : ' (-') + slPctText + '%)' : ''}` : '-';
+        // Swing exit mode: the trailing SL only exists once the trade has moved 1 ATR in our favor
+        // (a value on the wrong side of entry is an ignored leftover from INTRADAY mode) - same display as Real Trade.
         const tsl = p.trailingStopLoss ?? p.TrailingStopLoss;
         const isSwingClose = currentExitMode === "SWING_CLOSE";
-        const tslActive = tsl && (!isSwingClose || tsl >= avgPrice);
+        const tslActive = tsl && (!isSwingClose || (isShort ? tsl <= avgPrice : tsl >= avgPrice));
+        const tslHint = isShort ? "Activates once price falls to entry - 1 ATR" : "Activates once price reaches entry + 1 ATR (never on the entry day)";
         const tslText = tslActive
             ? `₹${formatNumber(tsl)}`
-            : (isSwingClose ? '<span style="color:#94a3b8; font-size:12px;" title="Activates once price reaches entry + 1 ATR (never on the entry day)">Not active yet</span>' : '-');
+            : (isSwingClose ? `<span style="color:#94a3b8; font-size:12px;" title="${tslHint}">Not active yet</span>` : '-');
+        const shortBadge = isShort ? ' <span class="badge bg-danger bg-opacity-25 text-danger" title="Auto Short - bought back automatically at the Short Square-off time">SHORT</span>' : '';
 
         html += `
             <tr>
-                <td><strong>${symbol}</strong> <span class="badge-tag badge-auto">AUTO</span></td>
+                <td><strong>${symbol}</strong> <span class="badge-tag badge-auto">AUTO</span>${shortBadge}</td>
                 <td>₹${formatNumber(avgPrice)}</td>
                 <td>₹${formatNumber(curPrice)}</td>
                 <td>${qty} (₹${formatNumber(entryVal)})</td>
@@ -730,7 +739,10 @@ function setupEventListeners() {
                 closeCheckTime: document.getElementById("txtCloseCheckTime")?.value || "15:15",
                 stopLossAtrMult: num("txtSlAtrMult", 1.5),
                 trailAtrMult: num("txtTrailAtrMult", 3),
-                targetAtrMult: num("txtTargetAtrMult", 3)
+                targetAtrMult: num("txtTargetAtrMult", 3),
+                isAutoShortEnabled: document.getElementById("chkAutoShortEnabled")?.checked === true,
+                shortEntryCutoff: document.getElementById("txtShortEntryCutoff")?.value || "15:00",
+                shortSquareOffTime: document.getElementById("txtShortSquareOffTime")?.value || "15:15"
             };
 
             try {

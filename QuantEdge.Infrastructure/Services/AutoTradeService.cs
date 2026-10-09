@@ -82,6 +82,9 @@ public class AutoTradeService : IAutoTradeService
         existing.MinConditionsMatch = updateDto.MinConditionsMatch;
         existing.TradingWindowStart = updateDto.TradingWindowStart ?? "09:15";
         existing.TradingWindowEnd = updateDto.TradingWindowEnd ?? "15:30";
+        existing.IsAutoShortEnabled = updateDto.IsAutoShortEnabled;
+        existing.ShortEntryCutoff = string.IsNullOrWhiteSpace(updateDto.ShortEntryCutoff) ? "15:00" : updateDto.ShortEntryCutoff;
+        existing.ShortSquareOffTime = string.IsNullOrWhiteSpace(updateDto.ShortSquareOffTime) ? "15:15" : updateDto.ShortSquareOffTime;
 
         var updated = await _repository.UpsertSettingsAsync(existing);
 
@@ -169,7 +172,8 @@ public class AutoTradeService : IAutoTradeService
         var todayHistory = historyItems.Where(t => t.TradeType == TradeType.Auto).ToList();
 
         decimal todayRealizedPnl = todayHistory.Sum(t => t.RealizedPnl);
-        decimal todayTradeAmount = todayHistory.Where(t => t.Side == TradeSide.BUY).Sum(t => t.Quantity * (t.EntryPrice > 0 ? t.EntryPrice : t.ExecutedPrice));
+        // Entries (a BUY, or an Auto Short's SELL) carry no exit reason; every Auto exit does.
+        decimal todayTradeAmount = todayHistory.Where(t => string.IsNullOrEmpty(t.ExitReason)).Sum(t => t.Quantity * (t.EntryPrice > 0 ? t.EntryPrice : t.ExecutedPrice));
         if (todayTradeAmount == 0 && todayCount > 0)
         {
             todayTradeAmount = todayCount * settings.FixedAmountPerTrade;
@@ -287,15 +291,29 @@ public class AutoTradeService : IAutoTradeService
     // Entry gates run in the same order, with the same rules, as AutoRealTradeService's
     // EvaluateAndExecuteRealBuyCoreAsync - only broker-specific steps (token check, pending broker
     // orders, broker margin) are replaced by their paper-account equivalents.
-    public async Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
-        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null)
+    public Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null) =>
+        EvaluateAndExecuteAutoEntryAsync(TradeSide.BUY, symbol, entryPrice, metConditionsCount, userId, isBuySignal,
+            engineStopLoss, engineTarget, dailyAtr, riskPct);
+
+    // Auto Short Selling - one entry path with BUY, so a short passes exactly the same gates, plus the short switch and
+    // the short entry cut-off. Paper only: a simulated SELL on the paper account, never a broker order.
+    public Task<bool> EvaluateAndExecuteAutoShortAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isSellSignal = false,
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null) =>
+        EvaluateAndExecuteAutoEntryAsync(TradeSide.SELL, symbol, entryPrice, metConditionsCount, userId, isSellSignal,
+            engineStopLoss, engineTarget, dailyAtr, riskPct);
+
+    private async Task<bool> EvaluateAndExecuteAutoEntryAsync(TradeSide side, string symbol, decimal entryPrice, int metConditionsCount, string userId,
+        bool isBuySignal, decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr, decimal? riskPct)
     {
+        bool isShort = side == TradeSide.SELL;
+        string label = isShort ? "SHORT" : "BUY";
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
         var nowIst = SwingTradeRules.NowIst();
 
-        // 1. Master Switch Validation
-        if (!settings.IsAutoTradeEnabled)
+        // 1. Master Switch Validation (a short also needs the Auto Short switch - OFF by default)
+        if (!settings.IsAutoTradeEnabled || (isShort && !settings.IsAutoShortEnabled))
         {
             return false;
         }
@@ -318,7 +336,15 @@ public class AutoTradeService : IAutoTradeService
         if (!SwingTradeRules.IsPastEntryDelay(settings.TradingWindowStart, settings.EntryDelayMinutes, nowIst))
         {
             await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
-                $"Opening entry delay active - new BUY signals held back for {settings.EntryDelayMinutes} min after {settings.TradingWindowStart}", userId);
+                $"Opening entry delay active - new {label} signals held back for {settings.EntryDelayMinutes} min after {settings.TradingWindowStart}", userId);
+            return false;
+        }
+
+        // 2c. Shorts are intraday only: no new short at/after the cut-off, so each has time to be bought back.
+        if (isShort && !SwingTradeRules.IsBeforeShortEntryCutoff(settings.ShortEntryCutoff, nowIst))
+        {
+            await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
+                $"Short selling closed for today - no new shorts at/after {settings.ShortEntryCutoff} IST (open shorts are squared off at {settings.ShortSquareOffTime} IST)", userId);
             return false;
         }
 
@@ -366,7 +392,7 @@ public class AutoTradeService : IAutoTradeService
             return false;
         }
 
-        // 6. Duplicate Open Position Check
+        // 6. Duplicate Open Position Check - any open position in the symbol, long or short, blocks a new entry.
         var existingOpenPos = await _paperRepository.GetOpenPositionBySymbolAsync(paperAccount.Id, symbol);
         if (existingOpenPos != null)
         {
@@ -390,7 +416,9 @@ public class AutoTradeService : IAutoTradeService
         decimal liveLtp = _matchingEngine?.GetLtp(symbol) ?? 0m;
         if (liveLtp > 0m)
         {
-            string? driftReason = SwingTradeRules.CheckSignalDrift(entryPrice, liveLtp);
+            string? driftReason = isShort
+                ? SwingTradeRules.CheckShortSignalDrift(entryPrice, liveLtp)
+                : SwingTradeRules.CheckSignalDrift(entryPrice, liveLtp);
             if (driftReason != null)
             {
                 await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0, driftReason, userId);
@@ -403,18 +431,24 @@ public class AutoTradeService : IAutoTradeService
             entryPrice = liveLtp;
         }
 
-        // 8. Target, Stop Loss & initial Trailing SL - shared SwingTradeRules levels.
-        var levels = SwingTradeRules.ComputeEntryLevels(entryPrice, dailyAtr, engineStopLoss, engineTarget, null, null, SwingTradeParams.From(settings));
+        // 8. Target, Stop Loss & initial Trailing SL - shared SwingTradeRules levels (mirrored for a short:
+        // Stop Loss above the entry, Target below).
+        var levels = isShort
+            ? SwingTradeRules.ComputeShortEntryLevels(entryPrice, dailyAtr, engineStopLoss, engineTarget, SwingTradeParams.From(settings))
+            : SwingTradeRules.ComputeEntryLevels(entryPrice, dailyAtr, engineStopLoss, engineTarget, null, null, SwingTradeParams.From(settings));
         decimal takeProfit = levels.TakeProfit;
         decimal stopLoss = levels.StopLoss;
         decimal? trailingSl = levels.TrailingStopLoss;
-        string tslText = trailingSl.HasValue ? $"₹{trailingSl.Value:F2}" : "activates after +1 ATR";
+        string tslText = trailingSl.HasValue ? $"₹{trailingSl.Value:F2}" : (isShort ? "activates after -1 ATR" : "activates after +1 ATR");
 
         // Risk-based size (Plan D5): at most FixedAmountPerTrade of stock AND at most DefaultRiskPerTradePct of capital
         // lost if the stop is hit - a volatile stock (wide stop) gets fewer shares instead of 3-4x the rupee risk.
         // riskPct: the market regime's risk per trade in REGIME mode (smaller in weak markets), else the default 1%.
-        var sizing = SwingTradeRules.RiskSizedQuantity(entryPrice, stopLoss, settings.AvailableCapital, settings.FixedAmountPerTrade,
-            riskPct ?? SwingTradeRules.DefaultRiskPerTradePct);
+        var sizing = isShort
+            ? SwingTradeRules.RiskSizedShortQuantity(entryPrice, stopLoss, settings.AvailableCapital, settings.FixedAmountPerTrade,
+                riskPct ?? SwingTradeRules.DefaultRiskPerTradePct)
+            : SwingTradeRules.RiskSizedQuantity(entryPrice, stopLoss, settings.AvailableCapital, settings.FixedAmountPerTrade,
+                riskPct ?? SwingTradeRules.DefaultRiskPerTradePct);
         int quantity = sizing.Quantity;
         if (quantity < 1)
         {
@@ -425,13 +459,13 @@ public class AutoTradeService : IAutoTradeService
 
         try
         {
-            // Execute Auto Paper Buy Order
+            // Execute Auto Paper entry order (BUY, or the SELL that opens a short) - simulated, no broker involved.
             var order = await _paperRepository.CreateOrderAsync(new PaperOrder
             {
                 AccountId = paperAccount.Id,
                 Symbol = symbol,
                 OrderType = PaperOrderType.Market,
-                Side = TradeSide.BUY,
+                Side = side,
                 Quantity = quantity,
                 Price = entryPrice,
                 StopLoss = stopLoss,
@@ -440,7 +474,7 @@ public class AutoTradeService : IAutoTradeService
                 FilledPrice = entryPrice,
                 FilledAt = DateTime.UtcNow,
                 TradeType = TradeType.Auto,
-                Remarks = $"Auto BUY (Score {metConditionsCount}/11, SL ₹{stopLoss:F2} / Target ₹{takeProfit:F2})"
+                Remarks = $"Auto {label} (Score {metConditionsCount}/11, SL ₹{stopLoss:F2} / Target ₹{takeProfit:F2})"
             });
 
             // Upsert Auto Paper Position
@@ -448,7 +482,7 @@ public class AutoTradeService : IAutoTradeService
             {
                 AccountId = paperAccount.Id,
                 Symbol = symbol,
-                Side = TradeSide.BUY,
+                Side = side,
                 Quantity = quantity,
                 AverageEntryPrice = entryPrice,
                 CurrentPrice = entryPrice,
@@ -469,13 +503,14 @@ public class AutoTradeService : IAutoTradeService
                 AccountId = paperAccount.Id,
                 OrderId = order.Id,
                 Symbol = symbol,
-                Side = TradeSide.BUY,
+                Side = side,
                 Quantity = quantity,
                 EntryPrice = entryPrice,
                 ExecutedPrice = entryPrice,
                 RealizedPnl = 0m,
                 TradeType = TradeType.Auto,
-                Remarks = $"Auto BUY Executed @ ₹{entryPrice:F2}"
+                IsExit = false,
+                Remarks = $"Auto {label} Executed @ ₹{entryPrice:F2}"
             });
 
             // Update Account Used Margin
@@ -488,8 +523,9 @@ public class AutoTradeService : IAutoTradeService
             await _cacheService.RemoveAsync(todayKey);
 
             // Log Audit Event
-            await LogAuditAsync(symbol, "AUTO_BUY", entryPrice, quantity,
-                $"Auto BUY Executed @ ₹{entryPrice:F2} (Qty: {quantity} - {sizing.Reason}; Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {tslText})", userId);
+            string squareOffNote = isShort ? $" - auto square-off at {settings.ShortSquareOffTime} IST if not covered" : string.Empty;
+            await LogAuditAsync(symbol, isShort ? "AUTO_SHORT" : "AUTO_BUY", entryPrice, quantity,
+                $"Auto {label} Executed @ ₹{entryPrice:F2} (Qty: {quantity} - {sizing.Reason}; Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {tslText}){squareOffNote}", userId);
 
             // Broadcast SignalR Toast Alert
             if (_hubContext != null)
@@ -497,13 +533,13 @@ public class AutoTradeService : IAutoTradeService
                 await _hubContext.Clients.All.SendAsync("ReceiveAutoTradeAlert", new
                 {
                     symbol,
-                    side = "BUY",
+                    side = isShort ? "SELL" : "BUY",
                     quantity,
                     price = entryPrice,
                     target = takeProfit,
                     stopLoss,
                     trailingSl,
-                    message = $"🤖 Auto BUY: {quantity} shares of {symbol} @ ₹{entryPrice:N2} (Met {metConditionsCount}/11)"
+                    message = $"🤖 Auto {label}: {quantity} shares of {symbol} @ ₹{entryPrice:N2} (Met {metConditionsCount}/11)"
                 });
             }
 
@@ -512,8 +548,8 @@ public class AutoTradeService : IAutoTradeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute auto buy order for {Symbol}", symbol);
-            await LogAuditAsync(symbol, "SYSTEM_ERROR", entryPrice, quantity, $"Auto BUY execution failed: {ex.Message}", userId);
+            _logger.LogError(ex, "Failed to execute auto {Label} order for {Symbol}", label, symbol);
+            await LogAuditAsync(symbol, "SYSTEM_ERROR", entryPrice, quantity, $"Auto {label} execution failed: {ex.Message}", userId);
             return false;
         }
     }
@@ -526,6 +562,12 @@ public class AutoTradeService : IAutoTradeService
         if (!await _marketHoursService.IsWithinMarketHoursAsync())
         {
             return false;
+        }
+
+        // An open short is exited by buying it back - its own (intraday) exit policy, see EvaluateAndExecuteAutoCoverAsync.
+        if (position.Side == TradeSide.SELL)
+        {
+            return await EvaluateAndExecuteAutoCoverAsync(position, currentLtp, userId);
         }
 
         var settings = await GetSettingsAsync(userId);
@@ -591,6 +633,7 @@ public class AutoTradeService : IAutoTradeService
                 RealizedPnl = realizedPnl,
                 TradeType = TradeType.Auto,
                 ExitReason = exitReason,
+                IsExit = true,
                 Remarks = $"Auto SELL ({exitReason}) @ ₹{currentLtp:F2}"
             });
 
@@ -627,6 +670,99 @@ public class AutoTradeService : IAutoTradeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to execute auto sell for position #{PositionId} on {Symbol}", position.Id, position.Symbol);
+            return false;
+        }
+    }
+
+    // Exit for an open Auto SHORT (paper): SwingTradeRules.EvaluateShortExit - auto square-off, then live target / stop /
+    // trailing SL. Not gated by the user's trading window (only market hours): a short must always be closable today.
+    private async Task<bool> EvaluateAndExecuteAutoCoverAsync(PaperPosition position, decimal currentLtp, string userId)
+    {
+        var settings = await GetSettingsAsync(userId);
+        var nowIst = SwingTradeRules.NowIst();
+        var tradeParams = SwingTradeParams.From(settings);
+        var decision = SwingTradeRules.EvaluateShortExit(ExitPositionView.From(position), currentLtp, nowIst,
+            settings.ShortSquareOffTime, tradeParams);
+
+        if (!decision.ShouldExit)
+        {
+            if (decision.NewTrailingStopLoss.HasValue)
+            {
+                bool activated = !position.TrailingStopLoss.HasValue || position.TrailingStopLoss.Value > position.AverageEntryPrice;
+                await _paperRepository.UpdateTrailingStopLossAsync(position.Id, decision.NewTrailingStopLoss.Value);
+                position.TrailingStopLoss = decision.NewTrailingStopLoss.Value;
+
+                if (activated && tradeParams.IsSwingClose)
+                {
+                    await LogAuditAsync(position.Symbol, "TRAILING_SL_ACTIVATED", currentLtp, position.Quantity,
+                        $"Short trailing SL activated @ ₹{decision.NewTrailingStopLoss.Value:F2} (entry ₹{position.AverageEntryPrice:F2})", userId);
+                }
+            }
+            return false;
+        }
+
+        var paperAccount = await _paperRepository.GetAccountAsync(userId);
+        if (paperAccount == null) return false;
+
+        string exitReason = decision.Reason;
+        try
+        {
+            // A short gains when the price falls.
+            decimal realizedPnl = (position.AverageEntryPrice - currentLtp) * position.Quantity;
+
+            bool closedSuccessfully = await _paperRepository.ClosePositionAsync(position.Id, currentLtp, realizedPnl, exitReason);
+            if (!closedSuccessfully)
+            {
+                _logger.LogWarning("AutoTradeService: Short position {PositionId} was already closed. Skipping duplicate history entry.", position.Id);
+                return false;
+            }
+
+            await _paperRepository.RecordTradeHistoryAsync(new PaperTradeHistory
+            {
+                AccountId = paperAccount.Id,
+                OrderId = 0,
+                Symbol = position.Symbol,
+                Side = TradeSide.BUY,
+                Quantity = position.Quantity,
+                EntryPrice = position.AverageEntryPrice,
+                ExecutedPrice = currentLtp,
+                RealizedPnl = realizedPnl,
+                TradeType = TradeType.Auto,
+                ExitReason = exitReason,
+                IsExit = true,
+                Remarks = $"Auto BUY TO COVER ({exitReason}) @ ₹{currentLtp:F2}"
+            });
+
+            decimal releasedMargin = position.Quantity * position.AverageEntryPrice;
+            await _paperRepository.UpdateAccountBalanceAndMarginAsync(paperAccount.Id,
+                paperAccount.CurrentBalance + realizedPnl,
+                Math.Max(0m, paperAccount.UsedMargin - releasedMargin),
+                paperAccount.RealizedPnl + realizedPnl);
+
+            string actionType = exitReason == SwingTradeRules.ShortSquareOffReason ? "AUTO_SQUARE_OFF" : "AUTO_COVER";
+            await LogAuditAsync(position.Symbol, actionType, currentLtp, position.Quantity,
+                $"Auto BUY TO COVER Executed ({exitReason}) @ ₹{currentLtp:F2} | Realized P&L: ₹{realizedPnl:N2}", userId);
+
+            if (_hubContext != null)
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveAutoTradeAlert", new
+                {
+                    symbol = position.Symbol,
+                    side = "BUY",
+                    quantity = position.Quantity,
+                    price = currentLtp,
+                    reason = exitReason,
+                    realizedPnl,
+                    message = $"🎯 Auto COVER ({exitReason}): {position.Symbol} @ ₹{currentLtp:N2} | P&L: ₹{realizedPnl:N2}"
+                });
+            }
+
+            await BroadcastDashboardUpdateAsync(userId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cover auto short position #{PositionId} on {Symbol}", position.Id, position.Symbol);
             return false;
         }
     }

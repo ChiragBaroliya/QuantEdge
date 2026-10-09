@@ -22,3 +22,14 @@ public record TodayNotificationsDto(
     DateTime DateIst,
     List<NotificationItemDto> Items
 );
+
+/// <summary>
+/// Notifications for an IST date range (View All Notifications page), newest first. Truncated = a source hit its
+/// row limit, so older items in the range may be missing - narrow the range to see them.
+/// </summary>
+public record NotificationHistoryDto(
+    DateTime FromIst,
+    DateTime ToIst,
+    List<NotificationItemDto> Items,
+    bool Truncated
+);

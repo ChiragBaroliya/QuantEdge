@@ -123,6 +123,12 @@ public class PositionReconciliationService : IPositionReconciliationService
         var rows = new List<PositionReconciliationRow>();
         foreach (var p in ours)
         {
+            if (p.Side == TradeSide.SELL)
+            {
+                rows.Add(CompareShort(p, brokerPositions));
+                continue;
+            }
+
             var h = holdings.FirstOrDefault(x => string.Equals(x.TradingSymbol, p.Symbol, StringComparison.OrdinalIgnoreCase));
             var bp = brokerPositions.FirstOrDefault(x => string.Equals(x.TradingSymbol, p.Symbol, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(x.Product, "CNC", StringComparison.OrdinalIgnoreCase));
@@ -171,5 +177,53 @@ public class PositionReconciliationService : IPositionReconciliationService
             rows.Add(row);
         }
         return rows;
+    }
+
+    // An Auto Short is an intraday MIS position: Zerodha shows it in today's MIS net positions with a NEGATIVE quantity
+    // (never in holdings), so it is compared against that, with the sell price as its average.
+    private static PositionReconciliationRow CompareShort(RealPosition p, IReadOnlyList<ZerodhaPositionItemDto> brokerPositions)
+    {
+        var bp = brokerPositions.FirstOrDefault(x => string.Equals(x.TradingSymbol, p.Symbol, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Product, "MIS", StringComparison.OrdinalIgnoreCase));
+
+        int brokerShortQty = bp != null && bp.Quantity < 0 ? -bp.Quantity : 0;
+        decimal brokerAvg = bp?.SellPrice ?? 0m;
+        decimal ltp = bp?.LastPrice ?? 0m;
+
+        var row = new PositionReconciliationRow
+        {
+            Symbol = p.Symbol,
+            OurQuantity = p.Quantity,
+            BrokerQuantity = brokerShortQty,
+            OurAveragePrice = Math.Round(p.AverageEntryPrice, 2),
+            BrokerAveragePrice = Math.Round(brokerAvg, 2),
+            LastPrice = ltp,
+            OurGrossPnl = ltp > 0m ? Math.Round((p.AverageEntryPrice - ltp) * p.Quantity, 2) : 0m,
+            BrokerPnl = Math.Round(bp?.Pnl ?? 0m, 2),
+            EstimatedCharges = ltp > 0m
+                ? Math.Round(ChargesCalculator.EstimateOpenPosition(p.AverageEntryPrice, ltp, p.Quantity, true, p.OpenedAt), 2)
+                : 0m
+        };
+
+        if (brokerShortQty <= 0)
+        {
+            row.Status = "MISSING_AT_ZERODHA";
+            row.Explanation = $"QuantEdge shows a short of {p.Quantity} {p.Symbol} but Zerodha has no open MIS short - it may have been squared off by Zerodha or bought back outside QuantEdge.";
+        }
+        else if (brokerShortQty != p.Quantity)
+        {
+            row.Status = "QUANTITY";
+            row.Explanation = $"Zerodha is short {brokerShortQty}, QuantEdge {p.Quantity}: a partial fill, or a trade outside QuantEdge.";
+        }
+        else if (brokerAvg > 0m && Math.Abs(p.AverageEntryPrice - brokerAvg) / brokerAvg * 100m > AvgPriceTolerancePct)
+        {
+            row.Status = "AVERAGE_PRICE";
+            row.Explanation = $"Short price differs (QuantEdge ₹{p.AverageEntryPrice:F2} vs Zerodha ₹{brokerAvg:F2}).";
+        }
+        else
+        {
+            row.Explanation = "Short quantity and price match Zerodha.";
+        }
+        return row;
     }
 }

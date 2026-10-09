@@ -23,8 +23,17 @@ public interface IAutoTradeService
         decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null);
 
     /// <summary>
+    /// Auto Short Selling (paper): places a simulated paper SHORT SELL after the same entry gates as
+    /// <see cref="EvaluateAndExecuteAutoBuyAsync"/>, plus the Auto Short switch (OFF by default) and the short entry
+    /// cut-off. Levels are mirrored (Stop Loss above the entry, Target below). Never places a broker order.
+    /// </summary>
+    Task<bool> EvaluateAndExecuteAutoShortAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isSellSignal = false,
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null);
+
+    /// <summary>
     /// Evaluates exit conditions via the shared swing exit policy (<see cref="Services.SwingTradeRules"/>)
-    /// and executes the auto paper sell when triggered.
+    /// and executes the auto paper sell when triggered. An open short is bought back instead (intraday short exit
+    /// policy, incl. the auto square-off).
     /// </summary>
     Task<bool> EvaluateAndExecuteAutoSellAsync(PaperPosition position, decimal currentLtp, string userId = "default_user");
 
