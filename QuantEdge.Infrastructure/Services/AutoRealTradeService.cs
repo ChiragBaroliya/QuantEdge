@@ -549,7 +549,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         // entryPrice rather than blocking a trade that already passed every risk gate over a
         // secondary, best-effort check.
 
-        int quantity;
+        // Auto trades are sized after the Stop Loss is known (step 9b); a Manual trade uses the popup quantity.
+        int quantity = 0;
         if (isManualTrade)
         {
             // Quantity is user-chosen from the Manual Real Trade popup - no longer auto-sized.
@@ -566,16 +567,6 @@ public class AutoRealTradeService : IAutoRealTradeService
             {
                 await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
                     $"Insufficient Broker Capital for requested quantity (₹{availableMargin:N2} < ₹{requiredCapital:N2} for {quantity} @ ₹{entryPrice:N2})", userId);
-                return false;
-            }
-        }
-        else
-        {
-            quantity = (int)Math.Floor(settings.FixedAmountPerTrade / entryPrice);
-            if (quantity < 1)
-            {
-                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
-                    $"Calculated quantity 0 for entry price ₹{entryPrice:N2}", userId);
                 return false;
             }
         }
@@ -609,6 +600,20 @@ public class AutoRealTradeService : IAutoRealTradeService
         decimal takeProfit = levels.TakeProfit;
         decimal stopLoss = levels.StopLoss;
         decimal? trailingSl = levels.TrailingStopLoss;
+
+        // 9b. Risk-based size, same as Auto Paper: at most FixedAmountPerTrade of stock AND at most
+        // DefaultRiskPerTradePct of capital lost if the stop is hit - a wide stop gets fewer shares.
+        if (!isManualTrade)
+        {
+            var sizing = SwingTradeRules.RiskSizedQuantity(entryPrice, stopLoss, settings.AvailableCapital, settings.FixedAmountPerTrade);
+            quantity = sizing.Quantity;
+            if (quantity < 1)
+            {
+                await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                    $"Calculated quantity 0 for entry price ₹{entryPrice:N2} ({sizing.Reason})", userId);
+                return false;
+            }
+        }
 
         try
         {
@@ -1017,20 +1022,22 @@ public class AutoRealTradeService : IAutoRealTradeService
             entryPrice = liveLtp;
         }
 
-        int quantity = (int)Math.Floor(settings.FixedAmountPerTrade / entryPrice);
-        if (quantity < 1)
-        {
-            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
-                $"Calculated quantity 0 for entry price ₹{entryPrice:N2}", userId);
-            return false;
-        }
-
         // 9. Mirrored levels: Stop Loss above the entry, Target below.
         var tradeParams = SwingTradeParams.From(settings);
         var levels = SwingTradeRules.ComputeShortEntryLevels(entryPrice, dailyAtr, engineStopLoss, engineTarget, tradeParams);
         decimal takeProfit = levels.TakeProfit;
         decimal stopLoss = levels.StopLoss;
         decimal? trailingSl = levels.TrailingStopLoss;
+
+        // 9b. Risk-based size, same as Auto Paper (per-share risk = stop - entry for a short).
+        var sizing = SwingTradeRules.RiskSizedShortQuantity(entryPrice, stopLoss, settings.AvailableCapital, settings.FixedAmountPerTrade);
+        int quantity = sizing.Quantity;
+        if (quantity < 1)
+        {
+            await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
+                $"Calculated quantity 0 for entry price ₹{entryPrice:N2} ({sizing.Reason})", userId);
+            return false;
+        }
 
         try
         {
