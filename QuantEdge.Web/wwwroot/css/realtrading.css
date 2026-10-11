@@ -1000,7 +1000,7 @@ input:checked + .real-slider {
 .qe-input,
 .form-control.qe-input,
 .form-select.qe-input,
-#frmRealTradeSettings input,
+#frmRealTradeSettings input:not([type="checkbox"]):not([type="radio"]),
 #frmRealTradeSettings select {
     width: 100% !important;
     background-color: #1e293b !important;
@@ -1024,7 +1024,7 @@ input:checked + .real-slider {
 .qe-input:focus,
 .form-control.qe-input:focus,
 .form-select.qe-input:focus,
-#frmRealTradeSettings input:focus,
+#frmRealTradeSettings input:not([type="checkbox"]):not([type="radio"]):focus,
 #frmRealTradeSettings select:focus {
     background-color: #0f172a !important;
     color: #ffffff !important;

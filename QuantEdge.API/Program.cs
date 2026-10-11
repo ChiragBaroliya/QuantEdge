@@ -78,7 +78,12 @@ try
         });
     }
 
-    app.UseHttpsRedirection();
+    // Not in Development: the Web UI (https://localhost:7031) calls the API on http://127.0.0.1:5000, and a 307 to
+    // https://...:5001 breaks every cross-origin call - browsers refuse redirected CORS preflights (SignalR negotiate).
+    if (!app.Environment.IsDevelopment())
+    {
+        app.UseHttpsRedirection();
+    }
 
     // Enable CORS before authorization and endpoint mappings
     app.UseCors();
