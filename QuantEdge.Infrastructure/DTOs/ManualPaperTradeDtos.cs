@@ -23,6 +23,74 @@ public class ManualPaperBuyRequestDto
     /// <summary>Trade-wise Trailing Stop Loss %, same semantics as StopLossPct above.</summary>
     [Range(typeof(decimal), "0.1", "50.0", ErrorMessage = "Trailing Stop Loss % must be between 0.1% and 50%.")]
     public decimal TrailingSlPct { get; set; }
+
+    /// <summary>Market (default) fills now at the latest stored price; Limit rests as a Pending order until the
+    /// stored 1-minute candles trade through <see cref="LimitPrice"/>.</summary>
+    public QuantEdge.Domain.Entities.PaperOrderType OrderType { get; set; } = QuantEdge.Domain.Entities.PaperOrderType.Market;
+
+    /// <summary>Limit orders only: BUY at or below / SHORT SELL at or above this price.</summary>
+    [Range(typeof(decimal), "0.01", "10000000", ErrorMessage = "Limit Price must be a positive price.")]
+    public decimal? LimitPrice { get; set; }
+
+    /// <summary>True: the position is closed automatically from stored 1-minute candles when its Target, Stop Loss or
+    /// trailed stop is hit. False: the levels are reference only (closed with the Close button).</summary>
+    public bool AutoExit { get; set; } = true;
+}
+
+/// <summary>An OPEN Manual Paper position for the Manual Trading page - a paper position plus its Auto Exit switch.</summary>
+public class ManualPaperPosition : QuantEdge.Domain.Entities.PaperPosition
+{
+    public bool AutoExit { get; set; }
+}
+
+/// <summary>An OPEN auto-exit position with its trail state (fn_get_manual_paper_auto_exit_positions).</summary>
+public class ManualPaperAutoExitPositionDto
+{
+    public int Id { get; set; }
+    public int AccountId { get; set; }
+    public string Symbol { get; set; } = string.Empty;
+    public QuantEdge.Domain.Entities.TradeSide Side { get; set; }
+    public int Quantity { get; set; }
+    public decimal AverageEntryPrice { get; set; }
+    public decimal? StopLoss { get; set; }
+    public decimal? TakeProfit { get; set; }
+    public decimal? TrailingSlPct { get; set; }
+    public decimal? TrailingStopLoss { get; set; }
+    /// <summary>Best price since entry: highest high for a long, lowest low for a short.</summary>
+    public decimal? BestPrice { get; set; }
+    /// <summary>Start time (UTC) of the last stored candle already checked; null before the first pass.</summary>
+    public DateTime? ExitCheckedUntil { get; set; }
+    public DateTime OpenedAt { get; set; }
+}
+
+/// <summary>A stored 1-minute candle (fn_get_manual_paper_candles). CandleTime is the candle's start (UTC).</summary>
+public class ManualPaperCandleDto
+{
+    public DateTime CandleTime { get; set; }
+    public decimal CandleOpen { get; set; }
+    public decimal CandleHigh { get; set; }
+    public decimal CandleLow { get; set; }
+    public decimal CandleClose { get; set; }
+}
+
+/// <summary>
+/// A Pending Manual Paper limit order with the first stored 1-minute candle that traded through its price
+/// (fn_get_manual_paper_pending_orders). TriggerCandleTime is null while the price hasn't reached the limit.
+/// </summary>
+public class ManualPaperPendingOrderDto
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Symbol { get; set; } = string.Empty;
+    public QuantEdge.Domain.Entities.TradeSide Side { get; set; }
+    public int Quantity { get; set; }
+    public decimal LimitPrice { get; set; }
+    public decimal? StopLossPct { get; set; }
+    public decimal? TrailingSlPct { get; set; }
+    public bool AutoExit { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? TriggerCandleTime { get; set; }
+    public decimal? TriggerCandleOpen { get; set; }
 }
 
 /// <summary>
@@ -125,6 +193,9 @@ public class ManualPaperDashboardDto
     // Manual-only figures
     public decimal ManualCapital { get; set; }
     public decimal ManualUsedMargin { get; set; }
+    /// <summary>Capital held by Pending limit orders (quantity × limit price) until they fill, cancel or expire.</summary>
+    public decimal ManualBlockedMargin { get; set; }
+    public int PendingOrdersCount { get; set; }
     public decimal ManualUnrealizedPnl { get; set; }
     /// <summary>Estimated round-trip charges of the open positions if sold now; net = ManualUnrealizedPnl − this.</summary>
     public decimal ManualEstimatedCharges { get; set; }
@@ -132,7 +203,7 @@ public class ManualPaperDashboardDto
     public decimal ManualTodayRealizedPnl { get; set; }
     public decimal ManualEquity => ManualCapital + ManualRealizedPnl + ManualUnrealizedPnl;
     // Manual Trading's own cash - what a manual BUY is checked against (not the shared paper account).
-    public decimal ManualAvailableMargin => ManualCapital + ManualRealizedPnl - ManualUsedMargin;
+    public decimal ManualAvailableMargin => ManualCapital + ManualRealizedPnl - ManualUsedMargin - ManualBlockedMargin;
     public int OpenPositionsCount { get; set; }
     public int TotalBuyTrades { get; set; }
     public int TodayBuyTrades { get; set; }
@@ -146,7 +217,8 @@ public class ManualPaperDashboardDto
 
 /// <summary>
 /// Edit Stop Loss / Trailing SL % / Target of an OPEN manual paper position (Live Open Positions "Edit").
-/// These are reference levels - manual paper positions are only sold with the Close button.
+/// With Auto Exit ON they are live exit levels (ManualAutoExitWorker); with it OFF they are reference only and the
+/// position is closed with the Close button.
 /// </summary>
 public class UpdateManualPositionLevelsDto
 {
@@ -158,6 +230,9 @@ public class UpdateManualPositionLevelsDto
 
     [Range(typeof(decimal), "0.01", "10000000", ErrorMessage = "Target must be a positive price.")]
     public decimal TakeProfit { get; set; }
+
+    /// <summary>Turns Auto Exit on / off for this position; null leaves it unchanged.</summary>
+    public bool? AutoExit { get; set; }
 }
 
 /// <summary>Result row of fn_close_manual_paper_position (Close button).</summary>

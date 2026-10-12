@@ -3385,7 +3385,8 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- Function: fn_get_today_manual_paper_trade_count
--- Counts today's executed manual paper BUYs (daily trade limit).
+-- Counts today's manual paper entries (daily trade limit): executed market BUYs / short sells, filled limit
+-- orders, and limit orders still Pending (a pending order holds its slot; a cancelled / expired one frees it).
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS fn_get_today_manual_paper_trade_count(VARCHAR, TIMESTAMP WITH TIME ZONE);
 DROP FUNCTION IF EXISTS fn_get_today_manual_paper_trade_count(INT, TIMESTAMP WITH TIME ZONE);
@@ -3396,14 +3397,19 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_count INT;
+    v_pending INT;
 BEGIN
     SELECT COUNT(*) INTO v_count
     FROM manual_paper_trade_execution_logs
     WHERE user_id = p_user_id
-      AND action_type IN ('MANUAL_BUY', 'MANUAL_SHORT')
+      AND action_type IN ('MANUAL_BUY', 'MANUAL_SHORT', 'LIMIT_FILLED')
       AND executed_at >= p_today_start;
 
-    RETURN v_count;
+    SELECT COUNT(*) INTO v_pending
+    FROM manual_paper_orders
+    WHERE user_id = p_user_id AND status = 0 AND order_type = 1;
+
+    RETURN v_count + v_pending;
 END;
 $$;
 
@@ -3494,7 +3500,7 @@ DROP FUNCTION IF EXISTS fn_update_manual_paper_position_levels CASCADE;
 -- Function: fn_open_manual_paper_position
 -- Manual entry: p_side 0 = BUY (long), 1 = SELL (short sell). Inserts the filled entry order, the OPEN
 -- position and the entry history row (is_exit = FALSE) in one call. Returns the new position id, or NULL
--- when the user already has an OPEN position (long or short) in the symbol.
+-- when the user already has an OPEN position (long or short) or a Pending limit order in the symbol.
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS fn_create_manual_paper_buy CASCADE;
 DROP FUNCTION IF EXISTS fn_open_manual_paper_position CASCADE;
@@ -3509,7 +3515,8 @@ CREATE OR REPLACE FUNCTION fn_open_manual_paper_position(
     p_trailing_sl_pct NUMERIC,
     p_take_profit NUMERIC,
     p_order_remarks VARCHAR,
-    p_history_remarks VARCHAR
+    p_history_remarks VARCHAR,
+    p_auto_exit BOOLEAN DEFAULT FALSE
 )
 RETURNS INT
 LANGUAGE plpgsql
@@ -3518,14 +3525,19 @@ DECLARE
     v_position_id INT;
     v_order_id INT;
 BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('manual_paper_entry:' || p_user_id || ':' || UPPER(p_symbol)));
+
     IF EXISTS (SELECT 1 FROM manual_paper_positions
-               WHERE user_id = p_user_id AND UPPER(symbol) = UPPER(p_symbol) AND status = 0) THEN
+               WHERE user_id = p_user_id AND UPPER(symbol) = UPPER(p_symbol) AND status = 0)
+       OR EXISTS (SELECT 1 FROM manual_paper_orders
+                  WHERE user_id = p_user_id AND UPPER(symbol) = UPPER(p_symbol) AND status = 0) THEN
         RETURN NULL;
     END IF;
 
     INSERT INTO manual_paper_positions (user_id, symbol, side, quantity, average_entry_price,
-                                        stop_loss, trailing_sl_pct, take_profit, status, opened_at, updated_at)
-    VALUES (p_user_id, UPPER(p_symbol), p_side, p_quantity, p_price, p_stop_loss, p_trailing_sl_pct, p_take_profit, 0, NOW(), NOW())
+                                        stop_loss, trailing_sl_pct, take_profit, auto_exit, status, opened_at, updated_at)
+    VALUES (p_user_id, UPPER(p_symbol), p_side, p_quantity, p_price, p_stop_loss, p_trailing_sl_pct, p_take_profit,
+            COALESCE(p_auto_exit, FALSE), 0, NOW(), NOW())
     RETURNING id INTO v_position_id;
 
     INSERT INTO manual_paper_orders (user_id, position_id, symbol, side, order_type, quantity, price,
@@ -3620,14 +3632,17 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- Function: fn_update_manual_paper_position_levels
--- Edit button: updates Stop Loss, Trailing SL % and Target of an OPEN position. TRUE when updated.
+-- Edit button: updates Stop Loss, Trailing SL % and Target of an OPEN position, and turns Auto Exit on/off
+-- (p_auto_exit NULL = unchanged). A changed Trailing SL % clears the trailed stop so the next candle pass sets it
+-- again from the best price at the new % (it can then loosen as well as tighten). TRUE when updated.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fn_update_manual_paper_position_levels(
     p_user_id INT,
     p_position_id INT,
     p_stop_loss NUMERIC,
     p_trailing_sl_pct NUMERIC,
-    p_take_profit NUMERIC
+    p_take_profit NUMERIC,
+    p_auto_exit BOOLEAN DEFAULT NULL
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -3637,8 +3652,10 @@ DECLARE
 BEGIN
     UPDATE manual_paper_positions
     SET stop_loss = p_stop_loss,
+        trailing_stop_loss = CASE WHEN trailing_sl_pct IS DISTINCT FROM p_trailing_sl_pct THEN NULL ELSE trailing_stop_loss END,
         trailing_sl_pct = p_trailing_sl_pct,
         take_profit = p_take_profit,
+        auto_exit = COALESCE(p_auto_exit, auto_exit),
         updated_at = NOW()
     WHERE id = p_position_id
       AND user_id = p_user_id
@@ -3665,6 +3682,8 @@ RETURNS TABLE (
     StopLoss NUMERIC,
     TrailingSlPct NUMERIC,
     TakeProfit NUMERIC,
+    TrailingStopLoss NUMERIC,
+    AutoExit BOOLEAN,
     Status INT,
     TradeType INT,
     OpenedAt TIMESTAMP WITH TIME ZONE
@@ -3683,6 +3702,8 @@ BEGIN
         p.stop_loss AS StopLoss,
         p.trailing_sl_pct AS TrailingSlPct,
         p.take_profit AS TakeProfit,
+        p.trailing_stop_loss AS TrailingStopLoss,
+        p.auto_exit AS AutoExit,
         p.status AS Status,
         0 AS TradeType,
         p.opened_at AS OpenedAt
@@ -3690,6 +3711,120 @@ BEGIN
     WHERE p.user_id = p_user_id
       AND p.status = 0
     ORDER BY p.opened_at DESC;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Manual Paper Auto Exit - Target / Stop Loss / Trailing SL from stored 1-minute candles (market_candles_1m),
+-- run by ManualAutoExitWorker. Only positions with auto_exit = TRUE; no live feed, no Zerodha call.
+-- ----------------------------------------------------------------------------
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_auto_exit_positions
+-- Every user's OPEN auto-exit positions with their trail state (AccountId = user id).
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_auto_exit_positions CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_auto_exit_positions()
+RETURNS TABLE (
+    Id INT,
+    AccountId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    AverageEntryPrice NUMERIC,
+    StopLoss NUMERIC,
+    TakeProfit NUMERIC,
+    TrailingSlPct NUMERIC,
+    TrailingStopLoss NUMERIC,
+    BestPrice NUMERIC,
+    ExitCheckedUntil TIMESTAMP WITH TIME ZONE,
+    OpenedAt TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT p.id AS Id, p.user_id AS AccountId, p.symbol AS Symbol, p.side AS Side, p.quantity AS Quantity,
+           p.average_entry_price AS AverageEntryPrice, p.stop_loss AS StopLoss, p.take_profit AS TakeProfit,
+           p.trailing_sl_pct AS TrailingSlPct, p.trailing_stop_loss AS TrailingStopLoss, p.best_price AS BestPrice,
+           p.exit_checked_until AS ExitCheckedUntil, p.opened_at AS OpenedAt
+    FROM manual_paper_positions p
+    WHERE p.status = 0
+      AND p.auto_exit = TRUE
+    ORDER BY p.user_id, p.opened_at;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_candles
+-- Stored 1-minute candles of a symbol with p_from <= candle_time <= p_to (candle start times, UTC), oldest
+-- first - the candles an auto-exit position has not been checked against yet.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_candles CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_candles(
+    p_symbol VARCHAR,
+    p_from TIMESTAMP WITH TIME ZONE,
+    p_to TIMESTAMP WITH TIME ZONE
+)
+RETURNS TABLE (
+    CandleTime TIMESTAMP WITH TIME ZONE,
+    CandleOpen NUMERIC,
+    CandleHigh NUMERIC,
+    CandleLow NUMERIC,
+    CandleClose NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT m.candle_time AS CandleTime, m.open::NUMERIC AS CandleOpen, m.high::NUMERIC AS CandleHigh,
+           m.low::NUMERIC AS CandleLow, m.close::NUMERIC AS CandleClose
+    FROM market_candles_1m m
+    WHERE m.symbol = p_symbol
+      AND m.candle_time >= p_from
+      AND m.candle_time <= p_to
+    ORDER BY m.candle_time
+    LIMIT 1000;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_update_manual_paper_position_trail
+-- Saves an auto-exit position's trail state after a candle pass: best price since entry, trailed stop and the
+-- last candle checked. Skipped (FALSE) when the position is closed, or its Trailing SL % was edited after the pass
+-- read it (p_trailing_sl_pct = the % the pass used) - the next pass recomputes with the new %.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_update_manual_paper_position_trail CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_update_manual_paper_position_trail(
+    p_position_id INT,
+    p_trailing_sl_pct NUMERIC,
+    p_best_price NUMERIC,
+    p_trailing_stop_loss NUMERIC,
+    p_checked_until TIMESTAMP WITH TIME ZONE
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_updated INT;
+BEGIN
+    UPDATE manual_paper_positions
+    SET best_price = p_best_price,
+        trailing_stop_loss = p_trailing_stop_loss,
+        exit_checked_until = p_checked_until,
+        updated_at = NOW()
+    WHERE id = p_position_id
+      AND status = 0
+      AND trailing_sl_pct IS NOT DISTINCT FROM p_trailing_sl_pct;
+
+    GET DIAGNOSTICS v_updated = ROW_COUNT;
+    RETURN v_updated > 0;
 END;
 $$;
 
@@ -3724,9 +3859,195 @@ END;
 $$;
 
 
+-- ============================================================================
+-- Manual Paper Limit Orders (order_type = 1). Placed and cancelled from the Manual Trading page; filled or
+-- expired by ManualLimitOrderWorker from stored 1-minute candles (market_candles_1m). manual_paper_* only.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_place_manual_paper_limit_order
+-- Inserts a Pending limit entry (p_side 0 = BUY, 1 = SHORT SELL). Returns the order id, or NULL when the user
+-- already has an OPEN position or a Pending order in the symbol (one per symbol; the advisory lock - shared
+-- with fn_open_manual_paper_position - stops two concurrent requests both passing the check).
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_place_manual_paper_limit_order CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_place_manual_paper_limit_order(
+    p_user_id INT,
+    p_side INT,
+    p_symbol VARCHAR,
+    p_quantity INT,
+    p_limit_price NUMERIC,
+    p_stop_loss_pct NUMERIC,
+    p_trailing_sl_pct NUMERIC,
+    p_stop_loss NUMERIC,
+    p_take_profit NUMERIC,
+    p_remarks VARCHAR,
+    p_auto_exit BOOLEAN DEFAULT FALSE
+)
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_order_id INT;
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('manual_paper_entry:' || p_user_id || ':' || UPPER(p_symbol)));
+
+    IF EXISTS (SELECT 1 FROM manual_paper_positions
+               WHERE user_id = p_user_id AND UPPER(symbol) = UPPER(p_symbol) AND status = 0)
+       OR EXISTS (SELECT 1 FROM manual_paper_orders
+                  WHERE user_id = p_user_id AND UPPER(symbol) = UPPER(p_symbol) AND status = 0) THEN
+        RETURN NULL;
+    END IF;
+
+    INSERT INTO manual_paper_orders (user_id, symbol, side, order_type, quantity, price, stop_loss, take_profit,
+                                     stop_loss_pct, trailing_sl_pct, auto_exit, status, created_at, remarks)
+    VALUES (p_user_id, UPPER(p_symbol), p_side, 1, p_quantity, p_limit_price, p_stop_loss, p_take_profit,
+            p_stop_loss_pct, p_trailing_sl_pct, COALESCE(p_auto_exit, FALSE), 0, NOW(), LEFT(p_remarks, 255))
+    RETURNING id INTO v_order_id;
+
+    RETURN v_order_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_manual_paper_pending_orders
+-- Pending limit orders - one user's (p_user_id) or every user's (NULL, for the Worker). TriggerCandleTime /
+-- TriggerCandleOpen: the first stored 1-minute candle that started AFTER the order's placement minute and
+-- traded through the limit (BUY: low <= limit, SELL: high >= limit); NULL while the price hasn't reached it.
+-- The placement minute itself is skipped - its low / high may come from ticks before the order existed.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_manual_paper_pending_orders CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_manual_paper_pending_orders(p_user_id INT DEFAULT NULL)
+RETURNS TABLE (
+    Id INT,
+    UserId INT,
+    Symbol VARCHAR,
+    Side INT,
+    Quantity INT,
+    LimitPrice NUMERIC,
+    StopLossPct NUMERIC,
+    TrailingSlPct NUMERIC,
+    AutoExit BOOLEAN,
+    CreatedAt TIMESTAMP WITH TIME ZONE,
+    TriggerCandleTime TIMESTAMP WITH TIME ZONE,
+    TriggerCandleOpen NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT o.id AS Id, o.user_id AS UserId, o.symbol AS Symbol, o.side AS Side, o.quantity AS Quantity,
+           o.price AS LimitPrice, o.stop_loss_pct AS StopLossPct, o.trailing_sl_pct AS TrailingSlPct,
+           o.auto_exit AS AutoExit, o.created_at AS CreatedAt, t.candle_time AS TriggerCandleTime, t.open::NUMERIC AS TriggerCandleOpen
+    FROM manual_paper_orders o
+    LEFT JOIN LATERAL (
+        SELECT m.candle_time, m.open
+        FROM market_candles_1m m
+        WHERE m.symbol = o.symbol
+          AND m.candle_time >= date_trunc('minute', o.created_at) + INTERVAL '1 minute'
+          AND ((o.side = 0 AND m.low <= o.price) OR (o.side = 1 AND m.high >= o.price))
+        ORDER BY m.candle_time
+        LIMIT 1
+    ) t ON TRUE
+    WHERE o.status = 0
+      AND o.order_type = 1
+      AND (p_user_id IS NULL OR o.user_id = p_user_id)
+    ORDER BY o.created_at, o.id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_fill_manual_paper_limit_order
+-- Fills a Pending limit order: opens the position at p_fill_price with the given levels, marks the order
+-- Filled (linked to the position) and writes the entry history row (is_exit = FALSE). Returns the new position
+-- id, or NULL when the order is no longer Pending or an OPEN position already exists in the symbol.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_fill_manual_paper_limit_order CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_fill_manual_paper_limit_order(
+    p_order_id INT,
+    p_fill_price NUMERIC,
+    p_stop_loss NUMERIC,
+    p_trailing_sl_pct NUMERIC,
+    p_take_profit NUMERIC,
+    p_history_remarks VARCHAR
+)
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_order manual_paper_orders%ROWTYPE;
+    v_position_id INT;
+BEGIN
+    SELECT * INTO v_order FROM manual_paper_orders
+    WHERE id = p_order_id AND status = 0 AND order_type = 1
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM manual_paper_positions
+               WHERE user_id = v_order.user_id AND UPPER(symbol) = UPPER(v_order.symbol) AND status = 0) THEN
+        RETURN NULL;
+    END IF;
+
+    INSERT INTO manual_paper_positions (user_id, symbol, side, quantity, average_entry_price,
+                                        stop_loss, trailing_sl_pct, take_profit, auto_exit, status, opened_at, updated_at)
+    VALUES (v_order.user_id, v_order.symbol, v_order.side, v_order.quantity, p_fill_price,
+            p_stop_loss, p_trailing_sl_pct, p_take_profit, v_order.auto_exit, 0, NOW(), NOW())
+    RETURNING id INTO v_position_id;
+
+    UPDATE manual_paper_orders
+    SET status = 1, position_id = v_position_id, filled_price = p_fill_price, filled_at = NOW(),
+        stop_loss = p_stop_loss, take_profit = p_take_profit
+    WHERE id = v_order.id;
+
+    INSERT INTO manual_paper_trade_history (user_id, order_id, position_id, symbol, side, quantity,
+                                            entry_price, executed_price, realized_pnl, is_exit, executed_at, remarks)
+    VALUES (v_order.user_id, v_order.id, v_position_id, v_order.symbol, v_order.side, v_order.quantity,
+            p_fill_price, p_fill_price, 0.00, FALSE, NOW(), LEFT(p_history_remarks, 255));
+
+    RETURN v_position_id;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_cancel_manual_paper_order
+-- Cancels (Cancel button) or expires (Worker) one Pending order of the user: status = 2, the reason is put in
+-- front of the remarks. Frees the held capital and the daily-trade slot. TRUE when it was Pending.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_cancel_manual_paper_order CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_cancel_manual_paper_order(p_user_id INT, p_order_id INT, p_reason VARCHAR)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_updated INT;
+BEGIN
+    UPDATE manual_paper_orders
+    SET status = 2,
+        remarks = LEFT(p_reason || ' | ' || COALESCE(remarks, ''), 255)
+    WHERE id = p_order_id
+      AND user_id = p_user_id
+      AND status = 0;
+
+    GET DIAGNOSTICS v_updated = ROW_COUNT;
+    RETURN v_updated > 0;
+END;
+$$;
+
+
 -- ----------------------------------------------------------------------------
 -- Function: fn_get_manual_paper_dashboard
--- Stat cards: money in OPEN positions, realized P&L (all-time / today) and trade counts.
+-- Stat cards: money in OPEN positions, capital held by Pending limit orders, realized P&L (all-time / today)
+-- and trade counts.
 -- p_today_start: start of the current IST day (UTC).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fn_get_manual_paper_dashboard(
@@ -3735,6 +4056,8 @@ CREATE OR REPLACE FUNCTION fn_get_manual_paper_dashboard(
 )
 RETURNS TABLE (
     ManualUsedMargin NUMERIC,
+    ManualBlockedMargin NUMERIC,
+    PendingOrdersCount INT,
     ManualRealizedPnl NUMERIC,
     ManualTodayRealizedPnl NUMERIC,
     OpenPositionsCount INT,
@@ -3750,6 +4073,11 @@ BEGIN
     SELECT
         COALESCE((SELECT SUM(p.quantity * p.average_entry_price) FROM manual_paper_positions p
                   WHERE p.user_id = p_user_id AND p.status = 0), 0.00)::NUMERIC,
+        -- Capital held by Pending limit orders (quantity x limit price) until they fill / cancel / expire.
+        COALESCE((SELECT SUM(o.quantity * o.price) FROM manual_paper_orders o
+                  WHERE o.user_id = p_user_id AND o.status = 0 AND o.order_type = 1), 0.00)::NUMERIC,
+        (SELECT COUNT(*) FROM manual_paper_orders o
+         WHERE o.user_id = p_user_id AND o.status = 0 AND o.order_type = 1)::INT,
         COALESCE((SELECT SUM(h.realized_pnl) FROM manual_paper_trade_history h
                   WHERE h.user_id = p_user_id), 0.00)::NUMERIC,
         COALESCE((SELECT SUM(h.realized_pnl) FROM manual_paper_trade_history h

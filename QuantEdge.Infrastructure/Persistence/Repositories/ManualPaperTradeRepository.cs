@@ -102,18 +102,84 @@ public class ManualPaperTradeRepository : IManualPaperTradeRepository
     }
 
     public async Task<int?> CreateEntryAsync(int userId, TradeSide side, string symbol, int quantity, decimal price, decimal stopLoss,
-        decimal trailingSlPct, decimal takeProfit, string orderRemarks, string historyRemarks)
+        decimal trailingSlPct, decimal takeProfit, string orderRemarks, string historyRemarks, bool autoExit = false)
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = @"
             SELECT fn_open_manual_paper_position(
-                @userId, @side, @symbol, @quantity, @price, @stopLoss, @trailingSlPct, @takeProfit, @orderRemarks, @historyRemarks
+                @userId, @side, @symbol, @quantity, @price, @stopLoss, @trailingSlPct, @takeProfit, @orderRemarks, @historyRemarks, @autoExit
             );";
 
         return await connection.ExecuteScalarAsync<int?>(sql, new
         {
-            userId, side = (int)side, symbol, quantity, price, stopLoss, trailingSlPct, takeProfit, orderRemarks, historyRemarks
+            userId, side = (int)side, symbol, quantity, price, stopLoss, trailingSlPct, takeProfit, orderRemarks, historyRemarks, autoExit
         });
+    }
+
+    public async Task<int?> PlaceLimitOrderAsync(int userId, TradeSide side, string symbol, int quantity, decimal limitPrice,
+        decimal stopLossPct, decimal trailingSlPct, decimal estStopLoss, decimal estTakeProfit, string remarks, bool autoExit = false)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = @"
+            SELECT fn_place_manual_paper_limit_order(
+                @userId, @side, @symbol, @quantity, @limitPrice, @stopLossPct, @trailingSlPct, @estStopLoss, @estTakeProfit, @remarks, @autoExit
+            );";
+
+        return await connection.ExecuteScalarAsync<int?>(sql, new
+        {
+            userId, side = (int)side, symbol, quantity, limitPrice, stopLossPct, trailingSlPct, estStopLoss, estTakeProfit, remarks, autoExit
+        });
+    }
+
+    public async Task<IEnumerable<ManualPaperAutoExitPositionDto>> GetAutoExitPositionsAsync()
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        return await connection.QueryAsync<ManualPaperAutoExitPositionDto>("SELECT * FROM fn_get_manual_paper_auto_exit_positions();");
+    }
+
+    public async Task<IEnumerable<ManualPaperCandleDto>> GetCandlesAsync(string symbol, DateTime fromUtc, DateTime toUtc)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        return await connection.QueryAsync<ManualPaperCandleDto>(
+            "SELECT * FROM fn_get_manual_paper_candles(@symbol, @fromUtc, @toUtc);",
+            new
+            {
+                symbol,
+                fromUtc = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc),
+                toUtc = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc)
+            });
+    }
+
+    public async Task<bool> UpdatePositionTrailAsync(int positionId, decimal? trailingSlPct, decimal? bestPrice, decimal? trailingStopLoss,
+        DateTime checkedUntilUtc)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        return await connection.ExecuteScalarAsync<bool>(
+            "SELECT fn_update_manual_paper_position_trail(@positionId, @trailingSlPct, @bestPrice, @trailingStopLoss, @checkedUntilUtc);",
+            new { positionId, trailingSlPct, bestPrice, trailingStopLoss, checkedUntilUtc = DateTime.SpecifyKind(checkedUntilUtc, DateTimeKind.Utc) });
+    }
+
+    public async Task<IEnumerable<ManualPaperPendingOrderDto>> GetPendingOrdersAsync(int? userId = null)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        return await connection.QueryAsync<ManualPaperPendingOrderDto>(
+            "SELECT * FROM fn_get_manual_paper_pending_orders(@userId);", new { userId });
+    }
+
+    public async Task<int?> FillLimitOrderAsync(int orderId, decimal fillPrice, decimal stopLoss, decimal trailingSlPct, decimal takeProfit,
+        string historyRemarks)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = "SELECT fn_fill_manual_paper_limit_order(@orderId, @fillPrice, @stopLoss, @trailingSlPct, @takeProfit, @historyRemarks);";
+
+        return await connection.ExecuteScalarAsync<int?>(sql, new { orderId, fillPrice, stopLoss, trailingSlPct, takeProfit, historyRemarks });
+    }
+
+    public async Task<bool> CancelOrderAsync(int userId, int orderId, string reason)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        return await connection.ExecuteScalarAsync<bool>(
+            "SELECT fn_cancel_manual_paper_order(@userId, @orderId, @reason);", new { userId, orderId, reason });
     }
 
     public async Task<IEnumerable<PaperPosition>> GetAllOpenShortPositionsAsync()
@@ -131,20 +197,21 @@ public class ManualPaperTradeRepository : IManualPaperTradeRepository
             ?? new ManualPaperCloseResult();
     }
 
-    public async Task<bool> UpdatePositionLevelsAsync(int userId, int positionId, decimal stopLoss, decimal trailingSlPct, decimal takeProfit)
+    public async Task<bool> UpdatePositionLevelsAsync(int userId, int positionId, decimal stopLoss, decimal trailingSlPct, decimal takeProfit,
+        bool? autoExit = null)
     {
         using var connection = _connectionFactory.CreateConnection();
-        string sql = "SELECT fn_update_manual_paper_position_levels(@userId, @positionId, @stopLoss, @trailingSlPct, @takeProfit);";
+        string sql = "SELECT fn_update_manual_paper_position_levels(@userId, @positionId, @stopLoss, @trailingSlPct, @takeProfit, @autoExit);";
 
-        return await connection.ExecuteScalarAsync<bool>(sql, new { userId, positionId, stopLoss, trailingSlPct, takeProfit });
+        return await connection.ExecuteScalarAsync<bool>(sql, new { userId, positionId, stopLoss, trailingSlPct, takeProfit, autoExit });
     }
 
-    public async Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync(int userId)
+    public async Task<IEnumerable<ManualPaperPosition>> GetOpenPositionsAsync(int userId)
     {
         using var connection = _connectionFactory.CreateConnection();
         string sql = "SELECT * FROM fn_get_manual_paper_open_positions(@userId);";
 
-        return await connection.QueryAsync<PaperPosition>(sql, new { userId });
+        return await connection.QueryAsync<ManualPaperPosition>(sql, new { userId });
     }
 
     public async Task<ManualPaperDashboardDto> GetDashboardAsync(int userId, DateTime todayStartUtc)

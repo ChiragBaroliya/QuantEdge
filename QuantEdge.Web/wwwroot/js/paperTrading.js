@@ -21,6 +21,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const orderQuantity = document.getElementById('orderQuantity');
     const orderSlPct = document.getElementById('orderSlPct');
     const orderTslPct = document.getElementById('orderTslPct');
+    const orderLimitPrice = document.getElementById('orderLimitPrice');
+    const limitPriceGroup = document.getElementById('limitPriceGroup');
+    const limitPriceHint = document.getElementById('limitPriceHint');
     const estimatedMargin = document.getElementById('estimatedMargin');
     const estSlPrice = document.getElementById('estSlPrice');
     const estRisk = document.getElementById('estRisk');
@@ -47,9 +50,53 @@ document.addEventListener('DOMContentLoaded', () => {
     let quantityTouched = false; // user typed a Quantity - stop auto-filling it from Amount / LTP
     let quantityDefaultedFor = null; // symbol the Quantity was last auto-filled for (once per symbol)
     let orderSide = 'BUY'; // order ticket side: 'BUY' (long) or 'SHORT' (short sell - sell first, buy back later)
+    let orderType = 'MARKET'; // 'MARKET' (fills now) or 'LIMIT' (Pending until the price reaches the Limit Price)
+    let limitTouched = false; // user typed a Limit Price - stop pre-filling it with the LTP
+    let lastPendingCount = 0; // Pending limit orders on the last dashboard load - keeps the Orders tab refreshing
+
+    // Same limits as ManualPaperTradeService (MaxLimitDistancePct, NSE tick size) - the server re-checks both.
+    const MAX_LIMIT_DISTANCE_PCT = 10;
+    const TICK_SIZE = 0.05;
 
     function isShortOrder() {
         return orderSide === 'SHORT';
+    }
+
+    function isLimitOrder() {
+        return orderType === 'LIMIT';
+    }
+
+    function roundToTick(price) {
+        return Math.round(price / TICK_SIZE) * TICK_SIZE;
+    }
+
+    function getLimitPrice() {
+        return parseFloat(orderLimitPrice?.value) || 0;
+    }
+
+    // Price the order is sized at: the Limit Price for a limit order, otherwise the latest stored price.
+    function getOrderPrice() {
+        return isLimitOrder() ? getLimitPrice() : getEffectivePrice();
+    }
+
+    // A BUY limit at/above the price (SHORT: at/below) trades at once - the server fills it now at the stored price.
+    function isMarketableLimit(limit, ltp) {
+        return isShortOrder() ? limit <= ltp : limit >= ltp;
+    }
+
+    function prefillLimitPrice() {
+        if (!orderLimitPrice || limitTouched) return;
+        const ltp = getEffectivePrice();
+        orderLimitPrice.value = ltp > 0 ? roundToTick(ltp).toFixed(2) : '';
+    }
+
+    function onOrderTypeChanged() {
+        const limitRadio = document.getElementById('orderTypeLimit');
+        orderType = limitRadio && limitRadio.checked ? 'LIMIT' : 'MARKET';
+        if (limitPriceGroup) limitPriceGroup.classList.toggle('d-none', !isLimitOrder());
+        if (isLimitOrder()) prefillLimitPrice();
+        resetPlaceOrderButton();
+        validateFormInputs();
     }
 
     // Positions / history rows carry side 0 = BUY, 1 = SELL (numeric or enum name).
@@ -89,6 +136,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         activeSymbol = newSymbol;
         quantityTouched = false;
+        limitTouched = false;
+        prefillLimitPrice();
         applyDefaultQuantity();
         updateLtpDisplay();
         validateFormInputs();
@@ -109,6 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentLtpTimeMap[symbol] = q.asOfUtc || null;
                 if (symbol === activeSymbol) {
                     if (quantityDefaultedFor !== symbol) applyDefaultQuantity();
+                    if (isLimitOrder() && !getLimitPrice()) prefillLimitPrice();
                     updateLtpDisplay();
                     validateFormInputs();
                 }
@@ -188,7 +238,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetPlaceOrderButton() {
         if (!placeOrderBtn) return;
-        placeOrderBtn.innerText = isShortOrder() ? '📉 Place Paper Short Sell' : '📝 Place Paper Trade';
+        const limit = getLimitPrice();
+        if (isLimitOrder()) {
+            const at = limit > 0 ? ` @ ₹${limit.toFixed(2)}` : '';
+            placeOrderBtn.innerText = isShortOrder() ? `📉 Place Limit Short Sell${at}` : `📝 Place Limit BUY${at}`;
+        } else {
+            placeOrderBtn.innerText = isShortOrder() ? '📉 Place Paper Short Sell' : '📝 Place Paper Trade';
+        }
         placeOrderBtn.classList.toggle('btn-success', !isShortOrder());
         placeOrderBtn.classList.toggle('btn-danger', isShortOrder());
     }
@@ -314,6 +370,13 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'MANUAL_SELL': return 'bg-info text-dark';
             case 'MANUAL_SHORT': return 'bg-danger';
             case 'MANUAL_COVER': return 'bg-info text-dark';
+            case 'LIMIT_PLACED': return 'bg-info text-dark';
+            case 'LIMIT_FILLED': return 'bg-success';
+            case 'LIMIT_CANCELLED':
+            case 'LIMIT_EXPIRED': return 'bg-secondary';
+            case 'AUTO_TARGET': return 'bg-success';
+            case 'AUTO_SL': return 'bg-danger';
+            case 'AUTO_TSL': return 'bg-warning text-dark';
             case 'AUTO_SQUARE_OFF': return 'bg-warning text-dark';
             case 'TRADE_SKIPPED': return 'bg-warning text-dark';
             case 'CIRCUIT_BREAKER':
@@ -413,7 +476,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('input', updateEditLevelsPreview);
         });
+        ['editAutoExit'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', updateEditLevelsHint);
+        });
         document.querySelectorAll('input[name="orderSide"]').forEach(r => r.addEventListener('change', onOrderSideChanged));
+        document.querySelectorAll('input[name="orderType"]').forEach(r => r.addEventListener('change', onOrderTypeChanged));
+        if (orderLimitPrice) orderLimitPrice.addEventListener('input', () => {
+            limitTouched = true;
+            resetPlaceOrderButton();
+            validateFormInputs();
+        });
         updateShortTimesText(); // create the SHORT SELL tooltip with default times; refreshed once settings load
         const shortInfo = document.getElementById('shortSellInfo');
         // The icon sits inside the SHORT SELL label - don't let a click on it switch the side.
@@ -572,7 +645,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Same client-side checks as the Manual Real Trade popup - the server re-runs every risk gate.
     function validateFormInputs() {
         let isValid = true;
-        const price = getEffectivePrice();
+        const ltp = getEffectivePrice();
+        const price = getOrderPrice();
         const qty = parseInt(orderQuantity.value, 10) || 0;
         const slPct = parseFloat(orderSlPct.value) || 0;
         const tslPct = parseFloat(orderTslPct.value) || 0;
@@ -596,6 +670,25 @@ document.addEventListener('DOMContentLoaded', () => {
             isValid = false;
         }
 
+        // 2b. Limit Price - positive and within MAX_LIMIT_DISTANCE_PCT of the price (typo guard, as on the server).
+        if (limitPriceHint) limitPriceHint.textContent = '';
+        if (isLimitOrder()) {
+            if (price <= 0) {
+                showFieldError(orderLimitPrice, 'limitPriceError', 'Limit Price must be greater than zero.');
+                isValid = false;
+            } else if (ltp > 0) {
+                const distancePct = (price - ltp) / ltp * 100;
+                if (Math.abs(distancePct) > MAX_LIMIT_DISTANCE_PCT) {
+                    showFieldError(orderLimitPrice, 'limitPriceError', `Limit Price is ${Math.abs(distancePct).toFixed(1)}% from the price ₹${ltp.toFixed(2)} - it must be within ${MAX_LIMIT_DISTANCE_PCT}%.`);
+                    isValid = false;
+                } else if (limitPriceHint) {
+                    limitPriceHint.textContent = isMarketableLimit(price, ltp)
+                        ? `Already ${isShortOrder() ? 'at/below' : 'at/above'} the price - fills now at about ₹${ltp.toFixed(2)}.`
+                        : `Pending until the price ${isShortOrder() ? 'rises to' : 'falls to'} ₹${price.toFixed(2)} (${Math.abs(distancePct).toFixed(2)}% away). Expires at day end if not filled.`;
+                }
+            }
+        }
+
         // 3. Capital Check
         const required = qty * price;
         estimatedMargin.innerText = `₹${required.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
@@ -613,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (estSlPrice) estSlPrice.textContent = slPrice > 0 ? `₹${slPrice.toFixed(2)}` : '-';
         if (estRisk) estRisk.textContent = (slPrice > 0 && qty > 0) ? `₹${(Math.abs(price - slPrice) * qty).toFixed(2)}` : '-';
 
-        if (!activeSymbol || price <= 0) {
+        if (!activeSymbol || price <= 0 || ltp <= 0) {
             isValid = false;
         }
 
@@ -625,7 +718,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resetInputStyles() {
-        [orderQuantity, orderSlPct, orderTslPct].forEach(el => {
+        [orderQuantity, orderSlPct, orderTslPct, orderLimitPrice].forEach(el => {
             if (el) {
                 el.classList.remove('is-invalid');
             }
@@ -758,6 +851,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         statAvailableMargin.innerText = formatInr(data.manualAvailableMargin);
         statUsedMargin.innerText = `Manual Used Margin: ${formatInr(data.manualUsedMargin)}`;
+        const pendingCount = data.pendingOrdersCount || 0;
+        const pendingEl = document.getElementById('statPendingOrders');
+        if (pendingEl) {
+            pendingEl.classList.toggle('d-none', pendingCount === 0);
+            pendingEl.innerText = `Pending Limit Orders: ${pendingCount} · Held ${formatInr(data.manualBlockedMargin)}`;
+        }
+        // A fill / expiry happens in the Worker: keep reloading the Orders tab while orders are (or just were) Pending.
+        const pendingChanged = pendingCount !== lastPendingCount;
+        const hadPending = pendingCount > 0 || lastPendingCount > 0;
+        lastPendingCount = pendingCount;
+        if (hadPending) {
+            loadOrders();
+            if (pendingChanged) {
+                loadPositions();
+                loadHistory(historyPageState.page);
+                loadManualLogs();
+            }
+        }
 
         const unPnl = data.manualUnrealizedPnl || 0;
         statUnrealizedPnl.innerHTML = formatSignedInr(unPnl) + netAfterChargesHtml(unPnl, data.manualEstimatedCharges);
@@ -806,7 +917,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!positionsTableBody) return;
         positionsTableBody.innerHTML = '';
 
+        // Auto Exit / square-off closes happen in the Worker: when a shown position is gone, refresh the
+        // history, orders and logs too (the 10s refresh only reloads positions and stat cards).
+        const shownIds = new Set((positions || []).map(p => p.id));
+        if ((lastRenderedPositions || []).some(p => !shownIds.has(p.id))) {
+            loadHistory(historyPageState.page);
+            loadOrders();
+            loadManualLogs();
+        }
+
         if (!positions || positions.length === 0) {
+            lastRenderedPositions = [];
             positionsTableBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">No open positions. Place an order from the ticket to start paper trading.</td></tr>';
             if (positionsCountBadge) positionsCountBadge.innerText = '0 Active';
             return;
@@ -821,6 +942,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const sideBadge = !isShortPos
                 ? '<span class="badge bg-success bg-opacity-25 text-success">LONG</span>'
                 : `<span class="badge bg-danger bg-opacity-25 text-danger" title="Short sell - profits when the price falls">SHORT</span>${squareOffCountdownHtml()}`;
+            const autoExit = !!(pos.autoExit ?? pos.AutoExit);
+            const autoExitBadge = autoExit
+                ? '<span class="badge bg-primary bg-opacity-25 text-info d-block mt-1" title="Auto Exit ON - closed automatically when a stored 1-minute candle hits the Stop Loss, Trailing SL or Target">AUTO EXIT</span>'
+                : '';
 
             const sl = pos.stopLoss ?? pos.StopLoss;
             const tp = pos.takeProfit ?? pos.TakeProfit;
@@ -828,10 +953,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const tslPct = pos.trailingSlPct ?? pos.TrailingSlPct;
             const slText = sl && sl > 0 ? `₹${parseFloat(sl).toFixed(2)}` : '-';
             const tpText = tp && tp > 0 ? `₹${parseFloat(tp).toFixed(2)}` : '-';
-            // Trailing SL has no level until the trade has moved in our favour (SWING_CLOSE) - show its %.
+            // Trailing SL has no level until the trade is Trailing SL % in profit - show its %.
             const tslText = tsl && tsl > 0
                 ? `₹${parseFloat(tsl).toFixed(2)}`
-                : (tslPct > 0 ? `<span class="text-white-50">Not active (${parseFloat(tslPct).toFixed(2)}%)</span>` : '-');
+                : (tslPct > 0 ? `<span class="text-white-50" title="Starts trailing once the trade is ${parseFloat(tslPct).toFixed(2)}% in profit">Not active (${parseFloat(tslPct).toFixed(2)}%)</span>` : '-');
             const ltpVal = pos.currentPrice || pos.averageEntryPrice;
             // Distance still to travel to the Target: up for a long, down for a short.
             const toTargetPct = tp > 0 && ltpVal > 0 ? ((isShortPos ? ltpVal - tp : tp - ltpVal) / ltpVal) * 100 : null;
@@ -842,7 +967,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="fw-bold">${pos.symbol}</td>
-                <td>${sideBadge}</td>
+                <td>${sideBadge}${autoExitBadge}</td>
                 <td>${pos.quantity}</td>
                 <td>₹${pos.averageEntryPrice.toFixed(2)}</td>
                 <td>₹${(pos.currentPrice || pos.averageEntryPrice).toFixed(2)}</td>
@@ -889,12 +1014,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('editLevelsPositionId').value = pos.id;
         const isShortPos = isSellSide(pos.side);
         document.getElementById('editLevelsTitle').innerText = `${pos.symbol} · ${isShortPos ? 'SHORT ' : ''}${pos.quantity} @ ₹${Number(pos.averageEntryPrice).toFixed(2)}`;
-        const hint = document.getElementById('editLevelsHint');
-        if (hint) {
-            hint.innerText = isShortPos
-                ? 'Short: Stop Loss must be ABOVE the Target. Reference levels only - the short is bought back when you click Buy to Cover, or automatically at the square-off time.'
-                : 'Reference levels only - the position is sold only when you click Close.';
-        }
+        const autoExitEl = document.getElementById('editAutoExit');
+        if (autoExitEl) autoExitEl.checked = !!pos.autoExit;
+        updateEditLevelsHint();
         document.getElementById('editLevelsLtp').innerText = `₹${Number(pos.currentPrice || pos.averageEntryPrice).toFixed(2)}`;
         document.getElementById('editStopLoss').value = pos.stopLoss > 0 ? Number(pos.stopLoss).toFixed(2) : '';
         document.getElementById('editTrailingSlPct').value = pos.trailingSlPct > 0 ? Number(pos.trailingSlPct).toFixed(2) : '';
@@ -904,6 +1026,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const modalEl = document.getElementById('editLevelsModal');
         if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+
+    // What the levels do, for the position being edited and the Auto Exit switch as currently set.
+    function updateEditLevelsHint() {
+        const hint = document.getElementById('editLevelsHint');
+        const pos = (lastRenderedPositions || []).find(p => p.id === parseInt(document.getElementById('editLevelsPositionId').value, 10));
+        if (!hint || !pos) return;
+        const isShortPos = isSellSide(pos.side);
+        const autoExit = !!document.getElementById('editAutoExit')?.checked;
+        const order = isShortPos ? 'Short: Stop Loss must be ABOVE the Target. ' : '';
+        hint.innerText = autoExit
+            ? `${order}Auto Exit ON - ${isShortPos ? 'bought back' : 'sold'} automatically when a completed stored 1-minute candle hits the Stop Loss, the Trailing SL or the Target. A changed Trailing SL % restarts the trail at the new %.`
+            : `${order}Reference levels only - ${isShortPos ? 'the short is bought back when you click Buy to Cover, or automatically at the square-off time' : 'the position is sold only when you click Close'}.`;
     }
 
     // Shows risk / reward vs the average entry price while editing.
@@ -946,7 +1081,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/position/${positionId}/levels`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ stopLoss, trailingSlPct, takeProfit })
+                body: JSON.stringify({ stopLoss, trailingSlPct, takeProfit, autoExit: !!document.getElementById('editAutoExit')?.checked })
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || data.success !== true) {
@@ -1043,21 +1178,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
         orders.forEach(o => {
             const sideBadge = o.side === 0 || o.side === 'BUY' ? '<span class="badge bg-success bg-opacity-25 text-success">BUY</span>' : '<span class="badge bg-danger bg-opacity-25 text-danger">SELL</span>';
-            const statusBadge = getStatusBadge(o.status);
+            const statusBadge = getStatusBadge(o.status, o.remarks);
+            const isLimit = !(o.orderType === 0 || o.orderType === 'Market');
+            const isPending = o.status === 0 || o.status === 'Pending';
+
+            // Limit: the limit price, plus the fill price once filled (a gap fill can be better than the limit) or the
+            // live distance to it while Pending.
+            let priceCell = o.price > 0 ? '₹' + Number(o.price).toFixed(2) : 'MKT';
+            if (isLimit && o.filledPrice > 0) {
+                priceCell += `<small class="d-block text-success">filled ₹${Number(o.filledPrice).toFixed(2)}</small>`;
+            } else if (isLimit && isPending) {
+                const ltp = currentLtpMap[o.symbol];
+                if (ltp > 0) {
+                    const awayPct = Math.abs(ltp - o.price) / o.price * 100;
+                    priceCell += `<small class="d-block text-white-50">LTP ₹${ltp.toFixed(2)} · ${awayPct.toFixed(2)}% away</small>`;
+                }
+            }
 
             const tr = document.createElement('tr');
+            if (o.remarks) tr.title = o.remarks;
             tr.innerHTML = `
                 <td><small class="text-white fw-medium">${formatISTTime(o.createdAt)} IST</small></td>
-                <td class="fw-bold">${o.symbol}</td>
+                <td class="fw-bold">${escapeHtml(o.symbol)}</td>
                 <td>${sideBadge}</td>
-                <td>${o.orderType === 0 || o.orderType === 'Market' ? 'Market' : 'Limit'}</td>
+                <td>${isLimit ? '<span class="badge bg-info bg-opacity-25 text-info">Limit</span>' : 'Market'}</td>
                 <td>${o.quantity}</td>
-                <td>${o.price > 0 ? '₹' + o.price.toFixed(2) : 'MKT'}</td>
+                <td>${priceCell}</td>
                 <td class="text-danger fw-semibold">${o.stopLoss > 0 ? '₹' + Number(o.stopLoss).toFixed(2) : '-'}</td>
                 <td class="text-success fw-bold">${o.takeProfit > 0 ? '₹' + Number(o.takeProfit).toFixed(2) : '-'}</td>
                 <td>${statusBadge}</td>
                 <td class="text-end">
-                    ${(o.status === 0 || o.status === 'Pending') ? `<button class="btn btn-outline-secondary btn-sm cancel-order-btn" data-id="${o.id}">Cancel</button>` : '-'}
+                    ${isPending ? `<button class="btn btn-outline-warning btn-sm cancel-order-btn" data-id="${o.id}" title="Cancel this Pending limit order and release its held capital">Cancel</button>` : '-'}
                 </td>
             `;
             ordersTableBody.appendChild(tr);
@@ -1068,10 +1219,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function getStatusBadge(status) {
+    function getStatusBadge(status, remarks) {
         if (status === 0 || status === 'Pending') return '<span class="badge bg-warning text-dark">Pending</span>';
         if (status === 1 || status === 'Filled') return '<span class="badge bg-success">Filled</span>';
-        if (status === 2 || status === 'Cancelled') return '<span class="badge bg-secondary">Cancelled</span>';
+        if (status === 2 || status === 'Cancelled') {
+            // Manual limit orders: an unfilled day order is cancelled with an "Expired ..." reason.
+            return /^Expired/.test(remarks || '')
+                ? '<span class="badge bg-dark border border-secondary">Expired</span>'
+                : '<span class="badge bg-secondary">Cancelled</span>';
+        }
         if (status === 4 || status === 'Open') return '<span class="badge bg-info text-dark">Open</span>';
         return '<span class="badge bg-danger">Rejected</span>';
     }
@@ -1200,12 +1356,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!validateFormInputs()) return;
 
         // Same request as Manual Real Trade (/api/realtrade/manual-buy), routed to the paper account.
+        // orderType: 0 = Market, 1 = Limit (PaperOrderType).
+        const isLimit = isLimitOrder();
         const payload = {
             symbol: activeSymbol,
             entryPrice: getEffectivePrice(),
             quantity: parseInt(orderQuantity.value, 10),
             stopLossPct: parseFloat(orderSlPct.value),
-            trailingSlPct: parseFloat(orderTslPct.value)
+            trailingSlPct: parseFloat(orderTslPct.value),
+            orderType: isLimit ? 1 : 0,
+            limitPrice: isLimit ? getLimitPrice() : null,
+            autoExit: !!document.getElementById('orderAutoExit')?.checked
         };
 
         try {
@@ -1225,8 +1386,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            showToast('Paper Trade Executed', data.message || `Paper ${isShortOrder() ? 'SHORT SELL' : 'BUY'} for ${payload.quantity} ${activeSymbol} executed.`, 'success');
+            const pending = isLimit && /Pending/.test(data.message || '');
+            showToast(pending ? 'Limit Order Placed' : 'Paper Trade Executed',
+                data.message || `Paper ${isShortOrder() ? 'SHORT SELL' : 'BUY'} for ${payload.quantity} ${activeSymbol} executed.`,
+                pending ? 'info' : 'success');
 
+            limitTouched = false;
             await loadPortfolio();
             await loadPositions();
             await loadOrders();
@@ -1267,21 +1432,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Cancels a Pending manual limit order (manual_paper_orders only - never the shared Auto paper account).
     async function handleCancelOrder(orderId) {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/papertrading/order/cancel/${orderId}`, {
+            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/order/cancel/${parseInt(orderId, 10)}`, {
                 method: 'POST'
             });
 
-            if (!res.ok) {
-                const errData = await res.json();
-                showToast('Cancel Failed', errData.detail || 'Could not cancel order.', 'danger');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success !== true) {
+                showToast('Cancel Failed', data.message || 'Could not cancel order.', 'danger');
+                await loadOrders();
                 return;
             }
 
-            showToast('Order Cancelled', `Pending order #${orderId} cancelled.`, 'warning');
+            showToast('Order Cancelled', data.message || `Pending order #${orderId} cancelled.`, 'warning');
             await loadPortfolio();
             await loadOrders();
+            loadManualLogs();
         } catch (err) {
             console.error('Error cancelling order:', err);
         }

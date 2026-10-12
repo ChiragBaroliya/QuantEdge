@@ -940,12 +940,12 @@ CREATE TABLE IF NOT EXISTS manual_paper_orders (
     position_id INT NULL,
     symbol VARCHAR(50) NOT NULL,
     side INT NOT NULL,                      -- 0 = BUY, 1 = SELL
-    order_type INT NOT NULL DEFAULT 0,      -- 0 = Market
+    order_type INT NOT NULL DEFAULT 0,      -- 0 = Market, 1 = Limit
     quantity INT NOT NULL,
-    price NUMERIC(18, 4) NOT NULL,
+    price NUMERIC(18, 4) NOT NULL,          -- limit price for a Limit order
     stop_loss NUMERIC(18, 4),
     take_profit NUMERIC(18, 4),
-    status INT NOT NULL DEFAULT 1,          -- 1 = Filled
+    status INT NOT NULL DEFAULT 1,          -- 0 = Pending (limit), 1 = Filled, 2 = Cancelled / Expired
     filled_price NUMERIC(18, 4),
     filled_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -1039,6 +1039,26 @@ ALTER TABLE manual_paper_trade_history ALTER COLUMN is_exit SET NOT NULL;
 ALTER TABLE manual_paper_trade_settings ADD COLUMN IF NOT EXISTS short_entry_cutoff VARCHAR(10) NOT NULL DEFAULT '15:00';
 ALTER TABLE manual_paper_trade_settings ADD COLUMN IF NOT EXISTS short_square_off_time VARCHAR(10) NOT NULL DEFAULT '15:15';
 CREATE INDEX IF NOT EXISTS ix_manual_paper_positions_open_side ON manual_paper_positions(status, side);
+
+-- Manual Paper Limit Orders. A limit entry rests as order_type = 1, status = 0 (Pending) until a stored 1-minute
+-- candle trades through its price (ManualLimitOrderWorker), then it opens the position like a market entry. The
+-- trade-wise SL % / Trailing SL % are kept on the order so the levels are set from the real fill price.
+-- Cancelled and expired orders are status = 2 (remarks say which).
+ALTER TABLE manual_paper_orders ADD COLUMN IF NOT EXISTS stop_loss_pct NUMERIC(9, 4);
+ALTER TABLE manual_paper_orders ADD COLUMN IF NOT EXISTS trailing_sl_pct NUMERIC(9, 4);
+CREATE INDEX IF NOT EXISTS ix_manual_paper_orders_pending ON manual_paper_orders(status, order_type);
+
+-- Manual Paper Auto Exit. auto_exit = TRUE: ManualAutoExitWorker closes the position from stored 1-minute candles
+-- when the Target, Stop Loss or trailed stop is hit (FALSE = levels are reference only, closed with the Close
+-- button). Existing positions stay FALSE. best_price / trailing_stop_loss / exit_checked_until are the trail state:
+-- best price since entry, the trailed stop, and the start time of the last candle already checked.
+-- An order's auto_exit is copied to the position when the limit fills.
+ALTER TABLE manual_paper_positions ADD COLUMN IF NOT EXISTS auto_exit BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE manual_paper_positions ADD COLUMN IF NOT EXISTS trailing_stop_loss NUMERIC(18, 4);
+ALTER TABLE manual_paper_positions ADD COLUMN IF NOT EXISTS best_price NUMERIC(18, 4);
+ALTER TABLE manual_paper_positions ADD COLUMN IF NOT EXISTS exit_checked_until TIMESTAMP WITH TIME ZONE;
+ALTER TABLE manual_paper_orders ADD COLUMN IF NOT EXISTS auto_exit BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS ix_manual_paper_positions_auto_exit ON manual_paper_positions(status, auto_exit);
 
 -- Auto Short Selling (Auto Paper + Auto Real). OFF by default for every user: an existing settings row gets
 -- is_auto_short_enabled = FALSE, so nothing shorts until a user turns it on. Intraday only - no new short at/after

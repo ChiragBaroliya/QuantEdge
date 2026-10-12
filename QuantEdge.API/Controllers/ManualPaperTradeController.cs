@@ -143,7 +143,7 @@ public class ManualPaperTradeController : ControllerBase
         }
 
         var (success, message) = await _manualPaperTradeService.UpdatePositionLevelsAsync(
-            positionId, dto.StopLoss, dto.TrailingSlPct, dto.TakeProfit, GetCurrentUserId());
+            positionId, dto.StopLoss, dto.TrailingSlPct, dto.TakeProfit, GetCurrentUserId(), dto.AutoExit);
         return Ok(new { success, message });
     }
 
@@ -241,9 +241,33 @@ public class ManualPaperTradeController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        var (success, message) = await _manualPaperTradeService.ExecuteManualBuyAsync(
-            dto.Symbol, dto.EntryPrice, dto.Quantity, dto.StopLossPct, dto.TrailingSlPct, GetCurrentUserId());
+        var (success, message) = dto.OrderType == PaperOrderType.Limit
+            ? await PlaceLimitAsync(TradeSide.BUY, dto)
+            : await _manualPaperTradeService.ExecuteManualBuyAsync(
+                dto.Symbol, dto.EntryPrice, dto.Quantity, dto.StopLossPct, dto.TrailingSlPct, GetCurrentUserId(), dto.AutoExit);
 
+        return Ok(new { success, message });
+    }
+
+    // Limit BUY / SHORT SELL - same request as a market order plus OrderType = Limit and LimitPrice.
+    private async Task<(bool Success, string Message)> PlaceLimitAsync(TradeSide side, ManualPaperBuyRequestDto dto)
+    {
+        if (!dto.LimitPrice.HasValue || dto.LimitPrice.Value <= 0)
+        {
+            return (false, "A Limit Price greater than zero is required for a Limit order.");
+        }
+
+        return await _manualPaperTradeService.PlaceManualLimitOrderAsync(side, dto.Symbol, dto.LimitPrice.Value, dto.Quantity,
+            dto.StopLossPct, dto.TrailingSlPct, GetCurrentUserId(), dto.AutoExit);
+    }
+
+    /// <summary>
+    /// Cancel button on a Pending manual limit order (manual_paper_orders only - not the shared paper account).
+    /// </summary>
+    [HttpPost("order/cancel/{orderId:int}")]
+    public async Task<IActionResult> CancelOrder(int orderId)
+    {
+        var (success, message) = await _manualPaperTradeService.CancelOrderAsync(orderId, GetCurrentUserId());
         return Ok(new { success, message });
     }
 
@@ -265,8 +289,10 @@ public class ManualPaperTradeController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        var (success, message) = await _manualPaperTradeService.ExecuteManualShortAsync(
-            dto.Symbol, dto.EntryPrice, dto.Quantity, dto.StopLossPct, dto.TrailingSlPct, GetCurrentUserId());
+        var (success, message) = dto.OrderType == PaperOrderType.Limit
+            ? await PlaceLimitAsync(TradeSide.SELL, dto)
+            : await _manualPaperTradeService.ExecuteManualShortAsync(
+                dto.Symbol, dto.EntryPrice, dto.Quantity, dto.StopLossPct, dto.TrailingSlPct, GetCurrentUserId(), dto.AutoExit);
 
         return Ok(new { success, message });
     }

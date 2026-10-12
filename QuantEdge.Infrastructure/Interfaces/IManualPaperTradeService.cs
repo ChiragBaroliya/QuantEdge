@@ -26,7 +26,7 @@ public interface IManualPaperTradeService
     Task<ManualPaperDashboardDto> GetDashboardAsync(int userId = 1);
 
     /// <summary>Manual Trading page - OPEN Manual paper positions with live LTP / unrealized P&amp;L.</summary>
-    Task<IEnumerable<PaperPosition>> GetOpenPositionsAsync(int userId = 1);
+    Task<IEnumerable<ManualPaperPosition>> GetOpenPositionsAsync(int userId = 1);
 
     /// <summary>Manual Trading page - paged, filtered Manual paper orders.</summary>
     Task<PagedResultDto<PaperOrder>> GetOrdersPagedAsync(ManualPaperOrderFilterDto filter, int userId = 1);
@@ -42,7 +42,7 @@ public interface IManualPaperTradeService
     /// mandatory trade-wise Stop Loss % / Trailing Stop Loss %. Returns whether it executed and why not.
     /// </summary>
     Task<(bool Success, string Message)> ExecuteManualBuyAsync(string symbol, decimal entryPrice, int quantity,
-        decimal stopLossPct, decimal trailingSlPct, int userId = 1);
+        decimal stopLossPct, decimal trailingSlPct, int userId = 1, bool autoExit = false);
 
     /// <summary>
     /// Places a manual paper SHORT SELL (sell first, buy back later) after the same entry gates as a BUY plus the
@@ -50,7 +50,26 @@ public interface IManualPaperTradeService
     /// uncovered short is bought back by <see cref="SquareOffDueShortsAsync"/>.
     /// </summary>
     Task<(bool Success, string Message)> ExecuteManualShortAsync(string symbol, decimal entryPrice, int quantity,
-        decimal stopLossPct, decimal trailingSlPct, int userId = 1);
+        decimal stopLossPct, decimal trailingSlPct, int userId = 1, bool autoExit = false);
+
+    /// <summary>
+    /// Limit entry (BUY or SHORT SELL) - same gates as a market entry, plus a limit price within
+    /// MaxLimitDistancePct of the stored price. A limit already at/through the price fills now at the stored price;
+    /// otherwise it rests as a Pending order holding quantity x limit price, filled or expired by
+    /// <see cref="ProcessPendingLimitOrdersAsync"/>.
+    /// </summary>
+    Task<(bool Success, string Message)> PlaceManualLimitOrderAsync(TradeSide side, string symbol, decimal limitPrice, int quantity,
+        decimal stopLossPct, decimal trailingSlPct, int userId = 1, bool autoExit = false);
+
+    /// <summary>Cancel button on a Pending limit order - releases its held capital and daily-trade slot.</summary>
+    Task<(bool Success, string Message)> CancelOrderAsync(int orderId, int userId = 1);
+
+    /// <summary>
+    /// Limit order pass (Worker): fills each Pending order once a stored 1-minute candle placed after it trades through
+    /// its price (at the limit, or the candle open on a gap), and expires orders still Pending at the trading window
+    /// end (short: the short entry cut-off) or left from an earlier day. Returns how many filled / were cancelled.
+    /// </summary>
+    Task<(int Filled, int Cancelled)> ProcessPendingLimitOrdersAsync();
 
     /// <summary>
     /// Auto square-off (Worker): buys back every OPEN short past its user's Short Square-off Time, or opened on an
@@ -59,15 +78,22 @@ public interface IManualPaperTradeService
     Task<int> SquareOffDueShortsAsync();
 
     /// <summary>
-    /// Edit button on Live Open Positions - changes an OPEN manual position's Stop Loss, Trailing SL % and
-    /// Target (reference levels only; the position is still sold only with Close).
+    /// Auto Exit pass (Worker): closes every OPEN Auto Exit position whose Target, Stop Loss or trailed stop was hit by
+    /// a completed stored 1-minute candle (gap at the open first, then stop before Target within a candle), and saves
+    /// the trail state of the rest. Stored candles only. Returns how many positions were closed.
+    /// </summary>
+    Task<int> ProcessAutoExitsAsync();
+
+    /// <summary>
+    /// Edit button on Live Open Positions - changes an OPEN manual position's Stop Loss, Trailing SL % and Target,
+    /// and turns Auto Exit on / off (null = unchanged). With Auto Exit OFF the levels are reference only.
     /// </summary>
     Task<(bool Success, string Message)> UpdatePositionLevelsAsync(int positionId, decimal stopLoss, decimal trailingSlPct,
-        decimal takeProfit, int userId = 1);
+        decimal takeProfit, int userId = 1, bool? autoExit = null);
 
     /// <summary>
     /// Close button on the Manual Trading page - sells an OPEN long, or buys back (covers) an OPEN short, at the
-    /// latest price. Apart from the short auto square-off, this is the only way a manual paper position is exited.
+    /// latest price. Besides this, a position is exited only by the short auto square-off or (when ON) Auto Exit.
     /// </summary>
     Task<(bool Success, string Message)> ClosePositionAsync(int positionId, int userId = 1);
 }
