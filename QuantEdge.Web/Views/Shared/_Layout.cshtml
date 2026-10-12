@@ -314,15 +314,18 @@
                 </svg>
                 <span class="nav-label">Sector Dashboard</span>
             </a>
-            <a asp-controller="Reconciliation" asp-action="Index"
-               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Reconciliation" ? "active" : "")"
-               data-tooltip="🧾 **Reconciliation**: Do our positions match Zerodha, and do our daily prices match NSE's official close?">
-                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 11 12 14 22 4"></polyline>
-                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                </svg>
-                <span class="nav-label">Reconciliation</span>
-            </a>
+            @if (isAdmin)
+            {
+                <a asp-controller="Reconciliation" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Reconciliation" ? "active" : "")"
+                   data-tooltip="🧾 **Reconciliation**: Do our positions match Zerodha, and do our daily prices match NSE's official close?">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 11 12 14 22 4"></polyline>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    <span class="nav-label">Reconciliation</span>
+                </a>
+            }
             <a asp-controller="Notifications" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Notifications" ? "active" : "")"
                data-tooltip="🔔 **Notifications**: Every bell notification for any date range - trades, swing picks, NIFTY flips and Zerodha/NSE problems.">
@@ -332,16 +335,19 @@
                 </svg>
                 <span class="nav-label">Notifications</span>
             </a>
-            <a asp-controller="Backtest" asp-action="Index"
-               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Backtest" ? "active" : "")"
-               data-tooltip="🧪 **Backtest**: Would the bot's rules have made money? Replays the live strategy on stored candles - no Zerodha calls.">
-                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="1 4 1 10 7 10"></polyline>
-                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-                    <polyline points="12 7 12 12 15 15"></polyline>
-                </svg>
-                <span class="nav-label">Backtest</span>
-            </a>
+            @if (isAdmin)
+            {
+                <a asp-controller="Backtest" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Backtest" ? "active" : "")"
+                   data-tooltip="🧪 **Backtest**: Would the bot's rules have made money? Replays the live strategy on stored candles - no Zerodha calls.">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="1 4 1 10 7 10"></polyline>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                        <polyline points="12 7 12 12 15 15"></polyline>
+                    </svg>
+                    <span class="nav-label">Backtest</span>
+                </a>
+            }
             <!-- Main Menu Trading with Sub Items -->
             @{
                 string currentController = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
@@ -351,7 +357,7 @@
                 bool isTradingActive = isAutoPaperActive || isAutoRealActive || isManualTradingActive;
             }
             <div class="nav-item-group @(isTradingActive ? "open" : "")">
-                <div class="nav-item-header @(isTradingActive ? "active" : "")" data-tooltip="💹 **Trading**: Auto Paper, Auto Real and Manual trading workspaces.">
+                <div class="nav-item-header @(isTradingActive ? "active" : "")" data-tooltip="@(isAdmin ? "💹 **Trading**: Auto Paper, Auto Real and Manual trading workspaces." : "💹 **Trading**: Manual paper trading workspace.")">
                     <div class="nav-item-header-left">
                         <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
@@ -364,39 +370,40 @@
                     </svg>
                 </div>
                 <div class="nav-submenu">
-                    <a asp-controller="AutoTrading" asp-action="Index"
-                       class="nav-sub-item @(isAutoPaperActive ? "active" : "")"
-                       data-tooltip="🤖 **Auto Paper Trading**: Automated strategy simulation engine with virtual capital, tick monitor, and positions dashboard.">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 2a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2V4a2 2 0 0 1 2-2z"></path>
-                            <circle cx="9" cy="11" r="1"></circle>
-                            <circle cx="15" cy="11" r="1"></circle>
-                            <line x1="9" y1="15" x2="15" y2="15"></line>
-                        </svg>
-                        <span>Auto Paper Trading</span>
-                    </a>
-                    <a asp-controller="RealTrading" asp-action="Index"
-                       class="nav-sub-item @(isAutoRealActive ? "active" : "")"
-                       data-tooltip="⚡ **Auto Real Trading**: Real-Money automated execution via Zerodha KiteConnect with margin guards and Panic Kill Switch.">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                        </svg>
-                        <span>Auto Real Trading</span>
-                        <span class="badge bg-danger ms-auto" style="font-size: 0.6rem; padding: 2px 5px; font-weight: 700;">LIVE</span>
-                    </a>
+                    @* Auto Paper / Auto Real Trading: temporarily Admin-only (AutoTradingController / RealTradingController). *@
                     @if (isAdmin)
                     {
-                        <a asp-controller="PaperTrading" asp-action="Index"
-                           class="nav-sub-item @(isManualTradingActive ? "active" : "")"
-                           data-tooltip="📝 **Manual Trading**: Place your own paper orders with virtual capital (₹1,00,000) against live prices.">
+                        <a asp-controller="AutoTrading" asp-action="Index"
+                           class="nav-sub-item @(isAutoPaperActive ? "active" : "")"
+                           data-tooltip="🤖 **Auto Paper Trading**: Automated strategy simulation engine with virtual capital, tick monitor, and positions dashboard.">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                                <line x1="8" y1="21" x2="16" y2="21"></line>
-                                <line x1="12" y1="17" x2="12" y2="21"></line>
+                                <path d="M12 2a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2V4a2 2 0 0 1 2-2z"></path>
+                                <circle cx="9" cy="11" r="1"></circle>
+                                <circle cx="15" cy="11" r="1"></circle>
+                                <line x1="9" y1="15" x2="15" y2="15"></line>
                             </svg>
-                            <span>Manual Trading</span>
+                            <span>Auto Paper Trading</span>
+                        </a>
+                        <a asp-controller="RealTrading" asp-action="Index"
+                           class="nav-sub-item @(isAutoRealActive ? "active" : "")"
+                           data-tooltip="⚡ **Auto Real Trading**: Real-Money automated execution via Zerodha KiteConnect with margin guards and Panic Kill Switch.">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                            </svg>
+                            <span>Auto Real Trading</span>
+                            <span class="badge bg-danger ms-auto" style="font-size: 0.6rem; padding: 2px 5px; font-weight: 700;">LIVE</span>
                         </a>
                     }
+                    <a asp-controller="PaperTrading" asp-action="Index"
+                       class="nav-sub-item @(isManualTradingActive ? "active" : "")"
+                       data-tooltip="📝 **Manual Trading**: Place your own paper orders with virtual capital (₹1,00,000) against live prices.">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                        <span>Manual Trading</span>
+                    </a>
                 </div>
             </div>
             <a asp-controller="SwingTrading" asp-action="Index"

@@ -340,7 +340,8 @@
                            class="form-control-custom" 
                            placeholder="Enter your password" 
                            required 
-                           data-parsley-required-message="Please enter your password." />
+                           data-parsley-required-message="Please enter your password."
+                           data-parsley-errors-container="#PasswordInputErrors" />
                     <button type="button" 
                             class="password-toggle-btn" 
                             onclick="event.preventDefault(); togglePwdVisibility('PasswordInput', this)"
@@ -353,6 +354,8 @@
                         </svg>
                     </button>
                 </div>
+                @* Parsley's message goes here, below the field - not inside the flex wrapper next to the input. *@
+                <div id="PasswordInputErrors"></div>
                 <span asp-validation-for="Password" class="text-danger-custom"></span>
             </div>
 

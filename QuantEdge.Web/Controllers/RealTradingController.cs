@@ -5,7 +5,8 @@ using Microsoft.Extensions.Configuration;
 
 namespace QuantEdge.Web.Controllers;
 
-[Authorize]
+// Temporarily Admin-only: Auto Paper / Auto Real Trading is hidden from Users for now (menu link hidden in _Layout too).
+[Authorize(Roles = "Admin")]
 public class RealTradingController : Controller
 {
     private readonly IConfiguration _configuration;

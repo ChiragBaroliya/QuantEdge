@@ -367,7 +367,8 @@
                                required 
                                data-parsley-required-message="Password is required."
                                data-parsley-minlength="6"
-                               data-parsley-minlength-message="Password must be at least 6 characters long." />
+                               data-parsley-minlength-message="Password must be at least 6 characters long."
+                               data-parsley-errors-container="#PasswordErrors" />
                         <button type="button" 
                                 class="password-toggle-btn" 
                                 onclick="event.preventDefault(); togglePwdVisibility('Password', this)"
@@ -380,6 +381,7 @@
                             </svg>
                         </button>
                     </div>
+                    <div id="PasswordErrors"></div>
                     <span asp-validation-for="Password" class="text-danger-custom"></span>
                 </div>
 
@@ -394,7 +396,8 @@
                                required 
                                data-parsley-required-message="Confirm Password is required."
                                data-parsley-equalto="#Password"
-                               data-parsley-equalto-message="Passwords do not match." />
+                               data-parsley-equalto-message="Passwords do not match."
+                               data-parsley-errors-container="#ConfirmPasswordErrors" />
                         <button type="button" 
                                 class="password-toggle-btn" 
                                 onclick="event.preventDefault(); togglePwdVisibility('ConfirmPassword', this)"
@@ -407,6 +410,7 @@
                             </svg>
                         </button>
                     </div>
+                    <div id="ConfirmPasswordErrors"></div>
                     <span asp-validation-for="ConfirmPassword" class="text-danger-custom"></span>
                 </div>
             </div>

@@ -406,7 +406,7 @@ public class ManualPaperTradeService : IManualPaperTradeService
                 message += $" - auto square-off at {settings.ShortSquareOffTime} IST if not covered";
             }
             await LogAuditAsync(symbol, isShort ? "MANUAL_SHORT" : "MANUAL_BUY", entryPrice, quantity, message, userId);
-            await BroadcastAlertAsync(symbol, isShort ? "SELL" : "BUY", quantity, entryPrice, $"{symbol}: {message}");
+            await BroadcastAlertAsync(symbol, isShort ? "SELL" : "BUY", quantity, entryPrice, $"{symbol}: {message}", userId);
             return (true, $"{symbol}: {message}");
         }
         catch (Exception ex)
@@ -649,7 +649,7 @@ public class ManualPaperTradeService : IManualPaperTradeService
                 message += $" - auto square-off at {settings.ShortSquareOffTime} IST if not covered";
             }
             await LogAuditAsync(order.Symbol, "LIMIT_FILLED", fillPrice, order.Quantity, message, userId);
-            await BroadcastAlertAsync(order.Symbol, isShort ? "SELL" : "BUY", order.Quantity, fillPrice, $"{order.Symbol}: {message}");
+            await BroadcastAlertAsync(order.Symbol, isShort ? "SELL" : "BUY", order.Quantity, fillPrice, $"{order.Symbol}: {message}", userId);
             return (true, null);
         }
         catch (Exception ex)
@@ -826,7 +826,7 @@ public class ManualPaperTradeService : IManualPaperTradeService
             string actionType = logActionType
                 ?? (exitReason == AutoSquareOffReason ? "AUTO_SQUARE_OFF" : (isShort ? "MANUAL_COVER" : "MANUAL_SELL"));
             await LogAuditAsync(position.Symbol, actionType, result.ExitPrice, result.Quantity, message, userId);
-            await BroadcastAlertAsync(position.Symbol, isShort ? "BUY" : "SELL", result.Quantity, result.ExitPrice, $"{position.Symbol}: {message}");
+            await BroadcastAlertAsync(position.Symbol, isShort ? "BUY" : "SELL", result.Quantity, result.ExitPrice, $"{position.Symbol}: {message}", userId);
             return (true, $"{position.Symbol}: {message}");
         }
         catch (Exception ex)
@@ -982,12 +982,12 @@ public class ManualPaperTradeService : IManualPaperTradeService
     }
 
     // Own SignalR event, so Auto Paper Trading's "ReceiveAutoTradeAlert" listeners are unaffected.
-    private async Task BroadcastAlertAsync(string symbol, string side, int quantity, decimal price, string message)
+    private async Task BroadcastAlertAsync(string symbol, string side, int quantity, decimal price, string message, int userId)
     {
         if (_hubContext == null) return;
         try
         {
-            await _hubContext.Clients.All.SendAsync("ReceiveManualPaperTradeAlert", new { symbol, side, quantity, price, message });
+            await _hubContext.Clients.All.SendAsync("ReceiveManualPaperTradeAlert", new { symbol, side, quantity, price, message, userId });
         }
         catch (Exception ex)
         {

@@ -10,7 +10,7 @@ namespace QuantEdge.Web.Controllers;
 /// Backtest (Plan Phase 7): queue a replay of the live strategy on stored candles and read its results. The page talks to
 /// /api/backtest/... in the browser; the run itself happens in the worker.
 /// </summary>
-[Authorize]
+[Authorize(Roles = "Admin")]
 public class BacktestController : Controller
 {
     private readonly IConfiguration _configuration;

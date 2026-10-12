@@ -19,7 +19,7 @@
                     Your account (<span class="badge bg-purple text-wrap">@User.Identity?.Name</span> - <span class="badge bg-secondary">User Role</span>) does not have administrative permissions to access this page.
                 </p>
                 <div class="alert alert-dark border-secondary text-start text-secondary mb-4 small">
-                    ℹ️ <strong>Role Access Policy:</strong> Standard User accounts are permitted to access only the <strong>Signal Dashboard</strong> and <strong>Swing Trading</strong> pages in read-only mode.
+                    ℹ️ <strong>Role Access Policy:</strong> Standard User accounts can use <strong>Manual Trading</strong> (their own paper account) and view the <strong>Signal Dashboard</strong> and <strong>Swing Trading</strong> pages in read-only mode. Auto Paper and Auto Real Trading are currently available to Admins only.
                 </div>
                 <div>
                     <a asp-controller="Home" asp-action="Index" class="btn btn-outline-info px-4 me-2">

@@ -19,9 +19,15 @@ public class ManualPaperTradeController : ControllerBase
         _manualPaperTradeService = manualPaperTradeService ?? throw new ArgumentNullException(nameof(manualPaperTradeService));
     }
 
-    // Same numeric user id resolution as RealTradeController (defaults to user 1).
+    // Same numeric user id resolution as RealTradeController: the page's ?userId= (the signed-in user - the
+    // Manual Trading page adds it to every call), else the claim, else user 1.
     private int GetCurrentUserId()
     {
+        if (int.TryParse(Request.Query["userId"], out int queryUid) && queryUid > 0)
+        {
+            return queryUid;
+        }
+
         var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (!string.IsNullOrWhiteSpace(userIdClaim) && int.TryParse(userIdClaim, out int uid))
         {

@@ -5,7 +5,8 @@ using Microsoft.Extensions.Configuration;
 
 namespace QuantEdge.Web.Controllers;
 
-[Authorize(Roles = "Admin")]
+// Manual (Paper) Trading is open to every signed-in user; each user trades their own manual_paper_* account.
+[Authorize]
 public class PaperTradingController : Controller
 {
     private readonly IConfiguration _configuration;
@@ -18,6 +19,8 @@ public class PaperTradingController : Controller
     public IActionResult Index()
     {
         ViewBag.ApiBaseUrl = _configuration["ApiBaseUrl"] ?? "https://localhost:44370";
+        // The page sends this as ?userId= on every /api/manualpapertrade call, so each user has their own account.
+        ViewBag.UserId = int.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var uid) ? uid : 1;
         return View();
     }
 }

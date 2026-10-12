@@ -10,7 +10,7 @@ namespace QuantEdge.Web.Controllers;
 /// Reconciliation: our open real positions vs Zerodha, and the daily data-quality checks. The page loads its data
 /// from GET /api/reconciliation/... in the browser.
 /// </summary>
-[Authorize]
+[Authorize(Roles = "Admin")]
 public class ReconciliationController : Controller
 {
     private readonly IConfiguration _configuration;

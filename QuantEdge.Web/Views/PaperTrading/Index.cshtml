@@ -172,19 +172,6 @@
                     <button type="submit" id="placeOrderBtn" class="btn btn-success w-100 fw-bold py-2 rounded-3 shadow">
                         📝 Place Paper Trade
                     </button>
-                    <p class="text-white small mt-2 mb-0">
-                        Same checks as Manual Real Trade, using the Manual Trading settings: Manual Trading switch, trading
-                        window and entry delay, daily trade/loss limits, max open positions, capital, and no duplicate open
-                        position. The price is re-checked when you place the trade. A <strong>Limit</strong> order waits as
-                        Pending (its capital is held and it uses a trade slot) until a stored 1-minute candle reaches the Limit
-                        Price, then fills at the limit (or better on a gap); cancel it any time from the Orders tab. Not filled
-                        by the trading window end (shorts: the short entry cut-off) = expired. With <strong>Auto Exit</strong> ON the
-                        position is closed at whichever of Stop Loss, Trailing SL or Target a completed stored 1-minute candle hits
-                        first (a gap fills at the candle open; if one candle touches both, the Stop Loss is assumed first). The
-                        Trailing SL starts once the trade is Trailing SL % in profit and only tightens. With it OFF the levels are
-                        reference only. Either way you can Close (Buy to Cover) any time, and a short is still bought back
-                        automatically at the Short Square-off Time.
-                    </p>
                 </form>
             </div>
 
@@ -561,6 +548,7 @@
 @section Scripts {
     <script>
         window.API_BASE_URL = "@ViewBag.ApiBaseUrl";
+        window.MANUAL_USER_ID = "@ViewBag.UserId";
     </script>
     <script src="~/lib/microsoft/signalr/dist/browser/signalr.min.js"></script>
     <script src="~/js/paperTrading.js" asp-append-version="true"></script>

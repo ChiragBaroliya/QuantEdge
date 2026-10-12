@@ -6,6 +6,11 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     const apiBaseUrl = window.API_BASE_URL || 'https://localhost:44370';
+    // Signed-in user's id - every /api/manualpapertrade call carries it (?userId=), so each user trades their own account.
+    const manualUserId = parseInt(window.MANUAL_USER_ID || '1', 10) || 1;
+    function withUser(url) {
+        return `${url}${url.includes('?') ? '&' : '?'}userId=${manualUserId}`;
+    }
 
     // DOM Elements
     const statTotalEquity = document.getElementById('statTotalEquity');
@@ -150,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function refreshQuote(symbol) {
         if (!symbol) return;
         try {
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/quote?symbol=${encodeURIComponent(symbol)}`);
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/quote?symbol=${encodeURIComponent(symbol)}`));
             if (!res.ok) return;
             const q = await res.json();
             if (q && q.success && q.ltp > 0) {
@@ -173,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Manual Real Trade popup takes from Real Trade settings. Fixed defaults stay if unreachable.
     async function loadManualTradeDefaults() {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/settings`);
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/settings`));
             if (!res.ok) return;
             manualSettings = await res.json();
             if (orderSlPct && manualSettings.stopLossPct > 0) orderSlPct.value = manualSettings.stopLossPct;
@@ -262,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleManualToggle(e) {
         const enabled = e.target.checked;
         try {
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/toggle`, {
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/toggle`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ enabled })
@@ -333,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         try {
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/settings`, {
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/settings`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -391,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const list = document.getElementById('manualLogsList');
         const countBadge = document.getElementById('manualTradeCountBadge');
         try {
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/logs?limit=50`);
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/logs?limit=50`));
             if (!res.ok) return;
             const data = await res.json();
             const logs = data.logs || [];
@@ -804,7 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Manual-only stat cards from the paper_* tables (fn_get_manual_paper_dashboard).
     async function loadPortfolio() {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/dashboard`);
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/dashboard`));
             if (!res.ok) return;
             const data = await res.json();
             updatePortfolioUi(data);
@@ -904,7 +909,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Manual-only open positions (fn_get_manual_paper_open_positions).
     async function loadPositions() {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/positions`);
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/positions`));
             if (!res.ok) return;
             const positions = await res.json();
             renderPositions(positions);
@@ -1078,7 +1083,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/position/${positionId}/levels`, {
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/position/${positionId}/levels`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ stopLoss, trailingSlPct, takeProfit, autoExit: !!document.getElementById('editAutoExit')?.checked })
@@ -1115,7 +1120,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 toDate: ordersPageState.toDate || ''
             });
 
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/orders?${query.toString()}`);
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/orders?${query.toString()}`));
             if (!res.ok) return;
             const pagedData = await res.json();
             renderOrders(pagedData);
@@ -1245,7 +1250,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             // Manual (trade_type = 0) paper trade history only (fn_get_manual_paper_trade_history_paged).
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/history?${query.toString()}`);
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/history?${query.toString()}`));
             if (!res.ok) return;
             const pagedData = await res.json();
             renderHistory(pagedData);
@@ -1370,11 +1375,12 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         try {
+            markOwnAction(activeSymbol);
             placeOrderBtn.disabled = true;
             placeOrderBtn.innerText = 'Processing Trade...';
 
             // Same payload for both sides; a short sell goes to /short (sell first, buy back later).
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/${isShortOrder() ? 'short' : 'buy'}`, {
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/${isShortOrder() ? 'short' : 'buy'}`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -1400,17 +1406,39 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Order submission exception:', err);
             showToast('System Error', 'Failed to connect to order execution server.', 'danger');
         } finally {
+            endOwnAction();
             resetPlaceOrderButton();
             validateFormInputs();
             loadManualLogs();
         }
     }
 
+    // This page's own Place Order / Close already shows its result from the HTTP response, and the server also
+    // broadcasts the same trade (ReceiveManualPaperTradeAlert) - skip that second toast for the symbol being traded
+    // here. Broadcasts nobody clicked for (a limit fill, an Auto Exit) still show.
+    let ownActionSymbol = null;
+    let ownActionUntil = 0;
+
+    function markOwnAction(symbol) {
+        ownActionSymbol = (symbol || '').toUpperCase();
+        ownActionUntil = Number.MAX_SAFE_INTEGER;   // until the response arrives
+    }
+
+    function endOwnAction() {
+        ownActionUntil = Date.now() + 5000;         // the broadcast can land just after the response
+    }
+
+    function isOwnActionAlert(alert) {
+        return !!alert && Date.now() < ownActionUntil && (alert.symbol || '').toUpperCase() === ownActionSymbol;
+    }
+
     async function handleClosePosition(positionId) {
+        const closing = (lastRenderedPositions || []).find(p => p.id === parseInt(positionId, 10));
+        markOwnAction(closing ? closing.symbol : null);
         try {
             // Manual close: exits at the position's own latest price (server-side), without touching the
             // shared paper account used by Auto Paper Trading.
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/position/close/${parseInt(positionId, 10)}`, {
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/position/close/${parseInt(positionId, 10)}`), {
                 method: 'POST'
             });
 
@@ -1429,13 +1457,15 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             console.error('Error closing position:', err);
             showToast('System Error', 'Could not execute position closure.', 'danger');
+        } finally {
+            endOwnAction();
         }
     }
 
     // Cancels a Pending manual limit order (manual_paper_orders only - never the shared Auto paper account).
     async function handleCancelOrder(orderId) {
         try {
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/order/cancel/${parseInt(orderId, 10)}`, {
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/order/cancel/${parseInt(orderId, 10)}`), {
                 method: 'POST'
             });
 
@@ -1455,17 +1485,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Styled confirmation (SweetAlert2, loaded by _Layout) with what will be cleared; falls back to confirm().
+    async function confirmReset() {
+        const openCount = (lastRenderedPositions || []).length;
+        const pendingCount = lastPendingCount || 0;
+        if (typeof Swal === 'undefined') {
+            return confirm('Start fresh? All your Manual Trading positions, orders, history and logs will be cleared. This cannot be undone.');
+        }
+
+        const result = await Swal.fire({
+            icon: 'warning',
+            title: 'Start fresh with Manual Trading?',
+            html: `
+                <div style="text-align:left; font-size:14px; color:#cbd5e1;">
+                    <p style="margin-bottom:10px;">This clears your Manual Trading account so you can begin again with your full capital.</p>
+                    <ul style="margin:0 0 12px 18px; padding:0; line-height:1.7;">
+                        <li><strong>${openCount}</strong> open position${openCount === 1 ? '' : 's'} closed and removed</li>
+                        <li><strong>${pendingCount}</strong> pending limit order${pendingCount === 1 ? '' : 's'} cancelled</li>
+                        <li>Order book, trade history and today's logs deleted</li>
+                        <li>Your full Manual Capital becomes available again</li>
+                    </ul>
+                    <p style="margin:0; color:#94a3b8; font-size:12px;">Your Manual Trading settings are kept. Auto Paper and Auto Real Trading are not affected.
+                    <strong style="color:#f87171;">This cannot be undone.</strong></p>
+                </div>`,
+            showCancelButton: true,
+            confirmButtonText: '🔄 Yes, reset',
+            cancelButtonText: 'Keep my trades',
+            confirmButtonColor: '#dc2626',
+            reverseButtons: true,
+            focusCancel: true,
+            background: 'var(--bg-card, #121824)',
+            color: 'var(--text-primary, #e2e8f0)'
+        });
+        return result.isConfirmed;
+    }
+
     async function handleResetAccount() {
-        if (!confirm('Reset Manual Paper Trading? All manual open positions, orders, trade history and today\'s manual logs will be cleared and your full Manual Capital becomes available again. Auto Paper Trading is not affected.')) {
+        if (!await confirmReset()) {
             return;
         }
 
         try {
             // Manual-only reset (fn_reset_manual_paper_trading) - Auto Paper / Auto Real data is untouched.
-            const res = await fetch(`${apiBaseUrl}/api/manualpapertrade/reset`, { method: 'POST' });
+            const res = await fetch(withUser(`${apiBaseUrl}/api/manualpapertrade/reset`), { method: 'POST' });
             const data = await res.json().catch(() => ({}));
             if (res.ok && data.success) {
-                showToast('Manual Trading Reset', data.message || 'Manual Paper Trading has been reset.', 'success');
+                showToast('Fresh Start ✅', 'Your Manual Trading account has been reset - your full capital is ready to trade.', 'success');
                 await loadPortfolio();
                 await loadPositions();
                 await loadOrders(1);
@@ -1517,8 +1582,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Manual Paper Trade BUY/SELL executions (incl. automatic Target / SL / Trailing SL exits).
+        // Every connected browser receives every user's events - react only to this user's own.
         signalRConnection.on('ReceiveManualPaperTradeAlert', async (alert) => {
-            if (alert && alert.message) {
+            if (alert && alert.userId && alert.userId !== manualUserId) return;
+            if (alert && alert.message && !isOwnActionAlert(alert)) {
                 showToast(alert.side === 'SELL' ? '🎯 Manual Paper SELL' : '📝 Manual Paper BUY', alert.message, 'success');
             }
             await loadPortfolio();
@@ -1528,7 +1595,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // New manual_paper_trade_execution_logs row (BUY/SELL, skipped trade, trailing SL, switch change).
-        signalRConnection.on('ReceiveManualPaperTradeLogEvent', () => {
+        signalRConnection.on('ReceiveManualPaperTradeLogEvent', (log) => {
+            const logUserId = log && (log.userId ?? log.UserId);
+            if (logUserId && logUserId !== manualUserId) return;
             loadManualLogs();
         });
 
