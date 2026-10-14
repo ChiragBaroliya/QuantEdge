@@ -41,6 +41,9 @@ public class AutoRealPositionMonitorWorker : BackgroundService
     private readonly ConcurrentDictionary<string, int> _consecutiveStaleMisses = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTime> _lastAuditLogUtc = new(StringComparer.OrdinalIgnoreCase);
 
+    private static readonly TimeSpan ClosedMarketStaleShortCheckInterval = TimeSpan.FromMinutes(5);
+    private DateTime _lastClosedMarketStaleShortCheckUtc = DateTime.MinValue;
+
     public AutoRealPositionMonitorWorker(
         IServiceProvider serviceProvider,
         ILogger<AutoRealPositionMonitorWorker> logger)
@@ -87,6 +90,8 @@ public class AutoRealPositionMonitorWorker : BackgroundService
                     {
                         _logger.LogError(ex, "Error reconciling pending real orders in AutoRealPositionMonitorWorker cycle.");
                     }
+
+                    await CloseStaleShortsAsync(realTradeService);
 
                     // Fetch all OPEN real positions from RAM (or DB fallback)
                     var openRealPositions = realTradeCache != null && realTradeCache.IsWarmedUp
@@ -135,6 +140,13 @@ public class AutoRealPositionMonitorWorker : BackgroundService
                                 if (realTradeCache == null || !wsConnected ||
                                     !realTradeCache.TryGetFreshLtp(position.Symbol, LtpFreshnessWindow, out var ltp))
                                 {
+                                    // A short past its square-off time must not wait on a live price - cover it using
+                                    // the latest stored 1-minute close instead (no Zerodha call).
+                                    if (position.Side == TradeSide.SELL && await realTradeService.TrySquareOffDueShortWithoutTickAsync(position))
+                                    {
+                                        continue;
+                                    }
+
                                     int misses = _consecutiveStaleMisses.AddOrUpdate(position.Symbol, 1, (_, count) => count + 1);
                                     if (ShouldLogAudit($"STALE:{position.Symbol}"))
                                     {
@@ -177,6 +189,13 @@ public class AutoRealPositionMonitorWorker : BackgroundService
                     if (realTradeCache != null && realTradeCache.IsWarmedUp)
                     {
                         await realTradeCache.ReleaseMarketCacheAsync();
+                    }
+
+                    // Outside market hours (cache released - one DB read), so throttled.
+                    if (DateTime.UtcNow - _lastClosedMarketStaleShortCheckUtc >= ClosedMarketStaleShortCheckInterval)
+                    {
+                        _lastClosedMarketStaleShortCheckUtc = DateTime.UtcNow;
+                        await CloseStaleShortsAsync(scope.ServiceProvider.GetRequiredService<IAutoRealTradeService>());
                     }
                 }
             }
@@ -254,6 +273,24 @@ public class AutoRealPositionMonitorWorker : BackgroundService
             {
                 _logger.LogError(ex, "Error executing REST LTP fallback for User {UserId} ({Count} stale symbols).", userId, positions.Count);
             }
+        }
+    }
+
+    // Closes (in QuantEdge only) every Auto Short still recorded OPEN from an earlier day - Zerodha already squared it
+    // off (MIS). No Zerodha call; see IAutoRealTradeService.CloseStaleShortsAsync.
+    private async Task CloseStaleShortsAsync(IAutoRealTradeService realTradeService)
+    {
+        try
+        {
+            int closed = await realTradeService.CloseStaleShortsAsync();
+            if (closed > 0)
+            {
+                _logger.LogInformation("AutoRealPositionMonitorWorker: {Closed} stale short(s) from an earlier day closed in QuantEdge (squared off by Zerodha).", closed);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error closing stale real shorts in AutoRealPositionMonitorWorker cycle.");
         }
     }
 

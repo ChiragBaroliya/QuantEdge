@@ -271,14 +271,90 @@ public class AutoRealTradeServiceShortTests : ClockedTest
     }
 
     [Fact]
-    public async Task StaleShortFromAnEarlierDay_IsFlaggedNotBoughtBack()
+    public async Task StaleShortFromAnEarlierDay_IsClosedInQuantEdgeWithoutAnOrder()
+    {
+        var pos = OpenShort(entry: 100m, qty: 10, openedUtc: IstToUtc(TradingDayIst.AddDays(-1)));
+        _repo.Setup(r => r.GetLastStoredCloseAsync("SBIN", It.IsAny<DateTime>(), It.IsAny<DateTime>())).ReturnsAsync(98m);
+
+        Assert.True(await CreateService().EvaluateAndExecuteRealSellAsync(pos, 104m, User));
+
+        Assert.Empty(_placed); // never a BUY at Zerodha - it would open a new long
+        Assert.Equal(PositionStatus.CLOSED, pos.Status);
+        Assert.Equal(20m, pos.RealizedPnl); // (100 - 98) x 10, at the stored close
+        var cover = Assert.Single(_orders);
+        Assert.Equal(TradeSide.BUY, cover.Side);
+        Assert.True(cover.IsShort);
+        Assert.Null(cover.BrokerOrderId);
+        var exit = Assert.Single(_history);
+        Assert.True(exit.IsExit);
+        Assert.Equal(AutoRealTradeService.StaleShortExitReason, exit.ExitReason);
+        Assert.Contains(_logs, l => l.ActionType == "SHORT_STALE_CLOSED");
+    }
+
+    [Fact]
+    public async Task StaleShort_WithNoStoredPrice_ClosesAtEntry()
     {
         var pos = OpenShort(entry: 100m, qty: 10, openedUtc: IstToUtc(TradingDayIst.AddDays(-1)));
 
-        Assert.False(await CreateService().EvaluateAndExecuteRealSellAsync(pos, 104m, User));
+        Assert.True(await CreateService().SquareOffSinglePositionAsync(pos.Id, userId: User));
+
+        Assert.Empty(_placed);
+        Assert.Equal(PositionStatus.CLOSED, pos.Status);
+        Assert.Equal(0m, pos.RealizedPnl);
+    }
+
+    [Fact]
+    public async Task ManualExit_OnAStaleShort_PlacesNoOrder()
+    {
+        var pos = OpenShort(entry: 100m, qty: 10, openedUtc: IstToUtc(TradingDayIst.AddDays(-2)));
+
+        var (success, _) = await CreateService().ManualSellAsync("SBIN", 10, 101m, "MIS", 100m, "Manual Web Square-Off", User);
+
+        Assert.True(success);
+        Assert.Empty(_placed);
+        Assert.Equal(PositionStatus.CLOSED, pos.Status);
+    }
+
+    [Fact]
+    public async Task CloseStaleShorts_ClosesOnlyEarlierDayShorts()
+    {
+        var stale = OpenShort(entry: 100m, qty: 10, symbol: "OLD", openedUtc: IstToUtc(TradingDayIst.AddDays(-1)));
+        var today = OpenShort(entry: 100m, qty: 10);
+        var oldLong = new RealPosition { Id = 1, UserId = User, Symbol = "TCS", Side = TradeSide.BUY, Quantity = 4, AverageEntryPrice = 100m, Status = PositionStatus.OPEN, OpenedAt = IstToUtc(TradingDayIst.AddDays(-3)) };
+        _positions.Add(oldLong);
+        _repo.Setup(r => r.GetAllOpenPositionsAsync()).ReturnsAsync(() => _positions.Where(p => p.Status == PositionStatus.OPEN).ToList());
+
+        Assert.Equal(1, await CreateService().CloseStaleShortsAsync());
+
+        Assert.Equal(PositionStatus.CLOSED, stale.Status);
+        Assert.Equal(PositionStatus.OPEN, today.Status);
+        Assert.Equal(PositionStatus.OPEN, oldLong.Status);
+        Assert.Empty(_placed);
+    }
+
+    [Fact]
+    public async Task SquareOffDue_WithoutATick_CoversUsingTheStoredClose()
+    {
+        var pos = OpenShort(entry: 100m, qty: 10);
+        SetIstNow(TradingDayIst.Date.AddHours(15).AddMinutes(16));
+        _repo.Setup(r => r.GetLastStoredCloseAsync("SBIN", It.IsAny<DateTime>(), It.IsAny<DateTime>())).ReturnsAsync(99m);
+        _brokerFillPrice = 99m;
+
+        Assert.True(await CreateService().TrySquareOffDueShortWithoutTickAsync(pos));
+
+        Assert.Equal(("SBIN", TradeSide.BUY, 10, "MIS"), Assert.Single(_placed));
+        Assert.Equal(PositionStatus.CLOSED, pos.Status);
+    }
+
+    [Fact]
+    public async Task SquareOffNotDue_WithoutATick_DoesNothing()
+    {
+        var pos = OpenShort(entry: 100m, qty: 10);
+        _repo.Setup(r => r.GetLastStoredCloseAsync("SBIN", It.IsAny<DateTime>(), It.IsAny<DateTime>())).ReturnsAsync(99m);
+
+        Assert.False(await CreateService().TrySquareOffDueShortWithoutTickAsync(pos));
         Assert.Empty(_placed);
         Assert.Equal(PositionStatus.OPEN, pos.Status);
-        Assert.Contains(_logs, l => l.ActionType == "SHORT_STALE");
     }
 
     [Fact]
@@ -286,14 +362,15 @@ public class AutoRealTradeServiceShortTests : ClockedTest
     {
         _positions.Add(new RealPosition { Id = 1, UserId = User, Symbol = "TCS", Side = TradeSide.BUY, Quantity = 4, AverageEntryPrice = 100m, Status = PositionStatus.OPEN, OpenedAt = IstToUtc(TradingDayIst.AddDays(-3)) });
         OpenShort(entry: 100m, qty: 10);
-        OpenShort(entry: 100m, qty: 7, symbol: "OLD", openedUtc: IstToUtc(TradingDayIst.AddDays(-1)));
+        var old = OpenShort(entry: 100m, qty: 7, symbol: "OLD", openedUtc: IstToUtc(TradingDayIst.AddDays(-1)));
 
         int filled = await CreateService().SquareOffAllPositionsAsync(userId: User);
 
         Assert.Equal(2, filled);
         Assert.Contains(("TCS", TradeSide.SELL, 4, "CNC"), _placed);
         Assert.Contains(("SBIN", TradeSide.BUY, 10, "MIS"), _placed);
-        Assert.DoesNotContain(_placed, p => p.Symbol == "OLD"); // stale short left for a manual check
+        Assert.DoesNotContain(_placed, p => p.Symbol == "OLD"); // stale short: no order...
+        Assert.Equal(PositionStatus.CLOSED, old.Status);         // ...only closed in QuantEdge
     }
 
     // ---------------- Reconcile (pending orders confirmed later) ----------------

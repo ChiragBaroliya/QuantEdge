@@ -56,6 +56,20 @@ public interface IAutoRealTradeService
     Task<bool> EvaluateAndExecuteRealSellAsync(RealPosition position, decimal currentLtp, int userId = 1);
 
     /// <summary>
+    /// Closes, in QuantEdge only, every open short recorded from an earlier IST day: an MIS position can't be carried
+    /// overnight, so Zerodha has already squared it off. No order is placed; the exit price is the last stored 1-minute
+    /// close up to Zerodha's square-off time. Returns how many were closed. No Zerodha call.
+    /// </summary>
+    Task<int> CloseStaleShortsAsync();
+
+    /// <summary>
+    /// For an open short with no fresh live price: once its square-off is due, covers it using the latest stored 1-minute
+    /// close (last 5 minutes) as the reference price, so a missing tick can't leave it to Zerodha's square-off.
+    /// A stale short is closed in QuantEdge only. Returns true when it was closed or a cover order was placed.
+    /// </summary>
+    Task<bool> TrySquareOffDueShortWithoutTickAsync(RealPosition position);
+
+    /// <summary>
     /// Emergency Kill Switch: Squares off all open real positions at market price and pauses the bot.
     /// </summary>
     Task<int> SquareOffAllPositionsAsync(string reason = "Emergency Panic Kill Switch Triggered", int userId = 1);

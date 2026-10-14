@@ -1317,6 +1317,14 @@ public class AutoRealTradeService : IAutoRealTradeService
         var trackedPosition = await _repository.GetOpenPositionBySymbolAsync(userId, symbol);
         if (trackedPosition != null)
         {
+            if (IsStaleShort(trackedPosition, SwingTradeRules.NowIst()))
+            {
+                bool cleared = await CloseStaleShortAsync(trackedPosition, userId);
+                return (cleared, cleared
+                    ? $"{symbol} short from an earlier day was already squared off by Zerodha (MIS) - closed in QuantEdge, no order placed."
+                    : $"Could not close the stale {symbol} short in QuantEdge.");
+            }
+
             // Side-aware: a tracked short is bought back (covered), not sold again.
             string exitLabel = trackedPosition.Side == TradeSide.SELL ? "BUY TO COVER" : "SELL";
             bool closed = await SquareOffSinglePositionAsync(trackedPosition.Id, reason, userId);
@@ -1555,9 +1563,133 @@ public class AutoRealTradeService : IAutoRealTradeService
         return false;
     }
 
-    // Positions already reported as a stale short (see EvaluateAndExecuteRealCoverAsync) - one alert per position, not
-    // one per 20-second monitor cycle.
-    private static readonly ConcurrentDictionary<int, byte> _staleShortsReported = new();
+    // ------------------------------------------------------------------------------------------
+    // Stale shorts: an Auto Short (always MIS) still recorded OPEN from an earlier IST day
+    // ------------------------------------------------------------------------------------------
+
+    public const string StaleShortExitReason = "Squared off by Zerodha (MIS auto square-off)";
+
+    // Zerodha's own MIS square-off for equity runs from ~15:20 IST; the last stored close up to this time is the
+    // closest price QuantEdge has to its fill.
+    private static readonly TimeSpan ZerodhaMisSquareOffTime = new(15, 25, 0);
+
+    // How far back the stored-price fallback for a due square-off may look (see TrySquareOffDueShortWithoutTickAsync).
+    private static readonly TimeSpan StoredSquareOffPriceMaxAge = TimeSpan.FromMinutes(5);
+
+    private static bool IsStaleShort(RealPosition position, DateTime nowIst) =>
+        position.Side == TradeSide.SELL && SwingTradeRules.ToIst(position.OpenedAt).Date < nowIst.Date;
+
+    public async Task<int> CloseStaleShortsAsync()
+    {
+        var nowIst = SwingTradeRules.NowIst();
+        var openPositions = _realTradeCache != null && _realTradeCache.IsWarmedUp
+            ? _realTradeCache.GetAllOpenPositions().ToList()
+            : (await _repository.GetAllOpenPositionsAsync()).ToList();
+
+        int closed = 0;
+        foreach (var position in openPositions.Where(p => IsStaleShort(p, nowIst)))
+        {
+            try
+            {
+                if (await CloseStaleShortAsync(position, position.UserId)) closed++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to close stale real short #{PositionId} ({Symbol}, User {UserId}).", position.Id, position.Symbol, position.UserId);
+            }
+        }
+        return closed;
+    }
+
+    // An MIS position can't be carried overnight: Zerodha squares off every open MIS position itself at the close, so a
+    // short QuantEdge didn't buy back that day is already flat at the broker - only QuantEdge's record is still OPEN.
+    // Buying it "back" now would OPEN a new long, so no order is placed: the position is closed in QuantEdge only, at the
+    // last stored 1-minute close up to Zerodha's square-off time (entry price if none is stored). No Zerodha call.
+    private async Task<bool> CloseStaleShortAsync(RealPosition position, int userId)
+    {
+        var openedIst = SwingTradeRules.ToIst(position.OpenedAt);
+        DateTime squareOffUtc = TimeZoneInfo.ConvertTimeToUtc(
+            DateTime.SpecifyKind(openedIst.Date + ZerodhaMisSquareOffTime, DateTimeKind.Unspecified), TimeZoneHelper.IndianTimeZone);
+
+        decimal? storedClose = await _repository.GetLastStoredCloseAsync(position.Symbol, position.OpenedAt, squareOffUtc);
+        bool priceKnown = storedClose.HasValue;
+        decimal exitPrice = storedClose ?? position.AverageEntryPrice;
+        decimal realizedPnl = Math.Round((position.AverageEntryPrice - exitPrice) * position.Quantity, 2);
+        string priceNote = priceKnown
+            ? $"est. @ ₹{exitPrice:F2} (last stored close up to {ZerodhaMisSquareOffTime:hh\\:mm} IST on {openedIst:dd-MMM})"
+            : $"@ entry ₹{exitPrice:F2} (no stored price - check the real fill in Zerodha's contract note)";
+
+        // Recorded as the covering BUY (IsShort, no broker order ID - QuantEdge placed nothing), so the Orders Book and
+        // trade history show how the short ended.
+        var coverRecord = await _repository.CreateOrderAsync(new RealOrder
+        {
+            UserId = userId,
+            Symbol = position.Symbol,
+            Side = TradeSide.BUY,
+            Quantity = position.Quantity,
+            OrderType = PaperOrderType.Market,
+            Price = exitPrice,
+            Status = PaperOrderStatus.Filled,
+            FilledPrice = exitPrice,
+            FilledAt = squareOffUtc,
+            IsShort = true,
+            TradeType = position.TradeType,
+            Remarks = $"{StaleShortExitReason} - no order placed by QuantEdge, {priceNote}"
+        });
+
+        await _repository.ClosePositionAsync(position.Id, exitPrice, realizedPnl, StaleShortExitReason);
+        _realTradeCache?.RemovePosition(position.Id);
+        _realTradeCache?.RemoveLiveLtp(position.Symbol);
+
+        await _repository.RecordTradeHistoryAsync(new RealTradeHistory
+        {
+            UserId = userId,
+            OrderId = coverRecord.Id,
+            Symbol = position.Symbol,
+            Side = TradeSide.BUY,
+            Quantity = position.Quantity,
+            EntryPrice = position.AverageEntryPrice,
+            ExecutedPrice = exitPrice,
+            RealizedPnl = realizedPnl,
+            TradeType = position.TradeType,
+            ExitReason = StaleShortExitReason,
+            IsExit = true,
+            Remarks = $"Short closed in QuantEdge only ({StaleShortExitReason}), {priceNote} | Est. P&L: ₹{realizedPnl:F2}"
+        });
+
+        _logger.LogWarning("Stale real short #{PositionId} ({Symbol}, User {UserId}) from {OpenedAt:dd-MMM} closed in QuantEdge only - Zerodha's MIS square-off already closed it. Exit {Price}.",
+            position.Id, position.Symbol, userId, openedIst, exitPrice);
+        string pnlSign = realizedPnl >= 0 ? "+" : "";
+        await LogAuditAsync(position.Symbol, "SHORT_STALE_CLOSED", exitPrice, position.Quantity,
+            $"🧹 Short #{position.Id} from {openedIst:dd-MMM} closed in QuantEdge - Zerodha squares off MIS at the close, no order placed. Exit {priceNote} | Est. P&L: {pnlSign}₹{realizedPnl:N2}", userId);
+
+        await BroadcastDashboardUpdateAsync(userId);
+        return true;
+    }
+
+    public async Task<bool> TrySquareOffDueShortWithoutTickAsync(RealPosition position)
+    {
+        if (position == null || position.Status != PositionStatus.OPEN || position.Side != TradeSide.SELL)
+            return false;
+
+        var nowIst = SwingTradeRules.NowIst();
+        if (IsStaleShort(position, nowIst))
+            return await CloseStaleShortAsync(position, position.UserId);
+
+        var settings = await GetSettingsAsync(position.UserId);
+        if (!SwingTradeRules.IsShortSquareOffDue(position.OpenedAt, settings.ShortSquareOffTime, nowIst))
+            return false;
+
+        // The cover is a MARKET order, so a recent stored close is a good enough reference for its price band.
+        DateTime nowUtc = SwingTradeRules.UtcNow();
+        decimal? storedClose = await _repository.GetLastStoredCloseAsync(position.Symbol, nowUtc - StoredSquareOffPriceMaxAge, nowUtc);
+        if (!storedClose.HasValue)
+            return false;
+
+        _logger.LogWarning("Square-off due for short #{PositionId} ({Symbol}) with no live price - covering using stored close {Price}.",
+            position.Id, position.Symbol, storedClose.Value);
+        return await EvaluateAndExecuteRealSellAsync(position, storedClose.Value, position.UserId);
+    }
 
     // Exit for an open real SHORT: SwingTradeRules.EvaluateShortExit (auto square-off, then live target / stop /
     // trailing SL). Not gated by the user's trading window (only market hours) - a short must always be closable today.
@@ -1566,20 +1698,9 @@ public class AutoRealTradeService : IAutoRealTradeService
         var settings = await GetSettingsAsync(userId);
         var nowIst = SwingTradeRules.NowIst();
 
-        // A short still recorded open from an earlier day was not bought back by QuantEdge - Zerodha squares off open MIS
-        // positions itself at the close, so the broker most likely holds nothing now. Buying "back" would then OPEN a new
-        // long, so no order is placed: it is flagged once for a manual check (Reconciliation page / Zerodha positions).
-        if (SwingTradeRules.ToIst(position.OpenedAt).Date < nowIst.Date)
-        {
-            if (_staleShortsReported.TryAdd(position.Id, 0))
-            {
-                _logger.LogWarning("Stale real short #{PositionId} ({Symbol}, User {UserId}) is still open from {OpenedAt:dd-MMM} - not covering automatically.",
-                    position.Id, position.Symbol, userId, SwingTradeRules.ToIst(position.OpenedAt));
-                await LogAuditAsync(position.Symbol, "SHORT_STALE", currentLtp, position.Quantity,
-                    $"⚠️ Short position #{position.Id} is still recorded OPEN from {SwingTradeRules.ToIst(position.OpenedAt):dd-MMM} (intraday shorts are squared off the same day). No order placed - check Zerodha positions and close it in QuantEdge manually.", userId);
-            }
-            return false;
-        }
+        // A short still recorded open from an earlier day: Zerodha has already squared it off (see CloseStaleShortAsync).
+        if (IsStaleShort(position, nowIst))
+            return await CloseStaleShortAsync(position, userId);
 
         var tradeParams = SwingTradeParams.From(settings);
         var decision = SwingTradeRules.EvaluateShortExit(ExitPositionView.From(position), currentLtp, nowIst,
@@ -2424,14 +2545,15 @@ public class AutoRealTradeService : IAutoRealTradeService
         int filledCount = 0;
         int pendingCount = 0;
 
-        var todayIst = SwingTradeRules.NowIst().Date;
+        var nowIst = SwingTradeRules.NowIst();
         foreach (var pos in openPositions)
         {
-            // A short still open from an earlier day was most likely squared off by Zerodha already - buying it "back"
-            // would open a new long, so it is left for a manual check (see EvaluateAndExecuteRealCoverAsync).
-            if (pos.Side == TradeSide.SELL && SwingTradeRules.ToIst(pos.OpenedAt).Date < todayIst)
+            // A short still open from an earlier day was already squared off by Zerodha - buying it "back" would open a
+            // new long, so it is only closed in QuantEdge (see CloseStaleShortAsync).
+            if (IsStaleShort(pos, nowIst))
             {
-                _logger.LogWarning("Kill switch skipped stale short #{PositionId} ({Symbol}) opened on an earlier day.", pos.Id, pos.Symbol);
+                _logger.LogWarning("Kill switch: stale short #{PositionId} ({Symbol}) opened on an earlier day - closing in QuantEdge only.", pos.Id, pos.Symbol);
+                await CloseStaleShortAsync(pos, userId);
                 continue;
             }
 
@@ -2456,6 +2578,10 @@ public class AutoRealTradeService : IAutoRealTradeService
     {
         var position = await _repository.GetOpenPositionByIdAsync(positionId);
         if (position == null) return false;
+
+        // Never send a BUY for a short Zerodha already squared off on an earlier day - it would open a new long.
+        if (IsStaleShort(position, SwingTradeRules.NowIst()))
+            return await CloseStaleShortAsync(position, userId);
 
         var livePrices = await GetLiveLtpsAsync(new[] { position.Symbol }, userId);
         decimal exitPrice = GetExitReferencePrice(position, livePrices);

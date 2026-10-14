@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.DTOs;
 
 namespace QuantEdge.Infrastructure.Persistence.Repositories;
 
@@ -272,6 +274,22 @@ public class RealTradingRepository : IRealTradingRepository
         string sql = "CALL sp_update_real_trailing_sl(@positionId, @newTrailingStopLoss);";
 
         await connection.ExecuteAsync(sql, new { positionId, newTrailingStopLoss });
+    }
+
+    // Reuses fn_get_manual_paper_candles (oldest first) - no new DB function, no Zerodha call.
+    public async Task<decimal?> GetLastStoredCloseAsync(string symbol, DateTime fromUtc, DateTime toUtc)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        var candles = await connection.QueryAsync<ManualPaperCandleDto>(
+            "SELECT * FROM fn_get_manual_paper_candles(@symbol, @fromUtc, @toUtc);",
+            new
+            {
+                symbol,
+                fromUtc = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc),
+                toUtc = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc)
+            });
+        var last = candles.LastOrDefault();
+        return last != null && last.CandleClose > 0m ? last.CandleClose : null;
     }
 
     public async Task<RealTradeHistory> RecordTradeHistoryAsync(RealTradeHistory history)

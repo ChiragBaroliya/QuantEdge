@@ -46,6 +46,9 @@ public interface IRealTradingRepository
     Task ClosePositionAsync(int positionId, decimal exitPrice, decimal realizedPnl, string exitReason);
     Task UpdateTrailingStopLossAsync(int positionId, decimal newTrailingStopLoss);
 
+    /// <summary>Close of the newest stored 1-minute candle (market_candles_1m) starting in [fromUtc, toUtc], or null if none.</summary>
+    Task<decimal?> GetLastStoredCloseAsync(string symbol, DateTime fromUtc, DateTime toUtc);
+
     // Trade History & Logs
     Task<RealTradeHistory> RecordTradeHistoryAsync(RealTradeHistory history);
 
