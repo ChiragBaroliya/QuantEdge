@@ -58,6 +58,10 @@ public class AutoRealPositionMonitorWorker : BackgroundService
 
         await Task.Delay(5000, stoppingToken);
 
+        // Only one process may run real-money exits (a second one would send every cover / sell twice).
+        await using var lease = await RealMoneyWorkerLease.AcquireAsync(_serviceProvider, "real_worker:monitor",
+            nameof(AutoRealPositionMonitorWorker), _logger, stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -92,6 +96,21 @@ public class AutoRealPositionMonitorWorker : BackgroundService
                     }
 
                     await CloseStaleShortsAsync(realTradeService);
+
+                    // Shorts Zerodha has already bought back today (e.g. its MIS square-off after our cover was
+                    // rejected) - book them at Zerodha's real fill before evaluating exits, so no cover is resent.
+                    try
+                    {
+                        int brokerClosed = await realTradeService.SyncShortsClosedAtBrokerAsync();
+                        if (brokerClosed > 0)
+                        {
+                            _logger.LogInformation("AutoRealPositionMonitorWorker: {Closed} short(s) already flat at Zerodha closed in QuantEdge.", brokerClosed);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error syncing open real shorts with Zerodha positions in AutoRealPositionMonitorWorker cycle.");
+                    }
 
                     // Fetch all OPEN real positions from RAM (or DB fallback)
                     var openRealPositions = realTradeCache != null && realTradeCache.IsWarmedUp

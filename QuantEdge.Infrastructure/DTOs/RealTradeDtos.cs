@@ -66,7 +66,7 @@ public class RealTradeSettingsUpdateDto : IValidatableObject
     public string ShortEntryCutoff { get; set; } = "15:00";
 
     [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Square-off Time must be HH:mm.")]
-    public string ShortSquareOffTime { get; set; } = "15:15";
+    public string ShortSquareOffTime { get; set; } = "15:05";
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext) =>
         ShortSellingSettingsValidator.Validate(ShortEntryCutoff, ShortSquareOffTime);

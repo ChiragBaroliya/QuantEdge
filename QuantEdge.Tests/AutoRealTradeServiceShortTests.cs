@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 using QuantEdge.Infrastructure.Services;
@@ -95,9 +96,10 @@ public class AutoRealTradeServiceShortTests : ClockedTest
             .ReturnsAsync(() => (true, _brokerStatus, _brokerFillPrice, 0, "status"));
     }
 
-    private AutoRealTradeService CreateService() => new(
+    private AutoRealTradeService CreateService(IRealTradeLockService? tradeLock = null, ICacheService? cache = null) => new(
         _repo.Object, _broker.Object, Mock.Of<IZerodhaSessionRepository>(), Mock.Of<IIndianHolidayRepository>(),
-        _marketHours.Object, Mock.Of<ICacheService>(), NullLogger<AutoRealTradeService>.Instance);
+        _marketHours.Object, cache ?? Mock.Of<ICacheService>(), NullLogger<AutoRealTradeService>.Instance,
+        tradeLock: tradeLock);
 
     private Task<bool> Short(string symbol = "SBIN") =>
         CreateService().EvaluateAndExecuteRealShortAsync(symbol, 100m, 11, User, isSellSignal: true,
@@ -417,6 +419,183 @@ public class AutoRealTradeServiceShortTests : ClockedTest
 
         Assert.Equal(PositionStatus.OPEN, pos.Status);
         Assert.Empty(_history);
+    }
+
+    // ---------------- Cross-process locks (duplicate real orders) ----------------
+
+    [Fact]
+    public async Task Short_WhenAnotherProcessHoldsTheEntryLock_PlacesNoOrder()
+    {
+        _settings.IsAutoShortEnabled = true;
+        var tradeLock = new FakeRealTradeLockService();
+        tradeLock.HeldElsewhere.Add($"real_entry:{User}");
+
+        Assert.False(await CreateService(tradeLock).EvaluateAndExecuteRealShortAsync("SBIN", 100m, 11, User, isSellSignal: true,
+            engineStopLoss: 102m, engineTarget: 96m, dailyAtr: 2m));
+        Assert.Empty(_placed);
+        Assert.Empty(_positions);
+    }
+
+    [Fact]
+    public async Task Short_DailyLimit_IsReadFromTheDatabaseNotTheCache()
+    {
+        _settings.IsAutoShortEnabled = true;
+        _settings.MaxTradesPerDay = 3;
+        // Another process already filled 3 trades today; this process's cached count is stale at 2.
+        _repo.Setup(r => r.GetTodayRealTradeCountAsync(It.IsAny<int>())).ReturnsAsync(3);
+        var staleCache = new Mock<ICacheService>();
+        staleCache.Setup(c => c.GetAsync<int?>(It.IsAny<string>())).ReturnsAsync(2);
+
+        Assert.False(await CreateService(new FakeRealTradeLockService(), staleCache.Object).EvaluateAndExecuteRealShortAsync(
+            "SBIN", 100m, 11, User, isSellSignal: true, engineStopLoss: 102m, engineTarget: 96m, dailyAtr: 2m));
+        Assert.Empty(_placed);
+        Assert.Contains(_logs, l => l.Reason != null && l.Reason.Contains("Daily limit of 3"));
+    }
+
+    [Fact]
+    public async Task Cover_PositionAlreadyClosedByAnotherProcess_SendsNoOrder()
+    {
+        var pos = OpenShort(entry: 100m, qty: 10);
+        // The other instance covered it between this process reading the position and taking the exit lock.
+        var stillOpenInMemory = new RealPosition
+        {
+            Id = pos.Id, UserId = User, Symbol = pos.Symbol, Side = TradeSide.SELL, Quantity = pos.Quantity,
+            AverageEntryPrice = pos.AverageEntryPrice, StopLoss = pos.StopLoss, TakeProfit = pos.TakeProfit,
+            Status = PositionStatus.OPEN, TradeType = TradeType.Auto, OpenedAt = pos.OpenedAt
+        };
+        pos.Status = PositionStatus.CLOSED;
+
+        Assert.False(await CreateService(new FakeRealTradeLockService()).EvaluateAndExecuteRealSellAsync(stillOpenInMemory, 104m, User));
+        Assert.Empty(_placed); // a second BUY would have opened a new long
+    }
+
+    [Fact]
+    public async Task Cover_RejectedByZerodha_IsNotResentWithinTheBackoff()
+    {
+        var pos = OpenShort(entry: 100m, qty: 10);
+        int attempts = 0;
+        _broker.Setup(b => b.SquareOffLivePositionAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<TradeSide>(), It.IsAny<decimal>(),
+                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<decimal?>()))
+            .ReturnsAsync(() => { attempts++; return (false, null, 0m, "Intraday orders (MIS) are allowed only till 3:12 PM."); });
+        var service = CreateService(new FakeRealTradeLockService());
+
+        Assert.False(await service.EvaluateAndExecuteRealSellAsync(pos, 104m, User)); // stop hit -> cover rejected
+        Assert.False(await service.EvaluateAndExecuteRealSellAsync(pos, 104m, User)); // next cycle: backed off
+
+        Assert.Equal(1, attempts);
+        Assert.Equal(PositionStatus.OPEN, pos.Status);
+    }
+
+    // ---------------- Same-day sync with Zerodha ----------------
+
+    [Fact]
+    public async Task Sync_ShortsFlatAtZerodha_AreClosedAtZerodhasBuyPriceWithoutAnOrder()
+    {
+        // 21-Oct: UNITDSPR shorted twice (3 + 3 @ 1334.70); the 15:15 cover was rejected and Zerodha squared off 6 @ 1294.40.
+        var first = OpenShort(entry: 1334.70m, qty: 3, symbol: "UNITDSPR");
+        var second = OpenShort(entry: 1334.70m, qty: 3, symbol: "UNITDSPR");
+        SetupBrokerPositions(new ZerodhaPositionItemDto
+        {
+            TradingSymbol = "UNITDSPR", Product = "MIS", Quantity = 0,
+            BuyQuantity = 6, BuyValue = 6 * 1294.40m, BuyPrice = 1294.40m, SellQuantity = 6, SellPrice = 1334.70m
+        });
+        _repo.Setup(r => r.GetFilledCoverTotalsAsync(User, "UNITDSPR", It.IsAny<DateTime>())).ReturnsAsync((0, 0m));
+
+        Assert.Equal(2, await CreateService().SyncShortsClosedAtBrokerAsync());
+
+        Assert.Empty(_placed);
+        Assert.Equal(PositionStatus.CLOSED, first.Status);
+        Assert.Equal(PositionStatus.CLOSED, second.Status);
+        Assert.Equal(241.80m, first.RealizedPnl + second.RealizedPnl); // matches Zerodha's MTM
+        Assert.All(_orders, o => { Assert.Null(o.BrokerOrderId); Assert.Equal(1294.40m, o.FilledPrice); Assert.True(o.IsShort); });
+        Assert.All(_history, h => Assert.Equal(AutoRealTradeService.BrokerClosedShortExitReason, h.ExitReason));
+        Assert.Equal(2, _logs.Count(l => l.ActionType == "SHORT_BROKER_CLOSED"));
+    }
+
+    [Fact]
+    public async Task Sync_PricesOnlyThePartQuantEdgeDidNotCoverItself()
+    {
+        var pos = OpenShort(entry: 1334.70m, qty: 3, symbol: "UNITDSPR");
+        // QuantEdge's own cover filled 3 @ 1300; Zerodha bought the other 3 @ 1294.40.
+        SetupBrokerPositions(new ZerodhaPositionItemDto
+        {
+            TradingSymbol = "UNITDSPR", Product = "MIS", Quantity = 0,
+            BuyQuantity = 6, BuyValue = 3 * 1300m + 3 * 1294.40m, BuyPrice = 1297.20m
+        });
+        _repo.Setup(r => r.GetFilledCoverTotalsAsync(User, "UNITDSPR", It.IsAny<DateTime>())).ReturnsAsync((3, 3 * 1300m));
+
+        Assert.Equal(1, await CreateService().SyncShortsClosedAtBrokerAsync());
+
+        Assert.Equal(1294.40m, Assert.Single(_orders).FilledPrice);
+        Assert.Equal(120.90m, pos.RealizedPnl); // (1334.70 - 1294.40) x 3
+    }
+
+    [Fact]
+    public async Task Sync_LeavesTheShortOpen_WhileQuantEdgesOwnCoverIsResting()
+    {
+        var pos = OpenShort(entry: 100m, qty: 10);
+        _pendingOrder = new RealOrder { Symbol = "SBIN", Side = TradeSide.BUY, IsShort = true, Status = PaperOrderStatus.Open, BrokerOrderId = "X9" };
+        SetupBrokerPositions(new ZerodhaPositionItemDto { TradingSymbol = "SBIN", Product = "MIS", Quantity = 0, BuyQuantity = 10, BuyValue = 990m, BuyPrice = 99m });
+
+        Assert.Equal(0, await CreateService().SyncShortsClosedAtBrokerAsync());
+        Assert.Equal(PositionStatus.OPEN, pos.Status);
+    }
+
+    [Fact]
+    public async Task Sync_StillShortAtZerodhaByADifferentQuantity_OnlyAudits()
+    {
+        var pos = OpenShort(entry: 100m, qty: 10);
+        SetupBrokerPositions(new ZerodhaPositionItemDto { TradingSymbol = "SBIN", Product = "MIS", Quantity = -4, LastPrice = 99m });
+
+        Assert.Equal(0, await CreateService().SyncShortsClosedAtBrokerAsync());
+
+        Assert.Equal(PositionStatus.OPEN, pos.Status);
+        Assert.Empty(_orders);
+        Assert.Contains(_logs, l => l.ActionType == "QUANTITY_MISMATCH");
+    }
+
+    // ---------------- Settings: short square-off before Zerodha's MIS cut-off ----------------
+
+    [Theory]
+    [InlineData("15:00", "15:15", false)] // past the 15:10 cap
+    [InlineData("15:05", "15:05", false)] // cut-off must be before the square-off
+    [InlineData("15:00", "15:05", true)]
+    [InlineData("15:00", "15:10", true)]
+    public async Task UpdateSettings_ValidatesTheShortTimes(string cutoff, string squareOff, bool valid)
+    {
+        _marketHours.Setup(m => m.IsWithinMarketHoursAsync(It.IsAny<DateTime?>())).ReturnsAsync(false);
+        _repo.Setup(r => r.UpsertSettingsAsync(It.IsAny<RealTradeSettings>())).ReturnsAsync((RealTradeSettings s) => s);
+        var dto = new RealTradeSettingsUpdateDto { ShortEntryCutoff = cutoff, ShortSquareOffTime = squareOff };
+
+        if (valid)
+            Assert.Equal(squareOff, (await CreateService().UpdateSettingsAsync(dto, User)).ShortSquareOffTime);
+        else
+            await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService().UpdateSettingsAsync(dto, User));
+    }
+
+    private void SetupBrokerPositions(params ZerodhaPositionItemDto[] rows)
+    {
+        _repo.Setup(r => r.GetAllOpenPositionsAsync()).ReturnsAsync(() => _positions.Where(p => p.Status == PositionStatus.OPEN).ToList());
+        _broker.Setup(b => b.GetLivePositionsAsync(It.IsAny<int>()))
+            .ReturnsAsync((true, new ZerodhaPositionsDto { Net = rows.ToList() }, "ok"));
+    }
+
+    // In-memory IRealTradeLockService: a key in HeldElsewhere behaves as if another process holds it.
+    private sealed class FakeRealTradeLockService : IRealTradeLockService
+    {
+        public HashSet<string> HeldElsewhere { get; } = new();
+        private readonly HashSet<string> _held = new();
+
+        public Task<IAsyncDisposable?> TryAcquireAsync(string key, CancellationToken cancellationToken = default)
+        {
+            if (HeldElsewhere.Contains(key) || !_held.Add(key)) return Task.FromResult<IAsyncDisposable?>(null);
+            return Task.FromResult<IAsyncDisposable?>(new Release(() => _held.Remove(key)));
+        }
+
+        private sealed class Release(Action release) : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync() { release(); return ValueTask.CompletedTask; }
+        }
     }
 
     private RealPosition OpenShort(decimal entry, int qty, string symbol = "SBIN", DateTime? openedUtc = null)

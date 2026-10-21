@@ -52,6 +52,7 @@ public static class ServiceCollectionExtensions
 
         // Register persistence layer
         services.AddSingleton<IDbConnectionFactory, NpgsqlConnectionFactory>();
+        services.AddSingleton<IRealTradeLockService, PostgresRealTradeLockService>();
         services.AddTransient<IMarketCandleRepository, MarketCandleRepository>();
         services.AddTransient<IMarketIndicatorRepository, MarketIndicatorRepository>();
         services.AddTransient<ITradingSignalRepository, TradingSignalRepository>();

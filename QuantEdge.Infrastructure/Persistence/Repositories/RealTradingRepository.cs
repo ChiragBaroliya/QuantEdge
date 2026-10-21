@@ -223,8 +223,33 @@ public class RealTradingRepository : IRealTradingRepository
                 @TrailingSlPct
             );";
 
-        return await connection.QuerySingleAsync<RealPosition>(sql, position);
+        try
+        {
+            return await connection.QuerySingleAsync<RealPosition>(sql, position);
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation
+                                                  && ex.ConstraintName == OpenPositionUniqueIndex
+                                                  && position.Status == PositionStatus.OPEN)
+        {
+            // Backstop for a second OPEN row in the same symbol (schema.sql ux_real_positions_open_symbol) - a real
+            // order was doubled somewhere. Keep tracking the existing row and leave a loud trail in the audit stream.
+            var existing = await GetOpenPositionBySymbolAsync(position.UserId, position.Symbol);
+            await LogExecutionAsync(new RealTradeExecutionLog
+            {
+                UserId = position.UserId,
+                Symbol = position.Symbol,
+                ActionType = "DUPLICATE_POSITION_BLOCKED",
+                Price = position.AverageEntryPrice,
+                Quantity = position.Quantity,
+                Reason = $"🚨 A second OPEN position for {position.Symbol} was blocked (Position #{existing?.Id} already open). " +
+                         "A duplicate real order may have filled at Zerodha - check Zerodha positions."
+            });
+            if (existing == null) throw;
+            return existing;
+        }
     }
+
+    private const string OpenPositionUniqueIndex = "ux_real_positions_open_symbol";
 
     public async Task<RealPosition?> GetOpenPositionByIdAsync(int positionId)
     {
@@ -290,6 +315,28 @@ public class RealTradingRepository : IRealTradingRepository
             });
         var last = candles.LastOrDefault();
         return last != null && last.CandleClose > 0m ? last.CandleClose : null;
+    }
+
+    // Inline query (no new DB function to deploy) over existing real_orders columns only.
+    public async Task<(int Quantity, decimal Value)> GetFilledCoverTotalsAsync(int userId, string symbol, DateTime fromUtc)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        var row = await connection.QuerySingleAsync<(long Quantity, decimal Value)>(@"
+            SELECT COALESCE(SUM(quantity), 0) AS Quantity, COALESCE(SUM(quantity * filled_price), 0) AS Value
+            FROM real_orders
+            WHERE user_id = @userId AND UPPER(symbol) = UPPER(@symbol)
+              AND is_short = TRUE AND side = @buySide AND status = @filledStatus
+              AND broker_order_id IS NOT NULL -- real Zerodha fills only, not QuantEdge-only close records
+              AND created_at >= @fromUtc;",
+            new
+            {
+                userId,
+                symbol,
+                buySide = (int)TradeSide.BUY,
+                filledStatus = (int)PaperOrderStatus.Filled,
+                fromUtc = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc)
+            });
+        return ((int)row.Quantity, row.Value);
     }
 
     public async Task<RealTradeHistory> RecordTradeHistoryAsync(RealTradeHistory history)

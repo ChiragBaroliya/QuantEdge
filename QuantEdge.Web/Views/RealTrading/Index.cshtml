@@ -687,14 +687,15 @@
                                 </div>
                                 <div class="col-6 mb-2">
                                     <label class="form-label" for="inpShortSquareOffTime">Short Square-off</label>
-                                    <input type="time" class="form-control qe-input" id="inpShortSquareOffTime" name="ShortSquareOffTime" max="15:20" />
+                                    <input type="time" class="form-control qe-input" id="inpShortSquareOffTime" name="ShortSquareOffTime" max="15:10" />
                                 </div>
                             </div>
                             <small class="form-hint">
                                 OFF by default, and only active while the Real Auto Trade master switch is ON. When ON, the bot may place
                                 real Zerodha SELL orders (product MIS) on bearish setups - NIFTY below its 50 DMA with EMA20 &lt; EMA50 and
                                 the stock in a daily downtrend - with the same guards and limits as a BUY. No new short after the cut-off;
-                                every open short is bought back at the Square-off time (15:20 at the latest, before Zerodha's own MIS square-off).
+                                every open short is bought back at the Square-off time (15:10 at the latest - Zerodha blocks MIS orders for some stocks from ~15:12).
+                                If Zerodha squares a short off itself, QuantEdge books it at Zerodha's real buy price within a minute.
                             </small>
                         </div>
 

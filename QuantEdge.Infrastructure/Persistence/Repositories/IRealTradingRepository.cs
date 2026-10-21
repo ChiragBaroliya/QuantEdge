@@ -49,6 +49,12 @@ public interface IRealTradingRepository
     /// <summary>Close of the newest stored 1-minute candle (market_candles_1m) starting in [fromUtc, toUtc], or null if none.</summary>
     Task<decimal?> GetLastStoredCloseAsync(string symbol, DateTime fromUtc, DateTime toUtc);
 
+    /// <summary>
+    /// Total quantity and value of today's FILLED short covers (is_short BUY orders) QuantEdge recorded for the symbol,
+    /// created at/after <paramref name="fromUtc"/> - so the rest of Zerodha's day buy can be priced as Zerodha's own square-off.
+    /// </summary>
+    Task<(int Quantity, decimal Value)> GetFilledCoverTotalsAsync(int userId, string symbol, DateTime fromUtc);
+
     // Trade History & Logs
     Task<RealTradeHistory> RecordTradeHistoryAsync(RealTradeHistory history);
 

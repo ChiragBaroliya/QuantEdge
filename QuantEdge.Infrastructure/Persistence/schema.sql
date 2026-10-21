@@ -1070,6 +1070,12 @@ ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS is_auto_short_enabled B
 ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_entry_cutoff VARCHAR(10) NOT NULL DEFAULT '15:00';
 ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_square_off_time VARCHAR(10) NOT NULL DEFAULT '15:15';
 
+-- Real shorts are MIS and Zerodha blocks new MIS orders for some stocks from ~15:12 IST (a 15:15 cover was rejected):
+-- real square-off defaults to 15:05 and is capped at 15:10 (AutoRealTradeService.UpdateSettingsAsync). Saved values
+-- past the cap are moved to the new default. Paper / Manual Paper settings are unchanged.
+ALTER TABLE real_trade_settings ALTER COLUMN short_square_off_time SET DEFAULT '15:05';
+UPDATE real_trade_settings SET short_square_off_time = '15:05' WHERE short_square_off_time > '15:10';
+
 -- real_orders.is_short marks both legs of a short (entry SELL, covering BUY): with shorts, the side alone no longer
 -- says whether a fill opens or closes a position. Existing rows are all longs (FALSE).
 ALTER TABLE real_orders ADD COLUMN IF NOT EXISTS is_short BOOLEAN NOT NULL DEFAULT FALSE;
@@ -1078,6 +1084,27 @@ ALTER TABLE real_orders ADD COLUMN IF NOT EXISTS is_short BOOLEAN NOT NULL DEFAU
 -- it, so readers keep the old rule for those rows: COALESCE(is_exit, side = 1 ...).
 ALTER TABLE paper_trade_history ADD COLUMN IF NOT EXISTS is_exit BOOLEAN;
 ALTER TABLE real_trade_history ADD COLUMN IF NOT EXISTS is_exit BOOLEAN;
+
+-- At most one OPEN real position per user + symbol: the database backstop behind the cross-process order locks
+-- (IRealTradeLockService). RealTradingRepository.UpsertPositionAsync catches a violation, keeps the existing row and
+-- logs DUPLICATE_POSITION_BLOCKED. Created only once no duplicates are open - otherwise it raises a NOTICE listing
+-- them; they are closed by the monitor's Zerodha sync (or by hand), then this block is re-run.
+DO $$
+DECLARE
+    v_duplicates TEXT;
+BEGIN
+    SELECT string_agg(format('user %s %s (%s open)', user_id, sym, cnt), ', ')
+      INTO v_duplicates
+      FROM (SELECT user_id, UPPER(symbol) AS sym, COUNT(*) AS cnt
+              FROM real_positions WHERE status = 0
+             GROUP BY user_id, UPPER(symbol) HAVING COUNT(*) > 1) d;
+
+    IF v_duplicates IS NOT NULL THEN
+        RAISE NOTICE 'ux_real_positions_open_symbol NOT created - duplicate OPEN real positions: %', v_duplicates;
+    ELSE
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_real_positions_open_symbol ON real_positions (user_id, UPPER(symbol)) WHERE status = 0;
+    END IF;
+END $$;
 
 -- ----------------------------------------------------------------------------
 -- Sector Master

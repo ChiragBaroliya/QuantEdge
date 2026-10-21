@@ -35,6 +35,10 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
         // Startup delay
         await Task.Delay(12000, stoppingToken);
 
+        // Only one process may run the real-money scan (a second one would place every real entry twice).
+        await using var lease = await RealMoneyWorkerLease.AcquireAsync(_serviceProvider, "real_worker:scan",
+            nameof(AutoRealTradeSignalScanWorker), _logger, stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try

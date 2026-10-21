@@ -45,6 +45,6 @@ public class RealTradeSettings
     // ShortSquareOffTime IST, before Zerodha's own MIS square-off. Same entry gates and risk limits as a BUY.
     public bool IsAutoShortEnabled { get; set; } = false;
     public string ShortEntryCutoff { get; set; } = "15:00";
-    public string ShortSquareOffTime { get; set; } = "15:15";
+    public string ShortSquareOffTime { get; set; } = "15:05";
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

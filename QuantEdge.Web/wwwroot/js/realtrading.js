@@ -137,6 +137,20 @@ async function loadLivePositionsFast() {
     }
 }
 
+// Capital tied up in the auto-managed open positions (entry price x quantity, longs and shorts alike) - the base for
+// the Unrealized P&L %. Zerodha's used margin is not: it is leveraged for MIS and drops to 0 once the broker is flat.
+function investedValue(positions) {
+    return (positions || []).reduce((sum, p) => sum + (p.averageEntryPrice || 0) * (p.quantity || 0), 0);
+}
+
+function unrealizedPnlHtml(data) {
+    const unPnl = data.totalUnrealizedPnl || 0;
+    const invested = investedValue(data.openPositions);
+    const unPct = invested > 0 ? (unPnl / invested) * 100 : 0;
+    const unPctSign = unPct > 0 ? "+" : "";
+    return `${formatCurrencyWithSign(unPnl)} (${unPctSign}${unPct.toFixed(2)}%)${netAfterChargesHtml(unPnl, data.totalEstimatedCharges)}`;
+}
+
 function updateFastPositionsUI(data) {
     // 1. Margin & P&L Cards
     const availMarginEl = document.getElementById("stat-available-margin");
@@ -147,13 +161,8 @@ function updateFastPositionsUI(data) {
 
     const unrealPnlEl = document.getElementById("stat-unrealized-pnl");
     if (unrealPnlEl) {
-        const unPnl = data.totalUnrealizedPnl || 0;
-        const usedMargin = data.usedBrokerMargin || 0;
-        const unPct = usedMargin > 0 ? (unPnl / usedMargin) * 100 : 0;
-        const unPctSign = unPct > 0 ? "+" : "";
-        const unPctStr = `${unPctSign}${unPct.toFixed(2)}%`;
-        unrealPnlEl.innerHTML = `${formatCurrencyWithSign(unPnl)} (${unPctStr})${netAfterChargesHtml(unPnl, data.totalEstimatedCharges)}`;
-        unrealPnlEl.style.color = unPnl >= 0 ? "#34d399" : "#f87171";
+        unrealPnlEl.innerHTML = unrealizedPnlHtml(data);
+        unrealPnlEl.style.color = (data.totalUnrealizedPnl || 0) >= 0 ? "#34d399" : "#f87171";
     }
 
     const zerodhaM2mEl = document.getElementById("stat-zerodha-m2m");
@@ -314,14 +323,8 @@ function updateDashboardUI(data) {
 
     const unrealPnlEl = document.getElementById("stat-unrealized-pnl");
     if (unrealPnlEl) {
-        const unPnl = data.totalUnrealizedPnl || 0;
-        const usedMargin = data.usedBrokerMargin || 0;
-        const baseCap = usedMargin > 0 ? usedMargin : (data.settings?.availableCapital || 0);
-        const unPct = baseCap > 0 ? (unPnl / baseCap) * 100 : 0;
-        const unPctSign = unPct > 0 ? "+" : "";
-        const unPctStr = `${unPctSign}${unPct.toFixed(2)}%`;
-        unrealPnlEl.innerHTML = `${formatCurrencyWithSign(unPnl)} (${unPctStr})${netAfterChargesHtml(unPnl, data.totalEstimatedCharges)}`;
-        unrealPnlEl.style.color = data.totalUnrealizedPnl >= 0 ? "#34d399" : "#f87171";
+        unrealPnlEl.innerHTML = unrealizedPnlHtml(data);
+        unrealPnlEl.style.color = (data.totalUnrealizedPnl || 0) >= 0 ? "#34d399" : "#f87171";
     }
 
     // Zerodha Live Broker Metrics
@@ -406,7 +409,7 @@ function populateSettingsForm(s) {
     setVal("inpTrailAtrMult", s.trailAtrMult);
     setVal("inpTargetAtrMult", s.targetAtrMult);
     setVal("inpShortEntryCutoff", s.shortEntryCutoff || "15:00");
-    setVal("inpShortSquareOffTime", s.shortSquareOffTime || "15:15");
+    setVal("inpShortSquareOffTime", s.shortSquareOffTime || "15:05");
     const chkShort = document.getElementById("chkAutoShortEnabled");
     if (chkShort) chkShort.checked = s.isAutoShortEnabled === true;
     currentExitMode = s.exitMode || "SWING_CLOSE";
@@ -1158,7 +1161,7 @@ function setupEventListeners() {
                 TargetAtrMult: parseFloat(document.getElementById("inpTargetAtrMult")?.value || "3"),
                 IsAutoShortEnabled: document.getElementById("chkAutoShortEnabled")?.checked === true,
                 ShortEntryCutoff: document.getElementById("inpShortEntryCutoff")?.value || "15:00",
-                ShortSquareOffTime: document.getElementById("inpShortSquareOffTime")?.value || "15:15"
+                ShortSquareOffTime: document.getElementById("inpShortSquareOffTime")?.value || "15:05"
             };
 
             try {

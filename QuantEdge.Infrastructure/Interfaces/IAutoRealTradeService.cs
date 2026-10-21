@@ -63,6 +63,13 @@ public interface IAutoRealTradeService
     Task<int> CloseStaleShortsAsync();
 
     /// <summary>
+    /// Same-day counterpart of <see cref="CloseStaleShortsAsync"/>: compares today's open shorts with Zerodha's MIS
+    /// positions and closes, in QuantEdge only, every short Zerodha has already bought back (its own MIS square-off or
+    /// a manual cover in Kite) at Zerodha's real average buy price. No order is placed. Returns how many were closed.
+    /// </summary>
+    Task<int> SyncShortsClosedAtBrokerAsync();
+
+    /// <summary>
     /// For an open short with no fresh live price: once its square-off is due, covers it using the latest stored 1-minute
     /// close (last 5 minutes) as the reference price, so a missing tick can't leave it to Zerodha's square-off.
     /// A stale short is closed in QuantEdge only. Returns true when it was closed or a cover order was placed.

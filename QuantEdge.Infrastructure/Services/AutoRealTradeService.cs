@@ -28,6 +28,7 @@ public class AutoRealTradeService : IAutoRealTradeService
     private readonly IHubBroadcastService? _hubBroadcast;
     private readonly IServiceScopeFactory? _scopeFactory;
     private readonly IWebSocketMarketDataService? _webSocketService;
+    private readonly IRealTradeLockService? _tradeLock;
     private readonly ILogger<AutoRealTradeService> _logger;
     private readonly ConcurrentDictionary<int, string> _userNameCache = new();
 
@@ -50,7 +51,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         IRealTradeCacheService? realTradeCache = null,
         IHubBroadcastService? hubBroadcast = null,
         IServiceScopeFactory? scopeFactory = null,
-        IWebSocketMarketDataService? webSocketService = null)
+        IWebSocketMarketDataService? webSocketService = null,
+        IRealTradeLockService? tradeLock = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _brokerService = brokerService ?? throw new ArgumentNullException(nameof(brokerService));
@@ -63,6 +65,36 @@ public class AutoRealTradeService : IAutoRealTradeService
         _hubBroadcast = hubBroadcast;
         _scopeFactory = scopeFactory;
         _webSocketService = webSocketService;
+        _tradeLock = tradeLock;
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Cross-process order locks (see IRealTradeLockService). The SemaphoreSlim guards below only
+    // cover this process; these hold across every API / Worker instance on the same database.
+    // ------------------------------------------------------------------------------------------
+
+    // Per user, not per symbol: the daily-limit and portfolio-cap checks must also be serialized.
+    private static string EntryLockKey(int userId) => $"real_entry:{userId}";
+    private static string PositionExitLockKey(int positionId) => $"real_exit:pos:{positionId}";
+    private static string SymbolExitLockKey(int userId, string symbol) => $"real_exit:{userId}:{symbol.ToUpperInvariant()}";
+
+    // Runs action only while holding key. Returns busyResult (no action run) when another process holds it.
+    // Without a lock service (unit tests) the action just runs.
+    private async Task<T> WithTradeLockAsync<T>(string key, T busyResult, Func<Task<T>> action)
+    {
+        if (_tradeLock == null) return await action();
+
+        var handle = await _tradeLock.TryAcquireAsync(key);
+        if (handle == null)
+        {
+            _logger.LogWarning("Real-trade lock {Key} is held by another process - skipped so the same real order is not placed twice.", key);
+            return busyResult;
+        }
+
+        await using (handle)
+        {
+            return await action();
+        }
     }
 
     // Ensures a real position's symbol is receiving live WebSocket ticks the moment it's opened,
@@ -98,6 +130,23 @@ public class AutoRealTradeService : IAutoRealTradeService
         return settings;
     }
 
+    // Real shorts are MIS: Zerodha blocks new MIS orders for some stocks from ~15:12 IST (the cover for UNITDSPR at 15:15 was
+    // rejected), so the square-off must run before that. Paper / Manual Paper keep their own, later defaults.
+    public const string DefaultShortSquareOffTime = "15:05";
+    public static readonly TimeSpan LatestShortSquareOffTime = new(15, 10, 0);
+
+    private static void ValidateShortTimes(string shortEntryCutoff, string shortSquareOffTime)
+    {
+        if (!TimeSpan.TryParse(shortSquareOffTime, out var squareOff))
+            throw new InvalidOperationException($"Short Square-off time '{shortSquareOffTime}' is not a valid HH:mm time.");
+        if (squareOff > LatestShortSquareOffTime)
+            throw new InvalidOperationException($"Short Square-off must be {LatestShortSquareOffTime:hh\\:mm} or earlier - Zerodha rejects MIS buy-backs for some stocks from about 15:12.");
+        if (!TimeSpan.TryParse(shortEntryCutoff, out var cutoff))
+            throw new InvalidOperationException($"Short Entry Cut-off '{shortEntryCutoff}' is not a valid HH:mm time.");
+        if (cutoff >= squareOff)
+            throw new InvalidOperationException($"Short Entry Cut-off ({shortEntryCutoff}) must be earlier than the Short Square-off ({shortSquareOffTime}).");
+    }
+
     public async Task<RealTradeSettings> UpdateSettingsAsync(RealTradeSettingsUpdateDto updateDto, int userId = 1)
     {
         // 1. Check if Market is currently Open (09:15 AM - 03:30 PM IST)
@@ -105,6 +154,10 @@ public class AutoRealTradeService : IAutoRealTradeService
         {
             throw new InvalidOperationException("⚙️ Auto Real Trade settings are LOCKED during active market hours (09:15 AM - 03:30 PM IST). You can adjust and save settings after 03:30 PM.");
         }
+
+        string shortEntryCutoff = string.IsNullOrWhiteSpace(updateDto.ShortEntryCutoff) ? "15:00" : updateDto.ShortEntryCutoff;
+        string shortSquareOffTime = string.IsNullOrWhiteSpace(updateDto.ShortSquareOffTime) ? DefaultShortSquareOffTime : updateDto.ShortSquareOffTime;
+        ValidateShortTimes(shortEntryCutoff, shortSquareOffTime);
 
         var existing = await _repository.GetSettingsAsync(userId);
         if (existing == null)
@@ -134,8 +187,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         existing.TrailAtrMult = updateDto.TrailAtrMult;
         existing.TargetAtrMult = updateDto.TargetAtrMult;
         existing.IsAutoShortEnabled = updateDto.IsAutoShortEnabled;
-        existing.ShortEntryCutoff = string.IsNullOrWhiteSpace(updateDto.ShortEntryCutoff) ? "15:00" : updateDto.ShortEntryCutoff;
-        existing.ShortSquareOffTime = string.IsNullOrWhiteSpace(updateDto.ShortSquareOffTime) ? "15:15" : updateDto.ShortSquareOffTime;
+        existing.ShortEntryCutoff = shortEntryCutoff;
+        existing.ShortSquareOffTime = shortSquareOffTime;
 
         var updated = await _repository.UpsertSettingsAsync(existing);
 
@@ -360,10 +413,13 @@ public class AutoRealTradeService : IAutoRealTradeService
         bool isManualTrade = false, int? manualQuantity = null, decimal? manualStopLossPct = null, decimal? manualTrailingSlPct = null,
         decimal? dailyAtr = null)
     {
+        Task<bool> RunCoreLocked() => WithTradeLockAsync(EntryLockKey(userId), false, () =>
+            EvaluateAndExecuteRealBuyCoreAsync(symbol, entryPrice, metConditionsCount, userId, isBuySignal,
+                engineStopLoss, engineTarget, dailyAtr, isManualTrade, manualQuantity, manualStopLossPct, manualTrailingSlPct));
+
         if (!isManualTrade)
         {
-            return await EvaluateAndExecuteRealBuyCoreAsync(symbol, entryPrice, metConditionsCount, userId, isBuySignal,
-                engineStopLoss, engineTarget, dailyAtr, isManualTrade, manualQuantity, manualStopLossPct, manualTrailingSlPct);
+            return await RunCoreLocked();
         }
 
         string lockKey = $"{userId}:{symbol.ToUpper().Trim()}";
@@ -376,8 +432,7 @@ public class AutoRealTradeService : IAutoRealTradeService
 
         try
         {
-            return await EvaluateAndExecuteRealBuyCoreAsync(symbol, entryPrice, metConditionsCount, userId, isBuySignal,
-                engineStopLoss, engineTarget, dailyAtr, isManualTrade, manualQuantity, manualStopLossPct, manualTrailingSlPct);
+            return await RunCoreLocked();
         }
         finally
         {
@@ -442,8 +497,9 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
-        // 5. Daily Trade Limit Check
-        int todayCount = await GetTodayRealTradeCountAsync(userId);
+        // 5. Daily Trade Limit Check - read straight from the database (not the per-process 5-minute cache) while
+        // the cross-process entry lock is held, so another process's fresh fill is always counted.
+        int todayCount = await _repository.GetTodayRealTradeCountAsync(userId);
         if (todayCount >= settings.MaxTradesPerDay)
         {
             await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
@@ -876,8 +932,9 @@ public class AutoRealTradeService : IAutoRealTradeService
 
         try
         {
-            return await EvaluateAndExecuteRealShortCoreAsync(symbol, entryPrice, metConditionsCount, userId, isSellSignal,
-                engineStopLoss, engineTarget, dailyAtr);
+            return await WithTradeLockAsync(EntryLockKey(userId), false, () =>
+                EvaluateAndExecuteRealShortCoreAsync(symbol, entryPrice, metConditionsCount, userId, isSellSignal,
+                    engineStopLoss, engineTarget, dailyAtr));
         }
         finally
         {
@@ -945,8 +1002,8 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
-        // 5. Daily Trade Limit Check (longs and shorts share it)
-        int todayCount = await GetTodayRealTradeCountAsync(userId);
+        // 5. Daily Trade Limit Check (longs and shorts share it) - fresh from the database, as in the BUY path.
+        int todayCount = await _repository.GetTodayRealTradeCountAsync(userId);
         if (todayCount >= settings.MaxTradesPerDay)
         {
             await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
@@ -1298,7 +1355,17 @@ public class AutoRealTradeService : IAutoRealTradeService
         return (true, $"{symbol} is now being monitored. It will be sold automatically once it reaches ₹{targetPrice:F2}.");
     }
 
-    public async Task<(bool Success, string Message)> ManualSellAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId = 1)
+    public Task<(bool Success, string Message)> ManualSellAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId = 1)
+        => WithTradeLockAsync(SymbolExitLockKey(userId, (symbol ?? string.Empty).Trim()),
+            (false, $"Another sell / buy-back for {symbol} is already being placed - check the Real Orders Book before retrying."),
+            () => ManualSellCoreAsync(symbol ?? string.Empty, quantity, currentPrice, product, entryPriceHint, reason, userId));
+
+    public Task<(bool Success, string Message)> ManualBuyBackAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId = 1)
+        => WithTradeLockAsync(SymbolExitLockKey(userId, (symbol ?? string.Empty).Trim()),
+            (false, $"Another sell / buy-back for {symbol} is already being placed - check the Real Orders Book before retrying."),
+            () => ManualBuyBackCoreAsync(symbol ?? string.Empty, quantity, currentPrice, product, entryPriceHint, reason, userId));
+
+    private async Task<(bool Success, string Message)> ManualSellCoreAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId)
     {
         symbol = symbol.ToUpper().Trim();
         if (string.IsNullOrWhiteSpace(symbol) || quantity <= 0 || currentPrice <= 0m)
@@ -1515,7 +1582,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
     }
 
-    public async Task<(bool Success, string Message)> ManualBuyBackAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId = 1)
+    private async Task<(bool Success, string Message)> ManualBuyBackCoreAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId)
     {
         symbol = symbol.ToUpper().Trim();
         if (string.IsNullOrWhiteSpace(symbol) || quantity <= 0 || currentPrice <= 0m)
@@ -1822,8 +1889,21 @@ public class AutoRealTradeService : IAutoRealTradeService
             ? $"est. @ ₹{exitPrice:F2} (last stored close up to {ZerodhaMisSquareOffTime:hh\\:mm} IST on {openedIst:dd-MMM})"
             : $"@ entry ₹{exitPrice:F2} (no stored price - check the real fill in Zerodha's contract note)";
 
-        // Recorded as the covering BUY (IsShort, no broker order ID - QuantEdge placed nothing), so the Orders Book and
-        // trade history show how the short ended.
+        _logger.LogWarning("Stale real short #{PositionId} ({Symbol}, User {UserId}) from {OpenedAt:dd-MMM} closed in QuantEdge only - Zerodha's MIS square-off already closed it. Exit {Price}.",
+            position.Id, position.Symbol, userId, openedIst, exitPrice);
+        string pnlSign = realizedPnl >= 0 ? "+" : "";
+        await CloseShortWithoutOrderAsync(position, exitPrice, squareOffUtc, StaleShortExitReason, priceNote, "SHORT_STALE_CLOSED",
+            $"🧹 Short #{position.Id} from {openedIst:dd-MMM} closed in QuantEdge - Zerodha squares off MIS at the close, no order placed. Exit {priceNote} | Est. P&L: {pnlSign}₹{realizedPnl:N2}", userId);
+        return true;
+    }
+
+    // Closes a short in QuantEdge only - Zerodha has already bought it back, so no order is placed. Recorded as the
+    // covering BUY (IsShort, no broker order ID), so the Orders Book and trade history show how the short ended.
+    private async Task CloseShortWithoutOrderAsync(RealPosition position, decimal exitPrice, DateTime filledAtUtc, string exitReason,
+        string priceNote, string auditAction, string auditMessage, int userId)
+    {
+        decimal realizedPnl = Math.Round((position.AverageEntryPrice - exitPrice) * position.Quantity, 2);
+
         var coverRecord = await _repository.CreateOrderAsync(new RealOrder
         {
             UserId = userId,
@@ -1834,15 +1914,16 @@ public class AutoRealTradeService : IAutoRealTradeService
             Price = exitPrice,
             Status = PaperOrderStatus.Filled,
             FilledPrice = exitPrice,
-            FilledAt = squareOffUtc,
+            FilledAt = filledAtUtc,
             IsShort = true,
             TradeType = position.TradeType,
-            Remarks = $"{StaleShortExitReason} - no order placed by QuantEdge, {priceNote}"
+            Remarks = $"{exitReason} - no order placed by QuantEdge, {priceNote}"
         });
 
-        await _repository.ClosePositionAsync(position.Id, exitPrice, realizedPnl, StaleShortExitReason);
+        await _repository.ClosePositionAsync(position.Id, exitPrice, position.RealizedPnl + realizedPnl, exitReason);
         _realTradeCache?.RemovePosition(position.Id);
         _realTradeCache?.RemoveLiveLtp(position.Symbol);
+        _coverRejectedAtUtc.TryRemove(position.Id, out _);
 
         await _repository.RecordTradeHistoryAsync(new RealTradeHistory
         {
@@ -1855,18 +1936,122 @@ public class AutoRealTradeService : IAutoRealTradeService
             ExecutedPrice = exitPrice,
             RealizedPnl = realizedPnl,
             TradeType = position.TradeType,
-            ExitReason = StaleShortExitReason,
+            ExitReason = exitReason,
             IsExit = true,
-            Remarks = $"Short closed in QuantEdge only ({StaleShortExitReason}), {priceNote} | Est. P&L: ₹{realizedPnl:F2}"
+            Remarks = $"Short closed in QuantEdge only ({exitReason}), {priceNote} | P&L: ₹{realizedPnl:F2}"
         });
 
-        _logger.LogWarning("Stale real short #{PositionId} ({Symbol}, User {UserId}) from {OpenedAt:dd-MMM} closed in QuantEdge only - Zerodha's MIS square-off already closed it. Exit {Price}.",
-            position.Id, position.Symbol, userId, openedIst, exitPrice);
-        string pnlSign = realizedPnl >= 0 ? "+" : "";
-        await LogAuditAsync(position.Symbol, "SHORT_STALE_CLOSED", exitPrice, position.Quantity,
-            $"🧹 Short #{position.Id} from {openedIst:dd-MMM} closed in QuantEdge - Zerodha squares off MIS at the close, no order placed. Exit {priceNote} | Est. P&L: {pnlSign}₹{realizedPnl:N2}", userId);
-
+        await LogAuditAsync(position.Symbol, auditAction, exitPrice, position.Quantity, auditMessage, userId);
         await BroadcastDashboardUpdateAsync(userId);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Same-day sync: shorts Zerodha has already bought back (its own MIS square-off, or a manual cover in Kite)
+    // ------------------------------------------------------------------------------------------
+
+    public const string BrokerClosedShortExitReason = "Squared off at Zerodha";
+
+    // How often the same symbol may log a QUANTITY_MISMATCH audit entry.
+    private static readonly TimeSpan QuantityMismatchAuditInterval = TimeSpan.FromMinutes(10);
+    private readonly ConcurrentDictionary<string, DateTime> _lastQuantityMismatchAuditUtc = new();
+
+    public async Task<int> SyncShortsClosedAtBrokerAsync()
+    {
+        var nowIst = SwingTradeRules.NowIst();
+        var openPositions = _realTradeCache != null && _realTradeCache.IsWarmedUp
+            ? _realTradeCache.GetAllOpenPositions().ToList()
+            : (await _repository.GetAllOpenPositionsAsync()).ToList();
+
+        // Earlier-day shorts are CloseStaleShortsAsync's job; only today's shorts are compared with Zerodha.
+        var todaysShorts = openPositions
+            .Where(p => p.Status == PositionStatus.OPEN && p.Side == TradeSide.SELL && !IsStaleShort(p, nowIst))
+            .ToList();
+        if (todaysShorts.Count == 0) return 0;
+
+        int closed = 0;
+        foreach (var userGroup in todaysShorts.GroupBy(p => p.UserId))
+        {
+            int userId = userGroup.Key;
+            try
+            {
+                var posRes = await _brokerService.GetLivePositionsAsync(userId);
+                if (!posRes.Success || posRes.Positions == null) continue; // never act on a failed broker read
+
+                foreach (var symbolGroup in userGroup.GroupBy(p => p.Symbol.ToUpperInvariant()))
+                {
+                    closed += await SyncSymbolShortsWithBrokerAsync(userId, symbolGroup.Key, symbolGroup.ToList(), posRes.Positions);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync open real shorts with Zerodha positions (User {UserId}).", userId);
+            }
+        }
+        return closed;
+    }
+
+    private async Task<int> SyncSymbolShortsWithBrokerAsync(int userId, string symbol, List<RealPosition> shorts, ZerodhaPositionsDto brokerPositions)
+    {
+        // A cover QuantEdge placed is still resting at Zerodha - ReconcilePendingRealOrdersAsync books that one.
+        if (await _repository.GetOpenBrokerOrderAsync(userId, symbol, TradeSide.BUY) != null) return 0;
+
+        var brokerRow = brokerPositions.Net.FirstOrDefault(r =>
+            string.Equals(r.TradingSymbol, symbol, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(r.Product, ShortProductType, StringComparison.OrdinalIgnoreCase));
+
+        // No MIS row at all: nothing traded in this symbol today at Zerodha, so there is no fill to book - leave it alone.
+        if (brokerRow == null) return 0;
+
+        int trackedQty = shorts.Sum(p => p.Quantity);
+        int brokerShortQty = brokerRow.Quantity < 0 ? -brokerRow.Quantity : 0;
+
+        if (brokerShortQty > 0)
+        {
+            // Still short at Zerodha, but not by what QuantEdge tracks - flag it for review, never auto-correct.
+            if (brokerShortQty != trackedQty && ShouldLogQuantityMismatch(userId, symbol))
+            {
+                await LogAuditAsync(symbol, "QUANTITY_MISMATCH", brokerRow.LastPrice, brokerShortQty,
+                    $"⚠️ Zerodha shows {symbol} short {brokerShortQty} (MIS) but QuantEdge tracks {trackedQty} across {shorts.Count} open position(s) - check Zerodha positions.", userId);
+            }
+            return 0;
+        }
+
+        // Flat (or net long) at Zerodha: it bought the short back. Price the part QuantEdge didn't cover itself at
+        // Zerodha's real fill: today's buy value/qty minus QuantEdge's own filled covers.
+        var (ownCoverQty, ownCoverValue) = await _repository.GetFilledCoverTotalsAsync(userId, symbol, TimeZoneHelper.IstTodayStartUtc());
+        int residualQty = brokerRow.BuyQuantity - ownCoverQty;
+        decimal residualValue = brokerRow.BuyValue - ownCoverValue;
+        decimal exitPrice = residualQty > 0 && residualValue > 0m
+            ? Math.Round(residualValue / residualQty, 2)
+            : brokerRow.BuyPrice;
+        if (exitPrice <= 0m)
+        {
+            _logger.LogWarning("{Symbol} (User {UserId}) is flat at Zerodha but no buy price is available - open short(s) left for the next cycle.", symbol, userId);
+            return 0;
+        }
+
+        string priceNote = $"@ Zerodha avg buy ₹{exitPrice:F2}";
+        DateTime nowUtc = SwingTradeRules.UtcNow();
+        int closed = 0;
+        foreach (var position in shorts)
+        {
+            decimal pnl = Math.Round((position.AverageEntryPrice - exitPrice) * position.Quantity, 2);
+            string pnlSign = pnl >= 0 ? "+" : "";
+            _logger.LogWarning("Real short #{PositionId} ({Symbol}, User {UserId}) is already flat at Zerodha - closed in QuantEdge at {Price}.",
+                position.Id, symbol, userId, exitPrice);
+            await CloseShortWithoutOrderAsync(position, exitPrice, nowUtc, BrokerClosedShortExitReason, priceNote, "SHORT_BROKER_CLOSED",
+                $"🔁 Short #{position.Id} ({position.Quantity} sh) already bought back at Zerodha - closed in QuantEdge {priceNote}, no order placed | P&L: {pnlSign}₹{pnl:N2}", userId);
+            closed++;
+        }
+        return closed;
+    }
+
+    private bool ShouldLogQuantityMismatch(int userId, string symbol)
+    {
+        string key = $"{userId}:{symbol}";
+        var now = DateTime.UtcNow;
+        if (_lastQuantityMismatchAuditUtc.TryGetValue(key, out var last) && now - last < QuantityMismatchAuditInterval) return false;
+        _lastQuantityMismatchAuditUtc[key] = now;
         return true;
     }
 
@@ -1911,6 +2096,15 @@ public class AutoRealTradeService : IAutoRealTradeService
 
         if (decision.ShouldExit)
         {
+            // Zerodha just rejected a cover for this short (e.g. "MIS allowed only till 3:12 PM"): don't resend it every
+            // monitor cycle. Zerodha's own MIS square-off then closes it and SyncShortsClosedAtBrokerAsync books that.
+            if (_coverRejectedAtUtc.TryGetValue(position.Id, out var rejectedAt) && SwingTradeRules.UtcNow() - rejectedAt < CoverRejectionBackoff)
+            {
+                _logger.LogDebug("Skipping cover for short #{PositionId} ({Symbol}) - Zerodha rejected the last one at {RejectedAt:HH:mm:ss} UTC.",
+                    position.Id, position.Symbol, rejectedAt);
+                return false;
+            }
+
             return await ExecuteRealSellOrderAsync(position, currentLtp, decision.Reason, userId,
                 decision.IsGap ? GapExitProtectionBufferPct : null);
         }
@@ -1937,7 +2131,39 @@ public class AutoRealTradeService : IAutoRealTradeService
     private async Task<bool> ExecuteRealSellOrderAsync(RealPosition position, decimal currentLtp, string exitReason, int userId, decimal? protectionBufferPctOverride = null)
         => (await ExecuteRealSellOrderCoreAsync(position, currentLtp, exitReason, userId, protectionBufferPctOverride)) is RealSellOutcome.Filled or RealSellOutcome.OrderOpenPending;
 
-    private async Task<RealSellOutcome> ExecuteRealSellOrderCoreAsync(RealPosition position, decimal currentLtp, string exitReason, int userId, decimal? protectionBufferPctOverride = null)
+    // How long an automatic cover waits after Zerodha rejected the previous one for the same short.
+    private static readonly TimeSpan CoverRejectionBackoff = TimeSpan.FromMinutes(2);
+    private readonly ConcurrentDictionary<int, DateTime> _coverRejectedAtUtc = new(); // service is a singleton
+
+    // One exit order per position across every process: the lock is held from the pending-order check to the
+    // recorded outcome, and the position is re-read under it - another instance may have just closed it, and a
+    // second cover for a closed short would open a new long.
+    private Task<RealSellOutcome> ExecuteRealSellOrderCoreAsync(RealPosition position, decimal currentLtp, string exitReason, int userId, decimal? protectionBufferPctOverride = null)
+        => WithTradeLockAsync(PositionExitLockKey(position.Id), RealSellOutcome.AlreadyPending, async () =>
+        {
+            if (_tradeLock != null)
+            {
+                var current = await _repository.GetOpenPositionByIdAsync(position.Id);
+                if (current == null || current.Status != PositionStatus.OPEN)
+                {
+                    _logger.LogInformation("Exit for position #{PositionId} ({Symbol}) skipped - it is no longer open (closed by another process).",
+                        position.Id, position.Symbol);
+                    _realTradeCache?.RemovePosition(position.Id);
+                    return RealSellOutcome.AlreadyPending;
+                }
+                position.Quantity = current.Quantity;
+            }
+
+            var outcome = await ExecuteRealSellOrderUnlockedAsync(position, currentLtp, exitReason, userId, protectionBufferPctOverride);
+            if (position.Side == TradeSide.SELL)
+            {
+                if (outcome == RealSellOutcome.Failed) _coverRejectedAtUtc[position.Id] = SwingTradeRules.UtcNow();
+                else _coverRejectedAtUtc.TryRemove(position.Id, out _);
+            }
+            return outcome;
+        });
+
+    private async Task<RealSellOutcome> ExecuteRealSellOrderUnlockedAsync(RealPosition position, decimal currentLtp, string exitReason, int userId, decimal? protectionBufferPctOverride = null)
     {
         var settings = await GetSettingsAsync(userId);
 
