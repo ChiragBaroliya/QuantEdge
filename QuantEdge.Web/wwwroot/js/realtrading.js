@@ -137,18 +137,24 @@ async function loadLivePositionsFast() {
     }
 }
 
-// Capital tied up in the auto-managed open positions (entry price x quantity, longs and shorts alike) - the base for
-// the Unrealized P&L %. Zerodha's used margin is not: it is leveraged for MIS and drops to 0 once the broker is flat.
-function investedValue(positions) {
-    return (positions || []).reduce((sum, p) => sum + (p.averageEntryPrice || 0) * (p.quantity || 0), 0);
-}
+// Every P&L card on this page is Zerodha's own figure (no QuantEdge-side recalculation), so it always matches
+// Kite: Today's P&L = the Positions screen's "Total P&L" (sum of each net position's pnl = realised + unrealised).
+function renderZerodhaPnlCards(data) {
+    const net = (data.brokerPositions && data.brokerPositions.net) ? data.brokerPositions.net : [];
+    const booked = data.zerodhaRealizedPnl || 0;
+    const open = data.zerodhaUnrealizedPnl || 0;
+    const total = net.length > 0 ? net.reduce((sum, p) => sum + (p.pnl || 0), 0) : booked + open;
 
-function unrealizedPnlHtml(data) {
-    const unPnl = data.totalUnrealizedPnl || 0;
-    const invested = investedValue(data.openPositions);
-    const unPct = invested > 0 ? (unPnl / invested) * 100 : 0;
-    const unPctSign = unPct > 0 ? "+" : "";
-    return `${formatCurrencyWithSign(unPnl)} (${unPctSign}${unPct.toFixed(2)}%)${netAfterChargesHtml(unPnl, data.totalEstimatedCharges)}`;
+    const totalEl = document.getElementById("stat-zerodha-total-pnl");
+    if (totalEl) {
+        totalEl.innerText = formatCurrencyWithSign(total);
+        totalEl.style.color = total >= 0 ? "#34d399" : "#f87171";
+    }
+
+    const breakdownEl = document.getElementById("stat-zerodha-pnl-breakdown");
+    if (breakdownEl) {
+        breakdownEl.innerText = `Booked ${formatCurrencyWithSign(booked)} · Open ${formatCurrencyWithSign(open)}`;
+    }
 }
 
 function updateFastPositionsUI(data) {
@@ -159,35 +165,7 @@ function updateFastPositionsUI(data) {
     const usedMarginEl = document.getElementById("stat-used-margin");
     if (usedMarginEl) usedMarginEl.innerText = formatCurrency(data.usedBrokerMargin);
 
-    const unrealPnlEl = document.getElementById("stat-unrealized-pnl");
-    if (unrealPnlEl) {
-        unrealPnlEl.innerHTML = unrealizedPnlHtml(data);
-        unrealPnlEl.style.color = (data.totalUnrealizedPnl || 0) >= 0 ? "#34d399" : "#f87171";
-    }
-
-    const zerodhaM2mEl = document.getElementById("stat-zerodha-m2m");
-    if (zerodhaM2mEl) {
-        zerodhaM2mEl.innerText = formatCurrencyWithSign(data.zerodhaTotalM2M);
-        zerodhaM2mEl.style.color = data.zerodhaTotalM2M >= 0 ? "#34d399" : "#f87171";
-    }
-
-    const zerodhaRealPnlEl = document.getElementById("stat-zerodha-realized-pnl");
-    if (zerodhaRealPnlEl) {
-        zerodhaRealPnlEl.innerText = formatCurrencyWithSign(data.zerodhaRealizedPnl);
-        zerodhaRealPnlEl.style.color = data.zerodhaRealizedPnl >= 0 ? "#34d399" : "#f87171";
-    }
-
-    const zerodhaUnrealPnlEl = document.getElementById("stat-zerodha-unrealized-pnl");
-    if (zerodhaUnrealPnlEl) {
-        zerodhaUnrealPnlEl.innerText = formatCurrencyWithSign(data.zerodhaUnrealizedPnl);
-        zerodhaUnrealPnlEl.style.color = data.zerodhaUnrealizedPnl >= 0 ? "#34d399" : "#f87171";
-    }
-
-    const statOpenCount = document.getElementById("stat-open-count");
-    if (statOpenCount) statOpenCount.innerText = (data.openPositions || []).length;
-
-    const badgeBotCount = document.getElementById("badge-bot-count");
-    if (badgeBotCount) badgeBotCount.innerText = (data.openPositions || []).length;
+    renderZerodhaPnlCards(data);
 
     // 2. Refresh Tables
     renderOpenPositions(data.openPositions || []);
@@ -286,7 +264,7 @@ function updateDashboardUI(data) {
     // Trade Counter Badge
     const counterBadge = document.getElementById("trade-counter-badge");
     if (counterBadge) {
-        counterBadge.innerText = `${data.todayTradeCount} / ${data.maxTradesPerDay} trades used today`;
+        counterBadge.innerText = `${data.todayTradeCount || 0} ${(data.todayTradeCount || 0) === 1 ? "trade" : "trades"} today`;
     }
 
     // Master Switch Toggle
@@ -311,38 +289,11 @@ function updateDashboardUI(data) {
         usedMarginEl.innerText = formatCurrency(data.usedBrokerMargin);
     }
 
-    const openCountEl = document.getElementById("stat-open-count");
-    if (openCountEl) {
-        openCountEl.innerText = (data.openPositions || []).length;
-    }
-
-    const badgeBotCount = document.getElementById("badge-bot-count");
-    if (badgeBotCount) {
-        badgeBotCount.innerText = (data.openPositions || []).length;
-    }
-
-    const unrealPnlEl = document.getElementById("stat-unrealized-pnl");
-    if (unrealPnlEl) {
-        unrealPnlEl.innerHTML = unrealizedPnlHtml(data);
-        unrealPnlEl.style.color = (data.totalUnrealizedPnl || 0) >= 0 ? "#34d399" : "#f87171";
-    }
-
-    // Zerodha Live Broker Metrics
-    const zerodhaM2mEl = document.getElementById("stat-zerodha-m2m");
-    if (zerodhaM2mEl) {
-        zerodhaM2mEl.innerText = formatCurrencyWithSign(data.zerodhaTotalM2M);
-        zerodhaM2mEl.style.color = data.zerodhaTotalM2M >= 0 ? "#34d399" : "#f87171";
-    }
-
-    const zerodhaRealPnlEl = document.getElementById("stat-zerodha-realized-pnl");
-    if (zerodhaRealPnlEl) {
-        zerodhaRealPnlEl.innerText = formatCurrencyWithSign(data.zerodhaRealizedPnl);
-        zerodhaRealPnlEl.style.color = data.zerodhaRealizedPnl >= 0 ? "#34d399" : "#f87171";
-    }
+    renderZerodhaPnlCards(data);
 
     const todayCountEl = document.getElementById("stat-today-trade-count");
     if (todayCountEl) {
-        todayCountEl.innerText = `${data.todayTradeCount} / ${data.maxTradesPerDay} Trades`;
+        todayCountEl.innerText = data.todayTradeCount || 0;
     }
 
     const todayUsedAmtEl = document.getElementById("stat-today-used-amount");
@@ -350,24 +301,12 @@ function updateDashboardUI(data) {
         todayUsedAmtEl.innerText = formatCurrency(data.todayTradeAmount);
     }
 
-    const todayRealPnlEl = document.getElementById("stat-realized-pnl");
-    if (todayRealPnlEl) {
-        const todayAmt = data.todayTradeAmount || (data.settings?.fixedAmountPerTrade ? data.todayTradeCount * data.settings.fixedAmountPerTrade : 0);
-        const realPnl = data.totalRealizedPnlToday || 0;
-        const baseCap = todayAmt > 0 ? todayAmt : (data.settings?.availableCapital || 0);
-        const pnlPct = baseCap > 0 ? (realPnl / baseCap) * 100 : 0;
-        const pctSign = pnlPct > 0 ? "+" : "";
-        const pctStr = `${pctSign}${pnlPct.toFixed(2)}%`;
-        todayRealPnlEl.innerText = `${formatCurrencyWithSign(realPnl)} (${pctStr})`;
-        todayRealPnlEl.style.color = data.totalRealizedPnlToday >= 0 ? "#34d399" : "#f87171";
-    }
-
     // 3. Populate Settings Form
     if (data.settings) {
         populateSettingsForm(data.settings);
     }
 
-    // 4. Populate Open Real Positions (Bot DB)
+    // 4. Cache the bot-managed positions (their Target / SL / Trailing SL show on the Zerodha rows below)
     renderOpenPositions(data.openPositions || []);
 
     // 4b. Populate Recent Orders first - Zerodha Positions/Holdings below cross-reference this to
@@ -457,23 +396,6 @@ function pendingOrderStatusBadge(order) {
     return `<span class="status-badge-pending" title="A ${sideLabel} order for this stock is already ${label} at the broker (Order #${order.brokerOrderId || 'N/A'}) - see Real Orders Book">${label}</span>`;
 }
 
-function applyPositionsFilter() {
-    const searchSymbol = (document.getElementById("inpSearchPositions")?.value || "").trim().toUpperCase();
-    const filterSide = document.getElementById("selFilterPosSide")?.value || "";
-    const filterPnl = document.getElementById("selFilterPosPnl")?.value || "";
-
-    const filtered = cachedOpenPositions.filter(p => {
-        if (searchSymbol && !p.symbol.toUpperCase().includes(searchSymbol)) return false;
-        if (filterSide === "BUY" && p.side !== 0) return false;
-        if (filterSide === "SELL" && p.side !== 1) return false;
-        if (filterPnl === "PROFIT" && (p.unrealizedPnl || 0) < 0) return false;
-        if (filterPnl === "LOSS" && (p.unrealizedPnl || 0) >= 0) return false;
-        return true;
-    });
-
-    renderFilteredOpenPositions(filtered);
-}
-
 // Returns the calendar date (YYYY-MM-DD) of a UTC timestamp as seen in IST, matching the "TIME (IST)" column.
 function toIstDateString(utcDateStr) {
     return new Date(utcDateStr).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -512,66 +434,24 @@ function applyOrdersFilter() {
     renderFilteredRecentOrders(filtered);
 }
 
+// The bot's own open positions are not shown as a separate table - they only supply the Target / SL /
+// Trailing SL levels overlaid on the matching Zerodha Positions/Holdings rows.
 function renderOpenPositions(positions) {
     cachedOpenPositions = positions || [];
-    applyPositionsFilter();
 }
 
-function renderFilteredOpenPositions(positions) {
-    const tbody = document.getElementById("openPositionsTableBody");
-    if (!tbody) return;
-
-    if (!positions || positions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No open real positions matching filters.</td></tr>`;
-        return;
-    }
-
-    let html = "";
-    positions.forEach(p => {
-        const pnl = p.unrealizedPnl || 0;
-        const pnlClass = pnl >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
-        const entryVal = p.quantity * p.averageEntryPrice;
-        const pnlPct = entryVal > 0 ? (pnl / entryVal * 100).toFixed(2) : '0.00';
-        const pnlPctSign = pnl > 0 ? '+' : '';
-        // side 1 = an Auto Short (MIS, intraday): Stop Loss above the entry, Target below, bought back at the square-off time.
-        const isShort = p.side === 1;
-        const sideText = isShort
-            ? '<span class="text-danger fw-bold" title="Auto Short (MIS) - bought back automatically at the Short Square-off time">SHORT</span>'
-            : '<span class="text-success fw-bold">BUY</span>';
-        const targetText = p.takeProfit ? `₹${p.takeProfit.toFixed(2)}` : '-';
-        const slText = p.stopLoss ? `₹${p.stopLoss.toFixed(2)}` : '-';
-        // Swing exit mode: the trailing SL only exists once the trade has moved 1 ATR in our favor
-        // (and a value on the wrong side of entry is an ignored leftover from INTRADAY mode).
-        const isSwingClose = (currentExitMode || "SWING_CLOSE") === "SWING_CLOSE";
-        const tslActive = p.trailingStopLoss && (!isSwingClose
-            || (isShort ? p.trailingStopLoss <= p.averageEntryPrice : p.trailingStopLoss >= p.averageEntryPrice));
-        const tslHint = isShort ? "Activates once price falls to entry - 1 ATR" : "Activates once price reaches entry + 1 ATR (never on the entry day)";
-        const tslText = tslActive
-            ? `₹${p.trailingStopLoss.toFixed(2)}`
-            : (isSwingClose ? `<span class="text-white small" title="${tslHint}">Not active yet</span>` : '-');
-
-        html += `
-            <tr>
-                <td><strong class="text-white">${p.symbol}</strong></td>
-                <td>${sideText}</td>
-                <td class="text-white">${p.quantity}</td>
-                <td class="text-white">₹${p.averageEntryPrice.toFixed(2)}</td>
-                <td><strong class="text-white">₹${(p.currentPrice || p.averageEntryPrice).toFixed(2)}</strong></td>
-                <td class="text-info fw-semibold">${targetText}</td>
-                <td class="text-white">${slText}</td>
-                <td class="text-white">${tslText}</td>
-                <td class="${p.priceSource === "NONE" ? "text-white" : pnlClass}">${p.priceSource === "NONE" ? "—" : `${formatCurrencyWithSign(pnl)} (${pnlPctSign}${pnlPct}%)${netAfterChargesHtml(pnl, p.estimatedCharges)}`}${priceAgeHtml(p.priceSource, p.priceAsOfUtc)}</td>
-                <td class="text-nowrap">
-                    ${journeyButton(p.symbol)}
-                    <button class="btn-square-off" onclick="openSquareOffModal(${p.id}, '${p.symbol}')" title="Square off this real position">
-                        Exit / Sell
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-
-    tbody.innerHTML = html;
+// Swing exit mode: the trailing SL only exists once the trade has moved 1 ATR in our favor
+// (and a value on the wrong side of entry is an ignored leftover from INTRADAY mode).
+function trailingSlText(mp) {
+    if (!mp) return "-";
+    const isShort = mp.side === 1;
+    const isSwingClose = (currentExitMode || "SWING_CLOSE") === "SWING_CLOSE";
+    const tslActive = mp.trailingStopLoss && (!isSwingClose
+        || (isShort ? mp.trailingStopLoss <= mp.averageEntryPrice : mp.trailingStopLoss >= mp.averageEntryPrice));
+    if (tslActive) return `₹${mp.trailingStopLoss.toFixed(2)}`;
+    if (!isSwingClose) return "-";
+    const tslHint = isShort ? "Activates once price falls to entry - 1 ATR" : "Activates once price reaches entry + 1 ATR (never on the entry day)";
+    return `<span class="text-white small" title="${tslHint}">Not active yet</span>`;
 }
 
 function renderZerodhaPositions(brokerPositions) {
@@ -591,7 +471,7 @@ function renderZerodhaPositions(brokerPositions) {
     }
 
     if (!brokerPositions || netPositions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No live open positions in Zerodha account.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No live open positions in Zerodha account.</td></tr>`;
         return;
     }
 
@@ -604,15 +484,15 @@ function renderZerodhaPositions(brokerPositions) {
     let html = "";
     netPositions.forEach(p => {
         const pnl = p.pnl || 0;
-        const m2m = p.m2m || 0;
         const pnlClass = pnl >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
-        const m2mClass = m2m >= 0 ? "text-success fw-bold" : "text-danger fw-bold";
-        const buyPrice = p.buyPrice > 0 ? `₹${p.buyPrice.toFixed(2)}` : "-";
+        // Average entry: the short's average SELL price or the long's average BUY price.
+        const avgEntry = (p.quantity || 0) < 0 ? p.sellPrice : p.buyPrice;
+        const avgPrice = avgEntry > 0 ? `₹${avgEntry.toFixed(2)}` : "-";
         const ltp = p.lastPrice > 0 ? `₹${p.lastPrice.toFixed(2)}` : "-";
         const monitoredPos = monitoredBySymbol.get((p.tradingSymbol || "").toUpperCase());
         const targetText = monitoredPos && monitoredPos.takeProfit ? `₹${monitoredPos.takeProfit.toFixed(2)}` : "-";
         const slText = monitoredPos && monitoredPos.stopLoss ? `₹${monitoredPos.stopLoss.toFixed(2)}` : "-";
-        const tslText = monitoredPos && monitoredPos.trailingStopLoss ? `₹${monitoredPos.trailingStopLoss.toFixed(2)}` : "-";
+        const tslText = trailingSlText(monitoredPos);
         const prodBadge = p.product === "MIS"
             ? '<span class="badge bg-warning text-dark">MIS (Intraday)</span>'
             : '<span class="badge bg-info text-dark">CNC (Delivery)</span>';
@@ -657,14 +537,11 @@ function renderZerodhaPositions(brokerPositions) {
                 <td><strong class="text-white">${p.tradingSymbol}</strong> <small style="color: #cbd5e1;">(${p.exchange})</small></td>
                 <td>${prodBadge}</td>
                 <td><strong class="text-white">${p.quantity}</strong></td>
-                <td class="text-white">${buyPrice}</td>
-                <td class="text-info fw-semibold">${targetText}</td>
+                <td class="text-white">${avgPrice}</td>
                 <td><strong class="text-white">${ltp}</strong></td>
+                <td class="text-info fw-semibold">${targetText}</td>
                 <td class="text-white">${slText}</td>
                 <td class="text-white">${tslText}</td>
-                <td class="${m2mClass}">${formatCurrencyWithSign(m2m)}</td>
-                <td class="text-white">${formatCurrencyWithSign(p.unrealised)}</td>
-                <td class="text-white">${formatCurrencyWithSign(p.realised)}</td>
                 <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
                 <td class="text-nowrap">${chartButton(p.tradingSymbol)}${journeyButton(p.tradingSymbol)}${actionCell}</td>
             </tr>
@@ -682,6 +559,14 @@ function renderZerodhaHoldings(holdings) {
     const holdingsList = holdings || [];
     if (badgeHoldingsCount) {
         badgeHoldingsCount.innerText = holdingsList.length;
+    }
+
+    // Same figure as "Total P&L" on Kite's Holdings screen.
+    const holdingsPnlEl = document.getElementById("stat-zerodha-holdings-pnl");
+    if (holdingsPnlEl) {
+        const holdingsPnl = holdingsList.reduce((sum, h) => sum + (h.pnl || 0), 0);
+        holdingsPnlEl.innerText = formatCurrencyWithSign(holdingsPnl);
+        holdingsPnlEl.style.color = holdingsPnl >= 0 ? "#34d399" : "#f87171";
     }
 
     if (holdingsList.length === 0) {
@@ -1048,9 +933,6 @@ function appendLogEntry(log) {
 
 function setupEventListeners() {
     // Advance Search: Positions Filter
-    document.getElementById("inpSearchPositions")?.addEventListener("input", applyPositionsFilter);
-    document.getElementById("selFilterPosSide")?.addEventListener("change", applyPositionsFilter);
-    document.getElementById("selFilterPosPnl")?.addEventListener("change", applyPositionsFilter);
 
     // Advance Search: Orders Filter
     document.getElementById("inpSearchOrders")?.addEventListener("input", applyOrdersFilter);

@@ -92,7 +92,7 @@
                 ⏳ Next Scan: Initializing...
             </div>
             <div class="badge-counter" id="trade-counter-badge">
-                0 / 5 trades used today
+                0 trades today
             </div>
             <div class="badge-ws connected" id="ws-status-badge">
                 <span class="ws-dot"></span> WebSocket Connected
@@ -120,65 +120,54 @@
 
     <!-- Metrics Stats Sections -->
     <div class="metrics-sections-wrapper">
-        <!-- Section 1: Broker & Overall Metrics -->
+        <!-- Section 1: Zerodha Account (every P&L figure here comes straight from Zerodha) -->
         <div class="metrics-section">
             <div class="metrics-section-title d-flex align-items-center flex-wrap gap-2">
-                <span><span class="section-icon">🏦</span> Zerodha Broker & Account Metrics</span>
+                <span><span class="section-icon">🏦</span> Zerodha Account (Live)</span>
                 <span class="badge-client-id" id="brokerClientIdTag" style="display:none; font-size:0.8rem; font-weight:700; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:3px 10px; border-radius:14px;"></span>
+            </div>
+            <div class="autotrade-stats-grid">
+                <div class="stat-card highlight-card" title="Today's total P&L on your Zerodha Positions (booked + open) - the same figure as 'Total P&L' on the Positions screen in Kite.">
+                    <div class="stat-label">Today's P&L</div>
+                    <div class="stat-value" id="stat-zerodha-total-pnl" style="font-weight: 700;">₹0.00</div>
+                    <div class="small mt-1" id="stat-zerodha-pnl-breakdown" style="color: #cbd5e1;">Booked ₹0.00 · Open ₹0.00</div>
+                </div>
+                <div class="stat-card" title="Overall P&L on the shares in your demat account - the same figure as 'Total P&L' on the Holdings screen in Kite.">
+                    <div class="stat-label">Holdings P&L</div>
+                    <div class="stat-value" id="stat-zerodha-holdings-pnl">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Available cash margin in your Zerodha account.">
+                    <div class="stat-label">Available Cash</div>
+                    <div class="stat-value" id="stat-available-margin" style="color: #38bdf8;">₹0.00</div>
+                </div>
+                <div class="stat-card" title="Margin currently blocked in open Zerodha positions/orders.">
+                    <div class="stat-label">Used Margin</div>
+                    <div class="stat-value" id="stat-used-margin" style="color: #f59e0b;">₹0.00</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Auto Trading Bot -->
+        <div class="metrics-section">
+            <div class="metrics-section-title">
+                <span class="section-icon">⚡</span> Auto Trading Bot
             </div>
             <div class="autotrade-stats-grid">
                 <div class="stat-card" title="Shows whether live real trading is ACTIVE or PAUSED.">
                     <div class="stat-label">Automation Status</div>
                     <div class="stat-value" id="sys-status-text" style="color: #f87171;">PAUSED</div>
                 </div>
-                <div class="stat-card" title="Maximum capital permitted for live auto trade bot.">
+                <div class="stat-card" title="Maximum capital the bot is allowed to use.">
                     <div class="stat-label">Allocated Capital</div>
                     <div class="stat-value" id="stat-capital">₹2,000.00</div>
                 </div>
-                <div class="stat-card" title="Live Available Cash margin in your Zerodha account.">
-                    <div class="stat-label">Zerodha Live Cash</div>
-                    <div class="stat-value" id="stat-available-margin" style="color: #38bdf8;">₹0.00</div>
+                <div class="stat-card" title="Number of trades the bot placed today.">
+                    <div class="stat-label">Today's Trades</div>
+                    <div class="stat-value" id="stat-today-trade-count" style="color: #38bdf8;">0</div>
                 </div>
-                <div class="stat-card" title="Margin utilised in open live trades.">
-                    <div class="stat-label">Used Margin</div>
-                    <div class="stat-value" id="stat-used-margin" style="color: #f59e0b;">₹0.00</div>
-                </div>
-                <div class="stat-card highlight-card" title="Real-time MTM (Mark to Market) Profit/Loss directly from Zerodha Broker API.">
-                    <div class="stat-label">Zerodha Live MTM</div>
-                    <div class="stat-value" id="stat-zerodha-m2m" style="color: #38bdf8; font-weight: 700;">₹0.00</div>
-                </div>
-                <div class="stat-card" title="Realized profit/loss closed today directly from Zerodha Broker API.">
-                    <div class="stat-label">Zerodha Realized P&L</div>
-                    <div class="stat-value" id="stat-zerodha-realized-pnl" style="color: #34d399;">₹0.00</div>
-                </div>
-                <div class="stat-card" title="Open real-money positions QuantEdge is currently auto-managing (see the Auto-Managed Positions tab).">
-                    <div class="stat-label">Auto-Managed Open Positions</div>
-                    <div class="stat-value" id="stat-open-count">0</div>
-                </div>
-                <div class="stat-card" title="Live unrealized profit or loss across auto-managed positions.">
-                    <div class="stat-label">Auto-Managed Unrealized P&L</div>
-                    <div class="stat-value" id="stat-unrealized-pnl">₹0.00</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Section 2: Today's Calculations -->
-        <div class="metrics-section">
-            <div class="metrics-section-title">
-                <span class="section-icon">📅</span> Today's Execution Summary
-            </div>
-            <div class="autotrade-stats-grid today-stats-grid">
-                <div class="stat-card" title="Total real trades executed today vs daily maximum limit.">
-                    <div class="stat-label">Today's Real Trades</div>
-                    <div class="stat-value" id="stat-today-trade-count" style="color: #38bdf8;">0 / 5 Trades</div>
-                </div>
-                <div class="stat-card highlight-card" title="Total capital deployed for today's live trades.">
-                    <div class="stat-label">Today Deployed Capital</div>
+                <div class="stat-card" title="Capital the bot deployed in today's trades.">
+                    <div class="stat-label">Capital Used Today</div>
                     <div class="stat-value" id="stat-today-used-amount" style="color: #38bdf8;">₹0.00</div>
-                </div>
-                <div class="stat-card" title="Realized profit or loss from live trades QuantEdge closed today.">
-                    <div class="stat-label">Auto-Managed Realized P&L Today</div>
-                    <div class="stat-value" id="stat-realized-pnl">₹0.00</div>
                 </div>
             </div>
         </div>
@@ -194,12 +183,7 @@
                     <div class="d-flex align-items-center gap-2">
                         <ul class="nav nav-pills qe-nav-pills" id="positionTabs" role="tablist">
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="tab-bot-positions" data-bs-toggle="pill" data-bs-target="#content-bot-positions" type="button" role="tab">
-                                    ⚡ Auto-Managed Positions (<span id="badge-bot-count">0</span>)
-                                </button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="tab-zerodha-positions" data-bs-toggle="pill" data-bs-target="#content-zerodha-positions" type="button" role="tab">
+                                <button class="nav-link active" id="tab-zerodha-positions" data-bs-toggle="pill" data-bs-target="#content-zerodha-positions" type="button" role="tab">
                                     🏦 Zerodha Live Positions (<span id="badge-zerodha-count">0</span>)
                                 </button>
                             </li>
@@ -228,69 +212,10 @@
                 </div>
 
                 <div class="tab-content mt-3" id="positionTabContent">
-                    <!-- Tab 1: Auto-Managed (Bot DB) Positions -->
-                    <div class="tab-pane fade show active" id="content-bot-positions" role="tabpanel">
+                    <!-- Tab 1: Zerodha Direct Live Positions -->
+                    <div class="tab-pane fade show active" id="content-zerodha-positions" role="tabpanel">
                         <div class="d-flex justify-content-between align-items-center mb-2 px-1">
-                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Real-money positions QuantEdge is actively auto-monitoring for Target/SL/Trailing-SL exit — empty until it buys, or you enable monitoring on a holding via "Set Target". (Zerodha Live Positions/Holdings below show your full broker account regardless of whether QuantEdge is managing the exit.)</small>
-                            <span class="badge bg-dark border border-secondary text-warning">Auto-Exit Engine</span>
-                        </div>
-                        <!-- Advance Search & Filter Bar for Auto-Managed Positions -->
-                        <div class="advance-search-bar mb-3">
-                            <div class="row g-2 align-items-center">
-                                <div class="col-12 col-md-5">
-                                    <div class="input-group input-group-sm">
-                                        <span class="input-group-text bg-dark border-secondary text-light">🔍</span>
-                                        <input type="text" class="form-control form-control-sm qe-search-input" id="inpSearchPositions" placeholder="Search Auto-Managed Positions (e.g. RELIANCE)..." />
-                                    </div>
-                                </div>
-                                <div class="col-6 col-md-3">
-                                    <select class="form-select form-select-sm qe-search-select" id="selFilterPosSide">
-                                        <option value="">All Sides (BUY / SELL)</option>
-                                        <option value="BUY">BUY Only</option>
-                                        <option value="SELL">SELL Only</option>
-                                    </select>
-                                </div>
-                                <div class="col-6 col-md-4">
-                                    <select class="form-select form-select-sm qe-search-select" id="selFilterPosPnl">
-                                        <option value="">All P&L (Profit / Loss)</option>
-                                        <option value="PROFIT">📈 In Profit Only</option>
-                                        <option value="LOSS">📉 In Loss Only</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="table-responsive-wrapper">
-                            <div class="table-responsive">
-                                <table class="qe-table">
-                                    <thead>
-                                        <tr>
-                                            <th>SYMBOL</th>
-                                            <th>SIDE</th>
-                                            <th>QTY</th>
-                                            <th>AVG ENTRY</th>
-                                            <th>CURRENT LTP</th>
-                                            <th>TARGET</th>
-                                            <th>STOP LOSS</th>
-                                            <th>TRAILING SL</th>
-                                            <th>P&L (₹)</th>
-                                            <th>ACTION</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="openPositionsTableBody">
-                                        <tr>
-                                            <td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">Loading open real positions...</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Tab 2: Zerodha Direct Live Positions -->
-                    <div class="tab-pane fade" id="content-zerodha-positions" role="tabpanel">
-                        <div class="d-flex justify-content-between align-items-center mb-2 px-1">
-                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Today's intraday (MIS) and same-day equity activity, straight from Zerodha — rows already fully settled against your holdings are hidden here (see Holdings for what you still own).</small>
+                            <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Today's positions straight from Zerodha. Target / Stop Loss / Trailing SL are shown on the rows the bot is managing. Shares bought on earlier days are under Holdings.</small>
                             <span class="badge bg-dark border border-secondary text-info">Live Broker Feed</span>
                         </div>
                         <div class="table-responsive-wrapper">
@@ -301,21 +226,18 @@
                                             <th>SYMBOL</th>
                                             <th>PRODUCT</th>
                                             <th>QTY</th>
-                                            <th>BUY PRICE</th>
-                                            <th>TARGET PRICE</th>
+                                            <th>AVG PRICE</th>
                                             <th>LTP</th>
-                                            <th>SL</th>
+                                            <th>TARGET</th>
+                                            <th>STOP LOSS</th>
                                             <th>TRAILING SL</th>
-                                            <th>M2M (₹)</th>
-                                            <th>UNREALISED</th>
-                                            <th>REALISED</th>
-                                            <th>TOTAL P&L (₹)</th>
+                                            <th>P&L (₹)</th>
                                             <th>ACTION</th>
                                         </tr>
                                     </thead>
                                     <tbody id="zerodhaPositionsTableBody">
                                         <tr>
-                                            <td colspan="12" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">Connect Zerodha to view live broker positions.</td>
+                                            <td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">Connect Zerodha to view live broker positions.</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -323,7 +245,7 @@
                         </div>
                     </div>
 
-                    <!-- Tab 3: Zerodha Direct Holdings -->
+                    <!-- Tab 2: Zerodha Direct Holdings -->
                     <div class="tab-pane fade" id="content-zerodha-holdings" role="tabpanel">
                         <div class="d-flex justify-content-between align-items-center mb-2 px-1">
                             <small class="text-white" style="color: #ffffff !important; opacity: 0.95;">Shares you actually own in your demat account, straight from Zerodha — includes today's T1 unsettled buys (not sellable until settled).</small>
