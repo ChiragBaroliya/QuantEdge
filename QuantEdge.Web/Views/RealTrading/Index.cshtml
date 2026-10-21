@@ -765,6 +765,31 @@
     </div>
 </div>
 
+<!-- Modal: Confirm Manual Buy Back (cover an open short from Zerodha Live Positions, tracked or not) -->
+<div class="modal fade" id="modalManualBuyBack" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content qe-confirm-modal">
+            <div class="modal-header">
+                <h5 class="modal-title text-success">⚠️ Confirm Manual BUY BACK</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to buy back <strong id="mbQuantity" class="text-warning"></strong> share(s) of <strong id="mbSymbol" class="text-warning"></strong> at ~₹<strong id="mbPrice" class="text-warning"></strong> to cover the short?</p>
+                <p class="text-muted small">This will immediately send a <strong>Real-Money Market BUY Order</strong> to Zerodha Kite OMS.</p>
+                <input type="hidden" id="mbRawSymbol" />
+                <input type="hidden" id="mbRawQuantity" />
+                <input type="hidden" id="mbRawPrice" />
+                <input type="hidden" id="mbRawProduct" />
+                <input type="hidden" id="mbRawEntryPrice" />
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="btnConfirmManualBuyBack">Yes, Execute Market Buy</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: Set Auto-Sell Target for a Zerodha Holding -->
 <div class="modal fade" id="modalSetHoldingTarget" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">

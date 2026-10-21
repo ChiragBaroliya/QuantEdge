@@ -10,6 +10,7 @@ let modalSquareOff = null;
 let modalKillSwitch = null;
 let modalSetHoldingTarget = null;
 let modalManualSell = null;
+let modalManualBuyBack = null;
 let currentExitMode = "SWING_CLOSE"; // from settings - drives how the Trailing SL column is shown
 
 // Smart Polling Manager
@@ -43,6 +44,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const manualSellModalEl = document.getElementById('modalManualSell');
     if (manualSellModalEl && typeof bootstrap !== 'undefined') {
         modalManualSell = new bootstrap.Modal(manualSellModalEl);
+    }
+
+    const manualBuyBackModalEl = document.getElementById('modalManualBuyBack');
+    if (manualBuyBackModalEl && typeof bootstrap !== 'undefined') {
+        modalManualBuyBack = new bootstrap.Modal(manualBuyBackModalEl);
     }
 
     // Check URL parameters for OAuth return
@@ -428,18 +434,24 @@ let cachedTodayLogs = [];
 // confirmed (Pending=0) - used so Holdings/Live Positions show that order's real status instead of
 // a Sell button that would just place a second, conflicting order on top of it.
 function findPendingSellOrder(symbol) {
+    return findPendingOrder(symbol, 1);
+}
+
+// side: 0 = BUY, 1 = SELL.
+function findPendingOrder(symbol, side) {
     const upperSymbol = (symbol || "").toUpperCase();
     if (!upperSymbol) return null;
     return cachedRecentOrders.find(o =>
         o.symbol && o.symbol.toUpperCase() === upperSymbol &&
-        o.side === 1 &&
+        o.side === side &&
         (o.status === 4 || o.status === 0)
     ) || null;
 }
 
 function pendingOrderStatusBadge(order) {
     const label = order.status === 4 ? "OPEN" : "PENDING";
-    return `<span class="status-badge-pending" title="A SELL order for this stock is already ${label} at the broker (Order #${order.brokerOrderId || 'N/A'}) - see Real Orders Book">${label}</span>`;
+    const sideLabel = order.side === 0 ? "BUY" : "SELL";
+    return `<span class="status-badge-pending" title="A ${sideLabel} order for this stock is already ${label} at the broker (Order #${order.brokerOrderId || 'N/A'}) - see Real Orders Book">${label}</span>`;
 }
 
 function applyPositionsFilter() {
@@ -603,15 +615,24 @@ function renderZerodhaPositions(brokerPositions) {
             : '<span class="badge bg-info text-dark">CNC (Delivery)</span>';
         // Rows with no genuine remaining exposure (a CNC sale netted against existing holdings) are
         // already filtered out above. What's left is either real long exposure (offer Sell) or a real
-        // MIS short (negative, intraday) - which needs a Buy-to-cover, not this button.
+        // MIS short (negative, intraday) - offer Buy Back to cover it.
         const qty = p.quantity || 0;
-        const sellPriceRef = p.lastPrice > 0 ? p.lastPrice : (p.buyPrice > 0 ? p.buyPrice : 0);
-        const pendingSellOrder = qty > 0 ? findPendingSellOrder(p.tradingSymbol) : null;
-        const actionCell = pendingSellOrder
-            ? pendingOrderStatusBadge(pendingSellOrder)
-            : (qty > 0
-                ? `<button class="btn-square-off" onclick="openManualSellModal('${(p.tradingSymbol || '').replace(/'/g, "")}', ${qty}, ${sellPriceRef}, '${p.product || 'CNC'}', ${p.buyPrice || 0})" title="Manually sell this Zerodha position">Sell</button>`
-                : `<span class="small" style="color: #cbd5e1 !important;" title="Open intraday short - cover with a BUY order directly in Zerodha">Short (cover in Zerodha)</span>`);
+        const safeSymbol = (p.tradingSymbol || '').replace(/'/g, "");
+        let actionCell = "";
+        if (qty > 0) {
+            const sellPriceRef = p.lastPrice > 0 ? p.lastPrice : (p.buyPrice > 0 ? p.buyPrice : 0);
+            const pendingSellOrder = findPendingSellOrder(p.tradingSymbol);
+            actionCell = pendingSellOrder
+                ? pendingOrderStatusBadge(pendingSellOrder)
+                : `<button class="btn-square-off" onclick="openManualSellModal('${safeSymbol}', ${qty}, ${sellPriceRef}, '${p.product || 'CNC'}', ${p.buyPrice || 0})" title="Manually sell this Zerodha position">Sell</button>`;
+        } else if (qty < 0) {
+            const coverQty = Math.abs(qty);
+            const buyPriceRef = p.lastPrice > 0 ? p.lastPrice : (p.sellPrice > 0 ? p.sellPrice : 0);
+            const pendingBuyOrder = findPendingOrder(p.tradingSymbol, 0);
+            actionCell = pendingBuyOrder
+                ? pendingOrderStatusBadge(pendingBuyOrder)
+                : `<button class="btn-buy-back" onclick="openManualBuyBackModal('${safeSymbol}', ${coverQty}, ${buyPriceRef}, '${p.product || 'MIS'}', ${p.sellPrice || 0})" title="Buy back (cover) this short at market">Buy Back</button>`;
+        }
 
         html += `
             <tr>
@@ -725,6 +746,19 @@ window.openManualSellModal = function (symbol, quantity, currentPrice, product, 
     document.getElementById("msRawEntryPrice").value = entryPrice || 0;
 
     if (modalManualSell) modalManualSell.show();
+};
+
+window.openManualBuyBackModal = function (symbol, quantity, currentPrice, product, entryPrice) {
+    document.getElementById("mbSymbol").innerText = symbol;
+    document.getElementById("mbQuantity").innerText = quantity;
+    document.getElementById("mbPrice").innerText = (currentPrice || 0).toFixed(2);
+    document.getElementById("mbRawSymbol").value = symbol;
+    document.getElementById("mbRawQuantity").value = quantity;
+    document.getElementById("mbRawPrice").value = currentPrice || 0;
+    document.getElementById("mbRawProduct").value = product || "MIS";
+    document.getElementById("mbRawEntryPrice").value = entryPrice || 0;
+
+    if (modalManualBuyBack) modalManualBuyBack.show();
 };
 
 function renderRecentOrders(orders) {
@@ -1257,6 +1291,46 @@ function setupEventListeners() {
                 loadLivePositionsFast();
             } catch (err) {
                 console.error("Manual sell error:", err);
+            } finally {
+                this.disabled = false;
+            }
+        });
+    }
+
+    // Manual Buy Back (cover a Zerodha short from Live Positions) Confirm
+    const btnConfirmManualBuyBack = document.getElementById("btnConfirmManualBuyBack");
+    if (btnConfirmManualBuyBack) {
+        btnConfirmManualBuyBack.addEventListener("click", async function () {
+            const symbol = document.getElementById("mbRawSymbol")?.value;
+            const quantity = parseInt(document.getElementById("mbRawQuantity")?.value || "0");
+            const currentPrice = parseFloat(document.getElementById("mbRawPrice")?.value || "0");
+            const product = document.getElementById("mbRawProduct")?.value || "MIS";
+            const entryPrice = parseFloat(document.getElementById("mbRawEntryPrice")?.value || "0");
+            if (!symbol || !quantity || !currentPrice) return;
+
+            this.disabled = true;
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/realtrade/manual-buy-back`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        Symbol: symbol,
+                        Quantity: quantity,
+                        CurrentPrice: currentPrice,
+                        Product: product,
+                        EntryPriceHint: entryPrice > 0 ? entryPrice : null,
+                        Reason: "Manual Buy Back from Dashboard",
+                        UserId: currentUserId
+                    })
+                });
+
+                const data = await response.json();
+                if (modalManualBuyBack) modalManualBuyBack.hide();
+                alert(data.message || (data.success ? "Buy back order submitted." : "Buy back order failed."));
+                loadDashboardData();
+                loadLivePositionsFast();
+            } catch (err) {
+                console.error("Manual buy back error:", err);
             } finally {
                 this.disabled = false;
             }

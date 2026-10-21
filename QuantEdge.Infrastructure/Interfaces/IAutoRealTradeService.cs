@@ -132,4 +132,11 @@ public interface IAutoRealTradeService
     /// (same broker-confirmed fill semantics as every other real order - never assumes Filled).
     /// </summary>
     Task<(bool Success, string Message)> ManualSellAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId = 1);
+
+    /// <summary>
+    /// Manual BUY BACK (cover) of an open short at Zerodha. A bot-tracked short is covered through
+    /// <see cref="SquareOffSinglePositionAsync"/>; an untracked one gets a direct market BUY flagged as a
+    /// short exit, so a late fill is reconciled as a cover and never opens a new long position.
+    /// </summary>
+    Task<(bool Success, string Message)> ManualBuyBackAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId = 1);
 }

@@ -300,6 +300,32 @@ public class RealTradeController : ControllerBase
     }
 
     /// <summary>
+    /// Manual BUY BACK (cover) for an open short at Zerodha (Live Positions), tracked by the bot or not.
+    /// Reuses <see cref="ManualSellRequestDto"/>: EntryPriceHint is the short's average sell price.
+    /// </summary>
+    [HttpPost("manual-buy-back")]
+    public async Task<IActionResult> ManualBuyBack([FromBody] ManualSellRequestDto dto, [FromQuery] int? userId = null)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Symbol) || dto.Quantity <= 0 || dto.CurrentPrice <= 0)
+        {
+            return BadRequest(new { success = false, message = "A valid Symbol, Quantity, and CurrentPrice are required." });
+        }
+
+        try
+        {
+            int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+            var (success, message) = await _realTradeService.ManualBuyBackAsync(
+                dto.Symbol, dto.Quantity, dto.CurrentPrice, dto.Product, dto.EntryPriceHint, dto.Reason ?? "Manual Web Buy Back", targetUid);
+
+            return Ok(new { success, message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Force re-verifies one order's status directly against Zerodha and corrects our records if they've
     /// drifted from the broker's truth - e.g. an order shown FILLED here that Zerodha's own Orders page
     /// still shows resting OPEN (unfilled).

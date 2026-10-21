@@ -1515,6 +1515,209 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
     }
 
+    public async Task<(bool Success, string Message)> ManualBuyBackAsync(string symbol, int quantity, decimal currentPrice, string? product, decimal? entryPriceHint, string reason, int userId = 1)
+    {
+        symbol = symbol.ToUpper().Trim();
+        if (string.IsNullOrWhiteSpace(symbol) || quantity <= 0 || currentPrice <= 0m)
+        {
+            return (false, "A valid symbol, quantity, and current price are required.");
+        }
+
+        var tokenCheck = await _brokerService.ValidateSessionTokenAsync(userId);
+        if (!tokenCheck.IsValid)
+        {
+            return (false, tokenCheck.Message ?? "Zerodha session is not active.");
+        }
+
+        // A short the bot is tracking goes through the existing square-off pipeline (BUY TO COVER), so
+        // P&L, position closing, and trade history stay consistent with the automatic cover.
+        var trackedPosition = await _repository.GetOpenPositionBySymbolAsync(userId, symbol);
+        if (trackedPosition != null)
+        {
+            if (trackedPosition.Side != TradeSide.SELL)
+            {
+                return (false, $"{symbol} is tracked as a long (BUY) position in QuantEdge - use Sell to exit it, not Buy Back.");
+            }
+
+            if (IsStaleShort(trackedPosition, SwingTradeRules.NowIst()))
+            {
+                bool cleared = await CloseStaleShortAsync(trackedPosition, userId);
+                return (cleared, cleared
+                    ? $"{symbol} short from an earlier day was already squared off by Zerodha (MIS) - closed in QuantEdge, no order placed."
+                    : $"Could not close the stale {symbol} short in QuantEdge.");
+            }
+
+            bool closed = await SquareOffSinglePositionAsync(trackedPosition.Id, reason, userId);
+            return (closed, closed
+                ? $"BUY TO COVER order submitted for {symbol}."
+                : $"BUY TO COVER order for {symbol} was not placed — it may already have an order resting OPEN at the broker. Check the Real Orders Book.");
+        }
+
+        // Otherwise a Zerodha short the bot isn't tracking - buy it back directly. The order is flagged
+        // IsShort so the reconciler treats a late fill as a cover (exit), never as a new long entry.
+        var existingPendingOrder = await _repository.GetOpenBrokerOrderAsync(userId, symbol, TradeSide.BUY);
+        if (existingPendingOrder != null)
+        {
+            return (false, $"A BUY order for {symbol} is already OPEN at the broker (Order #{existingPendingOrder.BrokerOrderId}), awaiting fill.");
+        }
+
+        string cleanProduct = string.IsNullOrWhiteSpace(product) ? "MIS" : product.ToUpper().Trim();
+
+        try
+        {
+            var brokerResult = await _brokerService.PlaceLiveOrderAsync(symbol, TradeSide.BUY, quantity, PaperOrderType.Market, currentPrice, cleanProduct, userId);
+
+            if (!brokerResult.Success)
+            {
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    Symbol = symbol,
+                    Side = TradeSide.BUY,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = currentPrice,
+                    Status = PaperOrderStatus.Rejected,
+                    FilledPrice = 0m,
+                    RejectionReason = brokerResult.Message,
+                    TradeType = TradeType.Manual,
+                    IsShort = true,
+                    Remarks = $"Manual BUY BACK ({reason}) Rejected by Zerodha: {brokerResult.Message}"
+                });
+
+                await LogAuditAsync(symbol, "ORDER_REJECTED", currentPrice, quantity, $"Manual Buy Back Failed: {brokerResult.Message}", userId);
+                return (false, brokerResult.Message ?? "Zerodha rejected the buy-back order.");
+            }
+
+            string brokerOrderId = brokerResult.BrokerOrderId ?? $"KITE-BUY-{DateTime.UtcNow.Ticks}";
+
+            var statusCheck = await _brokerService.GetOrderStatusAsync(brokerOrderId, userId);
+            var fill = ResolveFill(statusCheck, quantity);
+            bool confirmedComplete = fill.Outcome == RealFillOutcome.Filled && fill.Quantity == quantity;
+
+            if (fill.Outcome == RealFillOutcome.Rejected)
+            {
+                await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = symbol,
+                    Side = TradeSide.BUY,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = currentPrice,
+                    Status = PaperOrderStatus.Rejected,
+                    FilledPrice = 0m,
+                    RejectionReason = statusCheck.Message,
+                    TradeType = TradeType.Manual,
+                    IsShort = true,
+                    Remarks = $"Manual BUY BACK ({reason}) - Broker ID: {brokerOrderId}"
+                });
+
+                await LogAuditAsync(symbol, "ORDER_REJECTED", currentPrice, quantity,
+                    $"Manual Buy Back Order {statusCheck.BrokerStatus}: {statusCheck.Message} (Order #{brokerOrderId})", userId);
+                return (false, $"Buy-back order {statusCheck.BrokerStatus}: {statusCheck.Message}");
+            }
+
+            if (!confirmedComplete)
+            {
+                var openBuyBack = await _repository.CreateOrderAsync(new RealOrder
+                {
+                    UserId = userId,
+                    BrokerOrderId = brokerOrderId,
+                    Symbol = symbol,
+                    Side = TradeSide.BUY,
+                    Quantity = quantity,
+                    OrderType = PaperOrderType.Market,
+                    Price = currentPrice,
+                    Status = PaperOrderStatus.Open,
+                    FilledPrice = 0m,
+                    TradeType = TradeType.Manual,
+                    IsShort = true,
+                    Remarks = $"Manual BUY BACK ({reason}) - Broker ID: {brokerOrderId}"
+                });
+
+                await TryRecordFillDetailsAsync(openBuyBack.Id, currentPrice, null);
+
+                await LogAuditAsync(symbol, "BUY_ORDER_OPEN", currentPrice, quantity,
+                    $"🕓 Manual BUY BACK order placed for {symbol} — Status: OPEN, awaiting execution (Order #{brokerOrderId})", userId);
+
+                await BroadcastDashboardUpdateAsync(userId);
+                return (true, $"BUY BACK order placed for {symbol} — currently OPEN at the broker, awaiting execution.");
+            }
+
+            decimal executedPrice = fill.Price;
+            // Short P&L: sold at entry, bought back now.
+            decimal? realizedPnl = entryPriceHint.HasValue && entryPriceHint.Value > 0m ? (entryPriceHint.Value - executedPrice) * quantity : (decimal?)null;
+
+            var order = await _repository.CreateOrderAsync(new RealOrder
+            {
+                UserId = userId,
+                BrokerOrderId = brokerOrderId,
+                Symbol = symbol,
+                Side = TradeSide.BUY,
+                Quantity = quantity,
+                OrderType = PaperOrderType.Market,
+                Price = executedPrice,
+                Status = PaperOrderStatus.Filled,
+                FilledPrice = executedPrice,
+                FilledAt = DateTime.UtcNow,
+                TradeType = TradeType.Manual,
+                IsShort = true,
+                Remarks = $"Manual BUY BACK ({reason}) - Broker ID: {brokerOrderId}"
+            });
+            await TryRecordFillDetailsAsync(order.Id, currentPrice, fill.Quantity);
+
+            await _repository.RecordTradeHistoryAsync(new RealTradeHistory
+            {
+                UserId = userId,
+                OrderId = order.Id,
+                BrokerOrderId = brokerOrderId,
+                Symbol = symbol,
+                Side = TradeSide.BUY,
+                Quantity = quantity,
+                EntryPrice = entryPriceHint ?? 0m,
+                ExecutedPrice = executedPrice,
+                RealizedPnl = realizedPnl ?? 0m,
+                TradeType = TradeType.Manual,
+                ExitReason = reason,
+                IsExit = true,
+                Remarks = realizedPnl.HasValue
+                    ? $"Manual BUY BACK: {reason} | Realized P&L: ₹{realizedPnl.Value:F2}"
+                    : $"Manual BUY BACK: {reason}"
+            });
+
+            string pnlText = realizedPnl.HasValue ? $" | P&L: {(realizedPnl.Value >= 0 ? "+" : "")}₹{realizedPnl.Value:N2}" : "";
+            await LogAuditAsync(symbol, "REAL_COVER", executedPrice, quantity,
+                $"⚡ Manual Live BUY BACK ({reason}) @ ₹{executedPrice:F2}{pnlText} (Order #{brokerOrderId})", userId);
+
+            if (_hubBroadcast != null)
+            {
+                await _hubBroadcast.BroadcastAllAsync("ReceiveRealTradeAlert", new
+                {
+                    symbol,
+                    side = "BUY",
+                    quantity,
+                    price = executedPrice,
+                    realizedPnl,
+                    reason,
+                    brokerOrderId,
+                    userId,
+                    message = $"⚡ MANUAL REAL BUY BACK: {symbol} @ ₹{executedPrice:N2}{pnlText}"
+                });
+            }
+
+            await BroadcastDashboardUpdateAsync(userId);
+            return (true, $"BUY BACK order filled for {symbol} @ ₹{executedPrice:F2}.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Manual buy back failed for {Symbol} (User {UserId})", symbol, userId);
+            await LogAuditAsync(symbol, "SYSTEM_ERROR", currentPrice, quantity, $"Manual BUY BACK execution error: {ex.Message}", userId);
+            return (false, $"Manual buy back failed: {ex.Message}");
+        }
+    }
+
     public async Task<bool> EvaluateAndExecuteRealSellAsync(RealPosition position, decimal currentLtp, int userId = 1)
     {
         if (position == null || position.Status != PositionStatus.OPEN)
