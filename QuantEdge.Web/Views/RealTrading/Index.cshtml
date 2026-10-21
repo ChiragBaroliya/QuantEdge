@@ -790,6 +790,42 @@
     </div>
 </div>
 
+<!-- Modal: Zerodha Live Position chart - candles with Entry / Target / Stop Loss / Trailing SL lines -->
+<div class="modal fade" id="modalPositionChart" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content qe-confirm-modal pc-modal">
+            <div class="modal-header">
+                <h5 class="modal-title text-white" id="pcTitle"></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="pc-levels" id="pcLevels"></div>
+                <div class="pc-note" id="pcNote"></div>
+                <div class="pc-toolbar">
+                    <div class="pc-timeframes" id="pcTimeframes" role="group" aria-label="Timeframe">
+                        <button type="button" data-tf="1m">1m</button>
+                        <button type="button" data-tf="5m">5m</button>
+                        <button type="button" data-tf="15m">15m</button>
+                        <button type="button" data-tf="60m">1h</button>
+                        <button type="button" data-tf="1d">1D</button>
+                    </div>
+                    <div class="pc-legend">
+                        <span><i class="pc-swatch pc-swatch-entry"></i>Entry</span>
+                        <span><i class="pc-swatch pc-swatch-target"></i>Target</span>
+                        <span><i class="pc-swatch pc-swatch-sl"></i>Stop Loss</span>
+                        <span><i class="pc-swatch pc-swatch-tsl"></i>Trailing SL</span>
+                        <span><i class="pc-swatch pc-swatch-ltp"></i>LTP</span>
+                    </div>
+                </div>
+                <div class="pc-chart-wrap">
+                    <div id="pcChartContainer" class="pc-chart"></div>
+                    <div id="pcStatus" class="pc-status"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: Set Auto-Sell Target for a Zerodha Holding -->
 <div class="modal fade" id="modalSetHoldingTarget" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -939,7 +975,9 @@
 
 @section Scripts {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+    <script src="~/js/theme/lightweight-charts.standalone.production.js"></script>
     <script src="~/js/realtrading.js" asp-append-version="true"></script>
+    <script src="~/js/realtrade-position-chart.js" asp-append-version="true"></script>
     <script src="~/js/flow-diagram.js" asp-append-version="true"></script>
     <script src="~/js/realtrade-journey.js" asp-append-version="true"></script>
 }

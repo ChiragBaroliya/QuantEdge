@@ -854,6 +854,119 @@ input:checked + .real-slider {
     transform: translateY(-1px);
 }
 
+/* Zerodha Live Position chart (modal) */
+.btn-pos-chart {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #93c5fd;
+    background: rgba(96, 165, 250, 0.12);
+    border: 1px solid rgba(96, 165, 250, 0.5);
+    border-radius: 6px;
+    padding: 4px 9px;
+    margin-right: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-pos-chart:hover { background: rgba(96, 165, 250, 0.26); }
+
+.pc-modal .modal-title { display: flex; align-items: center; flex-wrap: wrap; font-weight: 700; }
+.pc-qty { font-size: 0.85rem; color: #cbd5e1; font-weight: 600; }
+
+.pc-levels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.pc-chip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left-width: 4px;
+}
+
+.pc-chip-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; font-weight: 600; }
+.pc-chip-value { font-size: 1.05rem; font-weight: 700; color: #f1f5f9; }
+.pc-chip-pct { font-size: 0.78rem; font-weight: 600; color: #94a3b8; }
+.pc-chip-entry { border-left-color: #60a5fa; }
+.pc-chip-ltp { border-left-color: #e2e8f0; }
+.pc-chip-target { border-left-color: #34d399; }
+.pc-chip-sl { border-left-color: #f87171; }
+.pc-chip-tsl { border-left-color: #fbbf24; }
+
+.pc-note {
+    display: none;
+    font-size: 0.8rem;
+    color: #fcd34d;
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+}
+
+.pc-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.pc-timeframes { display: inline-flex; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: hidden; }
+
+.pc-timeframes button {
+    background: transparent;
+    color: #cbd5e1;
+    border: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 4px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.pc-timeframes button:last-child { border-right: 0; }
+.pc-timeframes button:hover { background: rgba(96, 165, 250, 0.12); }
+.pc-timeframes button.active { background: #2563eb; color: #ffffff; }
+
+.pc-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.78rem; color: #cbd5e1; }
+.pc-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.pc-swatch { display: inline-block; width: 16px; height: 0; border-top: 3px solid; }
+.pc-swatch-entry { border-color: #60a5fa; }
+.pc-swatch-target { border-color: #34d399; border-top-style: dashed; }
+.pc-swatch-sl { border-color: #f87171; border-top-style: dashed; }
+.pc-swatch-tsl { border-color: #fbbf24; border-top-style: dotted; }
+.pc-swatch-ltp { border-color: #e2e8f0; border-top-style: dotted; }
+
+.pc-chart-wrap { position: relative; }
+.pc-chart { width: 100%; height: 440px; border-radius: 8px; overflow: hidden; }
+
+.pc-status {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 16px;
+    color: #cbd5e1;
+    font-size: 0.9rem;
+    background: rgba(13, 17, 30, 0.72);
+    pointer-events: none;
+}
+
+@media (max-width: 576px) {
+    .pc-chart { height: 320px; }
+}
+
 /* Status Badges */
 .status-badge-filled {
     background: rgba(52, 211, 153, 0.2);

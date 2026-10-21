@@ -634,6 +634,21 @@ function renderZerodhaPositions(brokerPositions) {
                 : `<button class="btn-buy-back" onclick="openManualBuyBackModal('${safeSymbol}', ${coverQty}, ${buyPriceRef}, '${p.product || 'MIS'}', ${p.sellPrice || 0})" title="Buy back (cover) this short at market">Buy Back</button>`;
         }
 
+        // Levels for the Chart popup: entry is the short's average SELL price or the long's average BUY price.
+        const brokerEntry = qty < 0 ? p.sellPrice : p.buyPrice;
+        setPositionChartRow(p.tradingSymbol, {
+            symbol: p.tradingSymbol,
+            side: qty < 0 ? "SELL" : "BUY",
+            product: p.product,
+            quantity: Math.abs(qty),
+            entry: brokerEntry > 0 ? brokerEntry : (monitoredPos ? monitoredPos.averageEntryPrice : 0),
+            ltp: p.lastPrice || 0,
+            target: monitoredPos ? monitoredPos.takeProfit : null,
+            stopLoss: monitoredPos ? monitoredPos.stopLoss : null,
+            trailingStopLoss: monitoredPos ? monitoredPos.trailingStopLoss : null,
+            isMonitored: !!monitoredPos
+        });
+
         html += `
             <tr>
                 <td><strong class="text-white">${p.tradingSymbol}</strong> <small style="color: #cbd5e1;">(${p.exchange})</small></td>
@@ -648,7 +663,7 @@ function renderZerodhaPositions(brokerPositions) {
                 <td class="text-white">${formatCurrencyWithSign(p.unrealised)}</td>
                 <td class="text-white">${formatCurrencyWithSign(p.realised)}</td>
                 <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
-                <td class="text-nowrap">${journeyButton(p.tradingSymbol)}${actionCell}</td>
+                <td class="text-nowrap">${chartButton(p.tradingSymbol)}${journeyButton(p.tradingSymbol)}${actionCell}</td>
             </tr>
         `;
     });
