@@ -1,30 +1,22 @@
-using Dapper;
 using KiteConnect;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using QuantEdge.API.Services;
-using QuantEdge.Infrastructure.Configurations;
 using QuantEdge.Infrastructure.DTOs;
-using QuantEdge.Infrastructure.Persistence;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 using System;
-using System.Data;
-using System.IO;
-using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using static KiteConnect.Constants.GTT;
-using static System.Collections.Specialized.BitVector32;
 
 namespace QuantEdge.API.Controllers;
 
+/// <summary>
+/// Zerodha OAuth for each QuantEdge user. Every user saves their own Kite Connect API key/secret (stored in
+/// zerodha_sessions, never in appsettings) and logs in with it; the resulting daily token is stored on their own row.
+/// </summary>
 [ApiController]
 [Route("zerodha")]
 public class ZerodhaAuthController : ControllerBase
 {
-    private readonly BrokerConfig _config;
-    private readonly IDbConnectionFactory _connectionFactory;
     private readonly IZerodhaSessionRepository _sessionRepository;
     private readonly ILogger<ZerodhaAuthController> _logger;
     private readonly IMemoryCache _cache;
@@ -34,15 +26,11 @@ public class ZerodhaAuthController : ControllerBase
     private const string ReturnUrlCacheKey = "zerodha_web_return_url";
 
     public ZerodhaAuthController(
-        IOptions<BrokerConfig> config,
-        IDbConnectionFactory connectionFactory,
         IZerodhaSessionRepository sessionRepository,
         IMemoryCache cache,
         IConfiguration configuration,
         ILogger<ZerodhaAuthController> logger)
     {
-        _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
-        _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -58,16 +46,24 @@ public class ZerodhaAuthController : ControllerBase
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(_config.ApiKey))
+            var activeSession = await _sessionRepository.GetActiveSessionAsync(userId);
+            if (activeSession == null || string.IsNullOrWhiteSpace(activeSession.ApiKey))
             {
-                return Ok(new { hasActiveToken = false, message = "ApiKey is not configured." });
+                return Ok(new
+                {
+                    hasActiveToken = false,
+                    hasCredentials = false,
+                    userId = userId,
+                    message = "Zerodha API Key / Secret not saved yet. Save your Kite Connect credentials first."
+                });
             }
 
-            // 1. Attempt activation for today's token
-            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey, userId);
-
-            // 2. Fetch current active session for this user
-            var activeSession = await _sessionRepository.GetActiveSessionAsync(userId);
+            // Attempt activation for today's token, then re-read the session
+            if (!string.IsNullOrWhiteSpace(activeSession.AccessToken) && !activeSession.IsActive)
+            {
+                await _sessionRepository.ActivateTokenIfValidAsync(userId);
+                activeSession = await _sessionRepository.GetActiveSessionAsync(userId) ?? activeSession;
+            }
 
             TimeZoneInfo indianTimeZone;
             try
@@ -92,18 +88,22 @@ public class ZerodhaAuthController : ControllerBase
 
             DateTimeOffset nextExpiryIst = todayCutoffIst.AddDays(1);
 
-            if (activeSession != null)
+            bool hasApiSecret = !string.IsNullOrWhiteSpace(activeSession.ApiSecret);
+            string? accessToken = activeSession.AccessToken;
+            if (!string.IsNullOrWhiteSpace(accessToken))
             {
                 var createdAtIst = TimeZoneInfo.ConvertTime(activeSession.CreatedAt, indianTimeZone);
                 if (createdAtIst >= todayCutoffIst)
                 {
-                    string maskedToken = activeSession.AccessToken.Length > 12
-                        ? activeSession.AccessToken[..8] + "••••••••" + activeSession.AccessToken[^4..]
-                        : activeSession.AccessToken[..Math.Min(4, activeSession.AccessToken.Length)] + "••••";
+                    string maskedToken = accessToken.Length > 12
+                        ? accessToken[..8] + "••••••••" + accessToken[^4..]
+                        : accessToken[..Math.Min(4, accessToken.Length)] + "••••";
 
                     return Ok(new
                     {
                         hasActiveToken = true,
+                        hasCredentials = true,
+                        hasApiSecret = hasApiSecret,
                         userId = activeSession.UserId,
                         clientId = activeSession.ClientId ?? "N/A",
                         userName = activeSession.UserName,
@@ -121,9 +121,11 @@ public class ZerodhaAuthController : ControllerBase
             return Ok(new
             {
                 hasActiveToken = false,
+                hasCredentials = true,
+                hasApiSecret = hasApiSecret,
                 userId = userId,
-                isDdpiEnabled = activeSession?.IsDdpiEnabled ?? false,
-                apiKey = _config.ApiKey,
+                isDdpiEnabled = activeSession.IsDdpiEnabled,
+                apiKey = activeSession.ApiKey,
                 expiresAtIst = nextExpiryIst.ToString("dd-MMM-yyyy hh:mm:ss tt"),
                 message = "No active session for today. Token expired or not created."
             });
@@ -156,18 +158,89 @@ public class ZerodhaAuthController : ControllerBase
     }
 
     /// <summary>
-    /// Generates the Zerodha OAuth login URL.
-    /// Redirects the user to: https://kite.zerodha.com/connect/login?v=3&api_key=XYZ&state=USER_ID
+    /// Saves the user's own Kite Connect API key and secret (from developers.kite.trade). A blank secret keeps the
+    /// stored one; a new API key clears the user's token, so they connect Zerodha again.
     /// </summary>
-    [HttpGet("login-url")]
-    public IActionResult GetLoginUrl([FromQuery] string? returnUrl = null, [FromQuery] int userId = 1)
+    [HttpPost("credentials")]
+    public async Task<IActionResult> SaveCredentials([FromBody] SaveZerodhaCredentialsDto request)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(_config.ApiKey))
+            int targetUserId = request.UserId > 0 ? request.UserId : 1;
+            string apiKey = (request.ApiKey ?? string.Empty).Trim();
+            string? apiSecret = string.IsNullOrWhiteSpace(request.ApiSecret) ? null : request.ApiSecret.Trim();
+
+            string? keyError = ValidateCredential(apiKey, "API Key", 6, 50);
+            if (keyError != null)
             {
-                _logger.LogError("ApiKey is not configured in BrokerConfig.");
-                return BadRequest("ApiKey is missing in BrokerConfig.");
+                return BadRequest(new { success = false, message = keyError });
+            }
+
+            if (apiSecret != null)
+            {
+                string? secretError = ValidateCredential(apiSecret, "API Secret", 8, 100);
+                if (secretError != null)
+                {
+                    return BadRequest(new { success = false, message = secretError });
+                }
+                if (apiSecret == apiKey)
+                {
+                    return BadRequest(new { success = false, message = "API Secret must be different from the API Key." });
+                }
+            }
+
+            var existing = await _sessionRepository.GetActiveSessionAsync(targetUserId);
+            bool keyChanged = !string.IsNullOrWhiteSpace(existing?.ApiKey) && existing.ApiKey != apiKey;
+            if (apiSecret == null && (keyChanged || string.IsNullOrWhiteSpace(existing?.ApiSecret)))
+            {
+                // A new API Key is a different Kite app, so the stored secret no longer matches it
+                return BadRequest(new
+                {
+                    success = false,
+                    message = keyChanged ? "Enter the API Secret of the new Kite Connect app." : "API Secret is required."
+                });
+            }
+
+            await _sessionRepository.SaveCredentialsAsync(targetUserId, apiKey, apiSecret);
+            _logger.LogInformation("Saved Zerodha API credentials for User {UserId} (API Key: {ApiKey}).", targetUserId, apiKey);
+            return Ok(new { success = true, userId = targetUserId, apiKey });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save Zerodha API credentials.");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Kite Connect API keys and secrets are plain letters/digits. Returns an error message, or <c>null</c> when valid.
+    /// Same rules as the Token page (token-manager.js).
+    /// </summary>
+    private static string? ValidateCredential(string value, string label, int minLength, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return $"{label} is required.";
+        if (value.Any(char.IsWhiteSpace)) return $"{label} must not contain spaces.";
+        if (!value.All(char.IsAsciiLetterOrDigit)) return $"{label} can contain only letters and numbers.";
+        if (value.Length < minLength || value.Length > maxLength)
+            return $"{label} must be {minLength}–{maxLength} characters (you entered {value.Length}).";
+        return null;
+    }
+
+    /// <summary>
+    /// Generates the Zerodha OAuth login URL with the user's own API key.
+    /// Redirects the user to: https://kite.zerodha.com/connect/login?v=3&api_key=XYZ&state=USER_ID
+    /// </summary>
+    [HttpGet("login-url")]
+    public async Task<IActionResult> GetLoginUrl([FromQuery] string? returnUrl = null, [FromQuery] int userId = 1)
+    {
+        try
+        {
+            var session = await _sessionRepository.GetActiveSessionAsync(userId);
+            string? apiKey = session?.ApiKey;
+            if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(session?.ApiSecret))
+            {
+                _logger.LogWarning("Zerodha login requested for User {UserId} without saved API credentials.", userId);
+                return BadRequest("Zerodha API Key / Secret not saved for this user. Save them on the Token page first.");
             }
 
             if (!string.IsNullOrWhiteSpace(returnUrl))
@@ -178,96 +251,15 @@ public class ZerodhaAuthController : ControllerBase
 
             // Generate Zerodha OAuth login URL with state = userId
             string statePayload = userId.ToString();
-            string loginUrl = $"https://kite.zerodha.com/connect/login?v=3&api_key={Uri.EscapeDataString(_config.ApiKey)}&state={Uri.EscapeDataString(statePayload)}";
+            string loginUrl = $"https://kite.zerodha.com/connect/login?v=3&api_key={Uri.EscapeDataString(apiKey)}&state={Uri.EscapeDataString(statePayload)}";
 
-            _logger.LogInformation("Generated Zerodha login URL for User {UserId} with API Key: {ApiKey}", userId, _config.ApiKey);
+            _logger.LogInformation("Generated Zerodha login URL for User {UserId} with API Key: {ApiKey}", userId, apiKey);
             return Ok(new { loginUrl });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate Zerodha login URL.");
             return StatusCode(500, $"Internal server error: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Programmatically triggers the full headless login flow to retrieve and persist a new access token.
-    /// </summary>
-    [HttpPost("headless-login")]
-    public async Task<IActionResult> HeadlessLogin()
-    {
-        _logger.LogInformation("Initiating programmatic headless login flow...");
-
-        try
-        {
-            if (string.IsNullOrWhiteSpace(_config.ApiKey) || string.IsNullOrWhiteSpace(_config.ApiSecret))
-            {
-                return BadRequest("Zerodha ApiKey or ApiSecret is not configured.");
-            }
-
-            if (string.IsNullOrWhiteSpace(_config.UserId) || string.IsNullOrWhiteSpace(_config.Password) || string.IsNullOrWhiteSpace(_config.TotpSecret))
-            {
-                return BadRequest("Zerodha UserId, Password, or TotpSecret is not configured in appsettings.json.");
-            }
-
-            // Step 1: Run the headless login flow to fetch request token
-            var authenticator = new ZerodhaHeadlessAuthenticator(
-                _config.UserId,
-                _config.Password,
-                _config.TotpSecret,
-                _config.ApiKey
-            );
-
-            string requestToken = await authenticator.FetchRequestTokenAsync();
-            _logger.LogInformation("Programmatically obtained request_token: {RequestToken}", requestToken);
-
-            // Step 2: Exchange request_token for access_token
-            var kite = new Kite(_config.ApiKey);
-            User userSession = kite.GenerateSession(requestToken, _config.ApiSecret);
-            string accessToken = userSession.AccessToken;
-
-            if (string.IsNullOrWhiteSpace(accessToken))
-            {
-                throw new InvalidOperationException("Zerodha returned an empty access token.");
-            }
-
-            _logger.LogInformation("Successfully programmatically exchanged request_token. Storing access token...");
-
-            // 3. Store in PostgreSQL database using Stored Procedure
-            var parameters = new DynamicParameters();
-            parameters.Add("p_api_key", _config.ApiKey);
-            parameters.Add("p_access_token", accessToken);
-
-            using (var conn = _connectionFactory.CreateConnection())
-            {
-                await conn.ExecuteAsync(
-                    "sp_upsert_zerodha_session",
-                    parameters,
-                    commandType: CommandType.StoredProcedure
-                );
-            }
-
-            // Immediately activate token in DB if valid for today
-            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey);
-
-            // 4. Persist to appsettings.json dynamically in the API & Worker folders
-            UpdateAppsettingsInAllPaths(accessToken);
-
-            _logger.LogInformation("Zerodha Access Token successfully stored and configuration updated via headless login.");
-
-            return Ok(new
-            {
-                Message = "Headless login successful! Zerodha Access Token has been created and configured.",
-                ApiKey = _config.ApiKey,
-                AccessToken = accessToken,
-                UserName = userSession.UserName,
-                Email = userSession.Email
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error occurred during Zerodha programmatic headless login.");
-            return StatusCode(500, $"Failed to perform programmatic headless login: {ex.Message}");
         }
     }
 
@@ -297,14 +289,18 @@ public class ZerodhaAuthController : ControllerBase
 
         try
         {
-            if (string.IsNullOrWhiteSpace(_config.ApiKey) || string.IsNullOrWhiteSpace(_config.ApiSecret))
+            // The request_token was issued for this user's own Kite app, so it is exchanged with that app's key/secret
+            var credentials = await _sessionRepository.GetActiveSessionAsync(userId);
+            string? apiKey = credentials?.ApiKey;
+            string? apiSecret = credentials?.ApiSecret;
+            if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(apiSecret))
             {
-                return BadRequest("Zerodha ApiKey or ApiSecret is not configured.");
+                throw new InvalidOperationException($"Zerodha API Key / Secret not saved for user {userId}.");
             }
 
             // Initialize Kite client and exchange request_token for access_token
-            var kite = new Kite(_config.ApiKey);
-            User userSession = kite.GenerateSession(requestToken, _config.ApiSecret);
+            var kite = new Kite(apiKey);
+            User userSession = kite.GenerateSession(requestToken, apiSecret);
             string accessToken = userSession.AccessToken;
 
             if (string.IsNullOrWhiteSpace(accessToken))
@@ -317,9 +313,9 @@ public class ZerodhaAuthController : ControllerBase
 
             // 1. Store in PostgreSQL database for specific user
             await _sessionRepository.UpsertSessionAsync(
-                userId, 
-                _config.ApiKey, 
-                _config.ApiSecret, 
+                userId,
+                apiKey,
+                apiSecret,
                 accessToken,
                 clientId: userSession.UserId,
                 userName: userSession.UserName,
@@ -327,14 +323,11 @@ public class ZerodhaAuthController : ControllerBase
             );
 
             // 2. Immediately activate token in DB if valid for today
-            await _sessionRepository.ActivateTokenIfValidAsync(_config.ApiKey, userId);
-
-            // 3. Persist to appsettings.json dynamically
-            UpdateAppsettingsInAllPaths(accessToken);
+            await _sessionRepository.ActivateTokenIfValidAsync(userId);
 
             _logger.LogInformation("Zerodha Access Token successfully stored for User {UserId} (Client: {ClientId}).", userId, userSession.UserId);
 
-            // 4. Resolve the Web UI base URL:
+            // 3. Resolve the Web UI base URL:
             //    - First priority: URL cached during login-url call (dynamic, works on any port)
             //    - Fallback: WebBaseUrl from appsettings.json
             string webBase = _cache.TryGetValue(ReturnUrlCacheKey, out string? cached) && !string.IsNullOrWhiteSpace(cached)
@@ -368,59 +361,6 @@ public class ZerodhaAuthController : ControllerBase
 
             var errorUrl = $"{targetUrl}?connected=false&message={Uri.EscapeDataString($"Token exchange failed: {ex.Message}")}";
             return Redirect(errorUrl);
-        }
-    }
-
-    private void UpdateAppsettingsInAllPaths(string accessToken)
-    {
-        // Try resolving various directories to find and update config files
-        string currentDir = Directory.GetCurrentDirectory();
-        
-        string[] appsettingsPaths = new[]
-        {
-            // API current directory files
-            Path.Combine(currentDir, "appsettings.json"),
-            Path.Combine(currentDir, "appsettings.Development.json"),
-            // API output directory files
-            Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
-            Path.Combine(AppContext.BaseDirectory, "appsettings.Development.json"),
-            // Worker project source files
-            Path.Combine(currentDir, "..", "QuantEdge.Worker", "appsettings.json"),
-            Path.Combine(currentDir, "..", "QuantEdge.Worker", "appsettings.Development.json"),
-            // Worker output directories (if they are compiled nearby)
-            Path.Combine(currentDir, "..", "QuantEdge.Worker", "bin", "Debug", "net10.0", "appsettings.json"),
-            Path.Combine(currentDir, "..", "QuantEdge.Worker", "bin", "Debug", "net10.0", "appsettings.Development.json")
-        };
-
-        foreach (var path in appsettingsPaths)
-        {
-            try
-            {
-                string fullPath = Path.GetFullPath(path);
-                if (System.IO.File.Exists(fullPath))
-                {
-                    _logger.LogInformation("Updating config file at: {Path}", fullPath);
-                    string json = System.IO.File.ReadAllText(fullPath);
-                    var rootNode = JsonNode.Parse(json);
-                    
-                    if (rootNode != null)
-                    {
-                        var brokerConfig = rootNode["MarketDataSettings"]?["BrokerConfig"];
-                        if (brokerConfig != null)
-                        {
-                            brokerConfig["AccessToken"] = accessToken;
-                            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
-                            System.IO.File.WriteAllText(fullPath, rootNode.ToJsonString(options));
-                            _logger.LogInformation("Successfully updated: {Path}", fullPath);
-                        }
-                    }
-                }
-
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to update appsettings JSON file at {Path}", path);
-            }
         }
     }
 }

@@ -51,6 +51,16 @@ public class TokenViewModel
     public bool HasActiveToken { get; set; }
 
     /// <summary>
+    /// Whether the current user has saved their own Kite Connect API Key (required before creating a token).
+    /// </summary>
+    public bool HasCredentials { get; set; }
+
+    /// <summary>
+    /// Whether an API Secret is stored for the current user (shown as "saved"; never displayed).
+    /// </summary>
+    public bool HasApiSecret { get; set; }
+
+    /// <summary>
     /// Timestamp when the current active token was created (formatted in IST).
     /// </summary>
     public string? CreatedAtIst { get; set; }

@@ -1089,6 +1089,81 @@ textarea.form-control {
     min-height: 100px;
 }
 
+/* Inline field validation */
+.form-input.is-invalid,
+.form-input.is-invalid:focus {
+    border-color: var(--accent-red);
+    box-shadow: 0 0 0 3px rgba(248,113,113,0.15);
+}
+
+.form-error {
+    min-height: 18px;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--accent-red);
+}
+
+.form-error:empty { visibility: hidden; }
+
+/* Input with an inline icon button (e.g. show / hide a secret) */
+.input-with-toggle { position: relative; }
+.input-with-toggle .form-input { padding-right: 44px; }
+
+.input-toggle-btn {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.input-toggle-btn:hover,
+.input-toggle-btn.active { color: var(--theme-accent); background: rgba(255,255,255,0.05); }
+
+/* Token page: Zerodha API credentials form */
+.credentials-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 8px 16px;
+    align-items: start;
+}
+
+/* Lines the buttons up with the inputs (label height + gap) */
+.credentials-actions { padding-top: 26px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+.credentials-hint {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Saved credentials, collapsed to one line */
+.credentials-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px 32px;
+    flex-wrap: wrap;
+}
+
+.credentials-summary[hidden] { display: none; }
+
+.credentials-summary-item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.credentials-summary-item .info-value { word-break: break-all; }
+.credentials-summary .btn-sm { margin-left: auto; }
+
+.btn-primary.is-loading { opacity: 0.7; pointer-events: none; }
+
 /* ============================================================
    TABLE SYSTEM
    ============================================================ */

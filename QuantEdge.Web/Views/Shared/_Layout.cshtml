@@ -1,4 +1,6 @@
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject QuantEdge.Web.Services.IPagePermissionService PagePermissions
+@using QuantEdge.Infrastructure.Constants
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -288,11 +290,16 @@
         <nav class="sidebar-nav" aria-label="Main navigation">
             @{
                 bool isAdmin = User.IsInRole("Admin");
+                // Page access comes from the Role Permissions screen (Admin always sees everything).
+                var allowedPages = await PagePermissions.GetAllowedPagesAsync(User);
+                Func<string, bool> can = allowedPages.Contains;
             }
 
             <!-- SECTION 1: TRADING & SIGNALS -->
             <div class="nav-section-label">TRADING & SIGNALS</div>
-            
+
+            @if (can(AppPages.SignalDashboard))
+            {
             <a asp-controller="Home" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" ? "active" : "")"
                data-tooltip="📊 **Signal Dashboard**: View live market data, indicators, and AI trade recommendations.">
@@ -303,6 +310,9 @@
                 </svg>
                 <span class="nav-label">Signal Dashboard</span>
             </a>
+            }
+            @if (can(AppPages.SectorDashboard))
+            {
             <a asp-controller="Sector" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Sector" ? "active" : "")"
                data-tooltip="🧭 **Sector Dashboard**: Which sectors are strong today, and which of their stocks have a BUY setup - and why.">
@@ -314,7 +324,8 @@
                 </svg>
                 <span class="nav-label">Sector Dashboard</span>
             </a>
-            @if (isAdmin)
+            }
+            @if (can(AppPages.Reconciliation))
             {
                 <a asp-controller="Reconciliation" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Reconciliation" ? "active" : "")"
@@ -326,6 +337,8 @@
                     <span class="nav-label">Reconciliation</span>
                 </a>
             }
+            @if (can(AppPages.Notifications))
+            {
             <a asp-controller="Notifications" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Notifications" ? "active" : "")"
                data-tooltip="🔔 **Notifications**: Every bell notification for any date range - trades, swing picks, NIFTY flips and Zerodha/NSE problems.">
@@ -335,7 +348,8 @@
                 </svg>
                 <span class="nav-label">Notifications</span>
             </a>
-            @if (isAdmin)
+            }
+            @if (can(AppPages.Backtest))
             {
                 <a asp-controller="Backtest" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Backtest" ? "active" : "")"
@@ -355,9 +369,15 @@
                 bool isAutoRealActive = currentController == "RealTrading";
                 bool isManualTradingActive = currentController == "PaperTrading";
                 bool isTradingActive = isAutoPaperActive || isAutoRealActive || isManualTradingActive;
+                var tradingPageNames = new List<string>();
+                if (can(AppPages.AutoPaperTrading)) tradingPageNames.Add("Auto Paper");
+                if (can(AppPages.AutoRealTrading)) tradingPageNames.Add("Auto Real");
+                if (can(AppPages.ManualTrading)) tradingPageNames.Add("Manual");
             }
+            @if (tradingPageNames.Count > 0)
+            {
             <div class="nav-item-group @(isTradingActive ? "open" : "")">
-                <div class="nav-item-header @(isTradingActive ? "active" : "")" data-tooltip="@(isAdmin ? "💹 **Trading**: Auto Paper, Auto Real and Manual trading workspaces." : "💹 **Trading**: Manual paper trading workspace.")">
+                <div class="nav-item-header @(isTradingActive ? "active" : "")" data-tooltip="💹 **Trading**: @string.Join(", ", tradingPageNames) trading @(tradingPageNames.Count > 1 ? "workspaces" : "workspace").">
                     <div class="nav-item-header-left">
                         <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
@@ -370,8 +390,7 @@
                     </svg>
                 </div>
                 <div class="nav-submenu">
-                    @* Auto Paper / Auto Real Trading: temporarily Admin-only (AutoTradingController / RealTradingController). *@
-                    @if (isAdmin)
+                    @if (can(AppPages.AutoPaperTrading))
                     {
                         <a asp-controller="AutoTrading" asp-action="Index"
                            class="nav-sub-item @(isAutoPaperActive ? "active" : "")"
@@ -384,6 +403,9 @@
                             </svg>
                             <span>Auto Paper Trading</span>
                         </a>
+                    }
+                    @if (can(AppPages.AutoRealTrading))
+                    {
                         <a asp-controller="RealTrading" asp-action="Index"
                            class="nav-sub-item @(isAutoRealActive ? "active" : "")"
                            data-tooltip="⚡ **Auto Real Trading**: Real-Money automated execution via Zerodha KiteConnect with margin guards and Panic Kill Switch.">
@@ -394,6 +416,8 @@
                             <span class="badge bg-danger ms-auto" style="font-size: 0.6rem; padding: 2px 5px; font-weight: 700;">LIVE</span>
                         </a>
                     }
+                    @if (can(AppPages.ManualTrading))
+                    {
                     <a asp-controller="PaperTrading" asp-action="Index"
                        class="nav-sub-item @(isManualTradingActive ? "active" : "")"
                        data-tooltip="📝 **Manual Trading**: Place your own paper orders with virtual capital (₹1,00,000) against live prices.">
@@ -404,8 +428,12 @@
                         </svg>
                         <span>Manual Trading</span>
                     </a>
+                    }
                 </div>
             </div>
+            }
+            @if (can(AppPages.SwingTrading))
+            {
             <a asp-controller="SwingTrading" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" && ViewContext.RouteData.Values["action"]?.ToString() != "EtfList" ? "active" : "")"
                data-tooltip="📈 **Swing Trading**: Multi-day entry/exit scanner and breakout trade setup.">
@@ -414,6 +442,9 @@
                 </svg>
                 <span class="nav-label">Swing Trading</span>
             </a>
+            }
+            @if (can(AppPages.EtfList))
+            {
             <a asp-controller="SwingTrading" asp-action="EtfList"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "SwingTrading" && ViewContext.RouteData.Values["action"]?.ToString() == "EtfList" ? "active" : "")"
                data-tooltip="📃 **ETF List**: View ETFs from the instrument master and manually send them to Real Trade.">
@@ -425,6 +456,9 @@
                 </svg>
                 <span class="nav-label">ETF List</span>
             </a>
+            }
+            @if (can(AppPages.TradingReports))
+            {
             <a asp-controller="Report" asp-action="Index"
                class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Report" ? "active" : "")"
                data-tooltip="📊 **Trading Reports**: Daily, Weekly, Fortnightly, Monthly & Yearly investment turnover and ROI analytics.">
@@ -435,12 +469,33 @@
                 </svg>
                 <span class="nav-label">Trading Reports</span>
             </a>
+            }
+            @if (can(AppPages.TokenManager))
+            {
+            <a asp-controller="Token" asp-action="Index"
+               class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Token" ? "active" : "")"
+               data-tooltip="🔑 **Token Manager**: Manage your Zerodha API credentials and daily access token.">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                <span class="nav-label">Token Manager</span>
+            </a>
+            }
 
-            @if (isAdmin)
+            @{
+                bool showDataSection = can(AppPages.DataCoverage) || can(AppPages.CandleSummary)
+                    || can(AppPages.ManageHistory) || can(AppPages.HolidayManager);
+                bool showSystemSection = can(AppPages.UserManagement) || can(AppPages.RolePermissions)
+                    || can(AppPages.RealTradeFlow) || can(AppPages.Logs);
+            }
+            @if (showDataSection)
             {
                 <!-- SECTION 2: DATA MANAGEMENT -->
                 <div class="nav-section-label mt-3">DATA MANAGEMENT</div>
 
+                if (can(AppPages.DataCoverage))
+                {
                 <a asp-controller="DataCoverage" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "DataCoverage" ? "active" : "")"
                    data-tooltip="🗄️ **Data Coverage**: Check 1-minute candlestick data completeness and missing candles.">
@@ -452,6 +507,9 @@
                     </svg>
                     <span class="nav-label">Data Coverage</span>
                 </a>
+                }
+                if (can(AppPages.CandleSummary))
+                {
                 <a asp-controller="CandleSummary" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "CandleSummary" ? "active" : "")"
                    data-tooltip="🕯️ **Candle Summary**: View today's stock total candle count timeframe-wise (1D, 15M, 60M) with symbol/date filters.">
@@ -462,6 +520,9 @@
                     </svg>
                     <span class="nav-label">Candle Summary</span>
                 </a>
+                }
+                if (can(AppPages.ManageHistory))
+                {
                 <a asp-controller="ManageHistory" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "ManageHistory" ? "active" : "")"
                    data-tooltip="🔄 **Manage History**: Download and backfill historical candlestick data.">
@@ -471,6 +532,9 @@
                     </svg>
                     <span class="nav-label">Manage History</span>
                 </a>
+                }
+                if (can(AppPages.HolidayManager))
+                {
                 <a asp-controller="Holiday" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Holiday" ? "active" : "")"
                    data-tooltip="📅 **Holiday Manager**: View official stock market trading calendar and holidays.">
@@ -482,19 +546,16 @@
                     </svg>
                     <span class="nav-label">Holiday Manager</span>
                 </a>
+                }
+            }
 
+            @if (showSystemSection)
+            {
                 <!-- SECTION 3: SYSTEM ADMINISTRATION -->
                 <div class="nav-section-label mt-3">SYSTEM ADMINISTRATION</div>
 
-                <a asp-controller="Token" asp-action="Index"
-                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Token" ? "active" : "")"
-                   data-tooltip="🔑 **Token Manager**: Manage Zerodha API authorization and access tokens.">
-                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                    <span class="nav-label">Token Manager</span>
-                </a>
+                if (can(AppPages.UserManagement))
+                {
                 <a asp-controller="User" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "User" ? "active" : "")"
                    data-tooltip="👥 **User Management**: Manage system users, roles, password resets, and permissions.">
@@ -506,6 +567,21 @@
                     </svg>
                     <span class="nav-label">User Management</span>
                 </a>
+                }
+                if (can(AppPages.RolePermissions))
+                {
+                <a asp-controller="RolePermission" asp-action="Index"
+                   class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "RolePermission" ? "active" : "")"
+                   data-tooltip="🛡️ **Role Permissions**: Decide which pages each role (Admin / User) can open.">
+                    <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        <polyline points="9 12 11 14 15 10"></polyline>
+                    </svg>
+                    <span class="nav-label">Role Permissions</span>
+                </a>
+                }
+                if (can(AppPages.RealTradeFlow))
+                {
                 <a asp-controller="TradeLogic" asp-action="Index"
                    class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "TradeLogic" ? "active" : "")"
                    data-tooltip="🧭 **Real Trade Flow**: Flow diagrams showing how the Auto Real Trade background jobs buy, guard and sell.">
@@ -517,7 +593,10 @@
                     </svg>
                     <span class="nav-label">Real Trade Flow</span>
                 </a>
+                }
 
+                if (can(AppPages.Logs))
+                {
                 <!-- Main Menu Log with Sub Items -->
                 bool isLogActive = ViewContext.RouteData.Values["controller"]?.ToString() == "Log";
                 string currentAction = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
@@ -583,6 +662,7 @@
                         </a>
                     </div>
                 </div>
+                }
             }
         </nav>
 

@@ -23,8 +23,8 @@ public record ZerodhaSession
     /// <summary>Zerodha API secret (optional, stored for automated token flows).</summary>
     public string? ApiSecret { get; init; }
 
-    /// <summary>The OAuth access token.</summary>
-    public string AccessToken { get; init; } = string.Empty;
+    /// <summary>The OAuth access token. Null between saving the API credentials and the user's first Zerodha login.</summary>
+    public string? AccessToken { get; init; }
 
     /// <summary>
     /// Whether this session is currently the active token.

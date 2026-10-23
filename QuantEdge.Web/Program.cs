@@ -19,6 +19,7 @@ try
     builder.Services.AddMemoryCache();
     builder.Services.AddSingleton<ICacheService, MemoryCacheService>();
     builder.Services.AddMarketDataServices(builder.Configuration);
+    builder.Services.AddSingleton<QuantEdge.Web.Services.IPagePermissionService, QuantEdge.Web.Services.PagePermissionService>();
 
     // Add Cookie Authentication
     builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

@@ -1,4 +1,6 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -15,7 +17,8 @@ namespace QuantEdge.Web.Controllers;
 /// Admin-only Trade Flow screen: flow diagrams explaining how the Auto Real Trade background jobs work.
 /// The rules snapshot is fetched server-side, so the browser never calls the API for it.
 /// </summary>
-[Authorize(Roles = "Admin")]
+[Authorize]
+[PageAccess(AppPages.RealTradeFlow)]
 public class TradeLogicController : Controller
 {
     private readonly IHttpClientFactory _httpClientFactory;

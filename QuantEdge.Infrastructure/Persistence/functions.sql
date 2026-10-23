@@ -165,10 +165,11 @@ $$;
 DROP FUNCTION IF EXISTS sp_activate_zerodha_token CASCADE;
 DROP FUNCTION IF EXISTS sp_activate_zerodha_token(VARCHAR) CASCADE;
 DROP FUNCTION IF EXISTS sp_activate_zerodha_token(VARCHAR, INT) CASCADE;
+DROP FUNCTION IF EXISTS sp_activate_zerodha_token(INT) CASCADE;
 
+-- Activates the user's token when it was created after today's 6:00 AM IST. Each user has their own row and API key.
 CREATE OR REPLACE FUNCTION sp_activate_zerodha_token(
-    p_api_key VARCHAR(50),
-    p_user_id INT DEFAULT 1
+    p_user_id INT
 )
 RETURNS VARCHAR
 LANGUAGE plpgsql
@@ -186,19 +187,17 @@ BEGIN
     SELECT access_token, created_at
     INTO v_access_token, v_token_created
     FROM zerodha_sessions
-    WHERE api_key = p_api_key AND user_id = p_user_id
-    ORDER BY created_at DESC
-    LIMIT 1;
+    WHERE user_id = p_user_id;
 
     IF v_access_token IS NULL THEN
-        RAISE NOTICE 'sp_activate_zerodha_token: No session found for api_key % and user %', p_api_key, p_user_id;
+        RAISE NOTICE 'sp_activate_zerodha_token: No token found for user %', p_user_id;
         RETURN NULL;
     END IF;
 
     IF v_token_created >= v_cutoff_time THEN
         UPDATE zerodha_sessions
         SET is_active = TRUE
-        WHERE api_key = p_api_key AND user_id = p_user_id;
+        WHERE user_id = p_user_id;
 
         RAISE NOTICE 'sp_activate_zerodha_token: Token for user % activated (created_at: %)', p_user_id, v_token_created;
         RETURN v_access_token;
@@ -279,6 +278,42 @@ $$;
 
 
 -- ----------------------------------------------------------------------------
+-- Function: fn_get_market_data_zerodha_session
+-- The session the system-wide market data (live WebSocket feed, historical candles) runs on: the newest active
+-- session of an Admin user. Empty when no Admin has connected Zerodha today.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_market_data_zerodha_session() CASCADE;
+
+CREATE OR REPLACE FUNCTION fn_get_market_data_zerodha_session()
+RETURNS TABLE (
+    user_id         INT,
+    client_id       VARCHAR(50),
+    user_name       VARCHAR(100),
+    user_email      VARCHAR(100),
+    api_key         VARCHAR(50),
+    api_secret      VARCHAR(100),
+    access_token    VARCHAR(255),
+    is_active       BOOLEAN,
+    is_ddpi_enabled BOOLEAN,
+    created_at      TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT s.user_id, s.client_id, s.user_name, s.user_email, s.api_key, s.api_secret, s.access_token, s.is_active, COALESCE(s.is_ddpi_enabled, FALSE), s.created_at
+    FROM zerodha_sessions s
+    JOIN app_users u ON u.id = s.user_id
+    WHERE u.role = 'Admin'
+      AND s.is_active = TRUE
+      AND s.access_token IS NOT NULL
+    ORDER BY s.created_at DESC
+    LIMIT 1;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
 -- Procedure: sp_upsert_user_zerodha_session
 -- ----------------------------------------------------------------------------
 DROP PROCEDURE IF EXISTS sp_upsert_user_zerodha_session CASCADE;
@@ -299,9 +334,9 @@ AS $$
 BEGIN
     INSERT INTO zerodha_sessions (user_id, client_id, user_name, user_email, api_key, api_secret, access_token, is_active, is_ddpi_enabled, created_at)
     VALUES (p_user_id, p_client_id, p_user_name, p_user_email, p_api_key, p_api_secret, p_access_token, TRUE, FALSE, NOW())
-    ON CONFLICT (api_key) 
-    DO UPDATE SET 
-        user_id = EXCLUDED.user_id,
+    ON CONFLICT (user_id)
+    DO UPDATE SET
+        api_key = EXCLUDED.api_key,
         client_id = COALESCE(EXCLUDED.client_id, zerodha_sessions.client_id),
         user_name = COALESCE(EXCLUDED.user_name, zerodha_sessions.user_name),
         user_email = COALESCE(EXCLUDED.user_email, zerodha_sessions.user_email),
@@ -4301,5 +4336,33 @@ BEGIN
     LEFT JOIN stock_master s ON s.id = ss.stock_id
     WHERE sec.is_active = TRUE
     ORDER BY sec.id, s.symbol;
+END;
+$$;
+
+
+-- Function: fn_get_role_page_permissions
+-- Role Permissions screen / page access checks: stored page access rows for one role.
+DROP FUNCTION IF EXISTS fn_get_role_page_permissions(VARCHAR);
+
+CREATE OR REPLACE FUNCTION fn_get_role_page_permissions(
+    p_role VARCHAR
+)
+RETURNS TABLE (
+    PageKey VARCHAR,
+    IsAllowed BOOLEAN,
+    UpdatedAt TIMESTAMP WITH TIME ZONE,
+    UpdatedBy VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT r.page_key AS PageKey,
+           r.is_allowed AS IsAllowed,
+           r.updated_at AS UpdatedAt,
+           r.updated_by AS UpdatedBy
+    FROM role_page_permissions r
+    WHERE LOWER(r.role) = LOWER(TRIM(p_role))
+    ORDER BY r.page_key;
 END;
 $$;

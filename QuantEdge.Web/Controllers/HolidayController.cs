@@ -1,4 +1,6 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -15,7 +17,8 @@ namespace QuantEdge.Web.Controllers;
 /// <summary>
 /// MVC Controller for rendering the Indian Stock Market Holiday dashboard UI.
 /// </summary>
-[Authorize(Roles = "Admin")]
+[Authorize]
+[PageAccess(AppPages.HolidayManager)]
 public class HolidayController : Controller
 {
     private const string CacheKeyHolidays = "holidays_web_list";

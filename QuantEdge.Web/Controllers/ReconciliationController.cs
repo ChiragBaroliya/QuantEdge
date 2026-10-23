@@ -1,4 +1,6 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,7 +12,8 @@ namespace QuantEdge.Web.Controllers;
 /// Reconciliation: our open real positions vs Zerodha, and the daily data-quality checks. The page loads its data
 /// from GET /api/reconciliation/... in the browser.
 /// </summary>
-[Authorize(Roles = "Admin")]
+[Authorize]
+[PageAccess(AppPages.Reconciliation)]
 public class ReconciliationController : Controller
 {
     private readonly IConfiguration _configuration;

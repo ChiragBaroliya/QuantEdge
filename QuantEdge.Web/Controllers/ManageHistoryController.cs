@@ -1,4 +1,6 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 
@@ -9,7 +11,8 @@ namespace QuantEdge.Web.Controllers;
 /// <summary>
 /// Controller serving the dedicated Manage History Data view.
 /// </summary>
-[Authorize(Roles = "Admin")]
+[Authorize]
+[PageAccess(AppPages.ManageHistory)]
 public class ManageHistoryController : Controller
 {
     private readonly IConfiguration _configuration;

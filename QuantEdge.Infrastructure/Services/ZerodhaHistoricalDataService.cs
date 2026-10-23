@@ -22,7 +22,6 @@ namespace QuantEdge.Infrastructure.Services;
 /// </summary>
 public class ZerodhaHistoricalDataService : IHistoricalDataService
 {
-    private readonly BrokerConfig _config;
     private readonly IMarketCandleRepository _candleRepository;
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IStockMasterRepository _stockMasterRepository;
@@ -33,7 +32,6 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
     private readonly IBrokerApiEventRecorder? _apiEventRecorder;
 
     public ZerodhaHistoricalDataService(
-        IOptions<BrokerConfig> config,
         IMarketCandleRepository candleRepository,
         IDbConnectionFactory connectionFactory,
         IStockMasterRepository stockMasterRepository,
@@ -43,7 +41,6 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         IBrokerApiEventRecorder? apiEventRecorder = null)
     {
         _apiEventRecorder = apiEventRecorder;
-        _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
@@ -75,7 +72,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         uint instrumentToken = (uint)stock.InstrumentToken;
 
         _logger.LogInformation("Resolving active Zerodha session token...");
-        string? token = await ResolveAccessTokenAsync();
+        var (apiKey, token) = await ResolveAccessTokenAsync();
 
         // A token Kite already rejected is not tried again for every remaining stock - that only produced one failed
         // call and one bell notification per stock. It is retried as soon as zerodha_sessions holds a different token.
@@ -119,7 +116,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
 
         try
         {
-            var kite = new Kite(_config.ApiKey);
+            var kite = new Kite(apiKey);
             kite.SetAccessToken(token);
 
             while (currentStart < adjustedToUtc)
@@ -268,18 +265,20 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
     // The last token Kite rejected (per process) - see FetchHistoricalCandlesAsync.
     private static string? _rejectedToken;
 
-    private string TokenCacheKey => $"zerodha_session_token_{_config.ApiKey}";
+    private const string TokenCacheKey = "zerodha_market_data_session";
 
     /// <summary>
-    /// The newest active token for the configured API key, if it is still within Zerodha's validity window (created
-    /// after the most recent 06:00 IST). Records one warning and throws when there is none.
+    /// The API key and token of an Admin user's active session (fn_get_market_data_zerodha_session), if the token is
+    /// still within Zerodha's validity window (created after the most recent 06:00 IST). Records one warning and
+    /// throws when there is none.
     /// </summary>
-    private async Task<string> ResolveAccessTokenAsync()
+    private async Task<(string ApiKey, string Token)> ResolveAccessTokenAsync()
     {
         if (_cacheService != null)
         {
-            string? cached = await _cacheService.GetAsync<string>(TokenCacheKey);
-            if (!string.IsNullOrWhiteSpace(cached)) return cached;
+            var cached = await _cacheService.GetAsync<SessionTokenRow>(TokenCacheKey);
+            if (!string.IsNullOrWhiteSpace(cached?.ApiKey) && !string.IsNullOrWhiteSpace(cached.AccessToken))
+                return (cached.ApiKey, cached.AccessToken);
         }
 
         SessionTokenRow? session = null;
@@ -287,19 +286,18 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
         {
             using var conn = _connectionFactory.CreateConnection();
             session = await conn.QueryFirstOrDefaultAsync<SessionTokenRow>(
-                "SELECT access_token AS AccessToken, created_at AS CreatedAt FROM zerodha_sessions WHERE api_key = @ApiKey AND is_active = TRUE ORDER BY created_at DESC LIMIT 1;",
-                new { ApiKey = _config.ApiKey });
+                "SELECT api_key AS ApiKey, access_token AS AccessToken, created_at AS CreatedAt FROM fn_get_market_data_zerodha_session();");
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to resolve active AccessToken from the database.");
         }
 
-        if (session == null || string.IsNullOrWhiteSpace(session.AccessToken))
+        if (session == null || string.IsNullOrWhiteSpace(session.ApiKey) || string.IsNullOrWhiteSpace(session.AccessToken))
         {
-            _logger.LogError("Zerodha AccessToken is missing. Cannot fetch historical data.");
+            _logger.LogError("No active Zerodha session for an Admin user. Cannot fetch historical data.");
             _apiEventRecorder?.RecordFailure(BrokerApiSource.Session, "historical sync",
-                "Historical candle sync skipped: no Zerodha access token. Log in to Zerodha (Token page).", level: "warning");
+                "Historical candle sync skipped: no active Zerodha session for an Admin user. An Admin must log in to Zerodha (Token page).", level: "warning");
             throw new InvalidOperationException("Zerodha AccessToken is missing.");
         }
 
@@ -317,13 +315,14 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
 
         if (_cacheService != null)
         {
-            await _cacheService.SetAsync(TokenCacheKey, session.AccessToken, TokenCacheTtl);
+            await _cacheService.SetAsync(TokenCacheKey, session, TokenCacheTtl);
         }
-        return session.AccessToken!;
+        return (session.ApiKey!, session.AccessToken!);
     }
 
     private sealed class SessionTokenRow
     {
+        public string? ApiKey { get; set; }
         public string? AccessToken { get; set; }
         public DateTime CreatedAt { get; set; }
     }

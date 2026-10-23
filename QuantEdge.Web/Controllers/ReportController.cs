@@ -1,4 +1,6 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using System.Net.Http;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -10,6 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace QuantEdge.Web.Controllers;
 
 [Authorize]
+[PageAccess(AppPages.TradingReports)]
 public class ReportController : Controller
 {
     private readonly IHttpClientFactory _httpClientFactory;

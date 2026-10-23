@@ -49,17 +49,14 @@ public class ZerodhaSessionRepository : IZerodhaSessionRepository
     }
 
     /// <inheritdoc />
-    public async Task<string?> ActivateTokenIfValidAsync(string apiKey, int userId = 1)
+    public async Task<string?> ActivateTokenIfValidAsync(int userId)
     {
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new ArgumentNullException(nameof(apiKey));
-
         using var conn = _connectionFactory.CreateConnection();
         await EnsureSchemaAsync(conn);
 
         // Call stored function sp_activate_zerodha_token
-        string sql = "SELECT sp_activate_zerodha_token(@apiKey, @userId);";
-        var activatedToken = await conn.ExecuteScalarAsync<string?>(sql, new { apiKey, userId });
+        string sql = "SELECT sp_activate_zerodha_token(@userId);";
+        var activatedToken = await conn.ExecuteScalarAsync<string?>(sql, new { userId });
 
         if (_cacheService != null)
         {
@@ -104,6 +101,37 @@ public class ZerodhaSessionRepository : IZerodhaSessionRepository
         // Call stored function fn_get_all_active_zerodha_sessions
         string sql = "SELECT * FROM fn_get_all_active_zerodha_sessions();";
         return await conn.QueryAsync<ZerodhaSession>(sql);
+    }
+
+    /// <inheritdoc />
+    public async Task<ZerodhaSession?> GetMarketDataSessionAsync()
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        await EnsureSchemaAsync(conn);
+
+        // Call stored function fn_get_market_data_zerodha_session
+        string sql = "SELECT * FROM fn_get_market_data_zerodha_session();";
+        return await conn.QueryFirstOrDefaultAsync<ZerodhaSession>(sql);
+    }
+
+    /// <inheritdoc />
+    public async Task SaveCredentialsAsync(int userId, string apiKey, string? apiSecret)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new ArgumentNullException(nameof(apiKey));
+
+        using var conn = _connectionFactory.CreateConnection();
+        await EnsureSchemaAsync(conn);
+
+        // Call stored procedure sp_save_user_zerodha_credentials
+        string sql = "CALL sp_save_user_zerodha_credentials(@userId, @apiKey, @apiSecret);";
+        await conn.ExecuteAsync(sql, new { userId, apiKey, apiSecret });
+
+        if (_cacheService != null)
+        {
+            await _cacheService.RemoveAsync($"zerodha_active_session_{userId}");
+            await _cacheService.RemoveAsync("zerodha_active_session");
+        }
     }
 
     /// <inheritdoc />

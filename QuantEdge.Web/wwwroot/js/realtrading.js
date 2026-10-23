@@ -967,11 +967,22 @@ function setupEventListeners() {
                     window.location.href = data.loginUrl;
                     return;
                 }
+            } else if (res.status === 400) {
+                // e.g. this user has not saved their own Zerodha API Key / Secret yet (Token page)
+                const goToTokenPage = await qeConfirm({
+                    title: "Zerodha API credentials needed",
+                    text: await res.text(),
+                    confirmButtonText: "Open Token page",
+                    cancelButtonText: "Later",
+                    focusCancel: false
+                });
+                if (goToTokenPage) window.location.href = "/Token";
+                return;
             }
-            alert("Failed to retrieve Zerodha login URL from server.");
+            qeAlert({ icon: "error", title: "Could not connect Zerodha", text: "Failed to retrieve the Zerodha login URL from the server." });
         } catch (e) {
             console.error("Connect Zerodha error:", e);
-            alert("Error initiating Zerodha connection.");
+            qeAlert({ icon: "error", title: "Could not connect Zerodha", text: "Error starting the Zerodha connection. Is QuantEdge.API running?" });
         }
     };
 

@@ -123,6 +123,46 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 });
 
+/* ---- SweetAlert2 dialogs in the app theme (SweetAlert2 is loaded by _Layout) ---- */
+window.qeSwalTheme = {
+    background: 'var(--bg-card)',
+    color: 'var(--text-primary)',
+    confirmButtonColor: 'var(--theme-accent)',
+    cancelButtonColor: '#475569'
+};
+
+// Message box. Resolves when closed with the SweetAlert2 result.
+window.qeAlert = function (options) {
+    return Swal.fire(Object.assign({}, window.qeSwalTheme, { icon: 'info' }, options));
+};
+
+// Yes / Cancel box. Resolves true only when confirmed; Cancel is focused so Enter does not confirm by accident.
+window.qeConfirm = function (options) {
+    return Swal.fire(Object.assign({}, window.qeSwalTheme, {
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes',
+        cancelButtonText: 'Cancel',
+        reverseButtons: true,
+        focusCancel: true
+    }, options)).then(function (result) { return result.isConfirmed; });
+};
+
+// Small auto-closing notice in the top-right corner.
+window.qeToast = function (title, icon) {
+    return Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: icon || 'info',
+        title: title,
+        showConfirmButton: false,
+        timer: 4000,
+        timerProgressBar: true,
+        background: window.qeSwalTheme.background,
+        color: window.qeSwalTheme.color
+    });
+};
+
 /* ---- Global Toast Notification System ---- */
 window.showToast = function (message, type, duration) {
     type = type || 'info';

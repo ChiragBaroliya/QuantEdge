@@ -281,14 +281,16 @@ CREATE TABLE IF NOT EXISTS trading_signals (
 );
 
 -- Table: zerodha_sessions
+-- One row per QuantEdge user: that user's own Kite Connect API key/secret (saved on the Token page) and their daily
+-- access token. access_token is NULL between saving the credentials and the first Zerodha login.
 CREATE TABLE IF NOT EXISTS zerodha_sessions (
-    user_id         INT          NOT NULL DEFAULT 1,
+    user_id         INT          PRIMARY KEY,
     client_id       VARCHAR(50),
     user_name       VARCHAR(100),
     user_email      VARCHAR(100),
-    api_key         VARCHAR(50)  PRIMARY KEY,
+    api_key         VARCHAR(50)  NOT NULL,
     api_secret      VARCHAR(100),
-    access_token    VARCHAR(255) NOT NULL,
+    access_token    VARCHAR(255),
     is_active       BOOLEAN      NOT NULL DEFAULT FALSE,
     is_ddpi_enabled BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
@@ -301,6 +303,33 @@ ALTER TABLE zerodha_sessions ADD COLUMN IF NOT EXISTS user_name VARCHAR(100);
 ALTER TABLE zerodha_sessions ADD COLUMN IF NOT EXISTS user_email VARCHAR(100);
 ALTER TABLE zerodha_sessions ADD COLUMN IF NOT EXISTS is_ddpi_enabled BOOLEAN DEFAULT FALSE;
 ALTER TABLE zerodha_sessions ADD COLUMN IF NOT EXISTS api_secret VARCHAR(100);
+
+-- Key by user_id instead of api_key: with api_key as the key, every user logging in through the same API key overwrote
+-- the previous user's token (and user_id) in the single row. Keeps the newest row per user.
+DO $$
+DECLARE
+    v_pk_name TEXT;
+BEGIN
+    SELECT c.conname INTO v_pk_name
+    FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+    WHERE c.conrelid = 'zerodha_sessions'::regclass AND c.contype = 'p' AND a.attname = 'api_key';
+
+    IF v_pk_name IS NOT NULL THEN
+        UPDATE zerodha_sessions SET user_id = 1 WHERE user_id IS NULL;
+        DELETE FROM zerodha_sessions s
+        USING zerodha_sessions n
+        WHERE s.user_id = n.user_id
+          AND (s.created_at < n.created_at OR (s.created_at = n.created_at AND s.api_key < n.api_key));
+
+        EXECUTE format('ALTER TABLE zerodha_sessions DROP CONSTRAINT %I', v_pk_name);
+        ALTER TABLE zerodha_sessions ALTER COLUMN user_id DROP DEFAULT;
+        ALTER TABLE zerodha_sessions ALTER COLUMN user_id SET NOT NULL;
+        ALTER TABLE zerodha_sessions ADD PRIMARY KEY (user_id);
+        ALTER TABLE zerodha_sessions ALTER COLUMN api_key SET NOT NULL;
+    END IF;
+END $$;
+ALTER TABLE zerodha_sessions ALTER COLUMN access_token DROP NOT NULL;
 
 -- Table: stock_master
 CREATE TABLE IF NOT EXISTS stock_master (
@@ -561,6 +590,19 @@ ALTER TABLE app_users ALTER COLUMN mobile_no DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS ix_app_users_email ON app_users (LOWER(email));
 CREATE INDEX IF NOT EXISTS ix_app_users_username ON app_users (LOWER(username));
+
+-- Role Permissions screen (Admin): which Web pages each role may open. Page keys come from
+-- AppPages (QuantEdge.Infrastructure/Constants/AppPages.cs). A page with no row uses the catalog
+-- default; the Admin role always has every page and is never stored here.
+-- Accessed via fn_get_role_page_permissions and sp_save_role_page_permissions.
+CREATE TABLE IF NOT EXISTS role_page_permissions (
+    role VARCHAR(50) NOT NULL,
+    page_key VARCHAR(50) NOT NULL,
+    is_allowed BOOLEAN NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    PRIMARY KEY (role, page_key)
+);
 
 
 

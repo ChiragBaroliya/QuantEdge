@@ -15,35 +15,8 @@ public class BrokerConfig
     /// </summary>
     public string WebSocketUrl { get; set; } = "wss://feed.quantedge.internal/v1/marketdata";
 
-    /// <summary>
-    /// Gets or sets the API token or credentials for authentication.
-    /// </summary>
-    public string ApiKey { get; set; } = "QE-MOCK-API-KEY-12345";
-
-    /// <summary>
-    /// Gets or sets the API Secret for request signing.
-    /// </summary>
-    public string ApiSecret { get; set; } = "QE-MOCK-API-SECRET-XYZ";
-
-    /// <summary>
-    /// Gets or sets the access token (required for Zerodha Kite login session).
-    /// </summary>
-    public string AccessToken { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the Zerodha User ID for headless login.
-    /// </summary>
-    public string UserId { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the Zerodha Password for headless login.
-    /// </summary>
-    public string Password { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the Zerodha TOTP Secret key for headless login.
-    /// </summary>
-    public string TotpSecret { get; set; } = string.Empty;
+    // Zerodha API key/secret and access tokens are not configured here: each user saves their own Kite Connect
+    // credentials in zerodha_sessions (Token page), and market data runs on an Admin user's session.
 
     /// <summary>
     /// Gets or sets connection timeouts in milliseconds.

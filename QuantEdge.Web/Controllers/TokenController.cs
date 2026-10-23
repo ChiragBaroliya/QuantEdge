@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using Microsoft.AspNetCore.Mvc;
 using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Web.Models;
@@ -9,11 +11,13 @@ namespace QuantEdge.Web.Controllers;
 
 /// <summary>
 /// Controller managing the Zerodha OAuth token creation flow.
+/// Each user manages their own Kite credentials and token; who can open it is set on the Role Permissions screen.
 /// </summary>
-[Authorize(Roles = "Admin")]
+[Authorize]
+[PageAccess(AppPages.TokenManager)]
 public class TokenController : Controller
 {
-    private const string CacheKeySessionStatus = "zerodha_session_status";
+    private const string CacheKeySessionStatusPrefix = "zerodha_session_status_";
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ICacheService _cacheService;
     private readonly ILogger<TokenController> _logger;
@@ -31,6 +35,55 @@ public class TokenController : Controller
         _apiBaseUrl = configuration["ApiBaseUrl"] ?? "https://localhost:44370";
     }
 
+    private string CurrentUserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "1";
+
+    // Per user: each user has their own Zerodha credentials and token.
+    private string SessionStatusCacheKey => CacheKeySessionStatusPrefix + CurrentUserId;
+
+    /// <summary>
+    /// POST /Token/SaveCredentials — saves the current user's own Kite Connect API Key / Secret via the API.
+    /// A blank secret keeps the stored one.
+    /// </summary>
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveCredentials(string apiKey, string? apiSecret)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient("QuantEdgeApi");
+            var response = await client.PostAsJsonAsync("/api/zerodha/credentials", new
+            {
+                userId = int.TryParse(CurrentUserId, out int uid) ? uid : 1,
+                apiKey,
+                apiSecret
+            });
+
+            string body = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                // "info", not "success": Index treats a carried-forward success as a freshly created token
+                TempData["StatusMessage"] = "Zerodha API credentials saved. Click \"Create Token\" to connect your Zerodha account.";
+                TempData["StatusType"] = "info";
+            }
+            else
+            {
+                string? message = null;
+                try { message = JsonNode.Parse(body)?["message"]?.ToString(); } catch { }
+                TempData["StatusMessage"] = $"Saving Zerodha credentials failed: {message ?? body}";
+                TempData["StatusType"] = "danger";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save Zerodha API credentials.");
+            TempData["StatusMessage"] = $"An error occurred: {ex.Message}. Is QuantEdge.API running on {_apiBaseUrl}?";
+            TempData["StatusType"] = "danger";
+        }
+
+        await _cacheService.RemoveAsync(SessionStatusCacheKey);
+        return RedirectToAction(nameof(Index));
+    }
+
     /// <summary>
     /// GET /Token — Renders the main token management dashboard.
     /// </summary>
@@ -45,7 +98,7 @@ public class TokenController : Controller
 
         try
         {
-            var cachedStatus = await _cacheService.GetAsync<TokenViewModel>(CacheKeySessionStatus);
+            var cachedStatus = await _cacheService.GetAsync<TokenViewModel>(SessionStatusCacheKey);
             if (cachedStatus != null)
             {
                 _logger.LogDebug("Retrieved Zerodha session status from MemoryCache.");
@@ -54,7 +107,7 @@ public class TokenController : Controller
             else
             {
                 var client = _httpClientFactory.CreateClient("QuantEdgeApi");
-                var response = await client.GetAsync("/api/zerodha/session-status");
+                var response = await client.GetAsync($"/api/zerodha/session-status?userId={CurrentUserId}");
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -63,6 +116,8 @@ public class TokenController : Controller
                     bool hasActiveToken = node?["hasActiveToken"]?.GetValue<bool>() ?? false;
 
                     vm.HasActiveToken = hasActiveToken;
+                    vm.HasCredentials = node?["hasCredentials"]?.GetValue<bool>() ?? false;
+                    vm.HasApiSecret = node?["hasApiSecret"]?.GetValue<bool>() ?? false;
                     vm.ClientId = node?["clientId"]?.ToString();
                     vm.UserName = node?["userName"]?.ToString();
                     vm.Email = node?["userEmail"]?.ToString();
@@ -77,6 +132,12 @@ public class TokenController : Controller
                         vm.StatusType = "success";
                         vm.StatusMessage = "Zerodha access token is ACTIVE and valid for today.";
                     }
+                    else if (!vm.HasCredentials)
+                    {
+                        vm.IsSuccess = false;
+                        vm.StatusType = "warning";
+                        vm.StatusMessage = "Save your Zerodha Kite Connect API Key and API Secret below, then click \"Create Token\".";
+                    }
                     else
                     {
                         vm.IsSuccess = false;
@@ -84,7 +145,7 @@ public class TokenController : Controller
                         vm.StatusMessage = "No active token for today. Click \"Create Token\" to authenticate.";
                     }
 
-                    await _cacheService.SetAsync(CacheKeySessionStatus, vm, TimeSpan.FromMinutes(2));
+                    await _cacheService.SetAsync(SessionStatusCacheKey, vm, TimeSpan.FromMinutes(2));
                 }
             }
         }
@@ -192,7 +253,7 @@ public class TokenController : Controller
         _logger.LogInformation("Received Zerodha callback in Web UI. Success: {Success}, User: {User}", success, userName);
 
         // Invalidate session status cache on callback
-        await _cacheService.RemoveAsync(CacheKeySessionStatus);
+        await _cacheService.RemoveAsync(SessionStatusCacheKey);
 
         // Mask the token — show only first 8 and last 4 characters for security
         string? maskedToken = null;

@@ -174,25 +174,34 @@ $$;
 
 
 -- ----------------------------------------------------------------------------
--- Procedure: sp_upsert_zerodha_session
+-- Procedure: sp_save_user_zerodha_credentials
+-- Saves a user's own Kite Connect API key/secret (Token page). A changed API key belongs to another Kite app, so the
+-- old token and account details are cleared and the user connects Zerodha again. A NULL secret keeps the stored one.
+-- (Replaces sp_upsert_zerodha_session, which keyed the row by api_key for the removed headless login.)
 -- ----------------------------------------------------------------------------
 DROP PROCEDURE IF EXISTS sp_upsert_zerodha_session CASCADE;
 DROP PROCEDURE IF EXISTS sp_upsert_zerodha_session(VARCHAR, VARCHAR) CASCADE;
+DROP PROCEDURE IF EXISTS sp_save_user_zerodha_credentials(INT, VARCHAR, VARCHAR) CASCADE;
 
-CREATE OR REPLACE PROCEDURE sp_upsert_zerodha_session(
+CREATE OR REPLACE PROCEDURE sp_save_user_zerodha_credentials(
+    p_user_id INT,
     p_api_key VARCHAR(50),
-    p_access_token VARCHAR(255)
+    p_api_secret VARCHAR(100)
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    INSERT INTO zerodha_sessions (api_key, access_token, is_active, created_at)
-    VALUES (p_api_key, p_access_token, FALSE, NOW())
-    ON CONFLICT (api_key)
+    INSERT INTO zerodha_sessions (user_id, api_key, api_secret, access_token, is_active, is_ddpi_enabled, created_at)
+    VALUES (p_user_id, p_api_key, p_api_secret, NULL, FALSE, FALSE, NOW())
+    ON CONFLICT (user_id)
     DO UPDATE SET
-        access_token = EXCLUDED.access_token,
-        is_active    = FALSE,
-        created_at   = NOW();
+        api_key      = EXCLUDED.api_key,
+        api_secret   = COALESCE(EXCLUDED.api_secret, zerodha_sessions.api_secret),
+        access_token = CASE WHEN zerodha_sessions.api_key = EXCLUDED.api_key THEN zerodha_sessions.access_token END,
+        is_active    = zerodha_sessions.is_active AND zerodha_sessions.api_key = EXCLUDED.api_key,
+        client_id    = CASE WHEN zerodha_sessions.api_key = EXCLUDED.api_key THEN zerodha_sessions.client_id END,
+        user_name    = CASE WHEN zerodha_sessions.api_key = EXCLUDED.api_key THEN zerodha_sessions.user_name END,
+        user_email   = CASE WHEN zerodha_sessions.api_key = EXCLUDED.api_key THEN zerodha_sessions.user_email END;
 END;
 $$;
 
@@ -913,5 +922,38 @@ BEGIN
     DELETE FROM user_favorite_symbols
     WHERE user_id = p_user_id
       AND symbol = UPPER(TRIM(p_symbol));
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Procedure: sp_save_role_page_permissions
+-- Role Permissions screen: upserts page access for one role in a single call.
+-- p_page_keys[i] gets p_allowed[i]; both arrays must be the same length.
+-- ----------------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_save_role_page_permissions(VARCHAR, VARCHAR[], BOOLEAN[], VARCHAR) CASCADE;
+
+CREATE OR REPLACE PROCEDURE sp_save_role_page_permissions(
+    p_role VARCHAR,
+    p_page_keys VARCHAR[],
+    p_allowed BOOLEAN[],
+    p_updated_by VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF COALESCE(array_length(p_page_keys, 1), 0) <> COALESCE(array_length(p_allowed, 1), 0) THEN
+        RAISE EXCEPTION 'sp_save_role_page_permissions: % page keys but % allowed flags',
+            COALESCE(array_length(p_page_keys, 1), 0), COALESCE(array_length(p_allowed, 1), 0);
+    END IF;
+
+    INSERT INTO role_page_permissions (role, page_key, is_allowed, updated_at, updated_by)
+    SELECT TRIM(p_role), k.page_key, k.is_allowed, NOW(), p_updated_by
+    FROM UNNEST(p_page_keys, p_allowed) AS k(page_key, is_allowed)
+    ON CONFLICT (role, page_key)
+    DO UPDATE SET
+        is_allowed = EXCLUDED.is_allowed,
+        updated_at = EXCLUDED.updated_at,
+        updated_by = EXCLUDED.updated_by;
 END;
 $$;

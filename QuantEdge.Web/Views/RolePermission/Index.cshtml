@@ -1,0 +1,72 @@
+@{
+    ViewData["Title"] = "Role Permissions";
+    ViewData["PageTitle"] = "Role Permissions";
+}
+
+<link rel="stylesheet" href="~/css/role-permission.css" asp-append-version="true" />
+
+<div class="rp-container">
+    <!-- Role picker + summary -->
+    <div class="rp-header-card">
+        <div class="rp-header-left">
+            <div class="rp-role-tabs" role="tablist" aria-label="Role">
+                <button type="button" class="rp-role-tab active" data-role="User" role="tab" aria-selected="true"
+                        data-tooltip="👤 **User role**: Choose which pages standard users can open.">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    User
+                </button>
+                <button type="button" class="rp-role-tab" data-role="Admin" role="tab" aria-selected="false"
+                        data-tooltip="🛡️ **Admin role**: Always has every page - shown for reference.">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    Admin
+                </button>
+            </div>
+            <p class="rp-header-note" id="rpRoleNote">
+                Turn pages on or off for the <strong>User</strong> role. Changes apply to signed-in users within a couple of minutes - no re-login needed.
+            </p>
+        </div>
+        <div class="rp-stats">
+            <div class="rp-stat">
+                <span class="rp-stat-value" id="rpAllowedCount">-</span>
+                <span class="rp-stat-label">Pages allowed</span>
+            </div>
+            <div class="rp-stat">
+                <span class="rp-stat-value rp-stat-muted" id="rpTotalCount">-</span>
+                <span class="rp-stat-label">Total pages</span>
+            </div>
+            <div class="rp-stat">
+                <span class="rp-stat-value rp-stat-amber" id="rpPendingCount">0</span>
+                <span class="rp-stat-label">Unsaved changes</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="rp-meta" id="rpLastUpdated"></div>
+
+    <!-- Page groups (rendered by role-permission.js) -->
+    <div class="rp-groups" id="rpGroups">
+        <div class="rp-loading">Loading page permissions...</div>
+    </div>
+
+    <!-- Save bar -->
+    <div class="rp-save-bar" id="rpSaveBar">
+        <span class="rp-save-hint" id="rpSaveHint">No unsaved changes.</span>
+        <div class="rp-save-actions">
+            <button type="button" class="rp-btn rp-btn-ghost" id="btnRpReset" disabled
+                    data-tooltip="↩️ **Discard**: Undo unsaved changes.">Discard</button>
+            <button type="button" class="rp-btn rp-btn-ghost" id="btnRpDefaults"
+                    data-tooltip="🧩 **Defaults**: Set every page back to its built-in default (still needs Save).">Restore defaults</button>
+            <button type="button" class="rp-btn rp-btn-primary" id="btnRpSave" disabled
+                    data-tooltip="💾 **Save**: Apply these page permissions.">Save changes</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/role-permission.js" asp-append-version="true"></script>
+}

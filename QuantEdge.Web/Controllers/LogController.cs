@@ -1,4 +1,6 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -18,7 +20,8 @@ namespace QuantEdge.Web.Controllers;
 /// Controller serving the Log Manager interface and daily log file discovery/reading API.
 /// Includes date range filtering API (startDate & endDate) and category isolation (Web vs API).
 /// </summary>
-[Authorize(Roles = "Admin")]
+[Authorize]
+[PageAccess(AppPages.Logs)]
 public class LogController : Controller
 {
     private readonly IConfiguration _configuration;

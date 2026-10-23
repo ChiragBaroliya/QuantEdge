@@ -66,10 +66,6 @@ try
                 builder.Services.AddHostedService<BacktestWorker>();   // queued backtests (Plan Phase 7) - stored candles only
             }
         }
-        else if (actualJobType.Equals("activezerodhatoken", StringComparison.OrdinalIgnoreCase))
-        {
-            builder.Services.AddHostedService<ActiveZerodhaTokenWorker>();
-        }
         else if (actualJobType.Equals("instrumentsync", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddHostedService<InstrumentSyncWorker>();
@@ -88,12 +84,6 @@ try
             builder.Services.AddHostedService<ManualShortSquareOffWorker>();   // Manual Short Selling: intraday square-off (manual_paper_* only)
             builder.Services.AddHostedService<ManualLimitOrderWorker>();       // Manual Paper limit orders: fill / expire (manual_paper_* only)
             builder.Services.AddHostedService<ManualAutoExitWorker>();         // Manual Paper Auto Exit: Target / SL / Trailing SL from stored 1m candles
-        }
-        else if (actualJobType.Equals("realtrade", StringComparison.OrdinalIgnoreCase) || actualJobType.Equals("autorealtrade", StringComparison.OrdinalIgnoreCase))
-        {
-            builder.Services.AddHostedService<AutoRealTradeSignalScanWorker>();
-            builder.Services.AddHostedService<AutoRealPositionMonitorWorker>();
-            builder.Services.AddHostedService<RealOrderChargesWorker>();
         }
         else if (actualJobType.Equals("clearcache", StringComparison.OrdinalIgnoreCase))
         {

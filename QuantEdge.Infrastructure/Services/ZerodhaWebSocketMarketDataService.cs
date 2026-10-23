@@ -27,7 +27,6 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
     public event Func<TickDataDto, Task>? OnTickReceived;
     public event Func<MarketDepthDto, Task>? OnDepthReceived;
 
-    private readonly BrokerConfig _config;
     private readonly ILogger<ZerodhaWebSocketMarketDataService> _logger;
     private readonly IBrokerApiEventRecorder? _apiEventRecorder;
     private readonly IDbConnectionFactory _connectionFactory;
@@ -64,7 +63,6 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
     public bool IsSubscribed(string symbol) => !string.IsNullOrWhiteSpace(symbol) && _subscribedSymbols.ContainsKey(symbol);
 
     public ZerodhaWebSocketMarketDataService(
-        IOptions<BrokerConfig> config,
         IDbConnectionFactory connectionFactory,
         IStockMasterRepository stockMasterRepository,
         ICacheService cacheService,
@@ -72,7 +70,6 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
         IBrokerApiEventRecorder? apiEventRecorder = null)
     {
         _apiEventRecorder = apiEventRecorder;
-        _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
@@ -84,28 +81,30 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
         // 1. Dynamic load of active stock instruments from database
         await LoadInstrumentMappingsAsync();
 
-        _logger.LogInformation("Resolving active Zerodha session from database...");
+        // The feed is system-wide, so it runs on an Admin user's active session (fn_get_market_data_zerodha_session).
+        _logger.LogInformation("Resolving Admin's active Zerodha session from database...");
+        string? apiKey = null;
         string? token = null;
         try
         {
             using var conn = _connectionFactory.CreateConnection();
-            token = await conn.QueryFirstOrDefaultAsync<string?>(
-                "SELECT access_token FROM zerodha_sessions WHERE api_key = @ApiKey AND is_active = TRUE LIMIT 1;",
-                new { ApiKey = _config.ApiKey }
-            );
+            var session = await conn.QueryFirstOrDefaultAsync<(string? ApiKey, string? AccessToken)>(
+                "SELECT api_key, access_token FROM fn_get_market_data_zerodha_session();");
+            apiKey = session.ApiKey;
+            token = session.AccessToken;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to resolve active AccessToken from the database.");
         }
 
-        if (string.IsNullOrWhiteSpace(token))
+        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(token))
         {
-            _logger.LogError("Zerodha AccessToken is not configured or could not be found in the database. Establish session via the API login callback first!");
+            _logger.LogError("No active Zerodha session for an Admin user. An Admin must connect Zerodha (Token page) first!");
             throw new InvalidOperationException("Zerodha AccessToken is missing.");
         }
 
-        _logger.LogInformation("Connecting to Zerodha Kite WebSocket with API Key: {ApiKey}", _config.ApiKey);
+        _logger.LogInformation("Connecting to Zerodha Kite WebSocket with API Key: {ApiKey}", apiKey);
 
         try
         {
@@ -127,7 +126,7 @@ public class ZerodhaWebSocketMarketDataService : IWebSocketMarketDataService, ID
             }
 
             // Initialize Kite Connect Ticker
-            _ticker = new Ticker(_config.ApiKey, token);
+            _ticker = new Ticker(apiKey, token);
 
             // Wire events
             _ticker.OnTick += OnKiteTick;

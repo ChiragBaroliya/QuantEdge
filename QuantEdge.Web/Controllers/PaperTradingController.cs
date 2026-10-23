@@ -1,4 +1,6 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -7,6 +9,7 @@ namespace QuantEdge.Web.Controllers;
 
 // Manual (Paper) Trading is open to every signed-in user; each user trades their own manual_paper_* account.
 [Authorize]
+[PageAccess(AppPages.ManualTrading)]
 public class PaperTradingController : Controller
 {
     private readonly IConfiguration _configuration;

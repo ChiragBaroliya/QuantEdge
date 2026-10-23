@@ -1,11 +1,14 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 
 namespace QuantEdge.Web.Controllers;
 
-[Authorize(Roles = "Admin")]
+[Authorize]
+[PageAccess(AppPages.CandleSummary)]
 public class CandleSummaryController : Controller
 {
     private readonly IConfiguration _configuration;

@@ -51,17 +51,9 @@ sc.exe description "Worker_marketdatafeed_60m" "QuantEdge Live 60-Minute Market 
 sc.exe create "Worker_marketdatafeed_1d" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe marketdatafeed:1d" start= auto
 sc.exe description "Worker_marketdatafeed_1d" "QuantEdge Live 1-Day Market Data Feed Service"
 
-# 5. Zerodha Session Token Refresher (Window: 6:00 AM - 8:30 AM IST)
-sc.exe create "Worker_activezerodhatoken" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe activezerodhatoken" start= auto
-sc.exe description "Worker_activezerodhatoken" "QuantEdge Active Zerodha Access Token Maintainer Service"
-
-# 6. Zerodha Instruments Synchronizer (Cron: Monday 8:00 AM IST)
+# 5. Zerodha Instruments Synchronizer (Cron: Monday 8:00 AM IST)
 sc.exe create "Worker_instrumentsync" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe instrumentsync" start= auto
 sc.exe description "Worker_instrumentsync" "QuantEdge Zerodha Instruments Synchronizer Service"
-
-# 7. Daily Swing Trading Strategy EOD Analysis Job (Runs daily at 15:45 IST)
-sc.exe create "Worker_swingtradingjob" binPath= "C:\QuantEdge\Worker\QuantEdge.Worker.exe swingtradingjob" start= auto
-sc.exe description "Worker_swingtradingjob" "QuantEdge Daily Swing Trading strategy EOD analysis service"
 ```
 
 ### Category B: Run-Once/Historical Services (Manual Start)
@@ -105,9 +97,7 @@ Start-Service -Name "Worker_marketdatafeed_5m"
 Start-Service -Name "Worker_marketdatafeed_15m"
 Start-Service -Name "Worker_marketdatafeed_60m"
 Start-Service -Name "Worker_marketdatafeed_1d"
-Start-Service -Name "Worker_activezerodhatoken"
 Start-Service -Name "Worker_instrumentsync"
-Start-Service -Name "Worker_swingtradingjob"
 
 # Trigger a historical gap sync manually
 Start-Service -Name "Worker_history_1m"
@@ -120,9 +110,7 @@ Stop-Service -Name "Worker_marketdatafeed_5m"
 Stop-Service -Name "Worker_marketdatafeed_15m"
 Stop-Service -Name "Worker_marketdatafeed_60m"
 Stop-Service -Name "Worker_marketdatafeed_1d"
-Stop-Service -Name "Worker_activezerodhatoken"
 Stop-Service -Name "Worker_instrumentsync"
-Stop-Service -Name "Worker_swingtradingjob"
 ```
 
 ### Get Service Status

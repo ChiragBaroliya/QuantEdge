@@ -118,6 +118,14 @@ public class UpdateDdpiDto
     public bool IsDdpiEnabled { get; set; }
 }
 
+// A user's own Kite Connect app credentials (Token page). Blank ApiSecret keeps the stored secret.
+public class SaveZerodhaCredentialsDto
+{
+    public int UserId { get; set; } = 1;
+    public string ApiKey { get; set; } = string.Empty;
+    public string? ApiSecret { get; set; }
+}
+
 public class ZerodhaPositionsDto
 {
     public List<ZerodhaPositionItemDto> Net { get; set; } = new();

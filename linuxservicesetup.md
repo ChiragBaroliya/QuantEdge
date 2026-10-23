@@ -148,7 +148,6 @@ declare -a SERVICES=(
     "worker-marketdatafeed-15m|marketdatafeed:15m|true|QuantEdge Live 15-Minute Market Data Feed Service"
     "worker-marketdatafeed-60m|marketdatafeed:60m|true|QuantEdge Live 60-Minute Market Data Feed Service"
     "worker-marketdatafeed-1d|marketdatafeed:1d|true|QuantEdge Live 1-Day Market Data Feed Service"
-    "worker-activezerodhatoken|activezerodhatoken|true|QuantEdge Active Zerodha Access Token Maintainer Service"
     "worker-instrumentsync|instrumentsync|true|QuantEdge Zerodha Instruments Synchronizer Service"
     
     # Worker Services - Category B (Manual Run-Once / Historical - Start on Demand)
@@ -245,7 +244,6 @@ sudo systemctl start quantedge-worker-marketdatafeed-5m
 sudo systemctl start quantedge-worker-marketdatafeed-15m
 sudo systemctl start quantedge-worker-marketdatafeed-60m
 sudo systemctl start quantedge-worker-marketdatafeed-1d
-sudo systemctl start quantedge-worker-activezerodhatoken
 sudo systemctl start quantedge-worker-instrumentsync
 
 # Manually Trigger historical gaps sync
@@ -259,7 +257,6 @@ sudo systemctl stop quantedge-worker-marketdatafeed-5m
 sudo systemctl stop quantedge-worker-marketdatafeed-15m
 sudo systemctl stop quantedge-worker-marketdatafeed-60m
 sudo systemctl stop quantedge-worker-marketdatafeed-1d
-sudo systemctl stop quantedge-worker-activezerodhatoken
 sudo systemctl stop quantedge-worker-instrumentsync
 ```
 

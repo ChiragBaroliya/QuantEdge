@@ -18,12 +18,9 @@ scp -r "D:\QuantEdge\Job\*" root@217.216.79.53:/opt/quantedge/worker/
 | `marketdatafeed:15m` | `Worker_marketdatafeed_15m` | `quantedge-worker-marketdatafeed-15m` | Live 15-Minute Candle Feed & Aggregation |
 | `marketdatafeed:60m` | `Worker_marketdatafeed_60m` | `quantedge-worker-marketdatafeed-60m` | Live 60-Minute Candle Feed & Aggregation |
 | `marketdatafeed:1d` | `Worker_marketdatafeed_1d` | `quantedge-worker-marketdatafeed-1d` | Live Daily Candle Feed & Aggregation |
-| `activezerodhatoken` | `Worker_activezerodhatoken` | `quantedge-worker-activezerodhatoken` | Zerodha Session Token Refresher |
 | `instrumentsync` | `Worker_instrumentsync` | `quantedge-worker-instrumentsync` | Zerodha Master Instrument List Sync |
 | `history:<timeframe>` | `Worker_history_<tf>` | `quantedge-worker-history-<tf>` | Historical Data Backfill Sync |
-| `swingtradingjob` | `Worker_swingtradingjob` | `quantedge-worker-swingtradingjob` | Daily Swing Trading Strategy Scan Job |
 | `autotrade` | `Worker_autotrade` | `quantedge-worker-autotrade` | Automated Paper Trading Scanner & Exit Monitor |
-| `realtrade` | `Worker_realtrade` | `quantedge-worker-realtrade` | Automated Real Trading (Live Broker Money) Scanner & Exit Monitor |
 | `clearcache` | `Worker_clearcache` | `quantedge-worker-clearcache` | On-Demand Memory Cache Reset Job |
 
 

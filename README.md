@@ -116,7 +116,6 @@ Job selection examples:
 - history
 - history:5m
 - instrumentsync
-- activezerodhatoken
 - swingintraday
 - autotrade or autotradescan
 - clearcache
@@ -126,13 +125,10 @@ Important workers:
 - MarketDataFeedWorker: market-hours-aware live stream loop and reconnect handling
 - HistoricalDataSyncWorker: gap sync for missing historical candles
 - InstrumentSyncWorker: startup/weekly instrument master sync
-- ActiveZerodhaTokenWorker: token activation window checks (6:00-8:30 AM IST)
 - AutoTradeSignalScanWorker: 15-minute scan loop over active stocks
 - AutoTradePositionMonitorWorker: monitors open auto positions and exits
 - SwingTradingIntradayJobWorker: 30-minute intraday swing scan
-- SwingTradingDailyJobWorker: end-of-day swing job scheduler
 - HistoryResetWorker: targeted date-range reset/rebuild
-- TodayHistoryResetWorker: today reset/rebuild
 - ClearCacheWorker: clears memory cache and exits
 
 ## QuantEdge.Infrastructure

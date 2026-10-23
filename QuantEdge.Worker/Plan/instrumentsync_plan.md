@@ -16,7 +16,6 @@ sudo systemctl stop quantedge-worker-instrumentsync
 sudo systemctl stop quantedge-worker-marketdatafeed-1m
 sudo systemctl stop quantedge-worker-marketdatafeed-5m
 sudo systemctl stop quantedge-worker-marketdatafeed-15m
-sudo systemctl stop quantedge-worker-activezerodhatoken
 ```
 
 ---

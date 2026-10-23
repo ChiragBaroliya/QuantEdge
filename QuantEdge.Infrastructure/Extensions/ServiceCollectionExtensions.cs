@@ -60,6 +60,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IZerodhaSessionRepository, ZerodhaSessionRepository>();
         services.AddTransient<IIndianHolidayRepository, IndianHolidayRepository>();
         services.AddTransient<IUserRepository, UserRepository>();
+        services.AddTransient<IRolePermissionRepository, RolePermissionRepository>();
         services.AddTransient<ISwingSlotRecommendationRepository, SwingSlotRecommendationRepository>();
         services.AddTransient<ISwingStrategySettingsRepository, SwingStrategySettingsRepository>();
         services.AddTransient<IFavoriteSymbolRepository, FavoriteSymbolRepository>();

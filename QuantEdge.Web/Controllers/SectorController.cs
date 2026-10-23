@@ -1,4 +1,6 @@
 using System;
+using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Web.Filters;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,6 +13,7 @@ namespace QuantEdge.Web.Controllers;
 /// the sector have a valid setup, and why). Both pages load their data from GET /api/sectors/... in the browser.
 /// </summary>
 [Authorize]
+[PageAccess(AppPages.SectorDashboard)]
 public class SectorController : Controller
 {
     private readonly IConfiguration _configuration;
