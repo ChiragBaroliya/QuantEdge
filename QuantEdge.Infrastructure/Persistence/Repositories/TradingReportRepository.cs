@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Infrastructure.DTOs;
+using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Services;
 
 namespace QuantEdge.Infrastructure.Persistence.Repositories;
@@ -52,14 +52,20 @@ public class TradingReportRepository : ITradingReportRepository
         {
             Mode = filter.TradeMode ?? "all",
             UserId = !string.IsNullOrWhiteSpace(filter.UserId) && filter.UserId != "all" ? filter.UserId.Trim() : null,
-            StartDate = filter.StartDate,
-            EndDate = filter.EndDate,
+            StartDate = IstDayStartUtc(filter.StartDate),
+            EndDate = IstDayStartUtc(filter.EndDate?.AddDays(1)),
             Symbol = !string.IsNullOrWhiteSpace(filter.Symbol) ? filter.Symbol.Trim() : null
         };
 
         var rawList = (await conn.QueryAsync<dynamic>(sql, parameters)).ToList();
         return await MapTradesWithChargesAsync(rawList);
     }
+
+    // The UI sends calendar dates (yyyy-MM-dd) meaning IST trading days. The SQL range is [start, end): start = IST
+    // midnight of the first day, end = IST midnight after the last day - so the last day's trades are included.
+    private static DateTime? IstDayStartUtc(DateTime? istDate) => istDate.HasValue
+        ? TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(istDate.Value.Date, DateTimeKind.Unspecified), TimeZoneHelper.IndianTimeZone)
+        : null;
 
     public async Task<PagedResult<TradingReportTradeDto>> GetTradesPagedAsync(ReportTradesFilterDto filter, CancellationToken cancellationToken = default)
     {
@@ -91,8 +97,8 @@ public class TradingReportRepository : ITradingReportRepository
         {
             Mode = filter.TradeMode ?? "all",
             UserId = !string.IsNullOrWhiteSpace(filter.UserId) && filter.UserId != "all" ? filter.UserId.Trim() : null,
-            StartDate = filter.StartDate,
-            EndDate = filter.EndDate,
+            StartDate = IstDayStartUtc(filter.StartDate),
+            EndDate = IstDayStartUtc(filter.EndDate?.AddDays(1)),
             Symbol = !string.IsNullOrWhiteSpace(filter.Symbol) ? filter.Symbol.Trim() : null,
             TradeType = filter.TradeType ?? "all",
             PnlFilter = filterOnNet ? "all" : pnlFilter,
@@ -122,92 +128,13 @@ public class TradingReportRepository : ITradingReportRepository
     public async Task<TradingReportSummaryDto> GetSummaryAsync(ReportFilterDto filter, CancellationToken cancellationToken = default)
     {
         var trades = await GetTradesAsync(filter, cancellationToken);
-        if (trades.Count == 0)
-        {
-            return new TradingReportSummaryDto(
-                TotalInvestedCapital: 0m,
-                NetRealizedPnl: 0m,
-                TotalRoiPct: 0m,
-                TotalTrades: 0,
-                WinningTrades: 0,
-                LosingTrades: 0,
-                WinRatePct: 0m,
-                GrossProfit: 0m,
-                GrossLoss: 0m,
-                ProfitFactor: 0m,
-                AvgTradePnl: 0m,
-                AvgTradeRoiPct: 0m,
-                MaxDrawdownPct: 0m,
-                BestTradePnl: 0m,
-                WorstTradePnl: 0m
-            );
-        }
-
-        // All performance stats below are on NET P&L (after estimated charges) - what actually reaches the account.
-        decimal totalInvested = trades.Sum(t => t.InvestedAmount);
-        decimal grossPnl = trades.Sum(t => t.RealizedPnl);
-        decimal totalCharges = trades.Sum(t => t.Charges);
-        decimal netPnl = trades.Sum(t => t.NetPnl);
-        decimal totalRoi = totalInvested > 0m ? Math.Round((netPnl / totalInvested) * 100m, 2) : 0m;
-
-        int wins = trades.Count(t => t.NetPnl > 0);
-        int losses = trades.Count(t => t.NetPnl < 0);
-        decimal winRate = trades.Count > 0 ? Math.Round((decimal)wins / trades.Count * 100m, 2) : 0m;
-
-        decimal grossProfit = trades.Where(t => t.NetPnl > 0).Sum(t => t.NetPnl);
-        decimal grossLoss = Math.Abs(trades.Where(t => t.NetPnl < 0).Sum(t => t.NetPnl));
-        decimal profitFactor = grossLoss > 0m ? Math.Round(grossProfit / grossLoss, 2) : (grossProfit > 0m ? 99.99m : 0m);
-
-        decimal avgPnl = Math.Round(netPnl / trades.Count, 2);
-        decimal avgRoi = Math.Round(trades.Average(t => t.ReturnPct), 2);
-        decimal bestPnl = trades.Max(t => t.NetPnl);
-        decimal worstPnl = trades.Min(t => t.NetPnl);
-
-        decimal peak = 0m;
-        decimal maxDrawdown = 0m;
-        decimal currentEquity = 0m;
-
-        foreach (var t in trades.OrderBy(x => x.ExecutedAt))
-        {
-            currentEquity += t.NetPnl;
-            if (currentEquity > peak)
-            {
-                peak = currentEquity;
-            }
-            decimal drawdown = peak - currentEquity;
-            if (drawdown > maxDrawdown)
-            {
-                maxDrawdown = drawdown;
-            }
-        }
-
-        decimal maxDrawdownPct = totalInvested > 0m ? Math.Round((maxDrawdown / totalInvested) * 100m, 2) : 0m;
-
-        return new TradingReportSummaryDto(
-            TotalInvestedCapital: Math.Round(totalInvested, 2),
-            NetRealizedPnl: Math.Round(netPnl, 2),
-            TotalRoiPct: totalRoi,
-            TotalTrades: trades.Count,
-            WinningTrades: wins,
-            LosingTrades: losses,
-            WinRatePct: winRate,
-            GrossProfit: Math.Round(grossProfit, 2),
-            GrossLoss: Math.Round(grossLoss, 2),
-            ProfitFactor: profitFactor,
-            AvgTradePnl: avgPnl,
-            AvgTradeRoiPct: avgRoi,
-            MaxDrawdownPct: maxDrawdownPct,
-            BestTradePnl: Math.Round(bestPnl, 2),
-            WorstTradePnl: Math.Round(worstPnl, 2),
-            GrossRealizedPnl: Math.Round(grossPnl, 2),
-            TotalCharges: Math.Round(totalCharges, 2)
-        );
+        return TradingReportCalculator.Summary(trades);
     }
 
     public async Task<IReadOnlyList<TradingReportPeriodDto>> GetPeriodicBreakdownAsync(ReportFilterDto filter, CancellationToken cancellationToken = default)
     {
-        var trades = (await GetTradesAsync(filter, cancellationToken)).OrderBy(t => t.ExecutedAt).ToList();
-        return CalculatePeriods(trades, filter.PeriodType);
+        var trades = await GetTradesAsync(filter, cancellationToken);
+        return TradingReportCalculator.Periods(trades, filter.PeriodType);
     }
 
     public async Task<PagedResult<TradingReportPeriodDto>> GetPeriodicBreakdownPagedAsync(ReportPeriodsFilterDto filter, CancellationToken cancellationToken = default)
@@ -217,60 +144,18 @@ public class TradingReportRepository : ITradingReportRepository
             TradeMode: filter.TradeMode,
             UserId: filter.UserId,
             StartDate: filter.StartDate,
-            EndDate: filter.EndDate
+            EndDate: filter.EndDate,
+            Symbol: filter.Symbol
         );
 
-        var allPeriods = (await GetPeriodicBreakdownAsync(baseFilter, cancellationToken)).ToList();
-
-        // Apply PnL filter
-        if (string.Equals(filter.PnlFilter, "profit", StringComparison.OrdinalIgnoreCase))
-        {
-            allPeriods = allPeriods.Where(p => p.NetPnl > 0).ToList();
-        }
-        else if (string.Equals(filter.PnlFilter, "loss", StringComparison.OrdinalIgnoreCase))
-        {
-            allPeriods = allPeriods.Where(p => p.NetPnl < 0).ToList();
-        }
-
-        int page = filter.Page < 1 ? 1 : filter.Page;
-        int pageSize = filter.PageSize < 1 ? 10 : filter.PageSize;
-        long totalCount = allPeriods.Count;
-        int totalPages = totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 0;
-
-        var pagedItems = allPeriods
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToList();
-
-        return new PagedResult<TradingReportPeriodDto>(pagedItems, totalCount, page, pageSize, totalPages);
+        var allPeriods = await GetPeriodicBreakdownAsync(baseFilter, cancellationToken);
+        return TradingReportCalculator.PagePeriods(allPeriods, filter.PnlFilter, filter.Page, filter.PageSize);
     }
 
     public async Task<IReadOnlyList<TradingReportEquityPointDto>> GetEquityCurveAsync(ReportFilterDto filter, CancellationToken cancellationToken = default)
     {
-        var trades = (await GetTradesAsync(filter, cancellationToken)).OrderBy(t => t.ExecutedAt).ToList();
-        if (trades.Count == 0) return Array.Empty<TradingReportEquityPointDto>();
-
-        var result = new List<TradingReportEquityPointDto>();
-        decimal runningPnl = 0m;
-        decimal runningInvested = 0m;
-
-        foreach (var t in trades)
-        {
-            runningPnl += t.NetPnl;
-            runningInvested += t.InvestedAmount;
-            decimal roi = runningInvested > 0m ? Math.Round((runningPnl / runningInvested) * 100m, 2) : 0m;
-
-            result.Add(new TradingReportEquityPointDto(
-                Timestamp: t.ExecutedAt,
-                Label: t.ExecutedAt.ToString("dd MMM yyyy HH:mm"),
-                TradePnl: t.NetPnl,
-                CumulativePnl: Math.Round(runningPnl, 2),
-                InvestedCapital: Math.Round(runningInvested, 2),
-                CumulativeRoiPct: roi
-            ));
-        }
-
-        return result;
+        var trades = await GetTradesAsync(filter, cancellationToken);
+        return TradingReportCalculator.EquityCurve(trades);
     }
 
     // Loads the rate table and any stored actual charges for the real orders in these rows, then maps them.
@@ -339,13 +224,18 @@ public class TradingReportRepository : ITradingReportRepository
 
             // Real trades: Zerodha's own charges (Kite contract note, stored daily by RealOrderChargesWorker) when
             // BOTH legs have them; otherwise the estimate. Never a mix, so the figure is either fully actual or not.
+            // Each order's charges are split by this row's share of the order's quantity, so an entry closed by
+            // two partial exits isn't charged twice. A row larger than its matched order (scaled-in position, so
+            // the match is only the last of several entries) can't be attributed and uses the estimate.
             var row = (IDictionary<string, object>)r;
-            int? sellOrderId = row.TryGetValue("sell_order_id", out var so) && so != null ? Convert.ToInt32(so) : null;
-            int? buyOrderId = row.TryGetValue("buy_order_id", out var bo) && bo != null ? Convert.ToInt32(bo) : null;
-            bool isActual = sellOrderId.HasValue && buyOrderId.HasValue
+            int? sellOrderId = ReadInt(row, "sell_order_id");
+            int? buyOrderId = ReadInt(row, "buy_order_id");
+            decimal? sellShare = OrderShare(qty, ReadInt(row, "sell_order_qty"));
+            decimal? buyShare = OrderShare(qty, ReadInt(row, "buy_order_qty"));
+            bool isActual = sellOrderId.HasValue && buyOrderId.HasValue && sellShare.HasValue && buyShare.HasValue
                 && actualCharges.ContainsKey(sellOrderId.Value) && actualCharges.ContainsKey(buyOrderId.Value);
             decimal chargesTotal = isActual
-                ? actualCharges[sellOrderId!.Value].Total + actualCharges[buyOrderId!.Value].Total
+                ? actualCharges[sellOrderId!.Value].Total * sellShare!.Value + actualCharges[buyOrderId!.Value].Total * buyShare!.Value
                 : estimate.Total;
             decimal netPnl = pnl - chargesTotal;
             decimal returnPct = invested > 0m ? Math.Round((netPnl / invested) * 100m, 2) : 0m;
@@ -378,87 +268,22 @@ public class TradingReportRepository : ITradingReportRepository
                 Charges: Math.Round(chargesTotal, 2),
                 NetPnl: Math.Round(netPnl, 2),
                 ChargeProduct: chargeProduct,
-                ChargeSource: isActual ? "ACTUAL" : "ESTIMATED"
+                ChargeSource: isActual ? "ACTUAL" : "ESTIMATED",
+                OpenedAt: openAt
             ));
         }
         return result;
     }
 
-    private static List<TradingReportPeriodDto> CalculatePeriods(List<TradingReportTradeDto> trades, string periodType)
+    private static int? ReadInt(IDictionary<string, object> row, string key) =>
+        row.TryGetValue(key, out var v) && v != null ? Convert.ToInt32(v) : null;
+
+    // Fraction of an order's charges that belong to a row of rowQty. Order quantity unknown (column absent before the
+    // SQL update) -> whole order, the old behaviour; row larger than the order -> null (not attributable).
+    private static decimal? OrderShare(int rowQty, int? orderQty)
     {
-        if (trades.Count == 0) return new List<TradingReportPeriodDto>();
-
-        periodType = (periodType ?? "daily").ToLowerInvariant();
-        var grouped = trades.GroupBy(t => GetPeriodKey(t.ExecutedAt, periodType));
-
-        var periodList = new List<TradingReportPeriodDto>();
-        decimal runningPnl = 0m;
-
-        foreach (var g in grouped)
-        {
-            var periodTrades = g.ToList();
-            var minDate = periodTrades.Min(t => t.ExecutedAt).Date;
-            var maxDate = periodTrades.Max(t => t.ExecutedAt).Date;
-
-            decimal periodInvested = periodTrades.Sum(t => t.InvestedAmount);
-            decimal periodGrossProfit = periodTrades.Where(t => t.NetPnl > 0).Sum(t => t.NetPnl);
-            decimal periodGrossLoss = Math.Abs(periodTrades.Where(t => t.NetPnl < 0).Sum(t => t.NetPnl));
-            decimal periodNetPnl = periodTrades.Sum(t => t.NetPnl);
-            decimal periodRoi = periodInvested > 0m ? Math.Round((periodNetPnl / periodInvested) * 100m, 2) : 0m;
-
-            int winCount = periodTrades.Count(t => t.NetPnl > 0);
-            int lossCount = periodTrades.Count(t => t.NetPnl < 0);
-            decimal winRate = periodTrades.Count > 0 ? Math.Round((decimal)winCount / periodTrades.Count * 100m, 2) : 0m;
-
-            runningPnl += periodNetPnl;
-            string label = FormatPeriodLabel(g.Key, minDate, maxDate, periodType);
-
-            periodList.Add(new TradingReportPeriodDto(
-                PeriodKey: g.Key,
-                PeriodLabel: label,
-                StartDate: minDate,
-                EndDate: maxDate,
-                TotalTrades: periodTrades.Count,
-                WinTrades: winCount,
-                LossTrades: lossCount,
-                WinRatePct: winRate,
-                InvestedCapital: Math.Round(periodInvested, 2),
-                GrossProfit: Math.Round(periodGrossProfit, 2),
-                GrossLoss: Math.Round(periodGrossLoss, 2),
-                NetPnl: Math.Round(periodNetPnl, 2),
-                RoiPct: periodRoi,
-                CumulativePnl: Math.Round(runningPnl, 2)
-            ));
-        }
-
-        return periodList.OrderByDescending(p => p.StartDate).ToList();
-    }
-
-    private static string GetPeriodKey(DateTime date, string periodType)
-    {
-        return periodType switch
-        {
-            "daily" => date.ToString("yyyy-MM-dd"),
-            "weekly" => $"{date.Year}-W{ISOWeek.GetWeekOfYear(date):D2}",
-            "fortnightly" => date.Day <= 15 ? $"{date:yyyy-MM}-H1" : $"{date:yyyy-MM}-H2",
-            "monthly" => date.ToString("yyyy-MM"),
-            "yearly" => date.ToString("yyyy"),
-            _ => date.ToString("yyyy-MM-dd")
-        };
-    }
-
-    private static string FormatPeriodLabel(string key, DateTime minDate, DateTime maxDate, string periodType)
-    {
-        return periodType switch
-        {
-            "daily" => minDate.ToString("dd MMM yyyy (ddd)"),
-            "weekly" => $"Week {ISOWeek.GetWeekOfYear(minDate)} ({minDate:dd MMM} – {maxDate:dd MMM yyyy})",
-            "fortnightly" => key.EndsWith("-H1") 
-                ? $"01–15 {minDate:MMM yyyy}" 
-                : $"16–{DateTime.DaysInMonth(minDate.Year, minDate.Month):D2} {minDate:MMM yyyy}",
-            "monthly" => minDate.ToString("MMMM yyyy"),
-            "yearly" => $"Year {minDate.Year}",
-            _ => minDate.ToString("dd MMM yyyy")
-        };
+        if (!orderQty.HasValue || orderQty.Value <= 0) return 1m;
+        if (rowQty <= 0 || rowQty > orderQty.Value) return null;
+        return (decimal)rowQty / orderQty.Value;
     }
 }

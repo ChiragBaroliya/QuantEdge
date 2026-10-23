@@ -130,9 +130,11 @@ $(document).ready(function () {
             clearTimeout(searchDebounceTimer);
             const val = $(this).val().trim();
             searchDebounceTimer = setTimeout(function () {
+                // The symbol filters the whole report (KPIs, charts, periods, trades) so every section agrees.
                 tradesPageState.symbol = val;
                 tradesPageState.page = 1;
-                fetchTradesPaged();
+                periodsPageState.page = 1;
+                loadFullReport();
             }, 300);
         });
 
@@ -214,6 +216,7 @@ $(document).ready(function () {
         const base = getBaseFilterParams();
         const params = {
             ...base,
+            symbol: tradesPageState.symbol || null,
             pnlFilter: periodsPageState.pnlFilter,
             page: periodsPageState.page,
             pageSize: periodsPageState.pageSize
@@ -293,6 +296,7 @@ $(document).ready(function () {
         const roiEl = $('#kpiTotalRoi');
         const roiSign = summary.totalRoiPct > 0 ? '+' : '';
         roiEl.text(`${roiSign}${summary.totalRoiPct.toFixed(2)}%`);
+        $('#kpiRoiBasis').text(`Net P&L ÷ peak capital deployed ${formatCurrency(summary.peakCapitalDeployed || 0)} • Max DD ${(summary.maxDrawdownPct || 0).toFixed(2)}%`);
         if (summary.totalRoiPct > 0) {
             roiEl.css('color', '#34d399');
         } else if (summary.totalRoiPct < 0) {
@@ -676,7 +680,7 @@ $(document).ready(function () {
     }
 
     function exportCsv() {
-        const params = getBaseFilterParams();
+        const params = { ...getBaseFilterParams(), symbol: tradesPageState.symbol || null };
         const queryStr = $.param(params);
         window.location.href = `/reports/export?${queryStr}`;
     }

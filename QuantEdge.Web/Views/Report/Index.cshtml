@@ -116,7 +116,7 @@
                 <div class="kpi-value-row">
                     <span id="kpiInvestedCapital" class="kpi-main-value" style="color: #38bdf8;">₹0.00</span>
                 </div>
-                <div class="kpi-subtext">Total executed buy volume in period</div>
+                <div class="kpi-subtext">Sum of every closed trade's entry value</div>
             </div>
         </div>
 
@@ -149,7 +149,7 @@
                 <div class="kpi-value-row">
                     <span id="kpiTotalRoi" class="kpi-main-value" style="color: #a78bfa;">0.00%</span>
                 </div>
-                <div class="kpi-subtext">(Net P&L / Total Invested Capital) × 100</div>
+                <div id="kpiRoiBasis" class="kpi-subtext" title="Turnover counts the same capital once per trade, so ROI uses the most capital held open at one time (overlapping trades summed).">Net P&L ÷ peak capital deployed</div>
             </div>
         </div>
 
@@ -295,8 +295,9 @@
                 <select id="tradesTypeFilter" class="report-filter-select-sm">
                     <option value="all" selected>All Trade Types</option>
                     <option value="auto">Auto Trading</option>
-                    <option value="manual">Manual / Intraday</option>
-                    <option value="swing">Swing</option>
+                    <option value="manual">Manual</option>
+                    <option value="intraday">Intraday (same-day exit)</option>
+                    <option value="swing">Swing Simulation</option>
                 </select>
                 <select id="tradesPnlFilter" class="report-filter-select-sm">
                     <option value="all" selected>All Outcomes</option>

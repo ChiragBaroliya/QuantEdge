@@ -128,11 +128,13 @@ public class ReportController : ControllerBase
         [FromQuery] string pnlFilter = "all",
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
+        [FromQuery] string? symbol = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
             var filter = new ReportPeriodsFilterDto(
+                Symbol: symbol,
                 PeriodType: periodType,
                 TradeMode: tradeMode,
                 UserId: userId,

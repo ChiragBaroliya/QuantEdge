@@ -63,16 +63,19 @@ public record ReportPeriodsFilterDto(
     DateTime? EndDate = null,
     string PnlFilter = "all",         // "all", "profit", "loss"
     int Page = 1,
-    int PageSize = 10
+    int PageSize = 10,
+    string? Symbol = null             // same symbol filter as the summary, so the period table agrees with the KPIs
 );
 
 /// <summary>
 /// Overall summary performance KPI metrics.
 /// </summary>
 public record TradingReportSummaryDto(
+    // Turnover: sum of every closed trade's entry value. The same capital reused N times counts N times.
     decimal TotalInvestedCapital,
     // Net P&L after estimated charges (GrossRealizedPnl − TotalCharges). All win/loss/drawdown stats use net.
     decimal NetRealizedPnl,
+    // Net P&L ÷ PeakCapitalDeployed - return on the capital actually tied up, not on turnover.
     decimal TotalRoiPct,
     int TotalTrades,
     int WinningTrades,
@@ -83,13 +86,16 @@ public record TradingReportSummaryDto(
     decimal ProfitFactor,
     decimal AvgTradePnl,
     decimal AvgTradeRoiPct,
+    // Largest peak-to-trough fall of equity (PeakCapitalDeployed + cumulative net P&L), as % of the peak.
     decimal MaxDrawdownPct,
     decimal BestTradePnl,
     decimal WorstTradePnl,
     // Price-difference P&L before any charges.
     decimal GrossRealizedPnl = 0m,
     // Estimated brokerage + STT + exchange + SEBI + stamp + GST + DP for the closed trades (ChargesCalculator).
-    decimal TotalCharges = 0m
+    decimal TotalCharges = 0m,
+    // Most entry value held open at one time (overlapping trades summed) - the capital base for ROI and drawdown.
+    decimal PeakCapitalDeployed = 0m
 );
 
 /// <summary>
@@ -104,11 +110,11 @@ public record TradingReportPeriodDto(
     int WinTrades,
     int LossTrades,
     decimal WinRatePct,
-    decimal InvestedCapital,
+    decimal InvestedCapital,     // turnover in the period
     decimal GrossProfit,
     decimal GrossLoss,
     decimal NetPnl,
-    decimal RoiPct,
+    decimal RoiPct,              // NetPnl ÷ peak capital deployed in the period
     decimal CumulativePnl
 );
 
@@ -120,8 +126,8 @@ public record TradingReportEquityPointDto(
     string Label,
     decimal TradePnl,
     decimal CumulativePnl,
-    decimal InvestedCapital,
-    decimal CumulativeRoiPct
+    decimal InvestedCapital,     // cumulative turnover
+    decimal CumulativeRoiPct     // CumulativePnl ÷ peak capital deployed so far
 );
 
 /// <summary>
@@ -130,7 +136,7 @@ public record TradingReportEquityPointDto(
 public record TradingReportTradeDto(
     long Id,
     string Symbol,
-    string Mode,                 // "Real" or "Paper"
+    string Mode,                 // "Real", "Paper", "Manual Paper" or "Swing Sim"
     string Side,                 // "BUY" or "SELL"
     int Quantity,
     decimal EntryPrice,
@@ -140,7 +146,7 @@ public record TradingReportTradeDto(
     decimal RealizedPnl,
     // Net return % (NetPnl ÷ InvestedAmount).
     decimal ReturnPct,
-    string TradeType,            // "Swing", "Intraday", "Auto"
+    string TradeType,            // "Manual", "Auto" or "Swing"
     string ExitReason,
     DateTime ExecutedAt,
     int HoldDays,
@@ -152,7 +158,9 @@ public record TradingReportTradeDto(
     // Rate set used: CNC or MIS.
     string ChargeProduct = "CNC",
     // ACTUAL = Zerodha's contract-note charges for both legs (real trades); ESTIMATED = ChargesCalculator.
-    string ChargeSource = "ESTIMATED"
+    string ChargeSource = "ESTIMATED",
+    // Entry time when known (null = unknown; treated as opened at ExecutedAt for capital-deployed maths).
+    DateTime? OpenedAt = null
 );
 
 /// <summary>

@@ -430,6 +430,7 @@ $$;
 -- Function: fn_get_trading_report_trades
 -- Aggregates real and paper trading history and simulated swing positions
 -- for performance and investment reporting.
+-- p_start_date is inclusive, p_end_date exclusive (the caller passes the IST midnight after the last day).
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS fn_get_trading_report_trades(TEXT, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, TEXT);
 
@@ -456,7 +457,9 @@ RETURNS TABLE (
     hold_days INT,
     username VARCHAR(100),
     sell_order_id INT,   -- real trades: the order that closed the trade (real_orders.id) - for actual charges
-    buy_order_id INT     -- real trades: the BUY that opened it (latest filled BUY before the sell)
+    buy_order_id INT,    -- real trades: the BUY that opened it (latest filled BUY before the sell)
+    sell_order_qty INT,  -- real trades: quantities of those orders, so their actual charges are split
+    buy_order_qty INT    --   across partial exits by this row's share instead of counted in full
 )
 LANGUAGE plpgsql
 AS $$
@@ -479,19 +482,34 @@ BEGIN
             th.trade_type,
             COALESCE(th.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
             th.executed_at,
-            NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
+            pp.opened_at,                 -- entry time: same-day round trips are charged at intraday rates
             0::INT AS hold_days,
             COALESCE(a.user_id, 'default_user')::VARCHAR(100) AS username,
             NULL::INT AS sell_order_id,
-            NULL::INT AS buy_order_id
+            NULL::INT AS buy_order_id,
+            NULL::INT AS sell_order_qty,
+            NULL::INT AS buy_order_qty
         FROM paper_trade_history th
         LEFT JOIN paper_accounts a ON th.account_id = a.id
+        -- The position this exit closed: latest one of the symbol on the account, opened before the exit, on the
+        -- opposite side (a long for a SELL exit, a short for a BUY-to-cover). Without it every paper trade fell back
+        -- to delivery (CNC) charges, overstating intraday charges ~2.4x.
+        LEFT JOIN LATERAL (
+            SELECT p.opened_at
+            FROM paper_positions p
+            WHERE p.account_id = th.account_id
+              AND UPPER(p.symbol) = UPPER(th.symbol)
+              AND p.side = 1 - th.side
+              AND p.opened_at <= th.executed_at
+            ORDER BY p.opened_at DESC
+            LIMIT 1
+        ) pp ON TRUE
         WHERE (v_mode = 'all' OR v_mode = 'paper')
           -- Exit rows only: is_exit when the writer set it (Auto Paper - covers a short's BUY, skips its entry SELL),
           -- else the old rule.
           AND COALESCE(th.is_exit, th.side = 1 OR th.exit_reason IS NOT NULL OR th.realized_pnl <> 0)
           AND (p_start_date IS NULL OR th.executed_at >= p_start_date)
-          AND (p_end_date IS NULL OR th.executed_at <= p_end_date)
+          AND (p_end_date IS NULL OR th.executed_at < p_end_date)
           AND (v_symbol IS NULL OR th.symbol ILIKE v_symbol)
           AND (p_user_id IS NULL OR p_user_id = 'all' OR a.user_id = p_user_id)
 
@@ -514,13 +532,16 @@ BEGIN
             0::INT AS hold_days,
             COALESCE(u.username, 'admin')::VARCHAR(100) AS username,
             rth.order_id AS sell_order_id,
-            bo.id AS buy_order_id
+            bo.id AS buy_order_id,
+            so.quantity AS sell_order_qty,
+            bo.quantity AS buy_order_qty
         FROM real_trade_history rth
         LEFT JOIN app_users u ON rth.user_id = u.id
+        LEFT JOIN real_orders so ON so.id = rth.order_id
         -- The order that opened this position: latest filled entry of the symbol before the exit (status 1 = Filled) -
         -- a long BUY for a SELL exit, the short's SELL (is_short) for a BUY-to-cover exit.
         LEFT JOIN LATERAL (
-            SELECT ro.id, COALESCE(ro.filled_at, ro.created_at) AS filled_at
+            SELECT ro.id, ro.quantity, COALESCE(ro.filled_at, ro.created_at) AS filled_at
             FROM real_orders ro
             WHERE ro.user_id = rth.user_id
               AND UPPER(ro.symbol) = UPPER(rth.symbol)
@@ -534,7 +555,7 @@ BEGIN
         WHERE (v_mode = 'all' OR v_mode = 'real')
           AND COALESCE(rth.is_exit, rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
           AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
-          AND (p_end_date IS NULL OR rth.executed_at <= p_end_date)
+          AND (p_end_date IS NULL OR rth.executed_at < p_end_date)
           AND (v_symbol IS NULL OR rth.symbol ILIKE v_symbol)
           AND (p_user_id IS NULL OR p_user_id = 'all' OR u.id::TEXT = p_user_id OR u.username = p_user_id)
 
@@ -558,14 +579,16 @@ BEGIN
             0::INT AS hold_days,
             COALESCE(mu.username, 'admin')::VARCHAR(100) AS username,
             NULL::INT AS sell_order_id,
-            NULL::INT AS buy_order_id
+            NULL::INT AS buy_order_id,
+            NULL::INT AS sell_order_qty,
+            NULL::INT AS buy_order_qty
         FROM manual_paper_trade_history mh
         LEFT JOIN app_users mu ON mh.user_id = mu.id
         LEFT JOIN manual_paper_positions mp ON mp.id = mh.position_id
         WHERE (v_mode = 'all' OR v_mode = 'manual_paper')
           AND mh.is_exit
           AND (p_start_date IS NULL OR mh.executed_at >= p_start_date)
-          AND (p_end_date IS NULL OR mh.executed_at <= p_end_date)
+          AND (p_end_date IS NULL OR mh.executed_at < p_end_date)
           AND (v_symbol IS NULL OR mh.symbol ILIKE v_symbol)
           AND (p_user_id IS NULL OR p_user_id = 'all' OR mu.id::TEXT = p_user_id OR mu.username = p_user_id)
 
@@ -588,12 +611,14 @@ BEGIN
             COALESCE((sp.exit_date - sp.entry_date), 0)::INT AS hold_days,
             'System'::VARCHAR(100) AS username,
             NULL::INT AS sell_order_id,
-            NULL::INT AS buy_order_id
+            NULL::INT AS buy_order_id,
+            NULL::INT AS sell_order_qty,
+            NULL::INT AS buy_order_qty
         FROM swing_positions sp
         WHERE sp.is_closed = TRUE
           AND (v_mode = 'swing')
           AND (p_start_date IS NULL OR sp.exit_date >= p_start_date)
-          AND (p_end_date IS NULL OR sp.exit_date <= p_end_date)
+          AND (p_end_date IS NULL OR sp.exit_date < p_end_date)
           AND (v_symbol IS NULL OR sp.symbol ILIKE v_symbol)
     )
     SELECT * FROM all_trades ORDER BY executed_at DESC;
@@ -603,6 +628,7 @@ $$;
 -- ----------------------------------------------------------------------------
 -- Function: fn_get_trading_report_trades_paged
 -- Returns paginated closed trades log with total count and server-side filters.
+-- p_start_date is inclusive, p_end_date exclusive (the caller passes the IST midnight after the last day).
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS fn_get_trading_report_trades_paged(TEXT, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, TEXT, TEXT, TEXT, INT, INT);
 
@@ -634,7 +660,9 @@ RETURNS TABLE (
     hold_days INT,
     username VARCHAR(100),
     sell_order_id INT,   -- real trades: the order that closed the trade (real_orders.id) - for actual charges
-    buy_order_id INT     -- real trades: the BUY that opened it (latest filled BUY before the sell)
+    buy_order_id INT,    -- real trades: the BUY that opened it (latest filled BUY before the sell)
+    sell_order_qty INT,  -- real trades: quantities of those orders, so their actual charges are split
+    buy_order_qty INT    --   across partial exits by this row's share instead of counted in full
 )
 LANGUAGE plpgsql
 AS $$
@@ -661,19 +689,34 @@ BEGIN
             th.trade_type,
             COALESCE(th.exit_reason, 'Exit Triggered')::VARCHAR(100) AS exit_reason,
             th.executed_at,
-            NULL::TIMESTAMP WITH TIME ZONE AS opened_at,
+            pp.opened_at,                 -- entry time: same-day round trips are charged at intraday rates
             0::INT AS hold_days,
             COALESCE(a.user_id, 'default_user')::VARCHAR(100) AS username,
             NULL::INT AS sell_order_id,
-            NULL::INT AS buy_order_id
+            NULL::INT AS buy_order_id,
+            NULL::INT AS sell_order_qty,
+            NULL::INT AS buy_order_qty
         FROM paper_trade_history th
         LEFT JOIN paper_accounts a ON th.account_id = a.id
+        -- The position this exit closed: latest one of the symbol on the account, opened before the exit, on the
+        -- opposite side (a long for a SELL exit, a short for a BUY-to-cover). Without it every paper trade fell back
+        -- to delivery (CNC) charges, overstating intraday charges ~2.4x.
+        LEFT JOIN LATERAL (
+            SELECT p.opened_at
+            FROM paper_positions p
+            WHERE p.account_id = th.account_id
+              AND UPPER(p.symbol) = UPPER(th.symbol)
+              AND p.side = 1 - th.side
+              AND p.opened_at <= th.executed_at
+            ORDER BY p.opened_at DESC
+            LIMIT 1
+        ) pp ON TRUE
         WHERE (v_mode = 'all' OR v_mode = 'paper')
           -- Exit rows only: is_exit when the writer set it (Auto Paper - covers a short's BUY, skips its entry SELL),
           -- else the old rule.
           AND COALESCE(th.is_exit, th.side = 1 OR th.exit_reason IS NOT NULL OR th.realized_pnl <> 0)
           AND (p_start_date IS NULL OR th.executed_at >= p_start_date)
-          AND (p_end_date IS NULL OR th.executed_at <= p_end_date)
+          AND (p_end_date IS NULL OR th.executed_at < p_end_date)
           AND (v_symbol IS NULL OR th.symbol ILIKE v_symbol)
           AND (p_user_id IS NULL OR p_user_id = 'all' OR a.user_id = p_user_id)
 
@@ -696,13 +739,16 @@ BEGIN
             0::INT AS hold_days,
             COALESCE(u.username, 'admin')::VARCHAR(100) AS username,
             rth.order_id AS sell_order_id,
-            bo.id AS buy_order_id
+            bo.id AS buy_order_id,
+            so.quantity AS sell_order_qty,
+            bo.quantity AS buy_order_qty
         FROM real_trade_history rth
         LEFT JOIN app_users u ON rth.user_id = u.id
+        LEFT JOIN real_orders so ON so.id = rth.order_id
         -- The order that opened this position: latest filled entry of the symbol before the exit (status 1 = Filled) -
         -- a long BUY for a SELL exit, the short's SELL (is_short) for a BUY-to-cover exit.
         LEFT JOIN LATERAL (
-            SELECT ro.id, COALESCE(ro.filled_at, ro.created_at) AS filled_at
+            SELECT ro.id, ro.quantity, COALESCE(ro.filled_at, ro.created_at) AS filled_at
             FROM real_orders ro
             WHERE ro.user_id = rth.user_id
               AND UPPER(ro.symbol) = UPPER(rth.symbol)
@@ -716,7 +762,7 @@ BEGIN
         WHERE (v_mode = 'all' OR v_mode = 'real')
           AND COALESCE(rth.is_exit, rth.side = 1 OR rth.exit_reason IS NOT NULL OR rth.realized_pnl <> 0)
           AND (p_start_date IS NULL OR rth.executed_at >= p_start_date)
-          AND (p_end_date IS NULL OR rth.executed_at <= p_end_date)
+          AND (p_end_date IS NULL OR rth.executed_at < p_end_date)
           AND (v_symbol IS NULL OR rth.symbol ILIKE v_symbol)
           AND (p_user_id IS NULL OR p_user_id = 'all' OR u.id::TEXT = p_user_id OR u.username = p_user_id)
 
@@ -740,14 +786,16 @@ BEGIN
             0::INT AS hold_days,
             COALESCE(mu.username, 'admin')::VARCHAR(100) AS username,
             NULL::INT AS sell_order_id,
-            NULL::INT AS buy_order_id
+            NULL::INT AS buy_order_id,
+            NULL::INT AS sell_order_qty,
+            NULL::INT AS buy_order_qty
         FROM manual_paper_trade_history mh
         LEFT JOIN app_users mu ON mh.user_id = mu.id
         LEFT JOIN manual_paper_positions mp ON mp.id = mh.position_id
         WHERE (v_mode = 'all' OR v_mode = 'manual_paper')
           AND mh.is_exit
           AND (p_start_date IS NULL OR mh.executed_at >= p_start_date)
-          AND (p_end_date IS NULL OR mh.executed_at <= p_end_date)
+          AND (p_end_date IS NULL OR mh.executed_at < p_end_date)
           AND (v_symbol IS NULL OR mh.symbol ILIKE v_symbol)
           AND (p_user_id IS NULL OR p_user_id = 'all' OR mu.id::TEXT = p_user_id OR mu.username = p_user_id)
 
@@ -770,23 +818,27 @@ BEGIN
             COALESCE((sp.exit_date - sp.entry_date), 0)::INT AS hold_days,
             'System'::VARCHAR(100) AS username,
             NULL::INT AS sell_order_id,
-            NULL::INT AS buy_order_id
+            NULL::INT AS buy_order_id,
+            NULL::INT AS sell_order_qty,
+            NULL::INT AS buy_order_qty
         FROM swing_positions sp
         WHERE sp.is_closed = TRUE
           AND (v_mode = 'swing')
           AND (p_start_date IS NULL OR sp.exit_date >= p_start_date)
-          AND (p_end_date IS NULL OR sp.exit_date <= p_end_date)
+          AND (p_end_date IS NULL OR sp.exit_date < p_end_date)
           AND (v_symbol IS NULL OR sp.symbol ILIKE v_symbol)
     ),
     filtered_trades AS (
         SELECT t.*
         FROM all_trades t
         WHERE (
-            v_trade_type = 'all' OR 
-            (v_trade_type = 'manual' AND t.trade_type = 0) OR
-            (v_trade_type = 'intraday' AND t.trade_type = 0) OR
-            (v_trade_type = 'auto' AND t.trade_type = 1) OR
-            (v_trade_type = 'swing' AND (t.trade_type = 1 OR t.mode = 'Swing Sim'))
+            v_trade_type = 'all' OR
+            (v_trade_type = 'manual' AND t.trade_type = 0 AND t.mode <> 'Swing Sim') OR
+            (v_trade_type = 'auto' AND t.trade_type = 1 AND t.mode <> 'Swing Sim') OR
+            (v_trade_type = 'swing' AND t.mode = 'Swing Sim') OR
+            -- intraday = opened and closed on the same IST day (trade_type says who placed it, not how long it was held)
+            (v_trade_type = 'intraday' AND t.opened_at IS NOT NULL
+                AND (t.opened_at AT TIME ZONE 'Asia/Kolkata')::DATE = (t.executed_at AT TIME ZONE 'Asia/Kolkata')::DATE)
         )
         AND (
             v_pnl_filter = 'all' OR
@@ -814,7 +866,9 @@ BEGIN
         f.hold_days,
         f.username,
         f.sell_order_id,
-        f.buy_order_id
+        f.buy_order_id,
+        f.sell_order_qty,
+        f.buy_order_qty
     FROM filtered_trades f
     ORDER BY f.executed_at DESC
     LIMIT v_limit OFFSET v_offset;
