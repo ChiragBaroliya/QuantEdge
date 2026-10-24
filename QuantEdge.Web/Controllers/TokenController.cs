@@ -88,13 +88,19 @@ public class TokenController : Controller
     /// GET /Token — Renders the main token management dashboard.
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> Index()
+    public async Task<IActionResult> Index([FromQuery] bool? connected = null, [FromQuery] string? message = null)
     {
         var vm = new TokenViewModel
         {
             StatusMessage = "Checking token status...",
             StatusType = "info"
         };
+
+        // Back from the Zerodha login (API callback redirect): the token just changed, so never show the cached status
+        if (connected.HasValue)
+        {
+            await _cacheService.RemoveAsync(SessionStatusCacheKey);
+        }
 
         try
         {
@@ -156,6 +162,19 @@ public class TokenController : Controller
             vm.StatusType = "warning";
         }
 
+        // Result of the Zerodha login, passed back by the API callback
+        if (connected == false)
+        {
+            vm.StatusMessage = string.IsNullOrWhiteSpace(message) ? "Zerodha login failed. Please try again." : message;
+            vm.StatusType = "danger";
+            vm.IsSuccess = false;
+        }
+        else if (connected == true && vm.HasActiveToken)
+        {
+            vm.StatusMessage = "Zerodha connected successfully. Today's access token is ACTIVE.";
+            vm.StatusType = "success";
+        }
+
         // Carry forward any TempData from a previous redirect (e.g. after callback)
         if (TempData.ContainsKey("StatusMessage"))
         {
@@ -187,10 +206,13 @@ public class TokenController : Controller
     {
         _logger.LogInformation("Initiating Zerodha OAuth flow — fetching login URL from API...");
 
+        // The token is about to change; don't let the Token page show the old cached status afterwards
+        await _cacheService.RemoveAsync(SessionStatusCacheKey);
+
         try
         {
-            // Build this Web app's own base URL dynamically from the current request.
-            string webReturnUrl = $"{Request.Scheme}://{Request.Host}";
+            // Come back to this Token page after the Zerodha login (built from the current request, so any host/port works).
+            string webReturnUrl = $"{Request.Scheme}://{Request.Host}{Url.Action(nameof(Index), "Token")}";
             var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "1";
 
             var client = _httpClientFactory.CreateClient("QuantEdgeApi");
@@ -223,7 +245,7 @@ public class TokenController : Controller
 
             // Redirect browser to Zerodha's OAuth login page.
             // After login + 2FA, Zerodha calls: https://localhost:44369/api/zerodha/callback?request_token=XYZ
-            // The API then redirects to: {webReturnUrl}/Token/Callback?success=true&...
+            // The API then redirects to: {webReturnUrl}?connected=true&message=...
             return Redirect(loginUrlNode);
         }
         catch (Exception ex)

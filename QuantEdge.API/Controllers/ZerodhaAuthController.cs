@@ -245,7 +245,7 @@ public class ZerodhaAuthController : ControllerBase
 
             if (!string.IsNullOrWhiteSpace(returnUrl))
             {
-                _cache.Set(ReturnUrlCacheKey, returnUrl, TimeSpan.FromMinutes(10));
+                _cache.Set(ReturnUrlCacheKeyFor(userId), returnUrl, TimeSpan.FromMinutes(10));
                 _logger.LogInformation("Saved Web returnUrl to MemoryCache: {ReturnUrl}", returnUrl);
             }
 
@@ -327,19 +327,8 @@ public class ZerodhaAuthController : ControllerBase
 
             _logger.LogInformation("Zerodha Access Token successfully stored for User {UserId} (Client: {ClientId}).", userId, userSession.UserId);
 
-            // 3. Resolve the Web UI base URL:
-            //    - First priority: URL cached during login-url call (dynamic, works on any port)
-            //    - Fallback: WebBaseUrl from appsettings.json
-            string webBase = _cache.TryGetValue(ReturnUrlCacheKey, out string? cached) && !string.IsNullOrWhiteSpace(cached)
-                ? cached
-                : _fallbackWebBaseUrl;
-
-            string targetUrl = webBase.TrimEnd('/');
-            if (!targetUrl.EndsWith("/RealTrading", StringComparison.OrdinalIgnoreCase))
-            {
-                targetUrl += "/RealTrading";
-            }
-
+            // 3. Back to the Web page the login started from
+            string targetUrl = ResolveWebReturnUrl(userId);
             _logger.LogInformation("Redirecting to Web UI at: {TargetUrl}", targetUrl);
 
             var redirectUrl = $"{targetUrl}?connected=true&message={Uri.EscapeDataString("⚡ Zerodha Account Connected Successfully! Daily Access Token is now ACTIVE.")}";
@@ -349,18 +338,30 @@ public class ZerodhaAuthController : ControllerBase
         {
             _logger.LogError(ex, "Error occurred during Zerodha token callback exchange.");
 
-            string webBase = _cache.TryGetValue(ReturnUrlCacheKey, out string? cached) && !string.IsNullOrWhiteSpace(cached)
-                ? cached
-                : _fallbackWebBaseUrl;
-
-            string targetUrl = webBase.TrimEnd('/');
-            if (!targetUrl.EndsWith("/RealTrading", StringComparison.OrdinalIgnoreCase))
-            {
-                targetUrl += "/RealTrading";
-            }
-
+            string targetUrl = ResolveWebReturnUrl(userId);
             var errorUrl = $"{targetUrl}?connected=false&message={Uri.EscapeDataString($"Token exchange failed: {ex.Message}")}";
             return Redirect(errorUrl);
         }
+    }
+
+    // Per user, so two users logging in at the same time are each sent back to their own page
+    private static string ReturnUrlCacheKeyFor(int userId) => $"{ReturnUrlCacheKey}_{userId}";
+
+    /// <summary>
+    /// The Web page to return to after the Zerodha login: the returnUrl the login-url call cached for this user
+    /// (Token page or Real Trading page), else WebBaseUrl from appsettings. A bare base URL goes to /RealTrading.
+    /// </summary>
+    private string ResolveWebReturnUrl(int userId)
+    {
+        string webUrl = _cache.TryGetValue(ReturnUrlCacheKeyFor(userId), out string? cached) && !string.IsNullOrWhiteSpace(cached)
+            ? cached
+            : _fallbackWebBaseUrl;
+
+        string targetUrl = webUrl.TrimEnd('/');
+        if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) && uri.AbsolutePath.Trim('/').Length == 0)
+        {
+            targetUrl += "/RealTrading";
+        }
+        return targetUrl;
     }
 }
