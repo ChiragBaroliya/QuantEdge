@@ -244,7 +244,7 @@ public class TokenController : Controller
             _logger.LogInformation("Web returnUrl sent to API: {ReturnUrl}. Redirecting to Zerodha: {LoginUrl}", webReturnUrl, loginUrlNode);
 
             // Redirect browser to Zerodha's OAuth login page.
-            // After login + 2FA, Zerodha calls: https://localhost:44369/api/zerodha/callback?request_token=XYZ
+            // After login + 2FA, Zerodha calls the registered redirect URL (ZerodhaRedirectUrl): .../api/zerodha/callback?request_token=XYZ
             // The API then redirects to: {webReturnUrl}?connected=true&message=...
             return Redirect(loginUrlNode);
         }

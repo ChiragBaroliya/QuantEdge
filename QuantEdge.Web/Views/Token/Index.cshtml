@@ -1,4 +1,6 @@
 @model QuantEdge.Web.Models.TokenViewModel
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@{ var ZerodhaRedirectUrl = Configuration["ZerodhaRedirectUrl"] ?? "https://quantage.cittaserver.com/api/zerodha/callback"; }
 @{
     ViewData["Title"] = "Token Manager";
     ViewData["PageTitle"] = "Token Manager";
@@ -107,7 +109,7 @@
             </div>
         </form>
         <div class="credentials-hint">
-            Redirect URL to register on your Kite Connect app: <code class="inline-code">https://localhost:44370/api/zerodha/callback</code>
+            Redirect URL to register on your Kite Connect app: <code class="inline-code">@ZerodhaRedirectUrl</code>
         </div>
         </div>
     </div>
@@ -397,7 +399,7 @@
                 <li>
                     <div class="info-bullet info-bullet-green"></div>
                     <span>Callback URL must be registered in Zerodha Developer Console:<br>
-                        <code class="inline-code">https://localhost:44370/api/zerodha/callback</code>
+                        <code class="inline-code">@ZerodhaRedirectUrl</code>
                     </span>
                 </li>
                 <li>

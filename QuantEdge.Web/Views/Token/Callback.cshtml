@@ -1,4 +1,6 @@
 @model QuantEdge.Web.Models.TokenViewModel
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@{ var ZerodhaRedirectUrl = Configuration["ZerodhaRedirectUrl"] ?? "https://quantage.cittaserver.com/api/zerodha/callback"; }
 @{
     ViewData["Title"] = Model.IsSuccess ? "Token Created" : "Token Failed";
     ViewData["PageTitle"] = Model.IsSuccess ? "Authentication Successful" : "Authentication Failed";
@@ -188,7 +190,7 @@
             <ul class="error-tip-list">
                 <li>The <strong>request_token</strong> already expired (tokens are single-use and expire in a few minutes)</li>
                 <li>The Zerodha <strong>ApiSecret</strong> is incorrect in <code>appsettings.json</code></li>
-                <li>The <strong>Redirect URL</strong> in Zerodha Developer Console does not match <code>https://localhost:44370/api/zerodha/callback</code></li>
+                <li>The <strong>Redirect URL</strong> in Zerodha Developer Console does not match <code>@ZerodhaRedirectUrl</code></li>
             </ul>
         </div>
 
