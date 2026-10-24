@@ -5,7 +5,7 @@
 
 $(document).ready(function () {
     let currentPeriod = 'daily';
-    let currentMode = 'all';
+    let currentMode = $('#reportModeSelect').val() || 'real';
     
     // Pagination & Filter States for Periodic Table
     let periodsPageState = {

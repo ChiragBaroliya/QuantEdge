@@ -1938,6 +1938,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             TradeType = position.TradeType,
             ExitReason = exitReason,
             IsExit = true,
+            ExecutedAt = filledAtUtc,
             Remarks = $"Short closed in QuantEdge only ({exitReason}), {priceNote} | P&L: ₹{realizedPnl:F2}"
         });
 

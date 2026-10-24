@@ -66,11 +66,9 @@
             <div class="filter-controls-group">
                 <label style="font-size: 13px; color: var(--text-muted, #94a3b8); font-weight: 600;">Trade Mode:</label>
                 <select id="reportModeSelect" class="report-filter-select">
-                    <option value="all" selected>All Trades (Real + Paper + Manual Paper)</option>
-                    <option value="paper">Paper Simulation Only</option>
-                    <option value="manual_paper">Manual Paper Trading Only</option>
-                    <option value="real">Real Broker Trading Only</option>
-                    <option value="swing">Swing Simulation Only</option>
+                    <option value="manual_paper">Manual Trading</option>
+                    <option value="paper">Auto Paper Trading</option>
+                    <option value="real" selected>Auto Real Trade</option>
                 </select>
 
                 @if (isAdmin)
@@ -297,7 +295,6 @@
                     <option value="auto">Auto Trading</option>
                     <option value="manual">Manual</option>
                     <option value="intraday">Intraday (same-day exit)</option>
-                    <option value="swing">Swing Simulation</option>
                 </select>
                 <select id="tradesPnlFilter" class="report-filter-select-sm">
                     <option value="all" selected>All Outcomes</option>

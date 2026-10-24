@@ -651,6 +651,58 @@ window.openManualSellModal = function (symbol, quantity, currentPrice, product, 
     if (modalManualSell) modalManualSell.show();
 };
 
+// Sends a manual Sell / Buy Back to the API and always tells the user what happened - every failure used to end
+// silently (a missing price returned early, a network / CORS error or a non-JSON error page only reached the console).
+async function submitManualExitOrder(endpoint, label, modal, payload) {
+    if (!payload.Symbol || !(payload.Quantity > 0) || !(payload.CurrentPrice > 0)) {
+        qeAlert({
+            icon: "warning",
+            title: `${label} not sent`,
+            text: `No live price for ${payload.Symbol || "this position"} yet (price ₹${(payload.CurrentPrice || 0).toFixed(2)}, qty ${payload.Quantity || 0}). Refresh Live Positions and try again.`
+        });
+        return;
+    }
+
+    let response;
+    try {
+        response = await fetch(`${apiBaseUrl}/api/realtrade/${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+    } catch (err) {
+        console.error(`Manual ${label} request failed:`, err);
+        qeAlert({
+            icon: "error",
+            title: `${label} not sent`,
+            text: `Could not reach QuantEdge API (${apiBaseUrl}). Check that the API is running and reachable from this browser. No order was placed.`
+        });
+        return;
+    }
+
+    let data = null;
+    try { data = await response.json(); } catch { /* error page, not JSON */ }
+
+    if (modal) modal.hide();
+
+    if (!data) {
+        qeAlert({
+            icon: "error",
+            title: `${label} failed`,
+            text: `The API answered HTTP ${response.status} ${response.statusText || ""} without a result. Check the API log on the server. Check Zerodha before retrying.`
+        });
+    } else {
+        qeAlert({
+            icon: data.success ? "success" : "error",
+            title: data.success ? `${label} order sent` : `${label} failed`,
+            text: data.message || (data.success ? `${label} order submitted.` : `${label} order failed.`)
+        });
+    }
+
+    loadDashboardData();
+    loadLivePositionsFast();
+}
+
 window.openManualBuyBackModal = function (symbol, quantity, currentPrice, product, entryPrice) {
     document.getElementById("mbSymbol").innerText = symbol;
     document.getElementById("mbQuantity").innerText = quantity;
@@ -1177,31 +1229,18 @@ function setupEventListeners() {
             const currentPrice = parseFloat(document.getElementById("msRawPrice")?.value || "0");
             const product = document.getElementById("msRawProduct")?.value || "CNC";
             const entryPrice = parseFloat(document.getElementById("msRawEntryPrice")?.value || "0");
-            if (!symbol || !quantity || !currentPrice) return;
 
             this.disabled = true;
             try {
-                const response = await fetch(`${apiBaseUrl}/api/realtrade/manual-sell`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        Symbol: symbol,
-                        Quantity: quantity,
-                        CurrentPrice: currentPrice,
-                        Product: product,
-                        EntryPriceHint: entryPrice > 0 ? entryPrice : null,
-                        Reason: "Manual Sell from Dashboard",
-                        UserId: currentUserId
-                    })
+                await submitManualExitOrder("manual-sell", "Sell", modalManualSell, {
+                    Symbol: symbol,
+                    Quantity: quantity,
+                    CurrentPrice: currentPrice,
+                    Product: product,
+                    EntryPriceHint: entryPrice > 0 ? entryPrice : null,
+                    Reason: "Manual Sell from Dashboard",
+                    UserId: currentUserId
                 });
-
-                const data = await response.json();
-                if (modalManualSell) modalManualSell.hide();
-                alert(data.message || (data.success ? "Sell order submitted." : "Sell order failed."));
-                loadDashboardData();
-                loadLivePositionsFast();
-            } catch (err) {
-                console.error("Manual sell error:", err);
             } finally {
                 this.disabled = false;
             }
@@ -1217,31 +1256,18 @@ function setupEventListeners() {
             const currentPrice = parseFloat(document.getElementById("mbRawPrice")?.value || "0");
             const product = document.getElementById("mbRawProduct")?.value || "MIS";
             const entryPrice = parseFloat(document.getElementById("mbRawEntryPrice")?.value || "0");
-            if (!symbol || !quantity || !currentPrice) return;
 
             this.disabled = true;
             try {
-                const response = await fetch(`${apiBaseUrl}/api/realtrade/manual-buy-back`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        Symbol: symbol,
-                        Quantity: quantity,
-                        CurrentPrice: currentPrice,
-                        Product: product,
-                        EntryPriceHint: entryPrice > 0 ? entryPrice : null,
-                        Reason: "Manual Buy Back from Dashboard",
-                        UserId: currentUserId
-                    })
+                await submitManualExitOrder("manual-buy-back", "Buy Back", modalManualBuyBack, {
+                    Symbol: symbol,
+                    Quantity: quantity,
+                    CurrentPrice: currentPrice,
+                    Product: product,
+                    EntryPriceHint: entryPrice > 0 ? entryPrice : null,
+                    Reason: "Manual Buy Back from Dashboard",
+                    UserId: currentUserId
                 });
-
-                const data = await response.json();
-                if (modalManualBuyBack) modalManualBuyBack.hide();
-                alert(data.message || (data.success ? "Buy back order submitted." : "Buy back order failed."));
-                loadDashboardData();
-                loadLivePositionsFast();
-            } catch (err) {
-                console.error("Manual buy back error:", err);
             } finally {
                 this.disabled = false;
             }

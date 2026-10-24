@@ -347,24 +347,19 @@ public class RealTradingRepository : IRealTradingRepository
         history.Remarks = Clamp(history.Remarks, 255);
 
         using var connection = _connectionFactory.CreateConnection();
-        string sql = @"
-            SELECT * FROM fn_record_real_trade_history(
-                @UserId,
-                @OrderId,
-                @BrokerOrderId,
-                @Symbol,
-                @Side,
-                @Quantity,
-                @EntryPrice,
-                @ExecutedPrice,
-                @RealizedPnl,
-                @TradeType,
-                @ExitReason,
-                @Remarks,
-                @IsExit
-            );";
+        const string args = "@UserId, @OrderId, @BrokerOrderId, @Symbol, @Side, @Quantity, @EntryPrice, @ExecutedPrice, @RealizedPnl, @TradeType, @ExitReason, @Remarks, @IsExit";
 
-        return await connection.QuerySingleAsync<RealTradeHistory>(sql, history);
+        // ExecutedAt is when the trade happened - a short Zerodha squared off at 15:25 but booked here after midnight
+        // must stay on its own day in reports, not the day QuantEdge noticed it.
+        try
+        {
+            return await connection.QuerySingleAsync<RealTradeHistory>($"SELECT * FROM fn_record_real_trade_history({args}, @ExecutedAt);", history);
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == Npgsql.PostgresErrorCodes.UndefinedFunction)
+        {
+            // functions.sql not re-applied yet (no p_executed_at): record at NOW() rather than lose a real trade.
+            return await connection.QuerySingleAsync<RealTradeHistory>($"SELECT * FROM fn_record_real_trade_history({args});", history);
+        }
     }
 
     public async Task<IEnumerable<RealTradeHistory>> GetTradeHistoryAsync(int userId = 1, int limit = 100, DateTime? date = null, string? symbol = null, int? side = null)

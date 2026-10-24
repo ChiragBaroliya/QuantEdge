@@ -2764,9 +2764,12 @@ $$;
 DROP FUNCTION IF EXISTS fn_record_real_trade_history(INT, INT, VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, VARCHAR, VARCHAR);
 DROP FUNCTION IF EXISTS fn_record_real_trade_history(VARCHAR, INT, VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, VARCHAR, VARCHAR);
 DROP FUNCTION IF EXISTS fn_record_real_trade_history(INT, INT, VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, VARCHAR, VARCHAR, BOOLEAN);
+DROP FUNCTION IF EXISTS fn_record_real_trade_history(INT, INT, VARCHAR, VARCHAR, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, VARCHAR, VARCHAR, BOOLEAN, TIMESTAMP WITH TIME ZONE);
 
 -- p_is_exit: TRUE = the row closes a trade (SELL a long / BUY to cover a short), FALSE = it opens one, NULL = not
 -- stated (readers fall back to "SELL = exit").
+-- p_executed_at: when the trade actually happened, if known (e.g. a short Zerodha squared off at 15:25 that QuantEdge
+-- only books after midnight). NULL = now. Without it such a row lands on the next day in reports.
 CREATE OR REPLACE FUNCTION fn_record_real_trade_history(
     p_user_id INT,
     p_order_id INT,
@@ -2780,7 +2783,8 @@ CREATE OR REPLACE FUNCTION fn_record_real_trade_history(
     p_trade_type INT,
     p_exit_reason VARCHAR,
     p_remarks VARCHAR,
-    p_is_exit BOOLEAN DEFAULT NULL
+    p_is_exit BOOLEAN DEFAULT NULL,
+    p_executed_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 )
 RETURNS TABLE (
     Id INT,
@@ -2809,9 +2813,9 @@ BEGIN
     ) VALUES (
         p_user_id, p_order_id, p_broker_order_id, p_symbol, p_side,
         p_quantity, p_entry_price, p_executed_price, p_realized_pnl,
-        p_trade_type, p_exit_reason, NOW(), p_remarks, p_is_exit
+        p_trade_type, p_exit_reason, COALESCE(p_executed_at, NOW()), p_remarks, p_is_exit
     )
-    RETURNING 
+    RETURNING
         real_trade_history.id AS Id,
         real_trade_history.user_id AS UserId,
         real_trade_history.order_id AS OrderId,
