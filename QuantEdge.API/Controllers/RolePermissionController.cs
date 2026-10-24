@@ -14,7 +14,7 @@ namespace QuantEdge.API.Controllers;
 /// Role Permissions: which Web pages each role may open (role_page_permissions + the AppPages catalog).
 /// </summary>
 [ApiController]
-[Route("api/role-permissions")]
+[Route("role-permissions")]
 public class RolePermissionController : ControllerBase
 {
     private readonly IRolePermissionRepository _repository;

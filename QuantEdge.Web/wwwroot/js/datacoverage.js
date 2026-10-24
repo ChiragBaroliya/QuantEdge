@@ -65,7 +65,7 @@ $(document).ready(function () {
     }
 
     // Active sectors for the Sector filter and the Map Sector popup
-    function loadSectors(onLoaded) {
+    function loadSectors(onLoaded, onError) {
         $.ajax({
             url: getEndpointUrl('/datacoverage/sectors'),
             type: 'GET',
@@ -80,6 +80,7 @@ $(document).ready(function () {
             },
             error: function (xhr, status, err) {
                 console.error('Failed to load sectors:', err);
+                if (onError) onError();
             }
         });
     }
@@ -301,33 +302,36 @@ $(document).ready(function () {
         `;
     }
 
-    // Map Sector Popup: tick sectors, or add a new one
+    // Map Sector Popup: Select2 multi-select of sectors; typing a name that isn't listed adds it as a new sector
     function openSectorMapping(id) {
         const stock = state.stocksMap[id];
         if (!stock) return;
+
+        // Fresh list each time, so sectors added elsewhere (or a failed first load) don't leave the dropdown empty
+        loadSectors(
+            () => showSectorMappingPopup(id, stock),
+            () => {
+                Toast.fire({ icon: 'error', title: 'Unable to load sectors.' });
+                showSectorMappingPopup(id, stock);
+            }
+        );
+    }
+
+    function showSectorMappingPopup(id, stock) {
         const symbol = stock.symbol || stock.Symbol || '';
         const selected = new Set(getStockSectorIds(stock));
+        const NEW_PREFIX = 'new:';
 
-        const sectorItemHtml = (s, checked) => `
-            <label class="sector-map-item" data-name="${escapeHtml(s.name.toUpperCase())}">
-                <input type="checkbox" class="sector-map-checkbox" value="${s.id}" ${checked ? 'checked' : ''} />
-                <span class="sector-map-name">${escapeHtml(s.name)}</span>
-                <span class="sector-map-count">${formatNumber(s.stockCount)}</span>
-            </label>
-        `;
+        const optionsHtml = state.sectors.map(s =>
+            `<option value="${s.id}" data-count="${s.stockCount}" ${selected.has(s.id) ? 'selected' : ''}>${escapeHtml(s.name)}</option>`
+        ).join('');
 
         Swal.fire({
             title: `Map Sector — ${escapeHtml(symbol)}`,
             html: `
                 <div class="sector-map-popup">
-                    <input type="text" id="sectorMapSearch" class="sector-map-input" placeholder="Search sectors..." autocomplete="off" />
-                    <div id="sectorMapList" class="sector-map-list">
-                        ${state.sectors.map(s => sectorItemHtml(s, selected.has(s.id))).join('') || '<div class="sector-map-empty">No sectors yet. Add one below.</div>'}
-                    </div>
-                    <div class="sector-map-add">
-                        <input type="text" id="sectorMapNewName" class="sector-map-input" maxlength="100" placeholder="Sector not listed? Type a new sector name" autocomplete="off" />
-                        <button type="button" id="sectorMapAddBtn" class="sector-map-add-btn">+ Add</button>
-                    </div>
+                    <select id="sectorMapSelect" multiple="multiple" style="width: 100%;">${optionsHtml}</select>
+                    <div class="sector-map-hint">Pick one or more sectors. Not listed? Type the name and press Enter to add it.</div>
                 </div>
             `,
             width: 520,
@@ -339,71 +343,78 @@ $(document).ready(function () {
             background: 'var(--bg-card, #1e293b)',
             color: '#f8fafc',
             focusConfirm: false,
+            showLoaderOnConfirm: true,
             didOpen: () => {
                 const $popup = $(Swal.getPopup());
+                const $select = $popup.find('#sectorMapSelect');
 
-                $popup.find('#sectorMapSearch').on('input', function () {
-                    const q = $(this).val().trim().toUpperCase();
-                    $popup.find('.sector-map-item').each(function () {
-                        $(this).toggle(!q || $(this).data('name').toString().includes(q));
-                    });
-                }).trigger('focus');
-
-                const addSector = function () {
-                    const $input = $popup.find('#sectorMapNewName');
-                    const name = $input.val().trim();
-                    if (!name) {
-                        Swal.showValidationMessage('Enter a sector name to add.');
-                        return;
-                    }
-                    Swal.resetValidationMessage();
-                    const $btn = $popup.find('#sectorMapAddBtn').prop('disabled', true).text('Adding...');
-
-                    $.ajax({
-                        url: getEndpointUrl('/datacoverage/sectors'),
-                        type: 'POST',
-                        contentType: 'application/json',
-                        data: JSON.stringify({ name: name }),
-                        success: function (res) {
-                            const sector = { id: res.id ?? res.Id, name: res.name ?? res.Name ?? name, stockCount: 0 };
-                            const $existing = $popup.find(`.sector-map-checkbox[value="${sector.id}"]`);
-                            if ($existing.length) {
-                                // Already in the list (same name, any case): just tick it
-                                $existing.prop('checked', true);
-                            } else {
-                                state.sectors.push(sector);
-                                state.sectors.sort((a, b) => a.name.localeCompare(b.name));
-                                renderSectorFilterOptions();
-                                $popup.find('.sector-map-empty').remove();
-                                $popup.find('#sectorMapList').prepend(sectorItemHtml(sector, true));
-                            }
-                            $input.val('');
-                            $popup.find('#sectorMapSearch').val('').trigger('input');
-                        },
-                        error: function (xhr) {
-                            Swal.showValidationMessage(xhr.responseText || 'Unable to add sector.');
-                        },
-                        complete: function () {
-                            $btn.prop('disabled', false).text('+ Add');
+                $select.select2({
+                    dropdownParent: $popup.find('.sector-map-popup'),
+                    placeholder: 'Search or add a sector...',
+                    width: '100%',
+                    tags: true,
+                    closeOnSelect: false,
+                    createTag: function (params) {
+                        const term = (params.term || '').trim().replace(/\s+/g, ' ').toUpperCase();
+                        if (!term || term.length > 100) return null;
+                        // An existing sector with the same name (any case) is offered instead of a duplicate
+                        if (state.sectors.some(s => s.name.toUpperCase() === term)) return null;
+                        return { id: NEW_PREFIX + term, text: term, newTag: true };
+                    },
+                    templateResult: function (item) {
+                        if (item.loading || !item.id) return item.text;
+                        if (item.newTag) {
+                            return $('<span class="sector-opt-new"></span>').text('+ Add new sector "' + item.text + '"');
                         }
-                    });
-                };
-
-                $popup.find('#sectorMapAddBtn').on('click', addSector);
-                $popup.find('#sectorMapNewName').on('keydown', function (e) {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        addSector();
+                        const count = item.element ? $(item.element).data('count') : undefined;
+                        const $row = $('<span class="sector-opt"></span>');
+                        $row.append($('<span class="sector-opt-name"></span>').text(item.text));
+                        if (count !== undefined) {
+                            $row.append($('<span class="sector-opt-count"></span>').text(formatNumber(count) + ' stocks'));
+                        }
+                        return $row;
                     }
                 });
+
+                $select.select2('open');
+            },
+            willClose: () => {
+                const $select = $(Swal.getPopup()).find('#sectorMapSelect');
+                if ($select.data('select2')) $select.select2('destroy');
             },
             preConfirm: () => {
-                return $(Swal.getPopup()).find('.sector-map-checkbox:checked')
-                    .map(function () { return parseInt($(this).val(), 10); }).get();
+                const values = $(Swal.getPopup()).find('#sectorMapSelect').val() || [];
+                const existingIds = values.filter(v => !v.startsWith(NEW_PREFIX)).map(v => parseInt(v, 10));
+                const newNames = values.filter(v => v.startsWith(NEW_PREFIX)).map(v => v.substring(NEW_PREFIX.length));
+
+                // Create typed sectors first, then save the full set of ids
+                return Promise.all(newNames.map(createSector))
+                    .then(created => existingIds.concat(created.map(s => s.id)))
+                    .catch(err => {
+                        Swal.showValidationMessage(err || 'Unable to add sector.');
+                        return false;
+                    });
             }
         }).then((result) => {
             if (!result.isConfirmed) return;
-            saveStockSectors(id, result.value || []);
+            saveStockSectors(id, Array.from(new Set(result.value || [])));
+        });
+    }
+
+    function createSector(name) {
+        return new Promise((resolve, reject) => {
+            $.ajax({
+                url: getEndpointUrl('/datacoverage/sectors'),
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ name: name }),
+                success: function (res) {
+                    resolve({ id: res.id ?? res.Id, name: res.name ?? res.Name ?? name });
+                },
+                error: function (xhr) {
+                    reject(`Unable to add sector "${name}". ${xhr.responseText || ''}`.trim());
+                }
+            });
         });
     }
 

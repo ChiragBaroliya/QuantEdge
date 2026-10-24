@@ -5,6 +5,8 @@
 Deployment artifact transfer to remote Linux server:
 ```bash
 scp -r "D:\QuantEdge\Job\*" root@217.216.79.53:/opt/quantedge/worker/
+
+scp -r "D:\Project\Publish\Quntage\WorkerJob\*" root@217.216.79.53:/opt/quantedge/worker/
 ```
 
 ---
