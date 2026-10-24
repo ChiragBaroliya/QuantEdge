@@ -9,4 +9,5 @@ public class CoverageSummaryDto
     public int ActiveCount { get; set; }
     public int InactiveCount { get; set; }
     public int HistoryMissingCount { get; set; }
+    public int NoSectorCount { get; set; }
 }

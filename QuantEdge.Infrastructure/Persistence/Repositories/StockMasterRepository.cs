@@ -182,16 +182,17 @@ public class StockMasterRepository : IStockMasterRepository
     /// <summary>
     /// Retrieves paginated stock coverage data using sp_get_paginated_stock_coverage.
     /// </summary>
-    public async Task<PaginatedCoverageResult> GetPaginatedCoverageAsync(string? search, string? statusFilter, string? historyFilter, string? alphabetFilter, int pageNumber, int pageSize)
+    public async Task<PaginatedCoverageResult> GetPaginatedCoverageAsync(string? search, string? statusFilter, string? historyFilter, string? alphabetFilter, string? sectorFilter, int pageNumber, int pageSize)
     {
         using var connection = _connectionFactory.CreateConnection();
         var items = (await connection.QueryAsync<StockCoverageDto>(
-            "SELECT * FROM sp_get_paginated_stock_coverage(@p_search, @p_status_filter, @p_history_filter, @p_alphabet_filter, @p_page_number, @p_page_size);",
+            "SELECT * FROM sp_get_paginated_stock_coverage(@p_search, @p_status_filter, @p_history_filter, @p_alphabet_filter, @p_sector_filter, @p_page_number, @p_page_size);",
             new {
                 p_search = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
                 p_status_filter = string.IsNullOrWhiteSpace(statusFilter) ? null : statusFilter.Trim(),
                 p_history_filter = string.IsNullOrWhiteSpace(historyFilter) ? null : historyFilter.Trim(),
                 p_alphabet_filter = string.IsNullOrWhiteSpace(alphabetFilter) ? null : alphabetFilter.Trim(),
+                p_sector_filter = string.IsNullOrWhiteSpace(sectorFilter) ? null : sectorFilter.Trim(),
                 p_page_number = pageNumber < 1 ? 1 : pageNumber,
                 p_page_size = pageSize < 1 ? 25 : pageSize
             }
@@ -271,9 +272,9 @@ public class StockMasterRepository : IStockMasterRepository
     /// <summary>
     /// Generates and exports Excel report (.xlsx) of stock coverage data based on search and filter criteria.
     /// </summary>
-    public async Task<byte[]> ExportStockCoverageToExcelAsync(string? search, string? statusFilter, string? historyFilter, string? alphabetFilter = null)
+    public async Task<byte[]> ExportStockCoverageToExcelAsync(string? search, string? statusFilter, string? historyFilter, string? alphabetFilter = null, string? sectorFilter = null)
     {
-        var result = await GetPaginatedCoverageAsync(search, statusFilter, historyFilter, alphabetFilter, pageNumber: 1, pageSize: 100000);
+        var result = await GetPaginatedCoverageAsync(search, statusFilter, historyFilter, alphabetFilter, sectorFilter, pageNumber: 1, pageSize: 100000);
         var items = result.Items ?? Enumerable.Empty<StockCoverageDto>();
 
         using var workbook = new XLWorkbook();
@@ -286,7 +287,7 @@ public class StockMasterRepository : IStockMasterRepository
         worksheet.Cell("A1").Style.Font.FontColor = XLColor.FromHtml("#1E293B");
 
         string generatedTimeStr = DateTime.Now.ToString("dd-MMM-yyyy HH:mm:ss");
-        worksheet.Cell("A2").Value = $"Generated: {generatedTimeStr} | Status Filter: {statusFilter ?? "All"} | History Filter: {historyFilter ?? "All"} | Alphabet: {alphabetFilter ?? "All"} | Search: {search ?? "None"} | Total Records: {result.TotalCount}";
+        worksheet.Cell("A2").Value = $"Generated: {generatedTimeStr} | Status Filter: {statusFilter ?? "All"} | History Filter: {historyFilter ?? "All"} | Alphabet: {alphabetFilter ?? "All"} | Sector: {sectorFilter ?? "All"} | Search: {search ?? "None"} | Total Records: {result.TotalCount}";
         worksheet.Cell("A2").Style.Font.Italic = true;
         worksheet.Cell("A2").Style.Font.FontSize = 10;
         worksheet.Cell("A2").Style.Font.FontColor = XLColor.FromHtml("#64748B");
@@ -296,7 +297,7 @@ public class StockMasterRepository : IStockMasterRepository
         {
             "#", "Symbol", "Company Name", "Exchange", "Instrument Token", "Status",
             "1m History", "5m History", "15m History", "60m History", "1D History",
-            "1D Candle Count", "60m Candle Count", "Last Candle Sync Date"
+            "1D Candle Count", "60m Candle Count", "Last Candle Sync Date", "Sector"
         };
 
         int headerRow = 4;
@@ -308,7 +309,7 @@ public class StockMasterRepository : IStockMasterRepository
             cell.Style.Font.FontSize = 11;
             cell.Style.Font.FontColor = XLColor.White;
             cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E293B");
-            cell.Style.Alignment.Horizontal = (col == 0 || col >= 11) ? XLAlignmentHorizontalValues.Right : XLAlignmentHorizontalValues.Left;
+            cell.Style.Alignment.Horizontal = (col == 0 || (col >= 11 && col <= 13)) ? XLAlignmentHorizontalValues.Right : XLAlignmentHorizontalValues.Left;
             if (col == 1 || col == 3 || col == 5 || (col >= 6 && col <= 10)) cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         }
 
@@ -338,6 +339,7 @@ public class StockMasterRepository : IStockMasterRepository
             worksheet.Cell(currentRow, 14).Value = item.LastCandleDate.HasValue 
                 ? item.LastCandleDate.Value.ToString("yyyy-MM-dd HH:mm:ss") 
                 : "No Sync";
+            worksheet.Cell(currentRow, 15).Value = string.IsNullOrWhiteSpace(item.SectorNames) ? "Not Mapped" : item.SectorNames;
 
             // Zebra striping
             if (currentRow % 2 == 0)

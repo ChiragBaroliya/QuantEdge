@@ -104,6 +104,15 @@
                 <option value="0-9">0-9 (Numeric)</option>
             </select>
 
+            <select id="sectorFilter" class="filter-select" data-tooltip="🏷️ **Sector Filter**: Show stocks not mapped to any sector, mapped stocks, or one sector's stocks.">
+                <option value="all">All Sectors</option>
+                <option value="none" id="sectorFilterNoneOption">⚠️ No Sector Mapped</option>
+                <option value="mapped">Has Sector</option>
+                <optgroup label="Sector" id="sectorFilterGroup">
+                    <!-- Populated by datacoverage.js -->
+                </optgroup>
+            </select>
+
             <div class="search-input-wrapper" data-tooltip="🔎 **Search Stock**: Enter company name or trading symbol.">
                 <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="11" cy="11" r="8"></circle>
@@ -148,6 +157,7 @@
                     <tr>
                         <th style="min-width: 140px;" data-tooltip="📌 **Symbol & Exchange**: NSE/BSE trading code.">Symbol & Exchange</th>
                         <th style="min-width: 180px;" data-tooltip="🏢 **Company Name**: Registered company name.">Company Name</th>
+                        <th style="min-width: 170px;" data-tooltip="🏷️ **Sector**: Sectors the stock is mapped to. Click to map or add a new sector.">Sector</th>
                         <th style="min-width: 220px;" data-tooltip="⏱️ **Timeframe Flags**: 1m, 5m, 15m, 60m, and 1d data status.">Timeframe History Flags</th>
                         <th style="min-width: 260px;" data-tooltip="📊 **History Status**: Start date, last date, and total candle records.">History Status</th>
                         <th style="min-width: 130px;" data-tooltip="⏰ **Last Candle Sync**: Most recent candle download timestamp.">Last Candle Sync</th>
@@ -157,7 +167,7 @@
                 </thead>
                 <tbody id="coverageTableBody">
                     <tr>
-                        <td colspan="7" style="text-align: center; padding: 40px; color: #94a3b8;">
+                        <td colspan="8" style="text-align: center; padding: 40px; color: #94a3b8;">
                             Loading stock data coverage...
                         </td>
                     </tr>

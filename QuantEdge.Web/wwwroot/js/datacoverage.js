@@ -21,6 +21,8 @@ $(document).ready(function () {
         statusFilter: 'all',
         historyFilter: 'all',
         alphabetFilter: 'all',
+        sectorFilter: 'all',
+        sectors: [], // [{ id, name, stockCount }] active sectors, sorted by name
         totalCount: 0,
         totalPages: 0,
         selectedStockId: null,
@@ -57,8 +59,49 @@ $(document).ready(function () {
 
     function initDataCoverage() {
         loadSummary();
+        loadSectors();
         loadPaginatedList();
         bindEvents();
+    }
+
+    // Active sectors for the Sector filter and the Map Sector popup
+    function loadSectors(onLoaded) {
+        $.ajax({
+            url: getEndpointUrl('/datacoverage/sectors'),
+            type: 'GET',
+            success: function (data) {
+                state.sectors = (data || []).map(s => ({
+                    id: s.id ?? s.Id,
+                    name: s.name ?? s.Name ?? '',
+                    stockCount: s.stockCount ?? s.StockCount ?? 0
+                }));
+                renderSectorFilterOptions();
+                if (onLoaded) onLoaded();
+            },
+            error: function (xhr, status, err) {
+                console.error('Failed to load sectors:', err);
+            }
+        });
+    }
+
+    function renderSectorFilterOptions() {
+        const $group = $('#sectorFilterGroup');
+        $group.empty();
+        state.sectors.forEach(s => {
+            $group.append(`<option value="${s.id}">${escapeHtml(s.name)} (${formatNumber(s.stockCount)})</option>`);
+        });
+        // Keep the current choice; fall back to All if the chosen sector no longer exists
+        if ($('#sectorFilter option[value="' + state.sectorFilter + '"]').length) {
+            $('#sectorFilter').val(state.sectorFilter);
+        } else {
+            state.sectorFilter = 'all';
+            $('#sectorFilter').val('all');
+        }
+    }
+
+    function getSectorName(sectorId) {
+        const sector = state.sectors.find(s => s.id === sectorId);
+        return sector ? sector.name : null;
     }
 
     // 1. Fetch & Render Summary KPI Cards
@@ -72,6 +115,7 @@ $(document).ready(function () {
                     $('#kpiActiveCount').text(formatNumber(data.activeCount || data.active_count || 0));
                     $('#kpiInactiveCount').text(formatNumber(data.inactiveCount || data.inactive_count || 0));
                     $('#kpiMissingCount').text(formatNumber(data.historyMissingCount || data.history_missing_count || 0));
+                    $('#sectorFilterNoneOption').text(`⚠️ No Sector Mapped (${formatNumber(data.noSectorCount ?? data.NoSectorCount ?? 0)})`);
                 }
             },
             error: function (xhr, status, err) {
@@ -89,6 +133,7 @@ $(document).ready(function () {
             status: state.statusFilter,
             historyFilter: state.historyFilter,
             alphabet: state.alphabetFilter,
+            sector: state.sectorFilter,
             page: state.currentPage,
             pageSize: state.pageSize
         };
@@ -180,6 +225,7 @@ $(document).ready(function () {
                 </div>
             `;
 
+            const sectorCell = renderSectorCellHtml(stock);
             const tfCheckboxes = renderTfGroupHtml(id);
             const historyStatusBadges = renderHistoryStatusGroupHtml(id);
             const lastSyncText = lastCandleDate ? formatDate(lastCandleDate) : '<span style="color:var(--text-muted);font-style:italic;">No Candles</span>';
@@ -210,6 +256,7 @@ $(document).ready(function () {
                     <td>
                         <div class="company-name-cell" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
                     </td>
+                    <td>${sectorCell}</td>
                     <td>${tfCheckboxes}</td>
                     <td>${historyStatusBadges}</td>
                     <td style="font-size: 12.5px;">${lastSyncText}</td>
@@ -219,6 +266,169 @@ $(document).ready(function () {
             `;
 
             $tbody.append(rowHtml);
+        });
+    }
+
+    function getStockSectorIds(stock) {
+        return (stock.sectorIds || stock.SectorIds || []).map(Number);
+    }
+
+    // Render Sector Chips + Map Button
+    function renderSectorCellHtml(stock) {
+        const id = stock.id || stock.Id;
+        const sectorIds = getStockSectorIds(stock);
+
+        if (sectorIds.length === 0) {
+            return `
+                <div class="sector-cell">
+                    <button type="button" class="btn-map-sector is-unmapped" data-id="${id}" title="Map this stock to a sector">+ Map Sector</button>
+                </div>
+            `;
+        }
+
+        // Names come from the loaded sector list; fall back to the names returned with the row
+        const rowNames = (stock.sectorNames || stock.SectorNames || '').split(', ');
+        const chips = sectorIds.map((sid, i) => {
+            const name = getSectorName(sid) || rowNames[i] || ('#' + sid);
+            return `<span class="sector-chip" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`;
+        }).join('');
+
+        return `
+            <div class="sector-cell">
+                ${chips}
+                <button type="button" class="btn-map-sector" data-id="${id}" title="Change sector mapping">Edit</button>
+            </div>
+        `;
+    }
+
+    // Map Sector Popup: tick sectors, or add a new one
+    function openSectorMapping(id) {
+        const stock = state.stocksMap[id];
+        if (!stock) return;
+        const symbol = stock.symbol || stock.Symbol || '';
+        const selected = new Set(getStockSectorIds(stock));
+
+        const sectorItemHtml = (s, checked) => `
+            <label class="sector-map-item" data-name="${escapeHtml(s.name.toUpperCase())}">
+                <input type="checkbox" class="sector-map-checkbox" value="${s.id}" ${checked ? 'checked' : ''} />
+                <span class="sector-map-name">${escapeHtml(s.name)}</span>
+                <span class="sector-map-count">${formatNumber(s.stockCount)}</span>
+            </label>
+        `;
+
+        Swal.fire({
+            title: `Map Sector — ${escapeHtml(symbol)}`,
+            html: `
+                <div class="sector-map-popup">
+                    <input type="text" id="sectorMapSearch" class="sector-map-input" placeholder="Search sectors..." autocomplete="off" />
+                    <div id="sectorMapList" class="sector-map-list">
+                        ${state.sectors.map(s => sectorItemHtml(s, selected.has(s.id))).join('') || '<div class="sector-map-empty">No sectors yet. Add one below.</div>'}
+                    </div>
+                    <div class="sector-map-add">
+                        <input type="text" id="sectorMapNewName" class="sector-map-input" maxlength="100" placeholder="Sector not listed? Type a new sector name" autocomplete="off" />
+                        <button type="button" id="sectorMapAddBtn" class="sector-map-add-btn">+ Add</button>
+                    </div>
+                </div>
+            `,
+            width: 520,
+            showCancelButton: true,
+            confirmButtonText: 'Save Mapping',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#3b82f6',
+            cancelButtonColor: '#475569',
+            background: 'var(--bg-card, #1e293b)',
+            color: '#f8fafc',
+            focusConfirm: false,
+            didOpen: () => {
+                const $popup = $(Swal.getPopup());
+
+                $popup.find('#sectorMapSearch').on('input', function () {
+                    const q = $(this).val().trim().toUpperCase();
+                    $popup.find('.sector-map-item').each(function () {
+                        $(this).toggle(!q || $(this).data('name').toString().includes(q));
+                    });
+                }).trigger('focus');
+
+                const addSector = function () {
+                    const $input = $popup.find('#sectorMapNewName');
+                    const name = $input.val().trim();
+                    if (!name) {
+                        Swal.showValidationMessage('Enter a sector name to add.');
+                        return;
+                    }
+                    Swal.resetValidationMessage();
+                    const $btn = $popup.find('#sectorMapAddBtn').prop('disabled', true).text('Adding...');
+
+                    $.ajax({
+                        url: getEndpointUrl('/datacoverage/sectors'),
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({ name: name }),
+                        success: function (res) {
+                            const sector = { id: res.id ?? res.Id, name: res.name ?? res.Name ?? name, stockCount: 0 };
+                            const $existing = $popup.find(`.sector-map-checkbox[value="${sector.id}"]`);
+                            if ($existing.length) {
+                                // Already in the list (same name, any case): just tick it
+                                $existing.prop('checked', true);
+                            } else {
+                                state.sectors.push(sector);
+                                state.sectors.sort((a, b) => a.name.localeCompare(b.name));
+                                renderSectorFilterOptions();
+                                $popup.find('.sector-map-empty').remove();
+                                $popup.find('#sectorMapList').prepend(sectorItemHtml(sector, true));
+                            }
+                            $input.val('');
+                            $popup.find('#sectorMapSearch').val('').trigger('input');
+                        },
+                        error: function (xhr) {
+                            Swal.showValidationMessage(xhr.responseText || 'Unable to add sector.');
+                        },
+                        complete: function () {
+                            $btn.prop('disabled', false).text('+ Add');
+                        }
+                    });
+                };
+
+                $popup.find('#sectorMapAddBtn').on('click', addSector);
+                $popup.find('#sectorMapNewName').on('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addSector();
+                    }
+                });
+            },
+            preConfirm: () => {
+                return $(Swal.getPopup()).find('.sector-map-checkbox:checked')
+                    .map(function () { return parseInt($(this).val(), 10); }).get();
+            }
+        }).then((result) => {
+            if (!result.isConfirmed) return;
+            saveStockSectors(id, result.value || []);
+        });
+    }
+
+    function saveStockSectors(id, sectorIds) {
+        $.ajax({
+            url: getEndpointUrl('/datacoverage/' + id + '/sectors'),
+            type: 'PUT',
+            contentType: 'application/json',
+            data: JSON.stringify({ sectorIds: sectorIds }),
+            success: function () {
+                Toast.fire({
+                    icon: 'success',
+                    title: sectorIds.length ? 'Sector mapping saved.' : 'Sector mapping removed.'
+                });
+                loadSummary();
+                loadSectors();
+                // Reload so the row leaves the "No Sector Mapped" view once it is mapped
+                loadPaginatedList();
+            },
+            error: function () {
+                Toast.fire({
+                    icon: 'error',
+                    title: 'Unable to save sector mapping.'
+                });
+            }
         });
     }
 
@@ -487,7 +697,7 @@ $(document).ready(function () {
     function renderEmptyTable(message) {
         $('#coverageTableBody').html(`
             <tr>
-                <td colspan="7" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
+                <td colspan="8" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
                     <div style="font-size: 14px; font-weight: 500;">${escapeHtml(message)}</div>
                 </td>
             </tr>
@@ -499,7 +709,7 @@ $(document).ready(function () {
     function showTableLoading() {
         $('#coverageTableBody').html(`
             <tr>
-                <td colspan="7" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
+                <td colspan="8" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon" style="vertical-align: middle; margin-right: 8px;">
                         <line x1="12" y1="2" x2="12" y2="6"></line>
                         <line x1="12" y1="18" x2="12" y2="22"></line>
@@ -653,6 +863,12 @@ $(document).ready(function () {
             loadPaginatedList();
         });
 
+        $('#sectorFilter').on('change', function () {
+            state.sectorFilter = $(this).val();
+            state.currentPage = 1;
+            loadPaginatedList();
+        });
+
         // Page Size change
         $('#pageSizeSelect').on('change', function () {
             state.pageSize = parseInt($(this).val(), 10) || 25;
@@ -689,7 +905,8 @@ $(document).ready(function () {
                 search: state.searchQuery || '',
                 status: state.statusFilter || 'all',
                 historyFilter: state.historyFilter || 'all',
-                alphabet: state.alphabetFilter || 'all'
+                alphabet: state.alphabetFilter || 'all',
+                sector: state.sectorFilter || 'all'
             });
 
             const exportUrl = getEndpointUrl('/datacoverage/export-excel?' + params.toString());
@@ -746,8 +963,16 @@ $(document).ready(function () {
         });
 
         // Prevent row selection when clicking inline controls
-        $(document).on('click', '.inline-status-toggle, .tf-checkboxes-group, .history-status-group, .row-actions-group', function (e) {
+        $(document).on('click', '.inline-status-toggle, .tf-checkboxes-group, .history-status-group, .row-actions-group, .sector-cell', function (e) {
             e.stopPropagation();
+        });
+
+        // Map Sector Button Click
+        $(document).on('click', '.btn-map-sector', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = parseInt($(this).data('id'), 10);
+            if (id) openSectorMapping(id);
         });
 
         // "All" Timeframes Checkbox Change

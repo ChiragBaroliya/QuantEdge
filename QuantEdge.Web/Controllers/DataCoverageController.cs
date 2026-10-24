@@ -85,12 +85,12 @@ public class DataCoverageController : Controller
     /// </summary>
     [HttpGet("api/datacoverage/export-excel")]
     [HttpGet("datacoverage/export-excel")]
-    public async Task<IActionResult> ExportExcel([FromQuery] string? search = null, [FromQuery] string? status = null, [FromQuery] string? historyFilter = null, [FromQuery] string? alphabet = null)
+    public async Task<IActionResult> ExportExcel([FromQuery] string? search = null, [FromQuery] string? status = null, [FromQuery] string? historyFilter = null, [FromQuery] string? alphabet = null, [FromQuery] string? sector = null)
     {
         try
         {
             var client = _httpClientFactory.CreateClient("QuantEdgeApi");
-            var query = $"?search={Uri.EscapeDataString(search ?? "")}&status={Uri.EscapeDataString(status ?? "")}&historyFilter={Uri.EscapeDataString(historyFilter ?? "")}&alphabet={Uri.EscapeDataString(alphabet ?? "")}";
+            var query = $"?search={Uri.EscapeDataString(search ?? "")}&status={Uri.EscapeDataString(status ?? "")}&historyFilter={Uri.EscapeDataString(historyFilter ?? "")}&alphabet={Uri.EscapeDataString(alphabet ?? "")}&sector={Uri.EscapeDataString(sector ?? "")}";
             var response = await client.GetAsync($"api/datacoverage/export-excel{query}");
 
             if (response.IsSuccessStatusCode)

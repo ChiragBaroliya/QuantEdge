@@ -22,5 +22,8 @@ public class StockCoverageDto
     public long Count1d { get; set; }
     public long Count60m { get; set; }
     public DateTime? LastCandleDate { get; set; }
+    /// <summary>Active sectors the stock is linked to (stock_sectors); null when it has none.</summary>
+    public int[]? SectorIds { get; set; }
+    public string? SectorNames { get; set; }
     public int TotalRecords { get; set; }
 }

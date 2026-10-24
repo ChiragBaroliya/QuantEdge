@@ -632,21 +632,26 @@ RETURNS TABLE (
     "TotalStocks" INT,
     "ActiveCount" INT,
     "InactiveCount" INT,
-    "HistoryMissingCount" INT
+    "HistoryMissingCount" INT,
+    "NoSectorCount" INT
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         COUNT(*)::INT AS "TotalStocks",
         COUNT(*) FILTER (WHERE s.is_active = TRUE)::INT AS "ActiveCount",
         COUNT(*) FILTER (WHERE s.is_active = FALSE)::INT AS "InactiveCount",
-        COUNT(*) FILTER (WHERE COALESCE(s.is_histry_stored_1m, 0) = 0 
-                            OR COALESCE(s.is_histry_stored_5m, 0) = 0 
-                            OR COALESCE(s.is_histry_stored_15m, 0) = 0 
-                            OR COALESCE(s.is_histry_stored_60m, 0) = 0 
-                            OR COALESCE(s.is_histry_stored_1d, 0) = 0)::INT AS "HistoryMissingCount"
+        COUNT(*) FILTER (WHERE COALESCE(s.is_histry_stored_1m, 0) = 0
+                            OR COALESCE(s.is_histry_stored_5m, 0) = 0
+                            OR COALESCE(s.is_histry_stored_15m, 0) = 0
+                            OR COALESCE(s.is_histry_stored_60m, 0) = 0
+                            OR COALESCE(s.is_histry_stored_1d, 0) = 0)::INT AS "HistoryMissingCount",
+        -- Only links to active sectors count: an inactive sector is hidden everywhere else too.
+        COUNT(*) FILTER (WHERE NOT EXISTS (
+            SELECT 1 FROM stock_sectors ss JOIN sectors sec ON sec.id = ss.sector_id AND sec.is_active = TRUE
+            WHERE ss.stock_id = s.id))::INT AS "NoSectorCount"
     FROM stock_master s;
 END;
 $$;
@@ -658,12 +663,15 @@ $$;
 DROP FUNCTION IF EXISTS sp_get_paginated_stock_coverage CASCADE;
 DROP FUNCTION IF EXISTS sp_get_paginated_stock_coverage(VARCHAR, VARCHAR, VARCHAR, INT, INT) CASCADE;
 DROP FUNCTION IF EXISTS sp_get_paginated_stock_coverage(VARCHAR, VARCHAR, VARCHAR, VARCHAR, INT, INT) CASCADE;
+DROP FUNCTION IF EXISTS sp_get_paginated_stock_coverage(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, INT, INT) CASCADE;
 
+-- p_sector_filter: NULL/'all', 'none' (no active sector linked), 'mapped' (at least one), or a sector id.
 CREATE OR REPLACE FUNCTION sp_get_paginated_stock_coverage(
     p_search VARCHAR DEFAULT NULL,
     p_status_filter VARCHAR DEFAULT NULL,
     p_history_filter VARCHAR DEFAULT NULL,
     p_alphabet_filter VARCHAR DEFAULT NULL,
+    p_sector_filter VARCHAR DEFAULT NULL,
     p_page_number INT DEFAULT 1,
     p_page_size INT DEFAULT 25
 )
@@ -683,20 +691,32 @@ RETURNS TABLE (
     "Count1d" BIGINT,
     "Count60m" BIGINT,
     "LastCandleDate" TIMESTAMP WITH TIME ZONE,
+    "SectorIds" INT[],
+    "SectorNames" TEXT,
     "TotalRecords" INT
 )
 LANGUAGE plpgsql
 AS $$
 DECLARE
     v_offset INT;
+    v_sector_filter VARCHAR := LOWER(TRIM(COALESCE(p_sector_filter, '')));
 BEGIN
     v_offset := (GREATEST(1, p_page_number) - 1) * GREATEST(1, p_page_size);
 
     RETURN QUERY
-    WITH filtered_stocks AS (
-        SELECT s.*
+    WITH stock_sector_links AS (
+        SELECT ss.stock_id,
+               ARRAY_AGG(sec.id ORDER BY sec.name) AS sector_ids,
+               STRING_AGG(sec.name, ', ' ORDER BY sec.name) AS sector_names
+        FROM stock_sectors ss
+        JOIN sectors sec ON sec.id = ss.sector_id AND sec.is_active = TRUE
+        GROUP BY ss.stock_id
+    ),
+    filtered_stocks AS (
+        SELECT s.*, l.sector_ids, l.sector_names
         FROM stock_master s
-        WHERE 
+        LEFT JOIN stock_sector_links l ON l.stock_id = s.id
+        WHERE
             (p_search IS NULL OR p_search = '' OR UPPER(s.symbol) LIKE '%' || UPPER(p_search) || '%' OR UPPER(COALESCE(s.name, '')) LIKE '%' || UPPER(p_search) || '%')
             AND (
                 p_status_filter IS NULL OR p_status_filter = '' OR LOWER(p_status_filter) = 'all'
@@ -729,6 +749,12 @@ BEGIN
                 OR (p_alphabet_filter = '0-9' AND s.symbol ~ '^[0-9]')
                 OR (UPPER(s.symbol) LIKE UPPER(p_alphabet_filter) || '%')
             )
+            AND (
+                v_sector_filter IN ('', 'all')
+                OR (v_sector_filter = 'none' AND l.stock_id IS NULL)
+                OR (v_sector_filter = 'mapped' AND l.stock_id IS NOT NULL)
+                OR (v_sector_filter ~ '^[0-9]+$' AND v_sector_filter::INT = ANY(l.sector_ids))
+            )
     ),
     counted AS (
         SELECT fs.*, COUNT(*) OVER()::INT AS full_count
@@ -752,6 +778,8 @@ BEGIN
         COALESCE(c.is_histry_stored_1d, 0)::BIGINT AS "Count1d",
         COALESCE(c.is_histry_stored_60m, 0)::BIGINT AS "Count60m",
         (SELECT MAX(candle_time) FROM market_candles_1d c1d WHERE c1d.symbol = c.symbol) AS "LastCandleDate",
+        c.sector_ids AS "SectorIds",
+        c.sector_names AS "SectorNames",
         c.full_count AS "TotalRecords"
     FROM counted c
     ORDER BY c.symbol ASC;
@@ -4340,6 +4368,32 @@ BEGIN
     LEFT JOIN stock_master s ON s.id = ss.stock_id
     WHERE sec.is_active = TRUE
     ORDER BY sec.id, s.symbol;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- Function: fn_get_sector_list
+-- Data Coverage Manager: active sectors with their linked stock count, for the sector filter / mapping popup.
+-- ----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS fn_get_sector_list();
+
+CREATE OR REPLACE FUNCTION fn_get_sector_list()
+RETURNS TABLE (
+    "Id" INT,
+    "Name" VARCHAR,
+    "StockCount" INT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT sec.id, sec.name, COUNT(ss.stock_id)::INT
+    FROM sectors sec
+    LEFT JOIN stock_sectors ss ON ss.sector_id = sec.id
+    WHERE sec.is_active = TRUE
+    GROUP BY sec.id, sec.name
+    ORDER BY sec.name;
 END;
 $$;
 

@@ -11,14 +11,19 @@ namespace QuantEdge.API.Controllers;
 [Route("datacoverage")]
 public class DataCoverageController : ControllerBase
 {
+    private const int MaxSectorNameLength = 100; // sectors.name VARCHAR(100)
+
     private readonly IStockMasterRepository _stockMasterRepository;
+    private readonly ISectorRepository _sectorRepository;
     private readonly ILogger<DataCoverageController> _logger;
 
     public DataCoverageController(
         IStockMasterRepository stockMasterRepository,
+        ISectorRepository sectorRepository,
         ILogger<DataCoverageController> logger)
     {
         _stockMasterRepository = stockMasterRepository ?? throw new ArgumentNullException(nameof(stockMasterRepository));
+        _sectorRepository = sectorRepository ?? throw new ArgumentNullException(nameof(sectorRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -49,12 +54,13 @@ public class DataCoverageController : ControllerBase
         [FromQuery] string? status = null,
         [FromQuery] string? historyFilter = null,
         [FromQuery] string? alphabet = null,
+        [FromQuery] string? sector = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25)
     {
         try
         {
-            var result = await _stockMasterRepository.GetPaginatedCoverageAsync(search, status, historyFilter, alphabet, page, pageSize);
+            var result = await _stockMasterRepository.GetPaginatedCoverageAsync(search, status, historyFilter, alphabet, sector, page, pageSize);
             return Ok(result);
         }
         catch (Exception ex)
@@ -72,11 +78,12 @@ public class DataCoverageController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
         [FromQuery] string? historyFilter = null,
-        [FromQuery] string? alphabet = null)
+        [FromQuery] string? alphabet = null,
+        [FromQuery] string? sector = null)
     {
         try
         {
-            var excelBytes = await _stockMasterRepository.ExportStockCoverageToExcelAsync(search, status, historyFilter, alphabet);
+            var excelBytes = await _stockMasterRepository.ExportStockCoverageToExcelAsync(search, status, historyFilter, alphabet, sector);
             string fileName = $"Stock_Coverage_Export_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
             return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
         }
@@ -166,6 +173,69 @@ public class DataCoverageController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to bulk delete {Count} stocks.", ids.Length);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// GET /datacoverage/sectors - Active sectors with linked stock counts (sector filter and mapping popup).
+    /// </summary>
+    [HttpGet("sectors")]
+    public async Task<IActionResult> GetSectors()
+    {
+        try
+        {
+            return Ok(await _sectorRepository.GetSectorListAsync());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch sector list.");
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// POST /datacoverage/sectors - Adds a new sector, or returns (and reactivates) the existing one with that name.
+    /// </summary>
+    [HttpPost("sectors")]
+    public async Task<IActionResult> CreateSector([FromBody] CreateSectorRequest request)
+    {
+        string name = request?.Name?.Trim() ?? string.Empty;
+        if (name.Length == 0 || name.Length > MaxSectorNameLength)
+        {
+            return BadRequest($"Sector name is required (max {MaxSectorNameLength} characters).");
+        }
+
+        try
+        {
+            return Ok(await _sectorRepository.UpsertSectorAsync(name));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create sector {Name}.", name);
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// PUT /datacoverage/{id}/sectors - Replaces the sectors a stock is mapped to (empty list removes all).
+    /// </summary>
+    [HttpPut("{id}/sectors")]
+    public async Task<IActionResult> SetStockSectors(int id, [FromBody] SetStockSectorsRequest request)
+    {
+        if (id <= 0 || request == null)
+        {
+            return BadRequest("Invalid sector mapping request.");
+        }
+
+        try
+        {
+            await _sectorRepository.SetStockSectorsAsync(id, request.SectorIds ?? Array.Empty<int>());
+            return Ok(new { success = true, message = "Stock sectors updated successfully." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update sectors for stock ID {Id}.", id);
             return StatusCode(500, $"Internal server error: {ex.Message}");
         }
     }
