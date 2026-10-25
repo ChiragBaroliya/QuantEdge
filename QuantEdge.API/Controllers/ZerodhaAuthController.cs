@@ -249,9 +249,10 @@ public class ZerodhaAuthController : ControllerBase
                 _logger.LogInformation("Saved Web returnUrl to MemoryCache: {ReturnUrl}", returnUrl);
             }
 
-            // Generate Zerodha OAuth login URL with state = userId
-            string statePayload = userId.ToString();
-            string loginUrl = $"https://kite.zerodha.com/connect/login?v=3&api_key={Uri.EscapeDataString(apiKey)}&state={Uri.EscapeDataString(statePayload)}";
+            // Generate Zerodha OAuth login URL. Kite only echoes back what is in redirect_params (a URL-encoded query string),
+            // so the userId travels as redirect_params=state=<userId> and arrives on the callback as ?state=<userId>.
+            string redirectParams = $"state={userId}";
+            string loginUrl = $"https://kite.zerodha.com/connect/login?v=3&api_key={Uri.EscapeDataString(apiKey)}&redirect_params={Uri.EscapeDataString(redirectParams)}";
 
             _logger.LogInformation("Generated Zerodha login URL for User {UserId} with API Key: {ApiKey}", userId, apiKey);
             return Ok(new { loginUrl });
@@ -279,10 +280,13 @@ public class ZerodhaAuthController : ControllerBase
             return BadRequest("Missing required query parameter 'request_token'.");
         }
 
-        int userId = 1;
-        if (!string.IsNullOrWhiteSpace(state) && int.TryParse(state, out int parsedUid))
+        // Without the state we can't tell whose Kite app issued the request_token; never guess (defaulting to user 1 would
+        // exchange it with the admin's key/secret and fail, or worse, overwrite the admin's session).
+        if (string.IsNullOrWhiteSpace(state) || !int.TryParse(state, out int userId) || userId <= 0)
         {
-            userId = parsedUid;
+            _logger.LogWarning("Zerodha callback received without a valid state (state='{State}').", state);
+            string missingStateUrl = $"{ResolveWebReturnUrl(0)}?connected=false&message={Uri.EscapeDataString("Token exchange failed: Zerodha did not return the user state. Please click Create Token again.")}";
+            return Redirect(missingStateUrl);
         }
 
         _logger.LogInformation("Received request_token from Zerodha for User {UserId}. Initiating token exchange...", userId);
@@ -349,7 +353,7 @@ public class ZerodhaAuthController : ControllerBase
 
     /// <summary>
     /// The Web page to return to after the Zerodha login: the returnUrl the login-url call cached for this user
-    /// (Token page or Real Trading page), else WebBaseUrl from appsettings. A bare base URL goes to /RealTrading.
+    /// (Token page or Real Trading page), else WebBaseUrl from appsettings. A bare base URL goes to /Token, which every role can open.
     /// </summary>
     private string ResolveWebReturnUrl(int userId)
     {
@@ -360,7 +364,7 @@ public class ZerodhaAuthController : ControllerBase
         string targetUrl = webUrl.TrimEnd('/');
         if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) && uri.AbsolutePath.Trim('/').Length == 0)
         {
-            targetUrl += "/RealTrading";
+            targetUrl += "/Token";
         }
         return targetUrl;
     }
