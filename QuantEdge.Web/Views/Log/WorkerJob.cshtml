@@ -1,0 +1,308 @@
+@{
+    ViewData["Title"] = "Worker Job Log";
+    ViewData["PageTitle"] = "Worker Job Log";
+
+    string[] workerServices =
+    {
+        "quantedge-worker-marketdatafeed-1m",
+        "quantedge-worker-marketdatafeed-5m",
+        "quantedge-worker-marketdatafeed-15m",
+        "quantedge-worker-marketdatafeed-60m",
+        "quantedge-worker-marketdatafeed-1d",
+        "quantedge-worker-history-1m",
+        "quantedge-worker-history-5m",
+        "quantedge-worker-history-15m",
+        "quantedge-worker-history-60m",
+        "quantedge-worker-history-1d",
+        "quantedge-worker-historyreset",
+        "quantedge-worker-instrumentsync",
+        "quantedge-worker-autotrade",
+        "quantedge-worker-swingintraday",
+        "quantedge-worker-clearcache",
+        "quantedge-api",
+        "quantedge-web"
+    };
+}
+
+<link rel="stylesheet" href="~/css/logmanager.css" asp-append-version="true" />
+
+<div class="log-manager-container">
+    <div class="log-workspace">
+        <!-- Left: SSH connection settings -->
+        <aside class="log-file-sidebar">
+            <div class="sidebar-panel-header">
+                <div class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="4 17 10 11 4 5"></polyline>
+                        <line x1="12" y1="19" x2="20" y2="19"></line>
+                    </svg>
+                    <span>Worker Server</span>
+                </div>
+                <span id="workerConnStatus" class="file-app-tag">Not Connected</span>
+            </div>
+
+            <div class="date-picker-card">
+                <div class="date-field">
+                    <label class="date-picker-label" for="workerHost">Server Name / Host IP</label>
+                    <input type="text" id="workerHost" class="date-picker-input" value="217.216.79.53" />
+                </div>
+                <div class="date-picker-row">
+                    <div class="date-field">
+                        <label class="date-picker-label" for="workerUser">Username</label>
+                        <input type="text" id="workerUser" class="date-picker-input" value="root" />
+                    </div>
+                    <div class="date-field">
+                        <label class="date-picker-label" for="workerPassword">Password</label>
+                        <input type="password" id="workerPassword" class="date-picker-input" autocomplete="off" />
+                    </div>
+                </div>
+                <div class="date-field">
+                    <label class="date-picker-label" for="workerService">Service</label>
+                    <select id="workerService" class="filter-select">
+                        @foreach (var svc in workerServices)
+                        {
+                            <option value="@svc">@svc</option>
+                        }
+                    </select>
+                </div>
+                <div class="date-field">
+                    <label class="date-picker-label" for="workerLines">Lines</label>
+                    <select id="workerLines" class="filter-select">
+                        <option value="100" selected>Last 100</option>
+                        <option value="250">Last 250</option>
+                        <option value="500">Last 500</option>
+                        <option value="1000">Last 1000</option>
+                    </select>
+                </div>
+                <button type="button" id="btnTestConnection" class="btn-action" style="justify-content: center;">Test Connection</button>
+                <button type="button" id="btnFetchWorkerLogs" class="btn-fetch-date-range">Fetch Logs</button>
+                <button type="button" id="btnLaunchPowerShell" class="btn-action" style="justify-content: center;"
+                        data-tooltip="Opens a PowerShell window on the Web server machine running journalctl -f over SSH.">
+                    Open Live PowerShell
+                </button>
+            </div>
+
+            <div id="workerConnMessage" class="active-file-meta" style="word-break: break-word;"></div>
+        </aside>
+
+        <!-- Right: journalctl output -->
+        <section class="log-content-panel">
+            <div class="active-file-header">
+                <div class="active-file-info">
+                    <span class="active-file-badge">JOURNALCTL</span>
+                    <h3 id="workerActiveService" class="active-file-title">No service loaded</h3>
+                    <span id="workerActiveMeta" class="active-file-meta">Pick a service and click Fetch Logs.</span>
+                </div>
+                <div class="active-file-actions">
+                    <label class="active-file-meta" for="workerAutoRefresh" style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                        <input type="checkbox" id="workerAutoRefresh" />
+                        Auto-refresh (10s)
+                    </label>
+                </div>
+            </div>
+
+            <div class="log-filter-bar">
+                <div class="filter-row">
+                    <div class="filter-col">
+                        <label class="filter-label" for="workerSearch">Search</label>
+                        <div class="input-with-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            <input type="text" id="workerSearch" class="filter-input" placeholder="Filter log lines..." />
+                        </div>
+                    </div>
+                    <div class="filter-col">
+                        <label class="filter-label" for="workerLevel">Level</label>
+                        <select id="workerLevel" class="filter-select">
+                            <option value="ALL">All Levels</option>
+                            <option value="ERR">Errors (ERR / FTL)</option>
+                            <option value="WRN">Warnings</option>
+                            <option value="INF">Information</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="log-table-container">
+                <div class="log-table-header">
+                    <span class="table-title">Service Output</span>
+                    <span id="workerMatchingBadge" class="matching-badge">0 lines</span>
+                </div>
+                <div class="table-scroll-wrapper">
+                    <table class="log-table">
+                        <thead>
+                            <tr>
+                                <th class="col-lvl">Level</th>
+                                <th>Line</th>
+                            </tr>
+                        </thead>
+                        <tbody id="workerLogRows">
+                            <tr class="empty-row">
+                                <td colspan="2">
+                                    <div class="empty-state">
+                                        <h3>No logs loaded</h3>
+                                        <p>Connect to the worker server and fetch a service's logs.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const el = id => document.getElementById(id);
+            const statusTag = el('workerConnStatus');
+            const connMessage = el('workerConnMessage');
+            const rows = el('workerLogRows');
+            const badge = el('workerMatchingBadge');
+
+            let loadedLines = [];
+            let autoTimer = null;
+
+            function connectionModel() {
+                return {
+                    host: el('workerHost').value.trim(),
+                    username: el('workerUser').value.trim(),
+                    password: el('workerPassword').value,
+                    serviceName: el('workerService').value,
+                    lines: parseInt(el('workerLines').value, 10) || 100
+                };
+            }
+
+            async function postJson(url, body) {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                return response.json();
+            }
+
+            el('btnTestConnection').addEventListener('click', async () => {
+                statusTag.innerText = 'Connecting...';
+                connMessage.innerText = '';
+                try {
+                    const data = await postJson('/Log/TestWorkerConnection', connectionModel());
+                    statusTag.innerText = data.status || (data.success ? 'Connected' : 'Not Connected');
+                    connMessage.innerText = data.message || '';
+                } catch (err) {
+                    statusTag.innerText = 'Not Connected';
+                    connMessage.innerText = 'Server error testing the connection.';
+                }
+            });
+
+            el('btnLaunchPowerShell').addEventListener('click', async () => {
+                try {
+                    const data = await postJson('/Log/LaunchPowerShellSession', connectionModel());
+                    connMessage.innerText = data.message || '';
+                } catch (err) {
+                    connMessage.innerText = 'Server error opening PowerShell.';
+                }
+            });
+
+            async function fetchWorkerLogs() {
+                const m = connectionModel();
+                el('workerActiveService').innerText = m.serviceName;
+                el('workerActiveMeta').innerText = `Loading from ${m.host || 'default host'}...`;
+
+                const qs = new URLSearchParams({
+                    host: m.host,
+                    user: m.username,
+                    password: m.password,
+                    serviceName: m.serviceName,
+                    lines: m.lines
+                });
+
+                try {
+                    const response = await fetch(`/Log/GetWorkerLogs?${qs.toString()}`);
+                    const data = await response.json();
+                    if (data.success) {
+                        loadedLines = data.logs || [];
+                        el('workerActiveMeta').innerText = `Host: ${data.host} · ${loadedLines.length} lines · Updated ${new Date().toLocaleTimeString()}`;
+                        renderLines();
+                    } else {
+                        showMessage(data.message || 'Failed to fetch worker logs.');
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch worker logs:', err);
+                    showMessage('Server error fetching worker logs.');
+                }
+            }
+
+            function lineLevel(line) {
+                if (/\[(ERR|ERROR|FTL|FATAL)\]|\bfail(ed)?\b|exception/i.test(line)) return 'ERR';
+                if (/\[(WRN|WARN|WARNING)\]/i.test(line)) return 'WRN';
+                return 'INF';
+            }
+
+            function renderLines() {
+                const query = el('workerSearch').value.toLowerCase().trim();
+                const levelVal = el('workerLevel').value;
+
+                const filtered = loadedLines.filter(line => {
+                    if (levelVal !== 'ALL' && lineLevel(line) !== levelVal) return false;
+                    return !query || line.toLowerCase().includes(query);
+                });
+
+                badge.innerText = `${filtered.length} lines`;
+
+                if (filtered.length === 0) {
+                    showMessage('No log lines match the active filters.', false);
+                    return;
+                }
+
+                const badgeClass = { INF: 'lvl-inf', WRN: 'lvl-wrn', ERR: 'lvl-err' };
+                rows.innerHTML = filtered.map(line => {
+                    const lvl = lineLevel(line);
+                    return `<tr>
+                        <td class="col-lvl"><span class="lvl-badge ${badgeClass[lvl]}">[${lvl}]</span></td>
+                        <td class="col-msg">${escapeHtml(line)}</td>
+                    </tr>`;
+                }).join('');
+            }
+
+            function showMessage(msg, resetBadge = true) {
+                if (resetBadge) badge.innerText = '0 lines';
+                rows.innerHTML = `
+                    <tr class="empty-row">
+                        <td colspan="2">
+                            <div class="empty-state"><h3>${escapeHtml(msg)}</h3></div>
+                        </td>
+                    </tr>`;
+            }
+
+            function escapeHtml(text) {
+                if (!text) return '';
+                return text
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            }
+
+            el('btnFetchWorkerLogs').addEventListener('click', fetchWorkerLogs);
+            el('workerSearch').addEventListener('input', renderLines);
+            el('workerLevel').addEventListener('change', renderLines);
+
+            el('workerAutoRefresh').addEventListener('change', e => {
+                if (autoTimer) {
+                    clearInterval(autoTimer);
+                    autoTimer = null;
+                }
+                if (e.target.checked) {
+                    fetchWorkerLogs();
+                    autoTimer = setInterval(fetchWorkerLogs, 10000);
+                }
+            });
+        });
+    </script>
+}

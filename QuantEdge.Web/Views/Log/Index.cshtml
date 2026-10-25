@@ -1,0 +1,13 @@
+@{
+    ViewData["Title"] = "Web Log";
+    ViewData["PageTitle"] = "Web Log";
+    ViewData["LogLabel"] = "Web";
+}
+
+<link rel="stylesheet" href="~/css/logmanager.css" asp-append-version="true" />
+
+<partial name="_LogWorkspace" />
+
+@section Scripts {
+    <script src="~/js/logmanager.js" asp-append-version="true"></script>
+}
