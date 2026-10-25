@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\QuantEdge.Infrastructure\QuantEdge.Infrastructure.csproj" />
+    <ProjectReference Include="..\QuantEdge.Worker\QuantEdge.Worker.csproj" />
   </ItemGroup>
 
 </Project>

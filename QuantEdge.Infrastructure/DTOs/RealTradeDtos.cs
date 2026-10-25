@@ -257,6 +257,20 @@ public class ManualSellRequestDto
     public int? UserId { get; set; }
 }
 
+/// <summary>
+/// Outcome of an order-placing Real Trade action routed through <see cref="Interfaces.IRealOrderGateway"/>.
+/// Also the wire format of QuantEdge.Worker's internal order endpoint, so it must stay JSON-serializable.
+/// </summary>
+public class RealOrderExecutionResultDto
+{
+    public bool Success { get; set; }
+    /// <summary>Null when the underlying service gave no message (e.g. a Manual Buy that returned false) -
+    /// callers then fall back to the audit log for the reason.</summary>
+    public string? Message { get; set; }
+    /// <summary>Kill switch only: number of positions squared off.</summary>
+    public int ClosedPositionsCount { get; set; }
+}
+
 public class RealTradeLivePositionsFastDto
 {
     public bool Success { get; set; }

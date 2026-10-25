@@ -84,6 +84,7 @@ try
             builder.Services.AddHostedService<ManualShortSquareOffWorker>();   // Manual Short Selling: intraday square-off (manual_paper_* only)
             builder.Services.AddHostedService<ManualLimitOrderWorker>();       // Manual Paper limit orders: fill / expire (manual_paper_* only)
             builder.Services.AddHostedService<ManualAutoExitWorker>();         // Manual Paper Auto Exit: Target / SL / Trailing SL from stored 1m candles
+            builder.Services.AddHostedService<InternalRealOrderEndpointWorker>(); // Real orders forwarded by the API - placed from this server's Zerodha-registered IP
         }
         else if (actualJobType.Equals("clearcache", StringComparison.OrdinalIgnoreCase))
         {
@@ -108,6 +109,7 @@ try
         builder.Services.AddHostedService<ManualShortSquareOffWorker>();
         builder.Services.AddHostedService<ManualLimitOrderWorker>();
         builder.Services.AddHostedService<ManualAutoExitWorker>();
+        builder.Services.AddHostedService<InternalRealOrderEndpointWorker>();
     }
 
 

@@ -195,6 +195,27 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRealTradeCacheService, RealTradeCacheService>();
         services.AddSingleton<IAutoRealTradeService, AutoRealTradeService>();
 
+        // IRealOrderGateway: Zerodha only accepts orders from the static IPs registered on the Kite app.
+        // When the API runs on a server whose IP isn't registered (RealOrderExecution:Mode = Remote), its
+        // user-triggered orders are forwarded to QuantEdge.Worker, which places them from its registered IP.
+        // The Worker itself (and a same-server API) always places them locally.
+        bool forwardOrdersToWorker = isApiHost &&
+            string.Equals(configuration["RealOrderExecution:Mode"], "Remote", StringComparison.OrdinalIgnoreCase);
+        if (forwardOrdersToWorker)
+        {
+            services.AddHttpClient(RemoteRealOrderGateway.HttpClientName, client =>
+            {
+                // Long enough for a Kill Switch squaring off many positions; there is no retry, so a timeout
+                // is reported to the user as "status unknown".
+                client.Timeout = TimeSpan.FromSeconds(90);
+            });
+            services.AddSingleton<IRealOrderGateway, RemoteRealOrderGateway>();
+        }
+        else
+        {
+            services.AddSingleton<IRealOrderGateway, LocalRealOrderGateway>();
+        }
+
         // Register Trading Reports & Performance Analytics
         services.AddTransient<IChargeRatesRepository, ChargeRatesRepository>();
         services.AddTransient<IRealOrderChargesRepository, RealOrderChargesRepository>();

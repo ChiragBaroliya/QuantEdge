@@ -14,11 +14,15 @@ public class RealTradeController : ControllerBase
 {
     private readonly IAutoRealTradeService _realTradeService;
     private readonly IZerodhaKiteBrokerService _brokerService;
+    // Every action below that places an order at Zerodha goes through this - it forwards to QuantEdge.Worker
+    // when this API isn't on the server whose IP is registered with Zerodha (RealOrderExecution:Mode = Remote).
+    private readonly IRealOrderGateway _orderGateway;
 
-    public RealTradeController(IAutoRealTradeService realTradeService, IZerodhaKiteBrokerService brokerService)
+    public RealTradeController(IAutoRealTradeService realTradeService, IZerodhaKiteBrokerService brokerService, IRealOrderGateway orderGateway)
     {
         _realTradeService = realTradeService ?? throw new ArgumentNullException(nameof(realTradeService));
         _brokerService = brokerService ?? throw new ArgumentNullException(nameof(brokerService));
+        _orderGateway = orderGateway ?? throw new ArgumentNullException(nameof(orderGateway));
     }
 
     private int GetCurrentUserId(int? queryUserId = null)
@@ -194,14 +198,19 @@ public class RealTradeController : ControllerBase
         }
 
         int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+        dto.UserId = targetUid;
 
-        bool executed = await _realTradeService.EvaluateAndExecuteRealBuyAsync(
-            dto.Symbol, dto.EntryPrice, dto.MetConditionsCount, targetUid, isBuySignal: true,
-            isManualTrade: true, manualQuantity: dto.Quantity, manualStopLossPct: dto.StopLossPct, manualTrailingSlPct: dto.TrailingSlPct);
+        var result = await _orderGateway.ManualBuyAsync(dto);
 
-        if (executed)
+        if (result.Success)
         {
             return Ok(new { success = true, message = $"Real BUY order submitted for {dto.Symbol.ToUpper().Trim()}." });
+        }
+
+        // Only a forwarding failure carries a message - a plain "not executed" explains itself in the audit log.
+        if (!string.IsNullOrWhiteSpace(result.Message))
+        {
+            return Ok(new { success = false, message = result.Message });
         }
 
         var recentLogs = await _realTradeService.GetTodayLogsAsync(targetUid, 20);
@@ -246,8 +255,8 @@ public class RealTradeController : ControllerBase
     {
         string reason = dto?.Reason ?? "Emergency Panic Kill Switch Triggered by User";
         int targetUid = dto?.UserId.HasValue == true && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
-        int closedCount = await _realTradeService.SquareOffAllPositionsAsync(reason, targetUid);
-        return Ok(new { success = true, closedPositionsCount = closedCount, message = $"Kill switch activated. {closedCount} positions squared off." });
+        var result = await _orderGateway.SquareOffAllAsync(new EmergencyKillSwitchRequestDto { Reason = reason, UserId = targetUid });
+        return Ok(new { success = result.Success, closedPositionsCount = result.ClosedPositionsCount, message = result.Message });
     }
 
     /// <summary>
@@ -263,9 +272,10 @@ public class RealTradeController : ControllerBase
 
         try
         {
-            int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
-            bool success = await _realTradeService.SquareOffSinglePositionAsync(dto.PositionId, dto.Reason ?? "Manual Web Square-Off", targetUid);
-            return Ok(new { success, message = success ? "Position square-off initiated." : "Failed to square off position." });
+            dto.UserId = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+            dto.Reason ??= "Manual Web Square-Off";
+            var result = await _orderGateway.SquareOffPositionAsync(dto);
+            return Ok(new { success = result.Success, message = result.Message });
         }
         catch (Exception ex)
         {
@@ -287,11 +297,11 @@ public class RealTradeController : ControllerBase
 
         try
         {
-            int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
-            var (success, message) = await _realTradeService.ManualSellAsync(
-                dto.Symbol, dto.Quantity, dto.CurrentPrice, dto.Product, dto.EntryPriceHint, dto.Reason ?? "Manual Web Sell", targetUid);
+            dto.UserId = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+            dto.Reason ??= "Manual Web Sell";
+            var result = await _orderGateway.ManualSellAsync(dto);
 
-            return Ok(new { success, message });
+            return Ok(new { success = result.Success, message = result.Message });
         }
         catch (Exception ex)
         {
@@ -313,11 +323,11 @@ public class RealTradeController : ControllerBase
 
         try
         {
-            int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
-            var (success, message) = await _realTradeService.ManualBuyBackAsync(
-                dto.Symbol, dto.Quantity, dto.CurrentPrice, dto.Product, dto.EntryPriceHint, dto.Reason ?? "Manual Web Buy Back", targetUid);
+            dto.UserId = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+            dto.Reason ??= "Manual Web Buy Back";
+            var result = await _orderGateway.ManualBuyBackAsync(dto);
 
-            return Ok(new { success, message });
+            return Ok(new { success = result.Success, message = result.Message });
         }
         catch (Exception ex)
         {
