@@ -622,18 +622,9 @@
                         </div>
 
                         <div class="settings-actions mt-3">
-                            @if (User.IsInRole("Admin"))
-                            {
-                                <button type="submit" class="btn-save-settings" id="btnSaveSettings">
-                                    💾 Save Risk & Strategy Settings
-                                </button>
-                            }
-                            else
-                            {
-                                <button type="button" class="btn-save-settings disabled" disabled title="Settings modification is restricted to System Admin">
-                                    🔒 Admin Only
-                                </button>
-                            }
+                            <button type="submit" class="btn-save-settings" id="btnSaveSettings">
+                                💾 Save Risk & Strategy Settings
+                            </button>
                         </div>
                     </form>
                 </div>
