@@ -40,6 +40,28 @@ public class SwingTradeRulesLevelPnlTests
         Assert.Null(SwingTradeRules.NetPnlAtLevel(18.30m, null, 273, isShort: true, DateTime.UtcNow));
     }
 
+    [Fact]
+    public void PositionLossLimit_ExitsOnceTheLossReachesTheLimit()
+    {
+        Assert.Null(SwingTradeRules.PositionLossLimitReason(100m, 98.6m, 10, isShort: false, 15m));     // loss 14
+        Assert.NotNull(SwingTradeRules.PositionLossLimitReason(100m, 98.5m, 10, isShort: false, 15m));  // loss 15
+        Assert.NotNull(SwingTradeRules.PositionLossLimitReason(100m, 101.5m, 10, isShort: true, 15m));  // short loss 15
+        Assert.Null(SwingTradeRules.PositionLossLimitReason(100m, 98.5m, 10, isShort: true, 15m));      // short in profit
+    }
+
+    [Fact]
+    public void PositionLossLimit_NotSet_NeverExits()
+    {
+        Assert.Null(SwingTradeRules.PositionLossLimitReason(100m, 50m, 10, isShort: false, null));
+        Assert.Null(SwingTradeRules.PositionLossLimitReason(100m, 50m, 10, isShort: false, 0m));
+    }
+
+    [Fact]
+    public void AccountDailyLossLimit_IsTenPercentOfCapital()
+    {
+        Assert.Equal(5000m, SwingTradeRules.AccountDailyLossLimit(50000m));
+    }
+
     [Theory]
     // SWING_CLOSE: only once the trail has crossed the entry.
     [InlineData(101, false, true, true)]

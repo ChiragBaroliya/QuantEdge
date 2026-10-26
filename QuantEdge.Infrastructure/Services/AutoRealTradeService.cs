@@ -541,14 +541,10 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
-        // 6. Daily Loss Circuit Breaker Check (mandatory - falls back to a conservative default
-        // percentage of available capital if the user hasn't configured an explicit limit).
-        decimal effectiveDailyLossLimit = SwingTradeRules.EffectiveDailyLossLimit(settings.MaxDailyLossLimit, settings.AvailableCapital);
-
-        decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
-        var openPositions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
-        decimal totalUnrealized = openPositions.Sum(p => p.UnrealizedPnl);
-        decimal totalLoss = todayRealizedPnl + totalUnrealized;
+        // 6. Daily Loss Circuit Breaker Check (mandatory, whole account): a fixed share of the capital. The user's ₹
+        // limit is per stock (PositionLossLimitReason in the exit path), not this.
+        decimal effectiveDailyLossLimit = SwingTradeRules.AccountDailyLossLimit(settings.AvailableCapital);
+        var (openPositions, totalLoss) = await GetTodayTotalPnlAsync(userId);
 
         if (totalLoss <= -effectiveDailyLossLimit)
         {
@@ -1045,11 +1041,9 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
-        // 6. Daily Loss Circuit Breaker
-        decimal effectiveDailyLossLimit = SwingTradeRules.EffectiveDailyLossLimit(settings.MaxDailyLossLimit, settings.AvailableCapital);
-        decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
-        var openPositions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
-        decimal totalLoss = todayRealizedPnl + openPositions.Sum(p => p.UnrealizedPnl);
+        // 6. Daily Loss Circuit Breaker (whole account, as in the BUY path)
+        decimal effectiveDailyLossLimit = SwingTradeRules.AccountDailyLossLimit(settings.AvailableCapital);
+        var (openPositions, totalLoss) = await GetTodayTotalPnlAsync(userId);
         if (totalLoss <= -effectiveDailyLossLimit)
         {
             await LogAuditAsync(symbol, "CIRCUIT_BREAKER", entryPrice, 0,
@@ -1841,8 +1835,12 @@ public class AutoRealTradeService : IAutoRealTradeService
             ? await _marketHoursService.CountTradingDaysElapsedAsync(position.OpenedAt, DateTime.UtcNow)
             : 0;
 
-        var decision = SwingTradeRules.EvaluateExit(ExitPositionView.From(position), currentLtp, nowIst,
-            tradingDaysOpen, settings.MaxDurationDays, SwingTradeParams.From(settings));
+        string? lossLimitReason = SwingTradeRules.PositionLossLimitReason(position.AverageEntryPrice, currentLtp, position.Quantity,
+            isShort: false, settings.MaxDailyLossLimit);
+        var decision = lossLimitReason != null
+            ? new ExitDecision(true, lossLimitReason, false, null)
+            : SwingTradeRules.EvaluateExit(ExitPositionView.From(position), currentLtp, nowIst,
+                tradingDaysOpen, settings.MaxDurationDays, SwingTradeParams.From(settings));
 
         if (decision.ShouldExit)
         {
@@ -2126,8 +2124,12 @@ public class AutoRealTradeService : IAutoRealTradeService
             return await CloseStaleShortAsync(position, userId);
 
         var tradeParams = SwingTradeParams.From(settings);
-        var decision = SwingTradeRules.EvaluateShortExit(ExitPositionView.From(position), currentLtp, nowIst,
-            settings.ShortSquareOffTime, tradeParams);
+        string? lossLimitReason = SwingTradeRules.PositionLossLimitReason(position.AverageEntryPrice, currentLtp, position.Quantity,
+            isShort: true, settings.MaxDailyLossLimit);
+        var decision = lossLimitReason != null
+            ? new ExitDecision(true, lossLimitReason, false, null)
+            : SwingTradeRules.EvaluateShortExit(ExitPositionView.From(position), currentLtp, nowIst,
+                settings.ShortSquareOffTime, tradeParams);
 
         if (decision.ShouldExit)
         {
@@ -3098,6 +3100,19 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
     }
 
+    // Today's booked P&L plus each open position's P&L at its live price, for the whole-account loss cap. The stored
+    // UnrealizedPnl is frozen at entry, so without this the cap only ever saw booked losses. No price = counted as 0.
+    private async Task<(List<RealPosition> OpenPositions, decimal TotalPnl)> GetTodayTotalPnlAsync(int userId)
+    {
+        decimal realized = await _repository.GetTodayRealizedPnlAsync(userId);
+        var openPositions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
+        if (openPositions.Count == 0) return (openPositions, realized);
+
+        var live = await GetLiveLtpsAsync(openPositions.Select(p => p.Symbol), userId);
+        decimal unrealized = openPositions.Sum(p => live.TryGetValue(p.Symbol, out var price) ? CalculateUnrealizedPnl(p, price.Ltp) : 0m);
+        return (openPositions, realized + unrealized);
+    }
+
     private static decimal CalculateUnrealizedPnl(RealPosition position, decimal ltp) =>
         Math.Round((position.Side == TradeSide.SELL ? position.AverageEntryPrice - ltp : ltp - position.AverageEntryPrice) * position.Quantity, 2);
 
@@ -3205,10 +3220,8 @@ public class AutoRealTradeService : IAutoRealTradeService
         if (todayCount >= settings.MaxTradesPerDay)
             return Fail(6, $"Daily limit of {settings.MaxTradesPerDay} real trades reached ({todayCount}/{settings.MaxTradesPerDay})");
 
-        decimal effectiveDailyLossLimit = SwingTradeRules.EffectiveDailyLossLimit(settings.MaxDailyLossLimit, settings.AvailableCapital);
-        decimal todayRealizedPnl = await _repository.GetTodayRealizedPnlAsync(userId);
-        var openPositions = (await _repository.GetOpenPositionsAsync(userId)).ToList();
-        decimal totalLoss = todayRealizedPnl + openPositions.Sum(p => p.UnrealizedPnl);
+        decimal effectiveDailyLossLimit = SwingTradeRules.AccountDailyLossLimit(settings.AvailableCapital);
+        var (openPositions, totalLoss) = await GetTodayTotalPnlAsync(userId);
         if (totalLoss <= -effectiveDailyLossLimit)
             return Fail(7, $"Daily loss limit ₹{effectiveDailyLossLimit:N2} breached (Total Loss: ₹{totalLoss:N2}) - the bot pauses itself on its next buy attempt");
 

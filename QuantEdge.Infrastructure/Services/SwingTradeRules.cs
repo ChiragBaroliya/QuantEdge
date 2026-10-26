@@ -167,6 +167,28 @@ public static class SwingTradeRules
             : Math.Max(1m, availableCapital * DefaultDailyLossLimitFactor);
 
     /// <summary>
+    /// Auto Real Trading's whole-account daily loss cap: always DefaultDailyLossLimitFactor of the capital. The user's ₹
+    /// limit there is per stock instead (<see cref="PositionLossLimitReason"/>).
+    /// </summary>
+    public static decimal AccountDailyLossLimit(decimal availableCapital) =>
+        Math.Max(1m, availableCapital * DefaultDailyLossLimitFactor);
+
+    /// <summary>
+    /// Auto Real Trading's "Max Loss per Stock": the exit reason once a position's open loss at <paramref name="ltp"/> has
+    /// reached <paramref name="maxLossPerStock"/> ₹, else null. Checked live (not on closing basis) for longs and shorts,
+    /// before the ATR stops - whichever is hit first exits. No limit set = never.
+    /// </summary>
+    public static string? PositionLossLimitReason(decimal entryPrice, decimal ltp, int quantity, bool isShort, decimal? maxLossPerStock)
+    {
+        if (!maxLossPerStock.HasValue || maxLossPerStock.Value <= 0m) return null;
+        decimal limit = Math.Abs(maxLossPerStock.Value);
+        decimal? pnl = PnlAtLevel(entryPrice, ltp, quantity, isShort);
+        return pnl.HasValue && pnl.Value <= -limit
+            ? $"Stop Loss - max loss per stock ₹{limit:N0} reached (loss ₹{-pnl.Value:N2} @ ₹{ltp:F2})"
+            : null;
+    }
+
+    /// <summary>
     /// Guards against buying a signal whose price has already moved away from the scanned candle
     /// close - either dropped (no longer the setup that was scored) or run up (chasing a local high).
     /// Returns the skip reason, or null when the live price is close enough to trade.

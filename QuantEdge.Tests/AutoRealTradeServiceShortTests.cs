@@ -263,6 +263,67 @@ public class AutoRealTradeServiceShortTests : ClockedTest
     }
 
     [Fact]
+    public async Task Cover_MaxLossPerStockReached_BuysBackBeforeTheAtrStop()
+    {
+        _settings.MaxDailyLossLimit = 20m;
+        var pos = OpenShort(entry: 100m, qty: 10); // ATR stop at 103
+        _brokerFillPrice = 102.5m;
+
+        Assert.True(await CreateService().EvaluateAndExecuteRealSellAsync(pos, 102.5m, User)); // loss 25 >= 20
+
+        Assert.Equal(("SBIN", TradeSide.BUY, 10, "MIS"), Assert.Single(_placed));
+        Assert.Equal(PositionStatus.CLOSED, pos.Status);
+        Assert.StartsWith("Stop Loss - max loss per stock", Assert.Single(_history).ExitReason);
+    }
+
+    [Fact]
+    public async Task Cover_NoMaxLossPerStock_WaitsForTheAtrStop()
+    {
+        _settings.MaxDailyLossLimit = null;
+        var pos = OpenShort(entry: 100m, qty: 10);
+
+        Assert.False(await CreateService().EvaluateAndExecuteRealSellAsync(pos, 102.5m, User));
+        Assert.Empty(_placed);
+    }
+
+    [Fact]
+    public async Task LongSell_MaxLossPerStockReached_SellsThatStockOnly()
+    {
+        _settings.MaxDailyLossLimit = 20m;
+        var pos = new RealPosition
+        {
+            Id = 700, UserId = User, Symbol = "TCS", Side = TradeSide.BUY, Quantity = 10, AverageEntryPrice = 100m,
+            StopLoss = 95m, TakeProfit = 110m, Status = PositionStatus.OPEN, TradeType = TradeType.Auto,
+            OpenedAt = IstToUtc(TradingDayIst.AddHours(-1))
+        };
+        _positions.Add(pos);
+        var other = OpenShort(entry: 100m, qty: 10, symbol: "INFY");
+        _brokerFillPrice = 97.5m;
+
+        Assert.True(await CreateService().EvaluateAndExecuteRealSellAsync(pos, 97.5m, User)); // loss 25 >= 20, ATR stop 95 not hit
+
+        Assert.Equal(("TCS", TradeSide.SELL, 10, "CNC"), Assert.Single(_placed));
+        Assert.Equal(PositionStatus.CLOSED, pos.Status);
+        Assert.Equal(PositionStatus.OPEN, other.Status);
+    }
+
+    [Fact]
+    public async Task Short_AccountLossCap_CountsOpenLossesAtLivePrice_AndIgnoresThePerStockLimit()
+    {
+        // Per-stock limit (₹20) is not an account cap: 10% of 10,000 = ₹1,000 is.
+        _settings.MaxDailyLossLimit = 20m;
+        _settings.IsAutoShortEnabled = true;
+        OpenShort(entry: 100m, qty: 10, symbol: "INFY");
+        _broker.Setup(b => b.GetLtpQuotesAsync(It.IsAny<IEnumerable<(string, string)>>(), It.IsAny<int>()))
+            .ReturnsAsync((IEnumerable<(string Symbol, string Exchange)> list, int _) =>
+                (true, list.ToDictionary(x => x.Symbol, x => x.Symbol == "INFY" ? 200m : 100m), "ok")); // INFY short is ₹1,000 down
+
+        Assert.False(await Short());
+        Assert.Contains(_logs, l => l.ActionType == "CIRCUIT_BREAKER");
+        Assert.Empty(_placed);
+    }
+
+    [Fact]
     public async Task Cover_SkipsWhenACoverOrderIsAlreadyPending()
     {
         var pos = OpenShort(entry: 100m, qty: 10);

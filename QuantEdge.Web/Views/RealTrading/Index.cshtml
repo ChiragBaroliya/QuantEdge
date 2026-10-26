@@ -503,8 +503,8 @@
                         <div class="optional-box mb-3">
                             <div class="optional-toggle-header">
                                 <label class="optional-label" for="chkEnableDailyLossLimit">
-                                    <span class="optional-title">Daily Loss Limit Override <span class="text-warning">(always on — this only overrides the ₹ amount)</span></span>
-                                    <small class="optional-desc">Emergency pause if daily loss breaches limit. Leaving this OFF does NOT disable the breaker — a default of 10% of Allocated Capital is still enforced automatically; this toggle only lets you set a custom ₹ amount instead.</small>
+                                    <span class="optional-title">Max Loss per Stock (₹)</span>
+                                    <small class="optional-desc">When ON, the bot exits a stock as soon as its open loss reaches this ₹ amount (longs and shorts, checked live), whichever comes first with its ATR stop loss. Other stocks keep trading. Separately, the bot always pauses itself if the whole account's loss today reaches 10% of Allocated Capital.</small>
                                 </label>
                                 <label class="qe-switch">
                                     <input type="checkbox" id="chkEnableDailyLossLimit" />
@@ -512,8 +512,8 @@
                                 </label>
                             </div>
                             <div id="dailyLossInputWrapper" class="optional-input-wrapper" style="display: none;">
-                                <label class="form-label mt-2" for="inpMaxDailyLoss">Max Daily Loss Limit (₹)</label>
-                                <input type="number" step="any" min="10" max="10000000" class="form-control qe-input" id="inpMaxDailyLoss" name="MaxDailyLossLimit" placeholder="e.g. 5000" />
+                                <label class="form-label mt-2" for="inpMaxDailyLoss">Max Loss per Stock (₹)</label>
+                                <input type="number" step="any" min="10" max="10000000" class="form-control qe-input" id="inpMaxDailyLoss" name="MaxDailyLossLimit" placeholder="e.g. 150" />
                             </div>
                         </div>
 

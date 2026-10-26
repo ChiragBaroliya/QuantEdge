@@ -29,8 +29,10 @@ public class TradeLogicRulesDto
     public decimal AvailableCapital { get; set; }
     public decimal FixedAmountPerTrade { get; set; }
     public int MaxTradesPerDay { get; set; }
+    /// <summary>Whole-account daily loss cap (always 10% of capital).</summary>
     public decimal EffectiveDailyLossLimit { get; set; }
-    public bool IsDailyLossLimitDefault { get; set; }
+    /// <summary>The user's per-stock ₹ loss limit (exits that stock); null = not set.</summary>
+    public decimal? MaxLossPerStock { get; set; }
     public int MinConditionsMatch { get; set; }
     public string TradingWindowStart { get; set; } = "09:15";
     public string TradingWindowEnd { get; set; } = "15:30";
@@ -81,8 +83,8 @@ public class TradeLogicRulesDto
             AvailableCapital = settings.AvailableCapital,
             FixedAmountPerTrade = settings.FixedAmountPerTrade,
             MaxTradesPerDay = settings.MaxTradesPerDay,
-            EffectiveDailyLossLimit = SwingTradeRules.EffectiveDailyLossLimit(settings.MaxDailyLossLimit, settings.AvailableCapital),
-            IsDailyLossLimitDefault = !(settings.MaxDailyLossLimit.HasValue && settings.MaxDailyLossLimit.Value > 0),
+            EffectiveDailyLossLimit = SwingTradeRules.AccountDailyLossLimit(settings.AvailableCapital),
+            MaxLossPerStock = settings.MaxDailyLossLimit.HasValue && settings.MaxDailyLossLimit.Value > 0 ? settings.MaxDailyLossLimit : null,
             MinConditionsMatch = settings.MinConditionsMatch,
             TradingWindowStart = settings.TradingWindowStart,
             TradingWindowEnd = settings.TradingWindowEnd,

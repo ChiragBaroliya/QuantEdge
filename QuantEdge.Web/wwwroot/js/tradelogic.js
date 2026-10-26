@@ -33,7 +33,7 @@
     const emergencyMult = Number(R.stopLossAtrMult) + Number(R.emergencyExtraAtrMult);
     const buffer = fracPct(R.marketProtectionBufferPct);
     const gapBuffer = fracPct(R.gapExitProtectionBufferPct);
-    const lossLimit = money(R.effectiveDailyLossLimit) + (R.isDailyLossLimitDefault ? " (10% of capital)" : "");
+    const lossLimit = money(R.effectiveDailyLossLimit) + " (10% of capital, whole account)";
     const staleAfterSec = R.restFallbackMissThreshold * R.monitorIntervalSeconds;
     const CHECKLIST_TOTAL = 11; // SwingDecisionEngine checklist: market filter + 2 hard filters + 8 factors
 
@@ -137,7 +137,7 @@
         ["Opening delay passed?", `no entries before ${firstEntry}`, `EntryDelayMinutes (${R.entryDelayMinutes}) avoids the volatile opening minutes. Exits are never delayed.`],
         ["Signal strong enough?", `BUY, or ≥ ${R.minConditionsMatch} of ${CHECKLIST_TOTAL} conditions`, `A BUY signal always passes. Otherwise at least ${R.minConditionsMatch} checklist items must be met.`],
         ["Under daily trade cap?", `fewer than ${R.maxTradesPerDay} filled BUYs today`, "MaxTradesPerDay counts only filled BUY orders."],
-        ["Under daily loss limit?", `loss < ${lossLimit}`, "If today's loss reaches the limit, the bot also switches itself OFF and logs CIRCUIT_BREAKER."],
+        ["Under daily loss limit?", `loss < ${lossLimit}`, "Today's booked loss plus open losses at live prices. If it reaches the limit, the bot also switches itself OFF and logs CIRCUIT_BREAKER." + (R.maxLossPerStock ? ` Separately, any one stock is exited once its loss reaches ${money(R.maxLossPerStock)}.` : "")],
         ["Under portfolio cap?", `fewer than ${R.maxConcurrentPositions} open positions`, `A fixed limit of ${R.maxConcurrentPositions} positions open at the same time.`],
         ["Not already holding it?", "no open position in this stock", "The bot never buys the same stock twice."],
         ["No pending BUY?", "no resting BUY for this stock", "Stops a second BUY while the first one is still waiting at the broker."],
