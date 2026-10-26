@@ -10,6 +10,7 @@ public interface IAutoRealTradeService
     Task<RealTradeSettings> GetSettingsAsync(int userId = 1);
     Task<RealTradeSettings> UpdateSettingsAsync(RealTradeSettingsUpdateDto updateDto, int userId = 1);
     Task ToggleRealTradeAsync(bool enabled, int userId = 1);
+    Task ToggleAutoShortAsync(bool enabled, bool riskAccepted, int userId = 1);
     Task<int> GetTodayRealTradeCountAsync(int userId = 1);
     Task<RealTradeDashboardDto> GetDashboardDataAsync(int userId = 1);
     Task LogAuditAsync(string symbol, string actionType, decimal? price, int? quantity, string? reason, int userId = 1);

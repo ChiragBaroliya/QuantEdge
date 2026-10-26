@@ -60,6 +60,18 @@
         </div>
     </div>
 
+    <!-- Shown whenever the saved Auto Short switch is ON - can't be dismissed -->
+    <div id="banner-short-risk" class="prerequisite-banner banner-token-alert" style="display: none;">
+        <div class="banner-content">
+            <span class="banner-icon">⚠️</span>
+            <div class="banner-text">
+                <strong>AUTO SHORT SELLING IS ON:</strong> Short selling is very risky - losses are unlimited if the price rises, and MIS uses leverage.
+                You are trading at your own risk. Open shorts are bought back at <strong id="bannerShortSquareOff">15:05</strong> IST.
+            </div>
+        </div>
+        <button type="button" class="btn-short-off" id="btnBannerShortOff">Turn Off Auto Short</button>
+    </div>
+
     <!-- Master Header Card -->
     <div class="autotrade-header-card realtrade-header-card">
         <div class="autotrade-title-group">
@@ -100,14 +112,16 @@
             <div class="toggle-switch-container">
                 <span class="switch-label">Live Trading:</span>
                 <label class="switch">
-                    @if (User.IsInRole("Admin"))
-                    {
-                        <input type="checkbox" id="chkRealTradeToggle" />
-                    }
-                    else
-                    {
-                        <input type="checkbox" id="chkRealTradeToggle" disabled title="Live Real Trading Master Switch can only be toggled by System Admin" />
-                    }
+                    <input type="checkbox" id="chkRealTradeToggle" />
+
+                    <span class="slider real-slider"></span>
+                </label>
+            </div>
+            <!-- Auto Short Selling switch - each user's own; ON only outside market hours, after the risk warning -->
+            <div class="toggle-switch-container" title="Auto Short Selling (Intraday, MIS): turn ON outside market hours only; OFF any time">
+                <span class="switch-label">Auto Short:</span>
+                <label class="switch">
+                    <input type="checkbox" id="chkAutoShortToggle" />
                     <span class="slider real-slider"></span>
                 </label>
             </div>
@@ -600,10 +614,7 @@
                         </div>
 
                         <div class="mt-3">
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="chkAutoShortEnabled" name="IsAutoShortEnabled" />
-                                <label class="form-check-label form-label" for="chkAutoShortEnabled">⚠️ Auto Short Selling (Intraday, MIS) - REAL MONEY</label>
-                            </div>
+                            <div class="form-label mb-2">⚠️ Auto Short Selling (Intraday, MIS) - REAL MONEY</div>
                             <div class="row">
                                 <div class="col-6 mb-2">
                                     <label class="form-label" for="inpShortEntryCutoff">Short Entry Cut-off</label>
@@ -615,7 +626,8 @@
                                 </div>
                             </div>
                             <small class="form-hint">
-                                OFF by default, and only active while the Real Auto Trade master switch is ON. When ON, the bot may place
+                                Turned ON / OFF with the "Auto Short" switch at the top (ON only outside market hours, OFF any time),
+                                and only active while the Live Trading switch is also ON. When ON, the bot may place
                                 real Zerodha SELL orders (product MIS) on bearish setups - NIFTY below its 50 DMA with EMA20 &lt; EMA50 and
                                 the stock in a daily downtrend - with the same guards and limits as a BUY. No new short after the cut-off;
                                 every open short is bought back at the Square-off time (15:10 at the latest - Zerodha blocks MIS orders for some stocks from ~15:12).
@@ -630,6 +642,35 @@
                         </div>
                     </form>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Short selling risk warning - must be accepted before Auto Short is turned ON -->
+<div class="modal fade" id="modalShortRisk" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content qe-confirm-modal">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger">⚠️ Turn ON Auto Short Selling?</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>The bot will place <strong class="text-warning">real-money Zerodha SELL (MIS) orders</strong> on bearish setups. Short selling is high risk:</p>
+                <ul class="small" style="color:#cbd5e1;">
+                    <li>Losses have no ceiling - a stock can keep rising after you short it.</li>
+                    <li>MIS is intraday and uses leverage, so losses grow faster than with delivery trades.</li>
+                    <li>Price gaps or fast moves can skip past your stop loss.</li>
+                    <li>Zerodha can block MIS orders or square shorts off on its own near market close.</li>
+                </ul>
+                <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" id="chkShortRiskAccept" />
+                    <label class="form-check-label text-white" for="chkShortRiskAccept">I understand the risks and trade at my own risk.</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="btnConfirmShortOn" disabled>Turn ON Auto Short</button>
             </div>
         </div>
     </div>

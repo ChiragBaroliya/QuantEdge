@@ -573,6 +573,60 @@ public class AutoRealTradeServiceShortTests : ClockedTest
             await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService().UpdateSettingsAsync(dto, User));
     }
 
+    [Fact]
+    public async Task UpdateSettings_LeavesTheAutoShortSwitchAlone()
+    {
+        _marketHours.Setup(m => m.IsWithinMarketHoursAsync(It.IsAny<DateTime?>())).ReturnsAsync(false);
+        _repo.Setup(r => r.UpsertSettingsAsync(It.IsAny<RealTradeSettings>())).ReturnsAsync((RealTradeSettings s) => s);
+        _settings.IsAutoShortEnabled = true;
+
+        var saved = await CreateService().UpdateSettingsAsync(new RealTradeSettingsUpdateDto(), User);
+
+        Assert.True(saved.IsAutoShortEnabled);
+    }
+
+    // ---------------- Auto Short switch ----------------
+
+    [Fact]
+    public async Task ToggleAutoShort_On_OutsideMarketHours_WithRiskAccepted_Saves()
+    {
+        _marketHours.Setup(m => m.IsWithinMarketHoursAsync(It.IsAny<DateTime?>())).ReturnsAsync(false);
+
+        await CreateService().ToggleAutoShortAsync(true, riskAccepted: true, User);
+
+        _repo.Verify(r => r.ToggleAutoShortAsync(User, true), Times.Once);
+        Assert.Contains(_logs, l => l.ActionType == "AUTO_SHORT_ENABLED");
+    }
+
+    [Fact]
+    public async Task ToggleAutoShort_On_WithoutRiskAccepted_IsRefused()
+    {
+        _marketHours.Setup(m => m.IsWithinMarketHoursAsync(It.IsAny<DateTime?>())).ReturnsAsync(false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService().ToggleAutoShortAsync(true, riskAccepted: false, User));
+        _repo.Verify(r => r.ToggleAutoShortAsync(It.IsAny<int>(), It.IsAny<bool>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ToggleAutoShort_On_DuringMarketHours_IsRefused()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService().ToggleAutoShortAsync(true, riskAccepted: true, User));
+        _repo.Verify(r => r.ToggleAutoShortAsync(It.IsAny<int>(), It.IsAny<bool>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ToggleAutoShort_Off_IsAllowedDuringMarketHours_AndStopsNewShorts()
+    {
+        _settings.IsAutoShortEnabled = true;
+
+        await CreateService().ToggleAutoShortAsync(false, riskAccepted: false, User);
+
+        _repo.Verify(r => r.ToggleAutoShortAsync(User, false), Times.Once);
+        Assert.False(_settings.IsAutoShortEnabled);
+        Assert.False(await Short());
+        Assert.Empty(_placed);
+    }
+
     private void SetupBrokerPositions(params ZerodhaPositionItemDto[] rows)
     {
         _repo.Setup(r => r.GetAllOpenPositionsAsync()).ReturnsAsync(() => _positions.Where(p => p.Status == PositionStatus.OPEN).ToList());

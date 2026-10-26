@@ -2184,6 +2184,25 @@ END;
 $$;
 
 
+-- Function: fn_toggle_real_auto_short
+-- The Auto Short Selling switch. Turning it ON also records when the user accepted the risk warning.
+DROP FUNCTION IF EXISTS fn_toggle_real_auto_short(INT, BOOLEAN);
+
+CREATE OR REPLACE FUNCTION fn_toggle_real_auto_short(p_user_id INT, p_enabled BOOLEAN)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO real_trade_settings (user_id, is_auto_short_enabled, short_risk_accepted_at, updated_at)
+    VALUES (p_user_id, p_enabled, CASE WHEN p_enabled THEN NOW() END, NOW())
+    ON CONFLICT (user_id) DO UPDATE SET
+        is_auto_short_enabled = p_enabled,
+        short_risk_accepted_at = CASE WHEN p_enabled THEN NOW() ELSE real_trade_settings.short_risk_accepted_at END,
+        updated_at = NOW();
+END;
+$$;
+
+
 -- Function: fn_create_real_order
 DROP FUNCTION IF EXISTS fn_create_real_order(INT, VARCHAR, VARCHAR, INT, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, NUMERIC, TIMESTAMP WITH TIME ZONE, VARCHAR, INT, VARCHAR);
 DROP FUNCTION IF EXISTS fn_create_real_order(VARCHAR, VARCHAR, VARCHAR, INT, INT, INT, NUMERIC, NUMERIC, NUMERIC, INT, NUMERIC, TIMESTAMP WITH TIME ZONE, VARCHAR, INT, VARCHAR);

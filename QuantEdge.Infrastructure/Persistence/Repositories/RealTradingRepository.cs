@@ -91,6 +91,14 @@ public class RealTradingRepository : IRealTradingRepository
         await connection.ExecuteAsync(sql, new { userId, enabled });
     }
 
+    public async Task ToggleAutoShortAsync(int userId, bool enabled)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        string sql = "SELECT fn_toggle_real_auto_short(@userId, @enabled);";
+
+        await connection.ExecuteAsync(sql, new { userId, enabled });
+    }
+
     public async Task<RealOrder> CreateOrderAsync(RealOrder order)
     {
         order.BrokerOrderId = Clamp(order.BrokerOrderId, 100);

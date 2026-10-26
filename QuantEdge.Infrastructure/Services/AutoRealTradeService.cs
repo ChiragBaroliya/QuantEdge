@@ -186,7 +186,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         existing.StopLossAtrMult = updateDto.StopLossAtrMult;
         existing.TrailAtrMult = updateDto.TrailAtrMult;
         existing.TargetAtrMult = updateDto.TargetAtrMult;
-        existing.IsAutoShortEnabled = updateDto.IsAutoShortEnabled;
+        // IsAutoShortEnabled is left as saved - it has its own switch (ToggleAutoShortAsync).
         existing.ShortEntryCutoff = shortEntryCutoff;
         existing.ShortSquareOffTime = shortSquareOffTime;
 
@@ -228,6 +228,40 @@ public class AutoRealTradeService : IAutoRealTradeService
 
         await LogAuditAsync(userTag, enabled ? "REAL_TRADE_ENABLED" : "REAL_TRADE_DISABLED", null, null,
             enabled ? "⚡ REAL MONEY Auto Trading Master Switch turned ON" : "Real Auto Trading Master Switch turned OFF", userId);
+
+        await BroadcastDashboardUpdateAsync(userId);
+    }
+
+    /// <summary>
+    /// The Auto Short Selling switch - each user's own. Turning it ON needs the risk warning accepted and is only allowed
+    /// outside market hours; turning it OFF is always allowed. OFF only stops new shorts: open shorts keep their SL /
+    /// Target and are still bought back at the Short Square-off time. Shorts are only ever placed while the Live Trading
+    /// switch is also ON (EvaluateAndExecuteRealShortAsync).
+    /// </summary>
+    public async Task ToggleAutoShortAsync(bool enabled, bool riskAccepted, int userId = 1)
+    {
+        string userTag = await GetUserTagAsync(userId);
+        if (enabled)
+        {
+            if (!riskAccepted)
+                throw new InvalidOperationException("⚠️ Please accept the short selling risk warning before turning Auto Short Selling ON.");
+            if (await _marketHoursService.IsWithinMarketHoursAsync())
+                throw new InvalidOperationException("🔒 Auto Short Selling can only be turned ON outside market hours (before 09:15 AM or after 03:30 PM IST). You can turn it OFF at any time.");
+        }
+
+        await _repository.ToggleAutoShortAsync(userId, enabled);
+
+        var settings = await GetSettingsAsync(userId);
+        settings.IsAutoShortEnabled = enabled;
+        _realTradeCache?.SetUserSettings(settings);
+
+        string cacheKey = $"realtrade:settings:{userId}";
+        await _cacheService.RemoveAsync(cacheKey);
+
+        await LogAuditAsync(userTag, enabled ? "AUTO_SHORT_ENABLED" : "AUTO_SHORT_DISABLED", null, null,
+            enabled
+                ? "⚠️ Auto Short Selling turned ON - user accepted the short selling risk warning (trading at own risk)"
+                : "Auto Short Selling turned OFF - no new shorts; open shorts are still managed and squared off", userId);
 
         await BroadcastDashboardUpdateAsync(userId);
     }

@@ -1118,6 +1118,10 @@ ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_square_off_time V
 ALTER TABLE real_trade_settings ALTER COLUMN short_square_off_time SET DEFAULT '15:05';
 UPDATE real_trade_settings SET short_square_off_time = '15:05' WHERE short_square_off_time > '15:10';
 
+-- Real Auto Short has its own switch (fn_toggle_real_auto_short), turned ON only after the user accepts the risk
+-- warning: when they last accepted it. NULL = never.
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_risk_accepted_at TIMESTAMP WITH TIME ZONE NULL;
+
 -- real_orders.is_short marks both legs of a short (entry SELL, covering BUY): with shorts, the side alone no longer
 -- says whether a fill opens or closes a position. Existing rows are all longs (FALSE).
 ALTER TABLE real_orders ADD COLUMN IF NOT EXISTS is_short BOOLEAN NOT NULL DEFAULT FALSE;

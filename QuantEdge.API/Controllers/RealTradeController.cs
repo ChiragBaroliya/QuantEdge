@@ -117,6 +117,24 @@ public class RealTradeController : ControllerBase
     }
 
     /// <summary>
+    /// Auto Short Selling ON / OFF switch (each user's own). ON needs the risk warning accepted and is only allowed outside market hours.
+    /// </summary>
+    [HttpPost("toggle-short")]
+    public async Task<IActionResult> ToggleAutoShort([FromBody] ToggleAutoShortRequestDto dto, [FromQuery] int? userId = null)
+    {
+        try
+        {
+            int targetUid = dto.UserId.HasValue && dto.UserId.Value > 0 ? dto.UserId.Value : GetCurrentUserId(userId);
+            await _realTradeService.ToggleAutoShortAsync(dto.Enabled, dto.RiskAccepted, targetUid);
+            return Ok(new { success = true, isAutoShortEnabled = dto.Enabled, userId = targetUid });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Gets full live dashboard summary: broker margin, realized/unrealized P&L, live open positions, recent orders, logs.
     /// </summary>
     [HttpGet("dashboard")]

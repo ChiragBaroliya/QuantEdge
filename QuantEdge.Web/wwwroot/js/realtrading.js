@@ -273,6 +273,11 @@ function updateDashboardUI(data) {
         chkToggle.checked = data.settings.isRealTradeEnabled;
     }
 
+    // Auto Short switch + its risk banner always follow the saved value
+    if (data.settings) {
+        applyAutoShortState(data.settings.isAutoShortEnabled === true, data.settings.shortSquareOffTime);
+    }
+
     // 2. Metrics Cards
     const capitalEl = document.getElementById("stat-capital");
     if (capitalEl && data.settings) {
@@ -349,8 +354,6 @@ function populateSettingsForm(s) {
     setVal("inpTargetAtrMult", s.targetAtrMult);
     setVal("inpShortEntryCutoff", s.shortEntryCutoff || "15:00");
     setVal("inpShortSquareOffTime", s.shortSquareOffTime || "15:05");
-    const chkShort = document.getElementById("chkAutoShortEnabled");
-    if (chkShort) chkShort.checked = s.isAutoShortEnabled === true;
     currentExitMode = s.exitMode || "SWING_CLOSE";
 
     // Stop Loss % / Trailing Stop Loss % are no longer settings-page fields - they're configured
@@ -452,6 +455,35 @@ function trailingSlText(mp) {
     if (!isSwingClose) return "-";
     const tslHint = isShort ? "Activates once price falls to entry - 1 ATR" : "Activates once price reaches entry + 1 ATR (never on the entry day)";
     return `<span class="text-white small" title="${tslHint}">Not active yet</span>`;
+}
+
+// Auto Short switch + "you trade at your own risk" banner, from the saved setting.
+function applyAutoShortState(enabled, squareOffTime) {
+    const chk = document.getElementById("chkAutoShortToggle");
+    if (chk) chk.checked = enabled;
+    const banner = document.getElementById("banner-short-risk");
+    if (banner) banner.style.display = enabled ? "flex" : "none";
+    const squareOffEl = document.getElementById("bannerShortSquareOff");
+    if (squareOffEl && squareOffTime) squareOffEl.innerText = squareOffTime;
+}
+
+async function saveAutoShort(enabled, riskAccepted) {
+    try {
+        const response = await fetch(`${apiBaseUrl}/api/realtrade/toggle-short`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled, riskAccepted, userId: currentUserId })
+        });
+        const resData = await response.json();
+        if (!response.ok) {
+            alert(resData.message || "Could not change Auto Short Selling.");
+        }
+    } catch (err) {
+        console.error("Auto Short toggle error:", err);
+        alert("Network error while changing Auto Short Selling.");
+    } finally {
+        loadDashboardData(); // the switch and banner show what was actually saved
+    }
 }
 
 // Net P&L at a level (server-computed, after estimated charges) - "-" for a row the bot isn't managing.
@@ -1085,6 +1117,38 @@ function setupEventListeners() {
         });
     }
 
+    // Auto Short Selling switch - ON goes through the risk warning popup, OFF applies straight away
+    const chkShortToggle = document.getElementById("chkAutoShortToggle");
+    const chkShortRiskAccept = document.getElementById("chkShortRiskAccept");
+    const btnConfirmShortOn = document.getElementById("btnConfirmShortOn");
+    const shortRiskModalEl = document.getElementById("modalShortRisk");
+    if (chkShortToggle) {
+        chkShortToggle.addEventListener("change", function () {
+            if (this.checked) {
+                this.checked = false; // stays OFF until the warning is accepted and saved
+                if (chkShortRiskAccept) chkShortRiskAccept.checked = false;
+                if (btnConfirmShortOn) btnConfirmShortOn.disabled = true;
+                if (shortRiskModalEl) bootstrap.Modal.getOrCreateInstance(shortRiskModalEl).show();
+            } else {
+                saveAutoShort(false, false);
+            }
+        });
+    }
+    if (chkShortRiskAccept && btnConfirmShortOn) {
+        chkShortRiskAccept.addEventListener("change", function () {
+            btnConfirmShortOn.disabled = !this.checked;
+        });
+        btnConfirmShortOn.addEventListener("click", async function () {
+            this.disabled = true;
+            if (shortRiskModalEl) bootstrap.Modal.getOrCreateInstance(shortRiskModalEl).hide();
+            await saveAutoShort(true, chkShortRiskAccept.checked);
+        });
+    }
+    const btnBannerShortOff = document.getElementById("btnBannerShortOff");
+    if (btnBannerShortOff) {
+        btnBannerShortOff.addEventListener("click", () => saveAutoShort(false, false));
+    }
+
     // Save Settings Form
     const frmSettings = document.getElementById("frmRealTradeSettings");
     if (frmSettings) {
@@ -1115,7 +1179,6 @@ function setupEventListeners() {
                 StopLossAtrMult: parseFloat(document.getElementById("inpSlAtrMult")?.value || "1.5"),
                 TrailAtrMult: parseFloat(document.getElementById("inpTrailAtrMult")?.value || "3"),
                 TargetAtrMult: parseFloat(document.getElementById("inpTargetAtrMult")?.value || "3"),
-                IsAutoShortEnabled: document.getElementById("chkAutoShortEnabled")?.checked === true,
                 ShortEntryCutoff: document.getElementById("inpShortEntryCutoff")?.value || "15:00",
                 ShortSquareOffTime: document.getElementById("inpShortSquareOffTime")?.value || "15:05"
             };

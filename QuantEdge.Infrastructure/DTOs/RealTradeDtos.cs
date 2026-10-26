@@ -59,9 +59,7 @@ public class RealTradeSettingsUpdateDto : IValidatableObject
     [Range(typeof(decimal), "0.5", "20.0", ErrorMessage = "Target ATR multiple must be between 0.5 and 20.")]
     public decimal TargetAtrMult { get; set; } = 3.0m;
 
-    // Auto Short Selling (intraday, MIS) - OFF unless explicitly turned on; also needs the real master switch.
-    public bool IsAutoShortEnabled { get; set; } = false;
-
+    // Auto Short Selling's ON/OFF is its own switch (ToggleAutoShortRequestDto), not part of this form.
     [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Entry Cut-off must be HH:mm.")]
     public string ShortEntryCutoff { get; set; } = "15:00";
 
@@ -177,6 +175,14 @@ public class ZerodhaHoldingDto
 public class ToggleRealTradeRequestDto
 {
     public bool Enabled { get; set; }
+    public int? UserId { get; set; }
+}
+
+public class ToggleAutoShortRequestDto
+{
+    public bool Enabled { get; set; }
+    /// <summary>Required to turn it ON: the user ticked "I understand the risks and trade at my own risk".</summary>
+    public bool RiskAccepted { get; set; }
     public int? UserId { get; set; }
 }
 

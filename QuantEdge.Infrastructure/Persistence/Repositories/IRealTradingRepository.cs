@@ -12,6 +12,7 @@ public interface IRealTradingRepository
     Task<IEnumerable<RealTradeSettings>> GetActiveSettingsAsync();
     Task<RealTradeSettings> UpsertSettingsAsync(RealTradeSettings settings);
     Task ToggleRealTradeAsync(int userId, bool enabled);
+    Task ToggleAutoShortAsync(int userId, bool enabled);
 
     // Orders
     Task<RealOrder> CreateOrderAsync(RealOrder order);

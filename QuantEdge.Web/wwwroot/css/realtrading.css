@@ -60,6 +60,21 @@
     animation: bannerPulse 2.5s infinite ease-in-out;
 }
 
+.btn-short-off {
+    background: #ffffff;
+    color: #b91c1c;
+    border: 1px solid rgba(239, 68, 68, 0.6);
+    padding: 7px 16px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.btn-short-off:hover {
+    background: #fee2e2;
+}
+
 .banner-tpin-notice {
     background: linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(217, 119, 6, 0.25) 100%);
     border: 1px solid rgba(245, 158, 11, 0.45);
