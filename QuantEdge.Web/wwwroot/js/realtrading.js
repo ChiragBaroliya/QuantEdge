@@ -454,6 +454,13 @@ function trailingSlText(mp) {
     return `<span class="text-white small" title="${tslHint}">Not active yet</span>`;
 }
 
+// Net P&L at a level (server-computed, after estimated charges) - "-" for a row the bot isn't managing.
+function levelPnlCell(value) {
+    if (value === null || value === undefined) return `<td class="text-white">-</td>`;
+    const cls = value >= 0 ? "text-success fw-semibold" : "text-danger fw-semibold";
+    return `<td class="${cls}">${formatCurrencyWithSign(value)}</td>`;
+}
+
 function renderZerodhaPositions(brokerPositions) {
     const tbody = document.getElementById("zerodhaPositionsTableBody");
     const badgeZerodhaCount = document.getElementById("badge-zerodha-count");
@@ -471,7 +478,7 @@ function renderZerodhaPositions(brokerPositions) {
     }
 
     if (!brokerPositions || netPositions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No live open positions in Zerodha account.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" class="text-center py-4 text-light" style="color: #cbd5e1 !important;">No live open positions in Zerodha account.</td></tr>`;
         return;
     }
 
@@ -493,6 +500,8 @@ function renderZerodhaPositions(brokerPositions) {
         const targetText = monitoredPos && monitoredPos.takeProfit ? `₹${monitoredPos.takeProfit.toFixed(2)}` : "-";
         const slText = monitoredPos && monitoredPos.stopLoss ? `₹${monitoredPos.stopLoss.toFixed(2)}` : "-";
         const tslText = trailingSlText(monitoredPos);
+        const atTargetCell = levelPnlCell(monitoredPos ? monitoredPos.netPnlAtTarget : null);
+        const atStopCell = levelPnlCell(monitoredPos ? monitoredPos.netPnlAtStop : null);
         const prodBadge = p.product === "MIS"
             ? '<span class="badge bg-warning text-dark">MIS (Intraday)</span>'
             : '<span class="badge bg-info text-dark">CNC (Delivery)</span>';
@@ -542,6 +551,8 @@ function renderZerodhaPositions(brokerPositions) {
                 <td class="text-info fw-semibold">${targetText}</td>
                 <td class="text-white">${slText}</td>
                 <td class="text-white">${tslText}</td>
+                ${atTargetCell}
+                ${atStopCell}
                 <td class="${pnlClass}">${formatCurrencyWithSign(pnl)}</td>
                 <td class="text-nowrap">${chartButton(p.tradingSymbol)}${journeyButton(p.tradingSymbol)}${actionCell}</td>
             </tr>

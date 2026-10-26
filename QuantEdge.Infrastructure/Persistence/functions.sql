@@ -2936,8 +2936,10 @@ BEGIN
     SELECT COUNT(*) INTO v_count
     FROM real_orders
     WHERE user_id = p_user_id
-      AND status = 1
-      -- Filled entries: a long BUY, or the SELL that opened an Auto Short (its covering BUY is an exit, not a trade).
+      -- Filled (1), plus Pending (0) / Open (4): a market order Zerodha hasn't confirmed yet is still a trade taken,
+      -- otherwise a burst of entries in one scan all pass the limit before the reconciler marks any of them Filled.
+      AND status IN (0, 1, 4)
+      -- Entries: a long BUY, or the SELL that opened an Auto Short (its covering BUY is an exit, not a trade).
       AND ((side = 0 AND NOT is_short) OR (side = 1 AND is_short))
       AND created_at >= p_today_start;
 

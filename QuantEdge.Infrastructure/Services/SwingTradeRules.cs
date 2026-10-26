@@ -643,4 +643,31 @@ public static class SwingTradeRules
             : entry * DefaultStopLossPct / 100m;
         return Math.Max(slDistance / p.StopLossAtrMult, entry * MinAtrPct / 100m);
     }
+
+    // ------------------------------------------------------------------------------------------
+    // P&L at a level (display only - what a position would make or lose if it exited there)
+    // ------------------------------------------------------------------------------------------
+
+    /// <summary>Gross P&amp;L if <paramref name="quantity"/> shares entered at <paramref name="entryPrice"/> exit at <paramref name="level"/>
+    /// (a short gains as the price falls). Null when there is no level.</summary>
+    public static decimal? PnlAtLevel(decimal entryPrice, decimal? level, int quantity, bool isShort) =>
+        level.HasValue && level.Value > 0m && quantity > 0
+            ? Math.Round((isShort ? entryPrice - level.Value : level.Value - entryPrice) * quantity, 2)
+            : null;
+
+    /// <summary><see cref="PnlAtLevel"/> less the estimated round-trip charges of exiting at that level.</summary>
+    public static decimal? NetPnlAtLevel(decimal entryPrice, decimal? level, int quantity, bool isShort, DateTime openedAtUtc)
+    {
+        decimal? gross = PnlAtLevel(entryPrice, level, quantity, isShort);
+        if (!gross.HasValue) return null;
+        return Math.Round(gross.Value - ChargesCalculator.EstimateOpenPosition(entryPrice, level!.Value, quantity, isShort, openedAtUtc), 2);
+    }
+
+    /// <summary>
+    /// Whether a position's Trailing SL is a live stop yet. SWING_CLOSE: only once it has crossed the entry (a value on
+    /// the wrong side is an ignored INTRADAY leftover); INTRADAY: whenever it is set.
+    /// </summary>
+    public static bool IsTrailActive(decimal? trailingStopLoss, decimal entryPrice, bool isShort, bool isSwingClose) =>
+        trailingStopLoss.HasValue
+        && (!isSwingClose || (isShort ? trailingStopLoss.Value <= entryPrice : trailingStopLoss.Value >= entryPrice));
 }

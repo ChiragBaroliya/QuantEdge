@@ -16,6 +16,10 @@ public class RealPosition
     // resulting net. Set by the services that build position lists for the trading pages.
     public decimal EstimatedCharges { get; set; }
     public decimal NetUnrealizedPnl => UnrealizedPnl - EstimatedCharges;
+    // Display only (never stored): net P&L (after estimated charges) if the position exits at its Target, and at the stop
+    // that would close it - the Trailing SL once active, else the Stop Loss. Null when that level isn't set.
+    public decimal? NetPnlAtTarget { get; set; }
+    public decimal? NetPnlAtStop { get; set; }
     // Display only: where CurrentPrice came from - LIVE (fresh tick), BROKER (REST quote now), STORED (DB value or last
     // stored candle, may be old) or NONE (no price: P&L is not meaningful) - and when it was observed, if known.
     public string? PriceSource { get; set; }

@@ -316,7 +316,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             }
         }
 
-        ApplyLivePrices(positions, brokerPositions, brokerHoldings);
+        ApplyLivePrices(positions, brokerPositions, brokerHoldings, SwingTradeParams.From(settings).IsSwingClose);
         decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
 
         var nextRunInfo = AutoTradeService.Calculate15MinNextRunInfo();
@@ -3025,10 +3025,19 @@ public class AutoRealTradeService : IAutoRealTradeService
     // RealPosition.CurrentPrice/UnrealizedPnl are written once at entry and never persisted again, so
     // every read path overlays the live price here: a fresh WebSocket tick first, else Zerodha's own
     // last_price from the positions/holdings snapshot the caller already fetched (no extra API call).
-    private void ApplyLivePrices(IEnumerable<RealPosition> positions, ZerodhaPositionsDto? brokerPositions, List<ZerodhaHoldingDto>? brokerHoldings)
+    private void ApplyLivePrices(IEnumerable<RealPosition> positions, ZerodhaPositionsDto? brokerPositions, List<ZerodhaHoldingDto>? brokerHoldings,
+        bool isSwingClose)
     {
         foreach (var position in positions)
         {
+            // P&L at Target / at the live stop - fixed levels, so set even when there's no price right now.
+            bool isShort = position.Side == TradeSide.SELL;
+            decimal? stop = SwingTradeRules.IsTrailActive(position.TrailingStopLoss, position.AverageEntryPrice, isShort, isSwingClose)
+                ? position.TrailingStopLoss
+                : position.StopLoss;
+            position.NetPnlAtTarget = SwingTradeRules.NetPnlAtLevel(position.AverageEntryPrice, position.TakeProfit, position.Quantity, isShort, position.OpenedAt);
+            position.NetPnlAtStop = SwingTradeRules.NetPnlAtLevel(position.AverageEntryPrice, stop, position.Quantity, isShort, position.OpenedAt);
+
             decimal ltp = 0m;
             string source = "LIVE";
             if (_realTradeCache == null || !_realTradeCache.TryGetFreshLtp(position.Symbol, RealTradeSchedule.LtpFreshnessWindow, out ltp))
@@ -3309,9 +3318,7 @@ public class AutoRealTradeService : IAutoRealTradeService
             // Levels exactly as the monitor derives them (SwingTradeRules infers the ATR from the SL).
             var view = ExitPositionView.From(position);
             decimal entry = position.AverageEntryPrice;
-            decimal? PnlAt(decimal? level) => level.HasValue
-                ? Math.Round((isShortPosition ? entry - level.Value : level.Value - entry) * position.Quantity, 2)
-                : null;
+            decimal? PnlAt(decimal? level) => SwingTradeRules.PnlAtLevel(entry, level, position.Quantity, isShortPosition);
 
             var levels = new SymbolJourneyLevelsDto
             {
@@ -3320,11 +3327,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 StopLoss = position.StopLoss,
                 TakeProfit = position.TakeProfit,
                 TrailingStopLoss = position.TrailingStopLoss,
-                IsTrailActive = isShortPosition
-                    ? position.TrailingStopLoss.HasValue && (!tradeParams.IsSwingClose || position.TrailingStopLoss.Value <= entry)
-                    : tradeParams.IsSwingClose
-                    ? position.TrailingStopLoss.HasValue && position.TrailingStopLoss.Value >= entry
-                    : position.TrailingStopLoss.HasValue,
+                IsTrailActive = SwingTradeRules.IsTrailActive(position.TrailingStopLoss, entry, isShortPosition, tradeParams.IsSwingClose),
                 Atr = Math.Round(isShortPosition ? SwingTradeRules.InferShortAtr(view, tradeParams) : SwingTradeRules.InferAtr(view, tradeParams), 4)
             };
             // The emergency stop / closing-basis trail activation are long (swing) concepts; a short's stops are all live.
@@ -3485,7 +3488,8 @@ public class AutoRealTradeService : IAutoRealTradeService
             }
         }
 
-        ApplyLivePrices(positions, brokerPositions, brokerHoldings);
+        var settings = await GetSettingsAsync(userId);
+        ApplyLivePrices(positions, brokerPositions, brokerHoldings, SwingTradeParams.From(settings).IsSwingClose);
         decimal unrealizedPnl = positions.Sum(p => p.UnrealizedPnl);
 
         return new RealTradeLivePositionsFastDto
