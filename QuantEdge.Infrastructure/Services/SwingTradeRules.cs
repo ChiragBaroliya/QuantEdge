@@ -571,6 +571,20 @@ public static class SwingTradeRules
     }
 
     /// <summary>
+    /// <see cref="BotLevelsFor"/> for a short evaluation (SwingShortDecisionEngine): the stop / target the bot would
+    /// place via <see cref="ComputeShortEntryLevels"/> - stop above the entry, target below.
+    /// </summary>
+    public static (decimal StopLoss, decimal Target, decimal RiskReward) ShortBotLevelsFor(SwingEvaluationResult r, SwingTradeParams p)
+    {
+        if (r.EntryPrice <= 0m) return (0m, 0m, 0m);
+        var levels = ComputeShortEntryLevels(r.EntryPrice, r.DailyAtr > 0m ? r.DailyAtr : null,
+            r.StopLoss > 0m ? r.StopLoss : null, r.Target1 > 0m ? r.Target1 : null, p);
+        decimal risk = levels.StopLoss - r.EntryPrice;
+        decimal rr = risk > 0m ? Math.Round((r.EntryPrice - levels.TakeProfit) / risk, 2) : 0m;
+        return (levels.StopLoss, levels.TakeProfit, rr);
+    }
+
+    /// <summary>
     /// Exit decision for an open SHORT at <paramref name="ltp"/> (pure function, like <see cref="EvaluateExit"/>):
     ///   1. Auto square-off - at/after the square-off time, or a short opened on an earlier day.
     ///   2. Target            - live: price at/below the target.

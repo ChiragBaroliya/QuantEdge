@@ -3043,6 +3043,7 @@ RETURNS TABLE (
     SlotTime TIMESTAMP WITH TIME ZONE,
     BuyCount BIGINT,
     WatchCount BIGINT,
+    ShortCount BIGINT,
     TotalCount BIGINT
 )
 LANGUAGE plpgsql
@@ -3054,6 +3055,7 @@ BEGIN
         MAX(r.slot_time) AS SlotTime,
         COUNT(*) FILTER (WHERE UPPER(r.decision) = 'BUY') AS BuyCount,
         COUNT(*) FILTER (WHERE UPPER(r.decision) = 'WATCH') AS WatchCount,
+        COUNT(*) FILTER (WHERE UPPER(r.decision) = 'SHORT') AS ShortCount,
         COUNT(*) AS TotalCount
     FROM swing_slot_recommendations r
     WHERE r.scan_date = p_date
@@ -3098,6 +3100,7 @@ RETURNS TABLE (
     Reason TEXT,
     TimeframeUsed VARCHAR,
     ChecklistJson JSONB,
+    Side VARCHAR,
     CreatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -3130,6 +3133,7 @@ BEGIN
             r.reason AS Reason,
             r.timeframe_used::VARCHAR AS TimeframeUsed,
             r.checklist_json AS ChecklistJson,
+            r.side::VARCHAR AS Side,
             r.created_at AS CreatedAt
         FROM swing_slot_recommendations r
         WHERE r.scan_date = p_date
@@ -3161,6 +3165,7 @@ BEGIN
             r.reason AS Reason,
             r.timeframe_used::VARCHAR AS TimeframeUsed,
             r.checklist_json AS ChecklistJson,
+            r.side::VARCHAR AS Side,
             r.created_at AS CreatedAt
         FROM swing_slot_recommendations r
         WHERE r.scan_date = p_date AND r.slot_label = p_slot_label

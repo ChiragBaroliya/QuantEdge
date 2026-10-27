@@ -82,8 +82,16 @@ public record SwingStockSignalDto(
     int RecommendedQty = 0,
     decimal CalculatedRiskAmount = 0m,
     string TimeframeUsed = "1D + 15M + 60M",
-    string ExitSignalReason = ""
+    string ExitSignalReason = "",
+    // LONG (SwingDecisionEngine: BUY/WATCH) or SHORT (SwingShortDecisionEngine: SHORT/WATCH) - tells a short WATCH from a long one.
+    string Side = SwingSignalSide.Long
 );
+
+public static class SwingSignalSide
+{
+    public const string Long = "LONG";
+    public const string Short = "SHORT";
+}
 
 public record BacktestStatsDto(
     int PeriodDays,
@@ -129,7 +137,8 @@ public record SwingScanSlotDto(
     int BuyCount,
     int WatchCount,
     int TotalCount,
-    bool IsLatest = false
+    bool IsLatest = false,
+    int ShortCount = 0
 );
 
 public record SwingSlotUpdateDto(
@@ -140,7 +149,8 @@ public record SwingSlotUpdateDto(
     int WatchCount,
     int TotalCount,
     List<SwingStockSignalDto> Signals,
-    NiftyStatusDto? NiftyStatus = null
+    NiftyStatusDto? NiftyStatus = null,
+    int ShortCount = 0
 );
 
 

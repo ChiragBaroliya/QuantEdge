@@ -2003,3 +2003,73 @@
     color: rgba(255, 255, 255, 0.5);
 }
 
+
+/* Short Selling suggestions (SwingShortDecisionEngine) */
+.filter-pill.pill-short.active {
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.4);
+}
+
+.slot-badge-count.short {
+    background: rgba(248, 113, 113, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+.slot-stat-tag.short {
+    color: #f87171;
+}
+
+.score-progress-header.short {
+    color: #f87171;
+}
+
+.score-progress-fill.short {
+    background: linear-gradient(90deg, #dc2626, #f87171);
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.4);
+}
+
+.side-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.side-tag.short {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.12);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.btn-paper-short {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-paper-short:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.22);
+    transform: translateY(-1px);
+}
+
+.btn-paper-short:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}

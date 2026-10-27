@@ -66,6 +66,7 @@ public class SwingSlotRecommendationRepository : ISwingSlotRecommendationReposit
                     );
                     CREATE INDEX IF NOT EXISTS ix_swing_slot_rec_date_slot ON swing_slot_recommendations (scan_date, slot_label);
                     CREATE INDEX IF NOT EXISTS ix_swing_slot_rec_symbol ON swing_slot_recommendations (symbol, scan_date);
+                    ALTER TABLE swing_slot_recommendations ADD COLUMN IF NOT EXISTS side VARCHAR(5) NOT NULL DEFAULT 'LONG';
                 ");
                 _tableEnsured = true;
             }
@@ -100,13 +101,13 @@ public class SwingSlotRecommendationRepository : ISwingSlotRecommendationReposit
                     scan_date, slot_time, slot_label, symbol, decision, score, confidence_pct,
                     entry_price, stop_loss, target1, target2, risk_reward_ratio, volume_multiplier,
                     rsi14, adx14, ema20, ema50, ema200, passed_rules, failed_rules, reason,
-                    timeframe_used, checklist_json, created_at
+                    timeframe_used, checklist_json, side, created_at
                 )
                 VALUES (
                     @ScanDate, @SlotTime, @SlotLabel, @Symbol, @Decision, @Score, @ConfidencePct,
                     @EntryPrice, @StopLoss, @Target1, @Target2, @RiskRewardRatio, @VolumeMultiplier,
                     @Rsi14, @Adx14, @Ema20, @Ema50, @Ema200, @PassedRules, @FailedRules, @Reason,
-                    @TimeframeUsed, @ChecklistJson::jsonb, NOW()
+                    @TimeframeUsed, @ChecklistJson::jsonb, @Side, NOW()
                 )
                 ON CONFLICT (scan_date, slot_label, symbol)
                 DO UPDATE SET
@@ -130,6 +131,7 @@ public class SwingSlotRecommendationRepository : ISwingSlotRecommendationReposit
                     reason = EXCLUDED.reason,
                     timeframe_used = EXCLUDED.timeframe_used,
                     checklist_json = EXCLUDED.checklist_json,
+                    side = EXCLUDED.side,
                     created_at = NOW();";
 
             foreach (var sig in signals)
@@ -164,7 +166,8 @@ public class SwingSlotRecommendationRepository : ISwingSlotRecommendationReposit
                     FailedRules = failedRulesStr,
                     Reason = sig.Reason,
                     TimeframeUsed = string.IsNullOrWhiteSpace(sig.TimeframeUsed) ? "1D + 15M + 60M" : sig.TimeframeUsed,
-                    ChecklistJson = checklistJson
+                    ChecklistJson = checklistJson,
+                    Side = string.IsNullOrWhiteSpace(sig.Side) ? SwingSignalSide.Long : sig.Side
                 }, tx);
             }
 
@@ -192,6 +195,7 @@ public class SwingSlotRecommendationRepository : ISwingSlotRecommendationReposit
                     MAX(slot_time) AS SlotTime,
                     COUNT(*) FILTER (WHERE UPPER(decision) = 'BUY') AS BuyCount,
                     COUNT(*) FILTER (WHERE UPPER(decision) = 'WATCH') AS WatchCount,
+                    COUNT(*) FILTER (WHERE UPPER(decision) = 'SHORT') AS ShortCount,
                     COUNT(*) AS TotalCount
                 FROM swing_slot_recommendations
                 WHERE scan_date = @ScanDate
@@ -211,7 +215,8 @@ public class SwingSlotRecommendationRepository : ISwingSlotRecommendationReposit
                     BuyCount: Convert.ToInt32(s.buycount),
                     WatchCount: Convert.ToInt32(s.watchcount),
                     TotalCount: Convert.ToInt32(s.totalcount),
-                    IsLatest: isLatest
+                    IsLatest: isLatest,
+                    ShortCount: Convert.ToInt32(s.shortcount)
                 ));
             }
 
@@ -312,7 +317,10 @@ public class SwingSlotRecommendationRepository : ISwingSlotRecommendationReposit
                 string reason = Convert.ToString(r.reason) ?? "";
                 string timeframe = Convert.ToString(r.timeframe_used) ?? "1D + 15M + 60M";
 
+                string side = Convert.ToString(r.side) ?? SwingSignalSide.Long;
+
                 bool isBuy = decision.Equals("BUY", StringComparison.OrdinalIgnoreCase);
+                bool isShort = decision.Equals("SHORT", StringComparison.OrdinalIgnoreCase);
 
                 result.Add(new SwingStockSignalDto(
                     Symbol: symbol,
@@ -335,7 +343,7 @@ public class SwingSlotRecommendationRepository : ISwingSlotRecommendationReposit
                     High52Week: 0m,
                     ClosenessTo52WeekHighPct: 0m,
                     IsLastCandleBullish: true,
-                    MeetsStockFilter: isBuy,
+                    MeetsStockFilter: isBuy || isShort,
                     MeetsAllBuyRules: isBuy,
                     Decision: decision,
                     Reason: reason,
@@ -355,7 +363,8 @@ public class SwingSlotRecommendationRepository : ISwingSlotRecommendationReposit
                     RecommendedQty: 0,
                     CalculatedRiskAmount: 0m,
                     TimeframeUsed: timeframe,
-                    ExitSignalReason: ""
+                    ExitSignalReason: "",
+                    Side: side
                 ));
             }
 

@@ -230,24 +230,26 @@ public class NotificationService : INotificationService
         try
         {
             var slots = await _slotRepository.GetScanSlotsAsync(todayIst, cancellationToken);
-            foreach (var slot in slots.Where(s => s.BuyCount > 0))
+            foreach (var slot in slots.Where(s => s.BuyCount > 0 || s.ShortCount > 0))
             {
                 var recs = await _slotRepository.GetSlotRecommendationsAsync(todayIst, slot.SlotLabel, cancellationToken);
-                var buySymbols = recs
-                    .Where(r => r.Decision.Equals("BUY", StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(r => r.Score)
-                    .Select(r => r.Symbol)
-                    .ToList();
+                string? buyList = SymbolList(recs, "BUY");
+                string? shortList = SymbolList(recs, SwingShortDecisionEngine.ShortDecision);
 
-                string symbolList = string.Join(", ", buySymbols.Take(MaxSymbolsInSwingMessage));
-                if (buySymbols.Count > MaxSymbolsInSwingMessage) symbolList += $" +{buySymbols.Count - MaxSymbolsInSwingMessage} more";
+                var counts = new List<string>();
+                if (slot.BuyCount > 0) counts.Add($"{slot.BuyCount} BUY");
+                if (slot.ShortCount > 0) counts.Add($"{slot.ShortCount} SHORT");
+
+                var lists = new List<string>();
+                if (buyList != null) lists.Add(shortList != null ? $"BUY: {buyList}" : buyList);
+                if (shortList != null) lists.Add($"SHORT: {shortList}");
 
                 items.Add(new NotificationItemDto(
                     Id: $"swing-{todayIst:yyyyMMdd}-{slot.SlotLabel}",
                     Category: "swing",
                     Level: "success",
-                    Title: $"Swing scan {slot.SlotLabel}: {slot.BuyCount} BUY",
-                    Message: buySymbols.Count > 0 ? symbolList : $"{slot.BuyCount} BUY recommendation(s) in this slot.",
+                    Title: $"Swing scan {slot.SlotLabel}: {string.Join(", ", counts)}",
+                    Message: lists.Count > 0 ? string.Join(" · ", lists) : $"{string.Join(", ", counts)} recommendation(s) in this slot.",
                     Symbol: null,
                     TimeUtc: SlotTimeToUtc(slot.SlotTime, istZone)));
             }
@@ -257,6 +259,21 @@ public class NotificationService : INotificationService
             _logger.LogError(ex, "Failed to load swing scan notifications for {Date:yyyy-MM-dd}.", todayIst);
         }
         return items;
+    }
+
+    // Top-scored symbols with this decision ("A, B, C +2 more"), or null when there are none.
+    private static string? SymbolList(IEnumerable<SwingStockSignalDto> recs, string decision)
+    {
+        var symbols = recs
+            .Where(r => r.Decision.Equals(decision, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(r => r.Score)
+            .Select(r => r.Symbol)
+            .ToList();
+        if (symbols.Count == 0) return null;
+
+        string list = string.Join(", ", symbols.Take(MaxSymbolsInSwingMessage));
+        if (symbols.Count > MaxSymbolsInSwingMessage) list += $" +{symbols.Count - MaxSymbolsInSwingMessage} more";
+        return list;
     }
 
     /// <summary>

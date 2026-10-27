@@ -430,9 +430,11 @@ CREATE TABLE IF NOT EXISTS swing_slot_recommendations (
     reason TEXT,
     timeframe_used VARCHAR(50) DEFAULT '1D + 15M + 60M',
     checklist_json JSONB,
+    side VARCHAR(5) NOT NULL DEFAULT 'LONG', -- LONG (BUY/WATCH) or SHORT (SHORT/WATCH)
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_swing_slot_rec UNIQUE (scan_date, slot_label, symbol)
 );
+ALTER TABLE swing_slot_recommendations ADD COLUMN IF NOT EXISTS side VARCHAR(5) NOT NULL DEFAULT 'LONG';
 
 
 

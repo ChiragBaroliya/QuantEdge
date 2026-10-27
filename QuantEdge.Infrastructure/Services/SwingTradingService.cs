@@ -526,7 +526,10 @@ public class SwingTradingService : ISwingTradingService
 
                     if (stockCandles.Count >= 50)
                     {
-                        var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles, stockCandles15m, stockCandles60m, niftyCandlesGlobal, strategySettings);
+                        var longResult = SwingDecisionEngine.Evaluate(stock, stockCandles, stockCandles15m, stockCandles60m, niftyCandlesGlobal, strategySettings);
+                        var shortResult = SwingShortDecisionEngine.Evaluate(stock, stockCandles, stockCandles15m, stockCandles60m, niftyCandlesGlobal, strategySettings);
+                        var (evalResult, side) = PickSuggestion(longResult, shortResult);
+                        bool isShort = side == SwingSignalSide.Short;
 
                         bool isAlreadyOpen = openPositionSymbols.Contains(stock.Symbol);
                         if (isAlreadyOpen && evalResult.IsBuySignal)
@@ -563,7 +566,9 @@ public class SwingTradingService : ISwingTradingService
                             bool is52W = c.Close >= 0.90m * high52W[idx];
 
                             decimal executionPrice = evalResult.EntryPrice > 0m ? evalResult.EntryPrice : c.Close;
-                            var botLevels = SwingTradeRules.BotLevelsFor(evalResult, defaultTradeParams);
+                            var botLevels = isShort
+                                ? SwingTradeRules.ShortBotLevelsFor(evalResult, defaultTradeParams)
+                                : SwingTradeRules.BotLevelsFor(evalResult, defaultTradeParams);
 
                             evaluatedSlotSignals.Add(new SwingStockSignalDto(
                                 Symbol: stock.Symbol,
@@ -586,7 +591,7 @@ public class SwingTradingService : ISwingTradingService
                                 High52Week: Math.Round(high52W[idx], 2),
                                 ClosenessTo52WeekHighPct: high52W[idx] > 0m ? Math.Round(c.Close / high52W[idx] * 100m, 2) : 0m,
                                 IsLastCandleBullish: c.Close > c.Open,
-                                MeetsStockFilter: evalResult.IsBuySignal,
+                                MeetsStockFilter: evalResult.IsBuySignal || evalResult.IsSellSignal,
                                 MeetsAllBuyRules: evalResult.IsBuySignal,
                                 Decision: evalResult.Decision,
                                 Reason: evalResult.Reason,
@@ -606,7 +611,8 @@ public class SwingTradingService : ISwingTradingService
                                 RecommendedQty: evalResult.RecommendedQty,
                                 CalculatedRiskAmount: evalResult.CalculatedRiskAmount,
                                 TimeframeUsed: evalResult.TimeframeUsed,
-                                ExitSignalReason: evalResult.ExitSignalReason
+                                ExitSignalReason: evalResult.ExitSignalReason,
+                                Side: side
                             ));
                         }
                     }
@@ -644,6 +650,7 @@ public class SwingTradingService : ISwingTradingService
             }
 
             int buyCount = evaluatedSlotSignals.Count(s => s.Decision.Equals("BUY", StringComparison.OrdinalIgnoreCase));
+            int shortCount = evaluatedSlotSignals.Count(s => s.Decision.Equals(SwingShortDecisionEngine.ShortDecision, StringComparison.OrdinalIgnoreCase));
             int watchCount = evaluatedSlotSignals.Count(s => s.Decision.Equals("WATCH", StringComparison.OrdinalIgnoreCase));
 
             var slotUpdate = new SwingSlotUpdateDto(
@@ -654,7 +661,8 @@ public class SwingTradingService : ISwingTradingService
                 WatchCount: watchCount,
                 TotalCount: evaluatedSlotSignals.Count,
                 Signals: sortedSignals,
-                NiftyStatus: niftyStatus
+                NiftyStatus: niftyStatus,
+                ShortCount: shortCount
             );
 
             if (_hubContext != null)
@@ -665,7 +673,7 @@ public class SwingTradingService : ISwingTradingService
 
             await BroadcastSwingDashboardUpdateAsync(cancellationToken);
 
-            UpdateJobProgress("intraday30m", false, 100, $"30-minute Swing Scan for slot '{slotLabel}' completed! ({buyCount} BUY, {watchCount} WATCH).");
+            UpdateJobProgress("intraday30m", false, 100, $"30-minute Swing Scan for slot '{slotLabel}' completed! ({buyCount} BUY, {shortCount} SHORT, {watchCount} WATCH).");
             _logger.LogInformation("30-Minute Intraday Swing Trading Job completed successfully for slot '{SlotLabel}' ({Count} recommendations).", slotLabel, evaluatedSlotSignals.Count);
         }
         catch (Exception ex)
@@ -674,6 +682,21 @@ public class SwingTradingService : ISwingTradingService
             UpdateJobProgress("intraday30m", false, 0, "30-minute Swing Trading job failed.", ex.Message);
             throw;
         }
+    }
+
+    /// <summary>
+    /// The one suggestion shown for a stock: the long evaluation when it is BUY/WATCH, else the short one when it is
+    /// SHORT/WATCH, else the long rejection (as before shorts were added). Both can't pass their hard filters at once -
+    /// they need opposite NIFTY and daily-trend conditions.
+    /// </summary>
+    public static (SwingEvaluationResult Result, string Side) PickSuggestion(SwingEvaluationResult longResult, SwingEvaluationResult shortResult)
+    {
+        static bool IsCandidate(SwingEvaluationResult r) => r.HardFiltersPassed
+            && (r.IsBuySignal || r.IsSellSignal || r.Decision.Equals("WATCH", StringComparison.OrdinalIgnoreCase));
+
+        if (IsCandidate(longResult)) return (longResult, SwingSignalSide.Long);
+        if (IsCandidate(shortResult)) return (shortResult, SwingSignalSide.Short);
+        return (longResult, SwingSignalSide.Long);
     }
 
     // Symbol -> sector name from stock_sectors (first sector when a stock is in several). Empty when unavailable.

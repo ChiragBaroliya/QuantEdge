@@ -185,6 +185,10 @@
                         <span>🟢 BUY Signals:</span>
                         <strong id="slotSummaryBuyCount">0</strong>
                     </span>
+                    <span class="slot-stat-tag short">
+                        <span>🔴 SHORT Signals:</span>
+                        <strong id="slotSummaryShortCount">0</strong>
+                    </span>
                     <span class="slot-stat-tag watch">
                         <span>🟡 WATCH Candidates:</span>
                         <strong id="slotSummaryWatchCount">0</strong>
@@ -207,6 +211,7 @@
 
                     <div class="filter-pills-group">
                         <span class="filter-pill pill-buy active" id="pillBuy" data-filter="buy">🟢 BUY Signals (<span id="countBuyPill">0</span>)</span>
+                        <span class="filter-pill pill-short" id="pillShort" data-filter="short" data-tooltip="Short Selling setups (sell first, buy back later) - only when NIFTY 50 is bearish. Intraday only: auto square-off the same day.">🔴 SHORT Signals (<span id="countShortPill">0</span>)</span>
                         <span class="filter-pill" id="pillWatch" data-filter="watch">🟡 WATCH Candidates (<span id="countWatchPill">0</span>)</span>
                         <span class="filter-pill" id="pillHighScore" data-filter="highscore">⭐ High Score (70+)</span>
                         <span class="filter-pill" id="pillRejected" data-filter="rejected" data-tooltip="Stocks scanned today that did NOT qualify as BUY/WATCH, with the reason why.">⛔ Rejected / No Signal (<span id="countRejectedPill">0</span>)</span>
@@ -318,6 +323,7 @@
     <script src="~/js/theme/signalr.min.js"></script>
     <script>
         const API_BASE_URL = "@ViewBag.ApiBaseUrl";
+        const MANUAL_USER_ID = parseInt("@ViewBag.UserId", 10) || 1;
     </script>
     <script src="~/js/realtrade-actions.js" asp-append-version="true"></script>
     <script>
@@ -375,7 +381,7 @@
             Swal.fire({
                 icon: 'success',
                 title: `⚡ 30-Min Scan: ${slotUpdate.slotLabel}`,
-                text: `Generated ${slotUpdate.buyCount} BUY and ${slotUpdate.watchCount} WATCH recommendations!`,
+                text: `Generated ${slotUpdate.buyCount} BUY, ${slotUpdate.shortCount || 0} SHORT and ${slotUpdate.watchCount} WATCH recommendations!`,
                 toast: true,
                 position: 'top-end',
                 showConfirmButton: false,
@@ -397,6 +403,7 @@
             startNextScanCountdownTimer();
             updateViewModeUI();
             initSwingSignalR();
+            loadShortEntryCutoff();
 
             // Load initial dashboard stats and slots
             loadDashboard();
@@ -849,24 +856,26 @@
 
             let totalAllBuy = 0;
             let totalAllWatch = 0;
+            let totalAllShort = 0;
             let totalAll = 0;
             let latestSlot = null;
 
             if (slots && slots.length > 0) {
                 totalAllBuy = slots.reduce((acc, s) => acc + (s.buyCount || 0), 0);
                 totalAllWatch = slots.reduce((acc, s) => acc + (s.watchCount || 0), 0);
+                totalAllShort = slots.reduce((acc, s) => acc + (s.shortCount || 0), 0);
                 totalAll = slots.reduce((acc, s) => acc + (s.totalCount || 0), 0);
                 latestSlot = slots.find(s => s.isLatest) || slots[slots.length - 1];
 
                 $("#statTotalSlotsToday").text(`${slots.length} Slots`);
                 $("#statLatestSlotLabel").text(`Latest: ${latestSlot ? latestSlot.slotLabel : 'None'}`);
-                $("#statTotalRecsToday").text(totalAllBuy + totalAllWatch);
-                $("#statRecsBreakdown").text(`${totalAllBuy} BUY • ${totalAllWatch} WATCH • ${totalAll} Scanned`);
+                $("#statTotalRecsToday").text(totalAllBuy + totalAllShort + totalAllWatch);
+                $("#statRecsBreakdown").text(`${totalAllBuy} BUY • ${totalAllShort} SHORT • ${totalAllWatch} WATCH • ${totalAll} Scanned`);
             } else {
                 $("#statTotalSlotsToday").text(`0 Slots`);
                 $("#statLatestSlotLabel").text(`Latest: None`);
                 $("#statTotalRecsToday").text(`0`);
-                $("#statRecsBreakdown").text(`0 BUY • 0 WATCH`);
+                $("#statRecsBreakdown").text(`0 BUY • 0 SHORT • 0 WATCH`);
             }
 
             // All Slots Pill
@@ -876,6 +885,7 @@
                     <span class="slot-pill-time">All Slots</span>
                     <div class="slot-pill-badges">
                         <span class="slot-badge-count buy" title="${totalAllBuy} BUY Signals">${totalAllBuy} B</span>
+                        <span class="slot-badge-count short" title="${totalAllShort} SHORT Signals">${totalAllShort} S</span>
                         <span class="slot-badge-count watch" title="${totalAllWatch} WATCH Candidates">${totalAllWatch} W</span>
                     </div>
                 </div>
@@ -895,6 +905,7 @@
                             <span class="slot-pill-time">${s.slotLabel}</span>
                             <div class="slot-pill-badges">
                                 <span class="slot-badge-count buy" title="${s.buyCount} BUY Signals">${s.buyCount} B</span>
+                                <span class="slot-badge-count short" title="${s.shortCount || 0} SHORT Signals">${s.shortCount || 0} S</span>
                                 <span class="slot-badge-count watch" title="${s.watchCount} WATCH Candidates">${s.watchCount} W</span>
                             </div>
                             ${isLatest ? `
@@ -935,8 +946,10 @@
 
                     const buyCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "BUY").length;
                     const watchCount = allStockSignals.filter(s => s.decision && s.decision.toUpperCase() === "WATCH").length;
+                    const shortCount = allStockSignals.filter(isShortSignal).length;
 
                     $("#slotSummaryBuyCount").text(buyCount);
+                    $("#slotSummaryShortCount").text(shortCount);
                     $("#slotSummaryWatchCount").text(watchCount);
                     $("#recommendationsBadge").text(buyCount);
 
@@ -1069,12 +1082,15 @@
             const rejectedCount = allStockSignals.filter(s => s.decision && (s.decision.toUpperCase() === "REJECT" || s.decision.toUpperCase() === "NO SIGNAL")).length;
 
             $("#countBuyPill").text(buyCount);
+            $("#countShortPill").text(allStockSignals.filter(isShortSignal).length);
             $("#countWatchPill").text(watchCount);
             $("#countRejectedPill").text(rejectedCount);
             $("#countAllPill").text(allStockSignals.length);
 
             if (currentFilter === "buy") {
                 filtered = filtered.filter(s => s.decision && s.decision.toUpperCase() === "BUY");
+            } else if (currentFilter === "short") {
+                filtered = filtered.filter(isShortSignal);
             } else if (currentFilter === "watch") {
                 filtered = filtered.filter(s => s.decision && s.decision.toUpperCase() === "WATCH");
             } else if (currentFilter === "highscore") {
@@ -1142,6 +1158,7 @@
         function getDecisionClass(decision) {
             if (!decision) return "neutral";
             const dUpper = decision.toUpperCase();
+            if (dUpper === "SHORT") return "sell";
             if (dUpper.includes("STRONG BUY")) return "strong-buy";
             if (dUpper.includes("BUY")) return "buy";
             if (dUpper.includes("WATCH")) return "hold";
@@ -1150,6 +1167,136 @@
             if (dUpper.includes("REJECT")) return "reject";
             if (dUpper.includes("NO SIGNAL")) return "no-signal";
             return "hold";
+        }
+
+        // ---- Short Selling suggestions (side = SHORT: SwingShortDecisionEngine) ----
+        // Manual Paper short entry cut-off (IST); refreshed from /api/manualpapertrade/settings. The server re-checks it.
+        let shortEntryCutoff = "15:00";
+
+        function isShortSide(s) {
+            return (s.side || "LONG").toUpperCase() === "SHORT";
+        }
+
+        function isShortSignal(s) {
+            return !!s.decision && s.decision.toUpperCase() === "SHORT";
+        }
+
+        function istNowParts() {
+            const parts = new Intl.DateTimeFormat("en-CA", {
+                timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+                hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+            }).formatToParts(new Date()).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+            return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10) };
+        }
+
+        // Why a SHORT can't be placed now, or "" when it can: shorts are intraday, so only today's
+        // suggestions and only before the short entry cut-off.
+        function shortBlockedReason() {
+            const now = istNowParts();
+            if (selectedDateStr && selectedDateStr !== now.date) return "Shorts are intraday only - this suggestion is from an earlier day";
+            const [h, m] = (shortEntryCutoff || "15:00").split(":").map(Number);
+            if (now.minutes >= h * 60 + (m || 0)) return `Past the short entry cut-off (${shortEntryCutoff} IST)`;
+            return "";
+        }
+
+        function loadShortEntryCutoff() {
+            $.get(getEndpointUrl(`/api/manualpapertrade/settings?userId=${MANUAL_USER_ID}`), function(s) {
+                if (s && s.shortEntryCutoff) shortEntryCutoff = s.shortEntryCutoff;
+            });
+        }
+
+        function renderPaperShortButton(s, fullWidth) {
+            if (!isShortSignal(s)) return "";
+            const blocked = shortBlockedReason();
+            const title = blocked || "Short Sell this stock in your Manual Paper account (sell first, buy back later). Intraday only - auto square-off the same day.";
+            const style = fullWidth ? 'style="width:100%; justify-content:center; margin-bottom:8px;"' : "";
+            return `
+                <button type="button" class="btn-paper-short" ${style} title="${escapeHtml(title)}" ${blocked ? "disabled" : ""}
+                    onclick="confirmPaperShort('${s.symbol}', ${Number(s.entryPrice || s.close)}, ${Number(s.stopLoss) || 0}, ${Number(s.target1) || 0})">
+                    📉 Short (Paper)
+                </button>`;
+        }
+
+        // Places a Manual Paper SHORT SELL (/api/manualpapertrade/short) for a SHORT suggestion. Stop Loss % comes from the
+        // suggestion's stop (above entry); the server fetches its own price and runs every Manual Paper risk check.
+        async function confirmPaperShort(symbol, entryPrice, stopLoss, target) {
+            const blocked = shortBlockedReason();
+            if (blocked) {
+                Swal.fire({ icon: 'info', title: 'Short not available', text: blocked, background: 'var(--bg-card)', color: 'var(--text-primary)' });
+                return;
+            }
+
+            let settings = null;
+            try { settings = await $.get(getEndpointUrl(`/api/manualpapertrade/settings?userId=${MANUAL_USER_ID}`)); } catch (e) { }
+
+            const slPct = (stopLoss > entryPrice && entryPrice > 0)
+                ? Math.max(0.1, Math.round((stopLoss - entryPrice) / entryPrice * 10000) / 100)
+                : ((settings && settings.stopLossPct > 0) ? settings.stopLossPct : 3.0);
+            const tslPct = (settings && settings.trailingSlPct > 0) ? settings.trailingSlPct : 2.0;
+            const defaultQty = (settings && settings.fixedAmountPerTrade > 0 && entryPrice > 0)
+                ? Math.max(1, Math.floor(settings.fixedAmountPerTrade / entryPrice)) : 1;
+            const squareOff = (settings && settings.shortSquareOffTime) || "15:15";
+
+            const result = await Swal.fire({
+                title: `📉 Paper Short Sell — ${symbol}`,
+                html: `
+                    <div style="text-align:left; font-size:13px; color:#cbd5e1;">
+                        <div style="margin-bottom:8px;">Side: <strong style="color:#f87171;">SHORT SELL</strong> at about ₹${Number(entryPrice).toFixed(2)}</div>
+                        <div style="margin-bottom:8px;">Suggested SL: <strong>₹${Number(stopLoss).toFixed(2)}</strong> (${slPct}% above) • Target: <strong>₹${Number(target).toFixed(2)}</strong></div>
+                        <label style="display:block; margin-bottom:4px;">Quantity</label>
+                        <input type="number" id="pssQty" class="swal2-input" style="margin:0 0 10px 0;" value="${defaultQty}" min="1" step="1">
+                        <label style="display:block; margin-bottom:4px;">Stop Loss %</label>
+                        <input type="number" id="pssSl" class="swal2-input" style="margin:0 0 10px 0;" value="${slPct}" min="0.1" max="100" step="0.1">
+                        <label style="display:block; margin-bottom:4px;">Trailing SL %</label>
+                        <input type="number" id="pssTsl" class="swal2-input" style="margin:0 0 10px 0;" value="${tslPct}" min="0.1" max="50" step="0.1">
+                        <div style="font-size:12px; color:#fbbf24;">⚠️ Intraday only: an open short is bought back automatically at ${squareOff} IST.</div>
+                    </div>`,
+                showCancelButton: true,
+                confirmButtonText: 'Place Paper Short',
+                confirmButtonColor: '#dc2626',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                preConfirm: () => {
+                    const quantity = parseInt($("#pssQty").val(), 10);
+                    const stopLossPct = parseFloat($("#pssSl").val());
+                    const trailingSlPct = parseFloat($("#pssTsl").val());
+                    if (!(quantity >= 1) || !(stopLossPct >= 0.1) || !(trailingSlPct >= 0.1)) {
+                        Swal.showValidationMessage('Enter a quantity of at least 1 and SL / Trailing SL of at least 0.1%.');
+                        return false;
+                    }
+                    return { quantity, stopLossPct, trailingSlPct };
+                }
+            });
+            if (!result.isConfirmed) return;
+
+            $.ajax({
+                url: getEndpointUrl(`/api/manualpapertrade/short?userId=${MANUAL_USER_ID}`),
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({
+                    symbol: symbol,
+                    entryPrice: entryPrice,
+                    quantity: result.value.quantity,
+                    stopLossPct: result.value.stopLossPct,
+                    trailingSlPct: result.value.trailingSlPct,
+                    orderType: 0,
+                    autoExit: true
+                }),
+                success: function(res) {
+                    const ok = res && res.success === true;
+                    Swal.fire({
+                        icon: ok ? 'success' : 'error',
+                        title: ok ? 'Paper Short Placed' : 'Short Not Executed',
+                        text: (res && res.message) || (ok ? `Paper SHORT SELL for ${symbol} executed.` : 'Could not place the paper short.'),
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)'
+                    });
+                },
+                error: function(err) {
+                    const msg = (err.responseJSON && (err.responseJSON.message || err.responseJSON.title)) || err.responseText || "Internal server error";
+                    Swal.fire({ icon: 'error', title: 'Short Not Executed', text: msg, background: 'var(--bg-card)', color: 'var(--text-primary)' });
+                }
+            });
         }
 
         function escapeHtml(text) {
@@ -1174,10 +1321,14 @@
             signals.forEach((s, index) => {
                 const decClass = getDecisionClass(s.decision);
                 const reasonTitle = escapeHtml(s.reason || "Evaluated by 11-Point Multi-Timeframe Scoring Model.");
-                const meetsEma = s.ema20 > s.ema50 && s.ema50 > s.ema200;
+                const isShort = isShortSide(s);
+                const meetsEma = isShort
+                    ? s.ema20 < s.ema50 && s.ema50 < s.ema200
+                    : s.ema20 > s.ema50 && s.ema50 > s.ema200;
+                const rsiInZone = isShort ? (s.rsi14 >= 25 && s.rsi14 <= 50) : (s.rsi14 >= 50 && s.rsi14 <= 75);
                 const score = s.score || 0;
                 const isBuy = (s.decision && s.decision.toUpperCase() === "BUY");
-                const scoreType = isBuy ? "buy" : "watch";
+                const scoreType = isBuy ? "buy" : (isShortSignal(s) ? "short" : "watch");
 
                 let volChipClass = s.volumeMultiplier >= 2.5 ? "high" : (s.volumeMultiplier >= 1.5 ? "medium" : "normal");
 
@@ -1229,6 +1380,7 @@
                                 <span class="rec-badge ${decClass}" title="${reasonTitle}" style="cursor: help;">
                                     ${s.decision}
                                 </span>
+                                ${isShort ? `<span class="side-tag short" title="Short Selling setup - intraday only, auto square-off the same day">SHORT • INTRADAY</span>` : ''}
                                 <div class="score-progress-wrapper">
                                     <div class="score-progress-header ${scoreType}">
                                         <span>Score</span>
@@ -1244,6 +1396,7 @@
                                         ⚡ Real Trade
                                     </button>
                                 ` : ''}
+                                ${renderPaperShortButton(s, false)}
                             </div>
                         </td>
                         <td>
@@ -1268,11 +1421,11 @@
                             </span>
                         </td>
                         <td style="font-size: 12px;">
-                            <span class="td-monospace ${s.rsi14 >= 50 && s.rsi14 <= 75 ? 'positive' : ''}">RSI: ${Number(s.rsi14).toFixed(1)}</span><br/>
+                            <span class="td-monospace ${rsiInZone ? 'positive' : ''}">RSI: ${Number(s.rsi14).toFixed(1)}</span><br/>
                             <span class="td-monospace ${s.adx14 >= 20 ? 'positive' : 'text-muted'}">ADX: ${Number(s.adx14).toFixed(1)}</span>
                         </td>
                         <td style="font-size: 11px;">
-                            <span class="td-monospace ${meetsEma ? 'positive' : 'text-muted'}">20 > 50 > 200</span><br/>
+                            <span class="td-monospace ${meetsEma ? 'positive' : 'text-muted'}">${isShort ? '20 < 50 < 200' : '20 > 50 > 200'}</span><br/>
                             <span class="text-muted">${Number(s.ema20).toFixed(0)} / ${Number(s.ema50).toFixed(0)}</span>
                         </td>
                         <td>
@@ -1329,7 +1482,9 @@
                 let badgeClass = metCount >= 8 ? "all-met" : (metCount >= 5 ? "partial-met" : "low-met");
                 const score = s.score || 0;
                 const isBuy = (s.decision && s.decision.toUpperCase() === "BUY");
-                const scoreType = isBuy ? "buy" : "watch";
+                const isShort = isShortSide(s);
+                const rsiInZone = isShort ? (s.rsi14 >= 25 && s.rsi14 <= 50) : (s.rsi14 >= 50 && s.rsi14 <= 75);
+                const scoreType = isBuy ? "buy" : (isShortSignal(s) ? "short" : "watch");
 
                 let condCardsHtml = "";
                 if (checklist.conditions && checklist.conditions.length > 0) {
@@ -1352,7 +1507,10 @@
                                 <span class="stock-card-symbol">${s.symbol}</span>
                                 <span class="stock-card-price">₹${Number(s.close || s.entryPrice).toFixed(2)}</span>
                             </div>
-                            <span class="rec-badge ${decClass}" title="${reasonTitle}">${s.decision}</span>
+                            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                                <span class="rec-badge ${decClass}" title="${reasonTitle}">${s.decision}</span>
+                                ${isShort ? `<span class="side-tag short">SHORT • INTRADAY</span>` : ''}
+                            </div>
                         </div>
 
                         <div class="stock-card-progress">
@@ -1374,6 +1532,7 @@
                                 ⚡ Send to Real Trade
                             </button>
                         ` : ''}
+                        ${renderPaperShortButton(s, true)}
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; font-size: 11px;">
                             <div class="metric-chip metric-chip-sl">SL: ₹${Number(s.stopLoss).toFixed(2)}</div>
@@ -1383,7 +1542,7 @@
                         </div>
 
                         <div class="stock-card-chips">
-                            <span class="stock-chip ${s.rsi14 >= 50 && s.rsi14 <= 75 ? 'positive' : ''}">RSI: ${Number(s.rsi14).toFixed(1)}</span>
+                            <span class="stock-chip ${rsiInZone ? 'positive' : ''}">RSI: ${Number(s.rsi14).toFixed(1)}</span>
                             <span class="stock-chip ${s.adx14 >= 20 ? 'positive' : ''}">ADX: ${Number(s.adx14).toFixed(1)}</span>
                             <span class="stock-chip ${s.volumeMultiplier >= 1.5 ? 'positive' : ''}">Vol: ${Number(s.volumeMultiplier).toFixed(1)}x</span>
                         </div>
