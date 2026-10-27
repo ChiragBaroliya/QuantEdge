@@ -71,6 +71,12 @@ public class MarketDataFeedWorker : BackgroundService
                             _logger.LogError(ex, "Failed to re-establish market data processing. Will retry in the next cycle.");
                         }
                     }
+
+                    if (_isActiveSession)
+                    {
+                        // Save candles whose period has ended even when no newer tick has arrived to close them.
+                        await _processor.CloseCompletedCandlesAsync();
+                    }
                 }
                 else
                 {

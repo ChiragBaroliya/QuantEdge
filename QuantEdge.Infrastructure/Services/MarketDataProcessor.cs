@@ -114,7 +114,20 @@ public class MarketDataProcessor : IMarketDataProcessor
     {
         _logger.LogInformation("Stopping MarketDataProcessor core routing pipeline connection...");
         await _webSocketService.DisconnectAsync(cancellationToken);
+
+        // No more ticks can arrive, so close what has ended (no grace needed). At the 15:30 session end this saves the
+        // day's last intraday bars and the daily candle - otherwise they'd only close on the next trading day's first
+        // tick, which for a Friday or a pre-holiday day never reaches this process if it restarts in between.
+        // A mid-session stop leaves today's still-forming candles alone so a partial row isn't saved.
+        await _candleBuilder.CloseCompletedCandlesAsync(DateTime.UtcNow);
     }
+
+    // Exchange tick timestamps can trail the wall clock by a few seconds; wait this long past a period's end before
+    // closing it by time, so the period's last ticks still land in it.
+    private static readonly TimeSpan CandleCloseGrace = TimeSpan.FromSeconds(10);
+
+    /// <inheritdoc />
+    public Task CloseCompletedCandlesAsync() => _candleBuilder.CloseCompletedCandlesAsync(DateTime.UtcNow - CandleCloseGrace);
 
     /// <summary>
     /// Processes incoming tick data and forwards it to the thread-safe candle builder.

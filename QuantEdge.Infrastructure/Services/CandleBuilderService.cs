@@ -73,9 +73,16 @@ public class CandleBuilderService : ICandleBuilderService
         {
             var roundedTimestamp = GetIntervalStart(tick.Timestamp, interval);
 
+            if (state.CurrentCandle == null && state.LastClosedStart.HasValue && roundedTimestamp <= state.LastClosedStart.Value)
+            {
+                // Late tick for a period CloseCompletedCandlesAsync already closed and saved - starting a candle
+                // from it would later overwrite the saved row with a one-tick candle.
+                return;
+            }
+
             if (state.CurrentCandle == null)
             {
-                // First tick for this asset & timeframe
+                // First tick for this asset & timeframe (or the first one after a period was closed by time)
                 state.CurrentCandle = new CandleDto(
                     tick.Symbol,
                     interval,
@@ -125,20 +132,7 @@ public class CandleBuilderService : ICandleBuilderService
         // If a candle closed, record it in history and notify subscribers outside of the state lock to avoid deadlocks
         if (closedCandle != null)
         {
-            lock (_historyLock)
-            {
-                var historyList = _history.GetOrAdd(key, _ => new List<CandleDto>());
-                historyList.Add(closedCandle);
-                if (historyList.Count > MaxHistorySize)
-                {
-                    historyList.RemoveAt(0); // Maintain a fixed-size buffer
-                }
-            }
-
-            if (OnCandleClosed != null)
-            {
-                await OnCandleClosed.Invoke(closedCandle);
-            }
+            await PublishClosedCandleAsync(key, closedCandle);
         }
 
         // Notify subscribers about the active candle tick updates
@@ -146,6 +140,66 @@ public class CandleBuilderService : ICandleBuilderService
         {
             await OnCandleUpdated.Invoke(updatedCandle);
         }
+    }
+
+    /// <inheritdoc />
+    public async Task CloseCompletedCandlesAsync(DateTime nowUtc)
+    {
+        var closed = new List<((string Symbol, TimeSpan Interval) Key, CandleDto Candle)>();
+
+        foreach (var (key, state) in _activeStates)
+        {
+            lock (state)
+            {
+                var current = state.CurrentCandle;
+                if (current == null || GetPeriodEnd(current.Timestamp, state.Interval) > nowUtc) continue;
+
+                closed.Add((key, current with { IsClosed = true }));
+                state.LastClosedStart = current.Timestamp;
+                state.CurrentCandle = null;   // the next period's first tick starts a fresh candle
+            }
+        }
+
+        foreach (var (key, candle) in closed)
+        {
+            await PublishClosedCandleAsync(key, candle);
+        }
+    }
+
+    private async Task PublishClosedCandleAsync((string Symbol, TimeSpan Interval) key, CandleDto closedCandle)
+    {
+        lock (_historyLock)
+        {
+            var historyList = _history.GetOrAdd(key, _ => new List<CandleDto>());
+            historyList.Add(closedCandle);
+            if (historyList.Count > MaxHistorySize)
+            {
+                historyList.RemoveAt(0); // Maintain a fixed-size buffer
+            }
+        }
+
+        if (OnCandleClosed != null)
+        {
+            await OnCandleClosed.Invoke(closedCandle);
+        }
+    }
+
+    private static readonly TimeSpan SessionCloseIst = new(15, 30, 0);
+
+    /// <summary>
+    /// End of the candle period starting at <paramref name="startUtc"/>, capped at that day's 15:30 IST session close:
+    /// a daily candle ends at 15:30 (not midnight) and the last 60m bar (15:15) ends at 15:30 too. Returned as UTC.
+    /// </summary>
+    public static DateTime GetPeriodEnd(DateTime startUtc, TimeSpan interval)
+    {
+        var utc = startUtc.Kind == DateTimeKind.Utc ? startUtc : DateTime.SpecifyKind(startUtc, DateTimeKind.Utc);
+        var startIst = TimeZoneInfo.ConvertTimeFromUtc(utc, Helpers.TimeZoneHelper.IndianTimeZone);
+        DateTime sessionCloseIst = startIst.Date + SessionCloseIst;
+
+        DateTime endIst = startIst + interval;
+        if (startIst < sessionCloseIst && endIst > sessionCloseIst) endIst = sessionCloseIst;
+
+        return TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(endIst, DateTimeKind.Unspecified), Helpers.TimeZoneHelper.IndianTimeZone);
     }
 
     /// <summary>
@@ -216,6 +270,8 @@ public class CandleBuilderService : ICandleBuilderService
         public string Symbol { get; }
         public TimeSpan Interval { get; }
         public CandleDto? CurrentCandle { get; set; }
+        /// <summary>Start of the last candle closed by time; ticks for that period or earlier are ignored.</summary>
+        public DateTime? LastClosedStart { get; set; }
 
         public CandleBuilderState(string symbol, TimeSpan interval)
         {

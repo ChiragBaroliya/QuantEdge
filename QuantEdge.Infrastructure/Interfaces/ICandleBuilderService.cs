@@ -26,6 +26,14 @@ public interface ICandleBuilderService
     Task ProcessTickAsync(TickDataDto tick);
 
     /// <summary>
+    /// Closes (and raises <see cref="OnCandleClosed"/> for) every active candle whose period has ended by
+    /// <paramref name="nowUtc"/>. A period never runs past the 15:30 IST session close, so the day's last
+    /// intraday bars and the daily candle close at the session end instead of waiting for the next
+    /// trading day's first tick (which, for a Friday or a pre-holiday day, may never reach this process).
+    /// </summary>
+    Task CloseCompletedCandlesAsync(DateTime nowUtc);
+
+    /// <summary>
     /// Retrieves the in-memory history of closed candles for a given asset and interval.
     /// </summary>
     IReadOnlyList<CandleDto> GetHistory(string symbol, TimeSpan interval);

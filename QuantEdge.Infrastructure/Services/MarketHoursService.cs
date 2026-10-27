@@ -109,6 +109,40 @@ public class MarketHoursService : IMarketHoursService
         return tradingDays;
     }
 
+    /// <inheritdoc />
+    public async Task<bool> IsTradingDayAsync(DateOnly date)
+    {
+        var todayDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _indianTimeZone));
+        if (_cachedDate != todayDate)
+        {
+            await EnsureDailyCacheInitializedAsync(todayDate);
+        }
+
+        return IsTradingDate(date);
+    }
+
+    /// <inheritdoc />
+    public async Task<DateOnly> GetLastCompletedTradingDayAsync(DateTime? nowUtc = null)
+    {
+        var nowIst = TimeZoneInfo.ConvertTimeFromUtc(nowUtc ?? DateTime.UtcNow, _indianTimeZone);
+        var todayDate = DateOnly.FromDateTime(nowIst);
+        if (_cachedDate != todayDate)
+        {
+            await EnsureDailyCacheInitializedAsync(todayDate);
+        }
+
+        var d = nowIst.TimeOfDay >= MarketCloseTime ? todayDate : todayDate.AddDays(-1);
+        // Bounded walk back: a long weekend plus a run of holidays is still well under 15 days.
+        for (int i = 0; i < 15 && !IsTradingDate(d); i++)
+        {
+            d = d.AddDays(-1);
+        }
+        return d;
+    }
+
+    private bool IsTradingDate(DateOnly d) =>
+        d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !_holidays.Contains(d);
+
     private async Task EnsureDailyCacheInitializedAsync(DateOnly targetDate)
     {
         await _cacheLock.WaitAsync();

@@ -26,4 +26,14 @@ public interface IMarketHoursService
     /// that are meant to count trading sessions rather than raw calendar days.
     /// </summary>
     Task<int> CountTradingDaysElapsedAsync(DateTime openedAtUtc, DateTime nowUtc);
+
+    /// <summary>True when <paramref name="date"/> (an IST date) is an NSE trading day - not a weekend or a market holiday.</summary>
+    Task<bool> IsTradingDayAsync(DateOnly date);
+
+    /// <summary>
+    /// The most recent IST trading day whose session has closed at <paramref name="nowUtc"/> (or now): today once it's
+    /// past 15:30 IST on a trading day, otherwise the trading day before - e.g. Friday on Saturday, Sunday and Monday
+    /// morning. Used to finalise daily candles by trading day instead of by calendar day.
+    /// </summary>
+    Task<DateOnly> GetLastCompletedTradingDayAsync(DateTime? nowUtc = null);
 }

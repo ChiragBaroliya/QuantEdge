@@ -63,6 +63,7 @@ try
             if (!jobType.Contains(":"))
             {
                 builder.Services.AddHostedService<NseBhavcopyWorker>();
+                builder.Services.AddHostedService<DailyCandleFinalizeWorker>();   // last trading day's 1d candles final from Kite after the close
                 builder.Services.AddHostedService<BacktestWorker>();   // queued backtests (Plan Phase 7) - stored candles only
             }
         }

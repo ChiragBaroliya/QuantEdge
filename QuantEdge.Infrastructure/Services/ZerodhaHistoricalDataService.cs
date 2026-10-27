@@ -261,6 +261,7 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
     // and failed every candle sync of the day with "invalid token".
     private static readonly TimeSpan TokenCacheTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DailyTokenExpiryIst = new(6, 0, 0);
+    private static readonly TimeSpan SessionCloseIst = new(15, 30, 0);
 
     // The last token Kite rejected (per process) - see FetchHistoricalCandlesAsync.
     private static string? _rejectedToken;
@@ -375,10 +376,13 @@ public class ZerodhaHistoricalDataService : IHistoricalDataService
             {
                 // A daily candle synced during the session is a partial snapshot (e.g. the 09:45 price).
                 // Keep it current WITHOUT extra Kite calls (historical API limit: 3 req/s):
-                //  - today's row already stored -> rebuild it from today's stored 15m candles (DB only);
-                //  - last row is an earlier day   -> one fetch starting AT that day, so a partial earlier
+                //  - today's row already stored, session open -> rebuild it from today's stored 15m candles (DB only);
+                //  - today's row, after the 15:30 close         -> one fetch for today, so the day is final the same
+                //    evening (a Friday's row would otherwise stay a 15:15 snapshot until Monday's first sync);
+                //  - last row is an earlier day                 -> one fetch starting AT that day, so a partial earlier
                 //    day is corrected in the same single call the old "last + 1 day" start already made.
-                if (DayChangeCalculator.IstDate(lastCandle.CandleTime) >= DayChangeCalculator.IstDate(DateTime.UtcNow))
+                bool sessionClosedToday = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _indianTimeZone).TimeOfDay >= SessionCloseIst;
+                if (DayChangeCalculator.IstDate(lastCandle.CandleTime) >= DayChangeCalculator.IstDate(DateTime.UtcNow) && !sessionClosedToday)
                 {
                     await RefreshTodayDailyFromIntradayAsync(symbol, lastCandle);
                     return;

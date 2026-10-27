@@ -25,6 +25,12 @@ public interface IMarketDataProcessor
     Task StopProcessingAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// Closes and saves the active candles whose period has ended, without waiting for the next period's first tick.
+    /// Called periodically during the session so a quiet symbol or a dropped feed can't strand a finished candle.
+    /// </summary>
+    Task CloseCompletedCandlesAsync();
+
+    /// <summary>
     /// Processes and routes an incoming market tick.
     /// </summary>
     Task ProcessIncomingTickAsync(TickDataDto tick);
