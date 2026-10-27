@@ -733,6 +733,7 @@ public class AutoRealTradeService : IAutoRealTradeService
 
                 await LogAuditAsync(symbol, "ORDER_REJECTED", entryPrice, quantity,
                     $"Zerodha Order Placement Failed: {brokerResult.Message}", userId);
+                if (!isManualTrade) await PauseOnBrokerAppRejectionAsync(symbol, entryPrice, brokerResult.Message, userId);
                 return false;
             }
 
@@ -1150,6 +1151,7 @@ public class AutoRealTradeService : IAutoRealTradeService
 
                 await LogAuditAsync(symbol, "ORDER_REJECTED", entryPrice, quantity,
                     $"Zerodha Short Order Placement Failed: {brokerResult.Message}", userId);
+                await PauseOnBrokerAppRejectionAsync(symbol, entryPrice, brokerResult.Message, userId);
                 return false;
             }
 
@@ -3473,6 +3475,18 @@ public class AutoRealTradeService : IAutoRealTradeService
     // Entry-only gate - never applied to exits (see call site in EvaluateAndExecuteRealBuyCoreAsync).
     private static bool IsPastEntryDelay(string windowStartTime, int entryDelayMinutes) =>
         SwingTradeRules.IsPastEntryDelay(windowStartTime, entryDelayMinutes, SwingTradeRules.NowIst());
+
+    // An entry rejected for the Zerodha app's setup (no whitelisted static IP, plan lacks the API) fails identically for
+    // every symbol on every scan, so the bot is switched off once instead of logging a rejection per signal. Exits are
+    // not gated by the master switch and keep running; the user turns the bot back on after fixing the Kite app.
+    private async Task PauseOnBrokerAppRejectionAsync(string symbol, decimal entryPrice, string? brokerMessage, int userId)
+    {
+        if (!KiteErrors.IsAccountLevelRejection(brokerMessage)) return;
+
+        await LogAuditAsync(symbol, "BROKER_APP_BLOCKED", entryPrice, 0,
+            $"Zerodha refused orders for this app: {brokerMessage} Auto Real Trade paused - fix the app on the Kite developer console (developers.kite.trade), then turn the bot back on.", userId);
+        await ToggleRealTradeAsync(false, userId);
+    }
 
     private async Task BroadcastDashboardUpdateAsync(int userId)
     {

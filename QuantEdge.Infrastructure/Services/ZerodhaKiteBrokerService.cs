@@ -1,12 +1,15 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
+using QuantEdge.Infrastructure.Constants;
 using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Helpers;
 using QuantEdge.Infrastructure.Interfaces;
@@ -29,6 +32,23 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ZerodhaKiteBrokerService> _logger;
     private readonly IBrokerApiEventRecorder? _apiEventRecorder;
+
+    // GET /user/margins/equity is hit by the 5s live-positions poll (per open tab), every dashboard rebuild/SignalR
+    // broadcast and every BUY/SHORT capital check in a scan pass - fired concurrently that tripped Kite's per-second
+    // limit (HTTP 429). One fetch per user is shared by all callers for this window; placing/cancelling an order drops it.
+    private static readonly TimeSpan MarginsCacheTtl = TimeSpan.FromSeconds(5);
+    private readonly ConcurrentDictionary<int, MarginsCacheEntry> _marginsCache = new();
+
+    private sealed record MarginsCacheEntry(Lazy<Task<(bool Success, decimal AvailableCash, decimal UsedMargin, string? Message)>> Fetch, DateTime StartedUtc)
+    {
+        public bool IsFresh(DateTime nowUtc) =>
+            !Fetch.IsValueCreated || !Fetch.Value.IsCompleted || nowUtc - StartedUtc < MarginsCacheTtl;
+    }
+
+    // A 403 "Insufficient permission" on /quote/ltp is the Kite app's plan, not the request - the same answer comes back
+    // on every call (60+ a 5 min in the bell). Skip REST quotes per API key for this long, then try once more.
+    private static readonly TimeSpan QuoteApiBlockedRetryAfter = TimeSpan.FromMinutes(30);
+    private readonly ConcurrentDictionary<string, DateTime> _quoteApiBlockedUntil = new();
 
     public string Mode => "Live";
 
@@ -200,6 +220,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
             if (response.IsSuccessStatusCode)
             {
+                InvalidateMarginsCache(userId);
                 using var doc = JsonDocument.Parse(responseJson);
                 if (doc.RootElement.TryGetProperty("data", out var dataElem) &&
                     dataElem.TryGetProperty("order_id", out var orderIdElem))
@@ -261,6 +282,7 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
             var responseJson = await response.Content.ReadAsStringAsync();
 
             _logger.LogInformation("Zerodha Cancel Order Response #{OrderId} for User {UserId}: Code {Status}, Body: {Body}", brokerOrderId, userId, response.StatusCode, responseJson);
+            if (response.IsSuccessStatusCode) InvalidateMarginsCache(userId);
             return (response.IsSuccessStatusCode, response.IsSuccessStatusCode ? "Order cancelled" : responseJson);
         }
         catch (Exception ex)
@@ -342,7 +364,21 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
         return await PlaceLiveOrderAsync(symbol, exitSide, quantity, PaperOrderType.Market, currentPrice, product, userId, protectionBufferPctOverride);
     }
 
-    public async Task<(bool Success, decimal AvailableCash, decimal UsedMargin, string? Message)> GetEquityMarginsAsync(int userId = 1)
+    public Task<(bool Success, decimal AvailableCash, decimal UsedMargin, string? Message)> GetEquityMarginsAsync(int userId = 1)
+    {
+        var nowUtc = DateTime.UtcNow;
+        MarginsCacheEntry NewEntry() => new(new Lazy<Task<(bool, decimal, decimal, string?)>>(() => FetchEquityMarginsAsync(userId)), nowUtc);
+
+        var entry = _marginsCache.AddOrUpdate(userId,
+            _ => NewEntry(),
+            (_, existing) => existing.IsFresh(nowUtc) ? existing : NewEntry());
+        return entry.Fetch.Value;
+    }
+
+    // An order changes the margin Kite reports - the next read must go to the broker.
+    private void InvalidateMarginsCache(int userId) => _marginsCache.TryRemove(userId, out _);
+
+    private async Task<(bool Success, decimal AvailableCash, decimal UsedMargin, string? Message)> FetchEquityMarginsAsync(int userId)
     {
         var tokenValidation = await ValidateSessionTokenAsync(userId);
         if (!tokenValidation.IsValid)
@@ -628,10 +664,32 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
             return (true, new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase), "No instruments requested.");
         }
 
+        // WebSocket ticks first (RealTradeCacheService) - REST only for the symbols without a fresh tick.
+        var cached = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        if (_cacheService != null)
+        {
+            foreach (var (symbol, _) in instrumentList)
+            {
+                if (_cacheService.TryGetFreshLtp(symbol, RealTradeSchedule.LtpFreshnessWindow, out var ltp) && ltp > 0m)
+                    cached[symbol] = ltp;
+            }
+            instrumentList = instrumentList.Where(i => !cached.ContainsKey(i.Symbol)).ToList();
+            if (instrumentList.Count == 0)
+            {
+                return (true, cached, "LTP served from live tick cache.");
+            }
+        }
+
         var tokenValidation = await ValidateSessionTokenAsync(userId);
         if (!tokenValidation.IsValid)
         {
-            return (false, null, tokenValidation.Message);
+            return cached.Count > 0 ? (true, cached, tokenValidation.Message) : (false, null, tokenValidation.Message);
+        }
+
+        if (_quoteApiBlockedUntil.TryGetValue(tokenValidation.ApiKey!, out var blockedUntil) && DateTime.UtcNow < blockedUntil)
+        {
+            const string blocked = "Zerodha /quote/ltp not permitted for this Kite app (plan) - using live ticks only.";
+            return cached.Count > 0 ? (true, cached, blocked) : (false, null, blocked);
         }
 
         try
@@ -647,12 +705,21 @@ public class ZerodhaKiteBrokerService : IZerodhaKiteBrokerService, ITradingBroke
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Failed to fetch LTP quotes from Zerodha for User {UserId}: Code {Status}", userId, response.StatusCode);
-                return (false, null, $"Zerodha Error: {response.StatusCode}");
+                if (response.StatusCode == HttpStatusCode.Forbidden && KiteErrors.IsAccountLevelRejection(responseJson))
+                {
+                    _quoteApiBlockedUntil[tokenValidation.ApiKey!] = DateTime.UtcNow + QuoteApiBlockedRetryAfter;
+                    _logger.LogWarning("Zerodha /quote/ltp not permitted for this Kite app (User {UserId}); REST quotes off for {Minutes} min, live ticks only.",
+                        userId, QuoteApiBlockedRetryAfter.TotalMinutes);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to fetch LTP quotes from Zerodha for User {UserId}: Code {Status}", userId, response.StatusCode);
+                }
+                return cached.Count > 0 ? (true, cached, $"Zerodha Error: {response.StatusCode}") : (false, null, $"Zerodha Error: {response.StatusCode}");
             }
 
             using var doc = JsonDocument.Parse(responseJson);
-            var result = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            var result = cached;
 
             if (doc.RootElement.TryGetProperty("data", out var dataElem))
             {

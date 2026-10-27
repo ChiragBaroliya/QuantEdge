@@ -34,6 +34,7 @@ public class NotificationService : INotificationService
         ["TOKEN_EXPIRED"] = ("warning", "Zerodha session expired"),
         ["KILL_SWITCH_ACTIVE"] = ("warning", "Kill switch active"),
         ["CIRCUIT_BREAKER"] = ("warning", "Circuit breaker hit"),
+        ["BROKER_APP_BLOCKED"] = ("error", "Auto Real Trade paused - Zerodha app setup"),
     };
 
     private const int MaxRealTradeLogs = 500;

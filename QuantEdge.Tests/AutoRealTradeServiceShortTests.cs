@@ -174,6 +174,38 @@ public class AutoRealTradeServiceShortTests : ClockedTest
     }
 
     [Fact]
+    public async Task Short_RejectedForKiteAppSetup_PausesTheBotOnce()
+    {
+        _settings.IsAutoShortEnabled = true;
+        _repo.Setup(r => r.ToggleRealTradeAsync(It.IsAny<int>(), It.IsAny<bool>())).Returns(Task.CompletedTask);
+        _broker.Setup(b => b.PlaceLiveOrderAsync(It.IsAny<string>(), It.IsAny<TradeSide>(), It.IsAny<int>(), It.IsAny<PaperOrderType>(),
+                It.IsAny<decimal>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<decimal?>()))
+            .ReturnsAsync((false, (string?)null, 0m, "Zerodha Error: No IPs configured for this app. Add allowed IPs on the Kite developer console."));
+
+        Assert.False(await Short());
+        Assert.False(await Short("PNB")); // bot now off - no second order is sent
+
+        _broker.Verify(b => b.PlaceLiveOrderAsync(It.IsAny<string>(), It.IsAny<TradeSide>(), It.IsAny<int>(), It.IsAny<PaperOrderType>(),
+            It.IsAny<decimal>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<decimal?>()), Times.Once);
+        _repo.Verify(r => r.ToggleRealTradeAsync(User, false), Times.Once);
+        Assert.Single(_logs, l => l.ActionType == "BROKER_APP_BLOCKED");
+    }
+
+    [Fact]
+    public async Task Short_OrdinaryBrokerError_KeepsTheBotOn()
+    {
+        _settings.IsAutoShortEnabled = true;
+        _broker.Setup(b => b.PlaceLiveOrderAsync(It.IsAny<string>(), It.IsAny<TradeSide>(), It.IsAny<int>(), It.IsAny<PaperOrderType>(),
+                It.IsAny<decimal>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<decimal?>()))
+            .ReturnsAsync((false, (string?)null, 0m, "Zerodha Error: Stock is in ban period"));
+
+        Assert.False(await Short());
+
+        _repo.Verify(r => r.ToggleRealTradeAsync(It.IsAny<int>(), It.IsAny<bool>()), Times.Never);
+        Assert.True(_settings.IsRealTradeEnabled);
+    }
+
+    [Fact]
     public async Task Short_IsBlockedByAnOpenPositionOrPendingOrder()
     {
         _settings.IsAutoShortEnabled = true;
