@@ -292,19 +292,21 @@ public class AutoTradeService : IAutoTradeService
     // EvaluateAndExecuteRealBuyCoreAsync - only broker-specific steps (token check, pending broker
     // orders, broker margin) are replaced by their paper-account equivalents.
     public Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
-        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null) =>
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null,
+        ConditionGate? conditionGate = null) =>
         EvaluateAndExecuteAutoEntryAsync(TradeSide.BUY, symbol, entryPrice, metConditionsCount, userId, isBuySignal,
-            engineStopLoss, engineTarget, dailyAtr, riskPct);
+            engineStopLoss, engineTarget, dailyAtr, riskPct, conditionGate);
 
     // Auto Short Selling - one entry path with BUY, so a short passes exactly the same gates, plus the short switch and
     // the short entry cut-off. Paper only: a simulated SELL on the paper account, never a broker order.
     public Task<bool> EvaluateAndExecuteAutoShortAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isSellSignal = false,
-        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null) =>
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null,
+        ConditionGate? conditionGate = null) =>
         EvaluateAndExecuteAutoEntryAsync(TradeSide.SELL, symbol, entryPrice, metConditionsCount, userId, isSellSignal,
-            engineStopLoss, engineTarget, dailyAtr, riskPct);
+            engineStopLoss, engineTarget, dailyAtr, riskPct, conditionGate);
 
     private async Task<bool> EvaluateAndExecuteAutoEntryAsync(TradeSide side, string symbol, decimal entryPrice, int metConditionsCount, string userId,
-        bool isBuySignal, decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr, decimal? riskPct)
+        bool isBuySignal, decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr, decimal? riskPct, ConditionGate? conditionGate)
     {
         bool isShort = side == TradeSide.SELL;
         string label = isShort ? "SHORT" : "BUY";
@@ -348,11 +350,13 @@ public class AutoTradeService : IAutoTradeService
             return false;
         }
 
-        // 3. Condition Match Check
-        if (!isBuySignal && metConditionsCount < settings.MinConditionsMatch)
+        // 3. Condition Match Check - the user's Trade Conditions min / total when the scan passed one, else the settings' out of 11.
+        int minConditionsMatch = conditionGate?.MinConditionsMatch ?? settings.MinConditionsMatch;
+        int totalConditions = conditionGate?.TotalConditions ?? TradeConditionRules.TotalConditions;
+        if (!isBuySignal && metConditionsCount < minConditionsMatch)
         {
             await LogAuditAsync(symbol, "SIGNAL_SKIPPED", entryPrice, 0,
-                $"Condition match score {metConditionsCount}/11 below minimum required {settings.MinConditionsMatch}/11", userId);
+                $"Condition match score {metConditionsCount}/{totalConditions} below minimum required {minConditionsMatch}/{totalConditions}", userId);
             return false;
         }
 
@@ -474,7 +478,7 @@ public class AutoTradeService : IAutoTradeService
                 FilledPrice = entryPrice,
                 FilledAt = DateTime.UtcNow,
                 TradeType = TradeType.Auto,
-                Remarks = $"Auto {label} (Score {metConditionsCount}/11, SL ₹{stopLoss:F2} / Target ₹{takeProfit:F2})"
+                Remarks = $"Auto {label} (Score {metConditionsCount}/{totalConditions}, SL ₹{stopLoss:F2} / Target ₹{takeProfit:F2})"
             });
 
             // Upsert Auto Paper Position
@@ -525,7 +529,7 @@ public class AutoTradeService : IAutoTradeService
             // Log Audit Event
             string squareOffNote = isShort ? $" - auto square-off at {settings.ShortSquareOffTime} IST if not covered" : string.Empty;
             await LogAuditAsync(symbol, isShort ? "AUTO_SHORT" : "AUTO_BUY", entryPrice, quantity,
-                $"Auto {label} Executed @ ₹{entryPrice:F2} (Qty: {quantity} - {sizing.Reason}; Met {metConditionsCount}/11 criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {tslText}){squareOffNote}", userId);
+                $"Auto {label} Executed @ ₹{entryPrice:F2} (Qty: {quantity} - {sizing.Reason}; Met {metConditionsCount}/{totalConditions} criteria, Target: ₹{takeProfit:F2}, SL: ₹{stopLoss:F2}, TSL: {tslText}){squareOffNote}", userId);
 
             // Broadcast SignalR Toast Alert
             if (_hubContext != null)
@@ -539,7 +543,7 @@ public class AutoTradeService : IAutoTradeService
                     target = takeProfit,
                     stopLoss,
                     trailingSl,
-                    message = $"🤖 Auto {label}: {quantity} shares of {symbol} @ ₹{entryPrice:N2} (Met {metConditionsCount}/11)"
+                    message = $"🤖 Auto {label}: {quantity} shares of {symbol} @ ₹{entryPrice:N2} (Met {metConditionsCount}/{totalConditions})"
                 });
             }
 

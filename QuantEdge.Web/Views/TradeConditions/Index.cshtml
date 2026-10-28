@@ -1,0 +1,118 @@
+@{
+    ViewData["Title"] = "Trade Conditions";
+    ViewData["PageTitle"] = "Trade Conditions";
+    var apiBaseUrl = ViewBag.ApiBaseUrl as string ?? "";
+    var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "1";
+}
+
+<link rel="stylesheet" href="~/css/trade-conditions.css" asp-append-version="true" />
+<div id="tc-config" data-api-base-url="@apiBaseUrl" data-user-id="@currentUserId" hidden></div>
+
+<div class="tc-container">
+    <div class="tc-header">
+        <div>
+            <div class="tc-eyebrow">Trading &amp; Signals</div>
+            <h2 class="tc-title">Trade Conditions</h2>
+            <p class="tc-subtitle">Choose which of the 11 conditions the bot checks before it buys or short sells a stock. Conditions you switch off are skipped, and the score is rescaled to 100 from the conditions that stay on.</p>
+        </div>
+        <div class="tc-header-pills">
+            <span class="tc-pill tc-pill-muted" id="tcStatusPill">Loading…</span>
+            <span class="tc-pill tc-pill-muted" data-tooltip="Market Gate Mode from Swing settings. In REGIME mode the BUY side's condition 1 is decided by the market regime, not by this page.">
+                Gate mode: <strong id="tcGateLabel">-</strong>
+            </span>
+        </div>
+    </div>
+
+    <div class="tc-toolbar">
+        <div class="tc-segment" role="tablist" aria-label="Trading mode" id="tcModeTabs">
+            <button type="button" class="tc-seg-btn active" data-mode="AUTO_PAPER" role="tab" aria-selected="true">Auto Paper</button>
+            <button type="button" class="tc-seg-btn" data-mode="AUTO_REAL" role="tab" aria-selected="false">Auto Real <span class="tc-live">LIVE</span></button>
+        </div>
+        <div class="tc-segment" role="tablist" aria-label="Side" id="tcSideTabs">
+            <button type="button" class="tc-seg-btn active" data-side="BUY" role="tab" aria-selected="true">BUY</button>
+            <button type="button" class="tc-seg-btn" data-side="SHORT" role="tab" aria-selected="false">SHORT</button>
+        </div>
+        <span class="tc-dirty" id="tcDirty" hidden></span>
+    </div>
+
+    <div class="tc-layout">
+        <div class="tc-main">
+            <section class="tc-card">
+                <div class="tc-card-head">
+                    <div>
+                        <h3>Hard filters</h3>
+                        <p>Pass / fail gates. If any filter that is ON fails, the stock is rejected, whatever its score.</p>
+                    </div>
+                    <div class="tc-bulk">
+                        <button type="button" class="tc-link-btn" data-bulk="hard" data-on="true">All on</button>
+                        <button type="button" class="tc-link-btn" data-bulk="hard" data-on="false">All off</button>
+                    </div>
+                </div>
+                <div class="tc-list" id="tcHardList"></div>
+            </section>
+
+            <section class="tc-card">
+                <div class="tc-card-head">
+                    <div>
+                        <h3>Scoring conditions</h3>
+                        <p>Each adds points to the score. A score of 70 or more is a signal; 50–69 is WATCH.</p>
+                    </div>
+                    <div class="tc-bulk">
+                        <button type="button" class="tc-link-btn" data-bulk="score" data-on="true">All on</button>
+                        <button type="button" class="tc-link-btn" data-bulk="score" data-on="false">All off</button>
+                    </div>
+                </div>
+                <div class="tc-list" id="tcScoreList"></div>
+            </section>
+        </div>
+
+        <aside class="tc-side">
+            <section class="tc-card tc-summary">
+                <h3>Summary</h3>
+                <div class="tc-stat-grid">
+                    <div class="tc-stat"><span class="tc-stat-label">Conditions on</span><span class="tc-stat-value" id="tcEnabledCount">11 / 11</span></div>
+                    <div class="tc-stat"><span class="tc-stat-label">Hard filters on</span><span class="tc-stat-value" id="tcHardCount">3 / 3</span></div>
+                </div>
+
+                <div class="tc-points">
+                    <div class="tc-points-head"><span>Scoring points in use</span><strong id="tcPointsText">100 / 100</strong></div>
+                    <div class="tc-bar"><div class="tc-bar-fill" id="tcPointsBar"></div></div>
+                    <p class="tc-hint" id="tcRescaleText">Score = points earned out of 100.</p>
+                </div>
+
+                <div class="tc-field">
+                    <label for="tcMinMatch">Min conditions to match</label>
+                    <div class="tc-min-row">
+                        <input type="number" class="tc-input" id="tcMinMatch" min="1" max="11" value="10" />
+                        <span class="tc-hint" id="tcMinMatchOf">of 11 on</span>
+                    </div>
+                    <p class="tc-hint">The bot also takes a stock with no signal if at least this many of the conditions that are ON pass.</p>
+                </div>
+
+                <div class="tc-thresholds">
+                    <span class="tc-chip tc-chip-green" id="tcSignalChip">BUY ≥ 70</span>
+                    <span class="tc-chip tc-chip-amber">WATCH ≥ 50</span>
+                    <span class="tc-chip tc-chip-muted">Set in Swing settings</span>
+                </div>
+
+                <div id="tcAlerts" class="tc-alerts" aria-live="polite"></div>
+
+                <label class="tc-risk" id="tcRiskWrap" hidden>
+                    <input type="checkbox" id="tcRiskAccept" />
+                    <span>I understand that with a hard filter off, the <strong>real-money</strong> bot may buy against the trend.</span>
+                </label>
+
+                <div class="tc-actions">
+                    <button type="button" class="tc-btn tc-btn-ghost" id="tcReset">Reset to default</button>
+                    <button type="button" class="tc-btn tc-btn-ghost" id="tcCopySide">Copy BUY → SHORT</button>
+                    <button type="button" class="tc-btn tc-btn-ghost" id="tcCopyMode">Copy to Auto Real</button>
+                    <button type="button" class="tc-btn tc-btn-primary" id="tcSave">Save</button>
+                </div>
+            </section>
+        </aside>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/trade-conditions.js" asp-append-version="true"></script>
+}

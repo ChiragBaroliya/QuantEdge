@@ -106,6 +106,7 @@
             <div class="badge-counter" id="trade-counter-badge">
                 0 trades today
             </div>
+            @await Html.PartialAsync("_TradeConditionsBadge", "AUTO_REAL")
             <div class="badge-ws connected" id="ws-status-badge">
                 <span class="ws-dot"></span> WebSocket Connected
             </div>
@@ -545,8 +546,10 @@
                                 </select>
                             </div>
                             <div class="col-6 mb-3">
-                                <label class="form-label" for="inpMinConditions">Min Criteria (Score)</label>
-                                <input type="number" min="1" max="13" class="form-control qe-input" id="inpMinConditions" name="MinConditionsMatch" required />
+                                <label class="form-label" for="inpMinConditions">Min Criteria (default)</label>
+                                @* Read-only: the minimum is configured per side on the Trade Conditions page; the stored value is sent back unchanged. *@
+                                <input type="number" min="1" max="13" class="form-control qe-input input-managed" id="inpMinConditions" name="MinConditionsMatch" readonly tabindex="-1" aria-describedby="hintMinConditionsReal" />
+                                <small class="form-hint form-hint-managed" id="hintMinConditionsReal">Set per BUY / SHORT on <a href="@Url.Action("Index", "TradeConditions")">Trade Conditions</a></small>
                             </div>
                         </div>
 
@@ -935,6 +938,7 @@
     <script src="~/js/theme/lightweight-charts.standalone.production.js"></script>
     <script src="~/js/realtrading.js" asp-append-version="true"></script>
     <script src="~/js/realtrade-position-chart.js" asp-append-version="true"></script>
+    <script src="~/js/trade-conditions-badge.js" asp-append-version="true"></script>
     <script src="~/js/flow-diagram.js" asp-append-version="true"></script>
     <script src="~/js/realtrade-journey.js" asp-append-version="true"></script>
 }

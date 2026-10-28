@@ -38,7 +38,7 @@ public interface IAutoRealTradeService
     Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
         decimal? engineStopLoss = null, decimal? engineTarget = null,
         bool isManualTrade = false, int? manualQuantity = null, decimal? manualStopLossPct = null, decimal? manualTrailingSlPct = null,
-        decimal? dailyAtr = null);
+        decimal? dailyAtr = null, Services.ConditionGate? conditionGate = null);
 
     /// <summary>
     /// Auto Short Selling (real money, intraday MIS): runs the same pre-trade guards as
@@ -47,7 +47,8 @@ public interface IAutoRealTradeService
     /// monitor (target / stop / trailing SL / auto square-off at the Short Square-off Time).
     /// </summary>
     Task<bool> EvaluateAndExecuteRealShortAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1,
-        bool isSellSignal = false, decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null);
+        bool isSellSignal = false, decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null,
+        Services.ConditionGate? conditionGate = null);
 
     /// <summary>
     /// Evaluates exit conditions via the shared swing exit policy (<see cref="Services.SwingTradeRules"/>)

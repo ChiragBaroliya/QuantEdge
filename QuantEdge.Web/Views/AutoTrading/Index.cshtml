@@ -30,6 +30,7 @@
             <div class="badge-counter" id="trade-counter-badge">
                 0 / 5 trades used today
             </div>
+            @await Html.PartialAsync("_TradeConditionsBadge", "AUTO_PAPER")
             <div class="badge-ws connected" id="ws-status-badge">
                 <span class="ws-dot"></span> WebSocket Connected
             </div>
@@ -295,8 +296,10 @@
                     </div>
 
                     <div class="form-group col-half">
-                        <label class="form-label" title="Minimum strategy criteria required to trigger an auto buy signal.">Min Criteria (Score)</label>
-                        <input type="number" id="txtMinConditions" class="form-input" value="10" min="1" max="13" disabled="@readOnly" />
+                        <label class="form-label" title="Default minimum conditions to match (out of 11). Set per BUY / SHORT side on the Trade Conditions page.">Min Criteria (default)</label>
+                        @* Read-only: the minimum is configured per side on the Trade Conditions page; the stored value is sent back unchanged. *@
+                        <input type="number" id="txtMinConditions" class="form-input input-managed" value="10" min="1" max="13" readonly tabindex="-1" aria-describedby="hintMinConditionsPaper" />
+                        <small class="form-hint-managed" id="hintMinConditionsPaper">Set on <a href="@Url.Action("Index", "TradeConditions")">Trade Conditions</a></small>
                     </div>
 
                     <div class="form-group col-half">
@@ -398,4 +401,5 @@
 
 @section Scripts {
     <script src="~/js/autotrading.js" asp-append-version="true"></script>
+    <script src="~/js/trade-conditions-badge.js" asp-append-version="true"></script>
 }

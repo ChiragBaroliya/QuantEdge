@@ -61,6 +61,7 @@ public static class AppPages
     public const string UserManagement = "UserManagement";
     public const string RolePermissions = "RolePermissions";
     public const string RealTradeFlow = "RealTradeFlow";
+    public const string TradeConditions = "TradeConditions";
     public const string Logs = "Logs";
 
     public static readonly IReadOnlyList<AppPageDefinition> All = new List<AppPageDefinition>
@@ -70,6 +71,7 @@ public static class AppPages
         new(Reconciliation, "Reconciliation", GroupTrading, "Positions vs Zerodha and daily prices vs NSE close.", false),
         new(Notifications, "Notifications", GroupTrading, "Bell notification history for any date range.", true),
         new(Backtest, "Backtest", GroupTrading, "Replay the live strategy on stored candles.", false),
+        new(TradeConditions, "Trade Conditions", GroupTrading, "Choose which of the 11 BUY / SHORT conditions the bots apply (UI preview).", false),
         new(AutoPaperTrading, "Auto Paper Trading", GroupTrading, "Automated strategy simulation with virtual capital. Master switch and settings stay Admin-only.", false),
         new(AutoRealTrading, "Auto Real Trading", GroupTrading, "Real-money automated execution via Zerodha. Master switch and settings stay Admin-only.", false),
         new(ManualTrading, "Manual Trading", GroupTrading, "Manual paper orders with virtual capital against live prices.", true),

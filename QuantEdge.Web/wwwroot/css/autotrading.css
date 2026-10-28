@@ -991,3 +991,31 @@ input:checked + .slider:before {
 .guide-compare-table tr:hover td {
     background: rgba(255, 255, 255, 0.02);
 }
+
+/* Trade Conditions header badge (Auto Paper / Auto Real) - conditions ON per side */
+.badge-conditions {
+    border-color: rgba(167, 139, 250, 0.35);
+    color: var(--theme-accent, #a78bfa);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+a.badge-conditions:hover { color: var(--theme-accent, #a78bfa); filter: brightness(1.15); }
+.badge-conditions.is-custom { border-color: rgba(251, 191, 36, 0.4); color: var(--accent-amber, #fbbf24); }
+.badge-conditions.has-risk { border-color: rgba(248, 113, 113, 0.45); color: var(--accent-red, #f87171); }
+
+/* Min Criteria on the Auto Paper / Auto Real settings forms - read-only, managed on the Trade Conditions page */
+.input-managed[readonly] {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.form-hint-managed {
+    display: block;
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--text-muted, #64748b);
+}
+
+.form-hint-managed a { color: var(--theme-accent, #a78bfa); }

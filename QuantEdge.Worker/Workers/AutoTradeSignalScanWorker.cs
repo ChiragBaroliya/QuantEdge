@@ -137,9 +137,17 @@ public class AutoTradeSignalScanWorker : BackgroundService
         // mode keeps the previous all-or-nothing NIFTY check.
         // Auto Short Selling (OFF by default) has its own, mirrored market gate: shorts only while NIFTY is bearish
         // (Close < 50 DMA & EMA20 < EMA50; missing data = no shorts), and only before the user's short entry cut-off.
+        // The user's Trade Conditions (which of the 11 conditions apply). A default profile keeps the original path below;
+        // a custom one is judged by TradeConditionRules - and with its NIFTY condition OFF, a NIFTY fail doesn't block it.
+        var conditionProfiles = await provider.GetRequiredService<ITradeConditionProfileRepository>()
+            .GetModeAsync(settings.UserId, TradeConditionProfile.ModeAutoPaper);
+        var buyProfile = conditionProfiles.First(p => !p.IsShort);
+        var shortProfile = conditionProfiles.First(p => p.IsShort);
+        bool regimeMode = strategySettings.UsesRegimeGate;
+
         bool shortGateOpen = settings.IsAutoShortEnabled
             && SwingTradeRules.IsBeforeShortEntryCutoff(settings.ShortEntryCutoff, SwingTradeRules.NowIst())
-            && SwingShortDecisionEngine.IsNiftyBearishFilterPassed(niftyCandles);
+            && (SwingShortDecisionEngine.IsNiftyBearishFilterPassed(niftyCandles) || !shortProfile.IsEnabled(TradeConditionRules.Market));
 
         MarketGateDecision? regimeGate = null;
         var engineSettings = strategySettings;
@@ -174,9 +182,16 @@ public class AutoTradeSignalScanWorker : BackgroundService
         }
         else if (strategySettings.RequireNiftyMarketFilter && !SwingDecisionEngine.IsNiftyMarketFilterPassed(niftyCandles, strategySettings))
         {
-            _logger.LogWarning("⛔ NIFTY Market Filter FAILED (Close <= 50 DMA / EMA20 <= EMA50 or {Count} daily candles available) - no new Auto Paper entries for User '{UserId}' this scan.",
-                niftyCandles.Count, settings.UserId);
-            longGateOpen = false;
+            if (buyProfile.IsEnabled(TradeConditionRules.Market))
+            {
+                _logger.LogWarning("⛔ NIFTY Market Filter FAILED (Close <= 50 DMA / EMA20 <= EMA50 or {Count} daily candles available) - no new Auto Paper entries for User '{UserId}' this scan.",
+                    niftyCandles.Count, settings.UserId);
+                longGateOpen = false;
+            }
+            else
+            {
+                _logger.LogInformation("NIFTY Market Filter failed, but User '{UserId}' switched it OFF in Trade Conditions - Auto Paper BUY scan continues.", settings.UserId);
+            }
         }
 
         if (!longGateOpen && !shortGateOpen)
@@ -220,21 +235,39 @@ public class AutoTradeSignalScanWorker : BackgroundService
                     var evalResult = SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, engineSettings);
                     if (evalResult != null && evalResult.Checklist != null)
                     {
+                        var scored = evalResult;
                         int metCount = evalResult.Checklist.MetCount;
+                        int totalCount = evalResult.Checklist.TotalCount;
+                        int score = evalResult.Score;
+                        bool isSignal = evalResult.IsBuySignal;
+                        ConditionGate? conditionGate = null;
+                        bool qualifies;
 
-                        bool qualifies = regimeGate?.Policy != null
-                            ? RegimeGate.Evaluate(evalResult, regimeGate.Policy).Allowed   // regime mode: only the policy decides
-                            : evalResult.IsBuySignal || metCount >= settings.MinConditionsMatch;
+                        if (buyProfile.IsDefault)
+                        {
+                            qualifies = regimeGate?.Policy != null
+                                ? RegimeGate.Evaluate(evalResult, regimeGate.Policy).Allowed   // regime mode: only the policy decides
+                                : evalResult.IsBuySignal || metCount >= settings.MinConditionsMatch;
+                        }
+                        else
+                        {
+                            (var judged, scored) = TradeConditionRules.Evaluate(buyProfile, evalResult,
+                                () => SwingDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, engineSettings, skipHardFilterGate: true),
+                                engineSettings, regimeMode, settings.MinConditionsMatch, regimeGate?.Policy);
+                            qualifies = judged.Qualifies;
+                            (metCount, totalCount, score, isSignal) = (judged.MetCount, judged.TotalCount, judged.Score, judged.IsSignal);
+                            conditionGate = ConditionGate.From(judged);
+                        }
 
                         if (qualifies)
                         {
                             buySignalsFound++;
                             _logger.LogInformation("BUY Signal detected for {Symbol} for User '{UserId}' (Score: {Score}/100, Met: {MetCount}/{TotalCount}, Entry: ₹{Price:F2})",
-                                stock.Symbol, settings.UserId, evalResult.Score, metCount, evalResult.Checklist.TotalCount, evalResult.EntryPrice);
+                                stock.Symbol, settings.UserId, score, metCount, totalCount, scored.EntryPrice);
 
                             bool executed = await autoTradeService.EvaluateAndExecuteAutoBuyAsync(
-                                stock.Symbol, evalResult.EntryPrice, metCount, settings.UserId, evalResult.IsBuySignal || regimeGate?.Policy != null,
-                                evalResult.StopLoss, evalResult.Target1, evalResult.DailyAtr, regimeGate?.Policy?.RiskPct);
+                                stock.Symbol, scored.EntryPrice, metCount, settings.UserId, isSignal || regimeGate?.Policy != null,
+                                scored.StopLoss, scored.Target1, scored.DailyAtr, regimeGate?.Policy?.RiskPct, conditionGate);
 
                             if (executed)
                             {
@@ -254,16 +287,37 @@ public class AutoTradeSignalScanWorker : BackgroundService
                 if (shortGateOpen && !boughtThisStock)
                 {
                     var shortResult = SwingShortDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, strategySettings);
+                    var shortScored = shortResult;
                     int shortMetCount = shortResult.Checklist?.MetCount ?? 0;
-                    if (shortResult.HardFiltersPassed && (shortResult.IsSellSignal || shortMetCount >= settings.MinConditionsMatch))
+                    int shortTotalCount = TradeConditionRules.TotalConditions;
+                    int shortScore = shortResult.Score;
+                    bool isShortSignal = shortResult.IsSellSignal;
+                    ConditionGate? shortConditionGate = null;
+                    bool shortQualifies;
+
+                    if (shortProfile.IsDefault)
+                    {
+                        shortQualifies = shortResult.HardFiltersPassed && (shortResult.IsSellSignal || shortMetCount >= settings.MinConditionsMatch);
+                    }
+                    else
+                    {
+                        (var judged, shortScored) = TradeConditionRules.Evaluate(shortProfile, shortResult,
+                            () => SwingShortDecisionEngine.Evaluate(stock, stockCandles1d, stockCandles15m, stockCandles60m, niftyCandles, strategySettings, skipHardFilterGate: true),
+                            strategySettings, regimeMode, settings.MinConditionsMatch);
+                        shortQualifies = judged.Qualifies;
+                        (shortMetCount, shortTotalCount, shortScore, isShortSignal) = (judged.MetCount, judged.TotalCount, judged.Score, judged.IsSignal);
+                        shortConditionGate = ConditionGate.From(judged);
+                    }
+
+                    if (shortQualifies)
                     {
                         shortSignalsFound++;
-                        _logger.LogInformation("SHORT Signal detected for {Symbol} for User '{UserId}' (Score: {Score}/100, Met: {MetCount}/11, Entry: ₹{Price:F2})",
-                            stock.Symbol, settings.UserId, shortResult.Score, shortMetCount, shortResult.EntryPrice);
+                        _logger.LogInformation("SHORT Signal detected for {Symbol} for User '{UserId}' (Score: {Score}/100, Met: {MetCount}/{TotalCount}, Entry: ₹{Price:F2})",
+                            stock.Symbol, settings.UserId, shortScore, shortMetCount, shortTotalCount, shortScored.EntryPrice);
 
                         bool executedShort = await autoTradeService.EvaluateAndExecuteAutoShortAsync(
-                            stock.Symbol, shortResult.EntryPrice, shortMetCount, settings.UserId, shortResult.IsSellSignal,
-                            shortResult.StopLoss, shortResult.Target1, shortResult.DailyAtr);
+                            stock.Symbol, shortScored.EntryPrice, shortMetCount, settings.UserId, isShortSignal,
+                            shortScored.StopLoss, shortScored.Target1, shortScored.DailyAtr, conditionGate: shortConditionGate);
 
                         if (executedShort)
                         {

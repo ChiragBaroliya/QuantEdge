@@ -20,13 +20,16 @@ public static class SwingShortDecisionEngine
 {
     public const string ShortDecision = "SHORT";
 
+    /// <param name="skipHardFilterGate">Score all 8 factors even when a hard filter fails (the flags are still filled in) -
+    /// only for <see cref="TradeConditionRules"/>, whose user profile may switch those filters off.</param>
     public static SwingEvaluationResult Evaluate(
         StockMaster stock,
         List<MarketCandle> stockCandles1d,
         List<MarketCandle>? stockCandles15m,
         List<MarketCandle>? stockCandles60m,
         List<MarketCandle>? niftyCandles1d,
-        SwingStrategySettings? settings = null)
+        SwingStrategySettings? settings = null,
+        bool skipHardFilterGate = false)
     {
         settings ??= SwingStrategySettings.Default;
         var result = new SwingEvaluationResult { Sector = string.Empty };
@@ -83,7 +86,8 @@ public static class SwingShortDecisionEngine
         result.Ema20_1d = Math.Round(curEma20, 2);
         result.Ema50_1d = Math.Round(curEma50, 2);
 
-        if (!niftyBearish || !downtrendPassed || !adxPassed)
+        bool hardFiltersPassed = niftyBearish && downtrendPassed && adxPassed;
+        if (!hardFiltersPassed && !skipHardFilterGate)
         {
             var hardFailed = new List<string>();
             if (!niftyBearish) hardFailed.Add("NIFTY_BEARISH_FILTER (Nifty 50 not below 50 DMA / EMA20 not below EMA50, or data unavailable - no new shorts)");
@@ -99,13 +103,11 @@ public static class SwingShortDecisionEngine
             return result;
         }
 
-        result.HardFiltersPassed = true;
-        var passedRules = new List<string>
-        {
-            "Hard Filter 1: NIFTY Bearish Market Filter (Passed)",
-            "Hard Filter 2: EMA Downtrend Alignment (Passed 1D)",
-            $"Hard Filter 3: ADX Trend Strength (Passed {curAdx:F1} >= 20)"
-        };
+        result.HardFiltersPassed = hardFiltersPassed;
+        var passedRules = new List<string>();
+        if (niftyBearish) passedRules.Add("Hard Filter 1: NIFTY Bearish Market Filter (Passed)");
+        if (downtrendPassed) passedRules.Add("Hard Filter 2: EMA Downtrend Alignment (Passed 1D)");
+        if (adxPassed) passedRules.Add($"Hard Filter 3: ADX Trend Strength (Passed {curAdx:F1} >= 20)");
         var failedRules = new List<string>();
 
         // ---------------- STAGE B: WEIGHTED SCORING (100 pts) ----------------

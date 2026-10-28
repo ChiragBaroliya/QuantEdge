@@ -1,0 +1,26 @@
+@model string
+@inject QuantEdge.Web.Services.IPagePermissionService PagePermissions
+@using QuantEdge.Infrastructure.Constants
+@*
+    Header badge on the Auto Paper / Auto Real pages: how many of the 11 Trade Conditions the bot applies per side.
+    Model = trade mode (AUTO_PAPER / AUTO_REAL). Filled by trade-conditions-badge.js from /api/tradeconditions.
+*@
+@{
+    string apiBaseUrl = ViewBag.ApiBaseUrl as string ?? "";
+    string userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "1";
+    bool canConfigure = (await PagePermissions.GetAllowedPagesAsync(User)).Contains(AppPages.TradeConditions);
+}
+@if (canConfigure)
+{
+    <a class="badge-counter badge-conditions js-trade-conditions-badge" href="@Url.Action("Index", "TradeConditions")"
+       data-api-base-url="@apiBaseUrl" data-mode="@Model" data-user-id="@userId" data-can-configure="true">
+        🎛️ <span data-tc-text>Conditions: loading…</span>
+    </a>
+}
+else
+{
+    <div class="badge-counter badge-conditions js-trade-conditions-badge"
+         data-api-base-url="@apiBaseUrl" data-mode="@Model" data-user-id="@userId">
+        🎛️ <span data-tc-text>Conditions: loading…</span>
+    </div>
+}

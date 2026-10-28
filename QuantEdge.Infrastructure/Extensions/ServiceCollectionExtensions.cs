@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IRolePermissionRepository, RolePermissionRepository>();
         services.AddTransient<ISwingSlotRecommendationRepository, SwingSlotRecommendationRepository>();
         services.AddTransient<ISwingStrategySettingsRepository, SwingStrategySettingsRepository>();
+        services.AddTransient<ITradeConditionProfileRepository, TradeConditionProfileRepository>();
         services.AddTransient<IFavoriteSymbolRepository, FavoriteSymbolRepository>();
         services.AddTransient<ISectorRepository, SectorRepository>();
         services.AddTransient<ILiveQuoteRepository, LiveQuoteRepository>();
@@ -194,6 +195,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IRealTradingRepository, RealTradingRepository>();
         services.AddSingleton<IRealTradeCacheService, RealTradeCacheService>();
         services.AddSingleton<IAutoRealTradeService, AutoRealTradeService>();
+        services.AddTransient<ITradeConditionService, TradeConditionService>();
 
         // IRealOrderGateway: Zerodha only accepts orders from the static IPs registered on the Kite app.
         // When the API runs on a server whose IP isn't registered (RealOrderExecution:Mode = Remote), its

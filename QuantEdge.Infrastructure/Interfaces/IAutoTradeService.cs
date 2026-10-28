@@ -19,8 +19,10 @@ public interface IAutoTradeService
     /// Evaluates candidate signal from scan job and places an auto paper buy order if every entry gate
     /// passes - the same gates and entry levels as Auto Real Trading (<see cref="Services.SwingTradeRules"/>).
     /// </summary>
+    /// <param name="conditionGate">The user's Trade Conditions min / total for the condition-match guard; null = mode settings, out of 11.</param>
     Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
-        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null);
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null,
+        Services.ConditionGate? conditionGate = null);
 
     /// <summary>
     /// Auto Short Selling (paper): places a simulated paper SHORT SELL after the same entry gates as
@@ -28,7 +30,8 @@ public interface IAutoTradeService
     /// cut-off. Levels are mirrored (Stop Loss above the entry, Target below). Never places a broker order.
     /// </summary>
     Task<bool> EvaluateAndExecuteAutoShortAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isSellSignal = false,
-        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null);
+        decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null,
+        Services.ConditionGate? conditionGate = null);
 
     /// <summary>
     /// Evaluates exit conditions via the shared swing exit policy (<see cref="Services.SwingTradeRules"/>)

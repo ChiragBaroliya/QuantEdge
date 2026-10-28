@@ -445,11 +445,11 @@ public class AutoRealTradeService : IAutoRealTradeService
     public async Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
         decimal? engineStopLoss = null, decimal? engineTarget = null,
         bool isManualTrade = false, int? manualQuantity = null, decimal? manualStopLossPct = null, decimal? manualTrailingSlPct = null,
-        decimal? dailyAtr = null)
+        decimal? dailyAtr = null, ConditionGate? conditionGate = null)
     {
         Task<bool> RunCoreLocked() => WithTradeLockAsync(EntryLockKey(userId), false, () =>
             EvaluateAndExecuteRealBuyCoreAsync(symbol, entryPrice, metConditionsCount, userId, isBuySignal,
-                engineStopLoss, engineTarget, dailyAtr, isManualTrade, manualQuantity, manualStopLossPct, manualTrailingSlPct));
+                engineStopLoss, engineTarget, dailyAtr, isManualTrade, manualQuantity, manualStopLossPct, manualTrailingSlPct, conditionGate));
 
         if (!isManualTrade)
         {
@@ -476,10 +476,12 @@ public class AutoRealTradeService : IAutoRealTradeService
 
     private async Task<bool> EvaluateAndExecuteRealBuyCoreAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId, bool isBuySignal,
         decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr,
-        bool isManualTrade, int? manualQuantity, decimal? manualStopLossPct, decimal? manualTrailingSlPct)
+        bool isManualTrade, int? manualQuantity, decimal? manualStopLossPct, decimal? manualTrailingSlPct, ConditionGate? conditionGate)
     {
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
+        int minConditionsMatch = conditionGate?.MinConditionsMatch ?? settings.MinConditionsMatch;
+        int totalConditions = conditionGate?.TotalConditions ?? TradeConditionRules.TotalConditions;
 
         // The guards below are mirrored read-only by PreviewBuyGuardsAsync (Signal Dashboard verdict
         // card) - keep both in the same order when a guard is added, removed or changed.
@@ -523,11 +525,11 @@ public class AutoRealTradeService : IAutoRealTradeService
             return false;
         }
 
-        // 4. Condition Match Check
-        if (!isBuySignal && metConditionsCount < settings.MinConditionsMatch)
+        // 4. Condition Match Check - the user's Trade Conditions min / total when the scan passed one, else the settings' out of 11.
+        if (!isBuySignal && metConditionsCount < minConditionsMatch)
         {
             await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
-                $"Condition score {metConditionsCount}/11 below required {settings.MinConditionsMatch}/11", userId);
+                $"Condition score {metConditionsCount}/{totalConditions} below required {minConditionsMatch}/{totalConditions}", userId);
             return false;
         }
 
@@ -766,7 +768,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     FilledPrice = 0m,
                     RejectionReason = statusCheck.Message,
                     TradeType = isManualTrade ? TradeType.Manual : TradeType.Auto,
-                    Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                    Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/{totalConditions})"
                 });
 
                 await LogAuditAsync(symbol, "ORDER_REJECTED", entryPrice, quantity,
@@ -793,7 +795,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     Status = PaperOrderStatus.Open,
                     FilledPrice = 0m,
                     TradeType = isManualTrade ? TradeType.Manual : TradeType.Auto,
-                    Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                    Remarks = $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/{totalConditions})"
                 });
 
                 await TryRecordFillDetailsAsync(openBuyOrder.Id, entryPrice, null);
@@ -857,7 +859,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 TradeType = tradeType,
                 Remarks = isManualTrade
                     ? $"[LIVE REAL MONEY - MANUAL] Zerodha Order #{brokerOrderId} (SL {effectiveStopLossPct:F2}% / TSL {effectiveTrailingSlPct:F2}%)"
-                    : $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                    : $"[LIVE REAL MONEY] Zerodha Order #{brokerOrderId} (Met {metConditionsCount}/{totalConditions})"
             });
             await TryRecordFillDetailsAsync(order.Id, entryPrice, fill.Quantity);
 
@@ -952,7 +954,8 @@ public class AutoRealTradeService : IAutoRealTradeService
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> _shortEntryLocks = new();
 
     public async Task<bool> EvaluateAndExecuteRealShortAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1,
-        bool isSellSignal = false, decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null)
+        bool isSellSignal = false, decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null,
+        ConditionGate? conditionGate = null)
     {
         var entryLock = _shortEntryLocks.GetOrAdd($"{userId}:{symbol.ToUpper().Trim()}", _ => new SemaphoreSlim(1, 1));
         if (!await entryLock.WaitAsync(TimeSpan.Zero))
@@ -965,7 +968,7 @@ public class AutoRealTradeService : IAutoRealTradeService
         {
             return await WithTradeLockAsync(EntryLockKey(userId), false, () =>
                 EvaluateAndExecuteRealShortCoreAsync(symbol, entryPrice, metConditionsCount, userId, isSellSignal,
-                    engineStopLoss, engineTarget, dailyAtr));
+                    engineStopLoss, engineTarget, dailyAtr, conditionGate));
         }
         finally
         {
@@ -976,10 +979,12 @@ public class AutoRealTradeService : IAutoRealTradeService
     // Same guards, in the same order and with the same reason texts, as EvaluateAndExecuteRealBuyCoreAsync - plus the
     // Auto Short switch (OFF by default), the short entry cut-off and a pending-order check on both sides.
     private async Task<bool> EvaluateAndExecuteRealShortCoreAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId,
-        bool isSellSignal, decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr)
+        bool isSellSignal, decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr, ConditionGate? conditionGate)
     {
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
+        int minConditionsMatch = conditionGate?.MinConditionsMatch ?? settings.MinConditionsMatch;
+        int totalConditions = conditionGate?.TotalConditions ?? TradeConditionRules.TotalConditions;
 
         // 1. Master Switch + Auto Short switch - both must be ON for a real short.
         if (!settings.IsRealTradeEnabled || !settings.IsAutoShortEnabled)
@@ -1026,10 +1031,10 @@ public class AutoRealTradeService : IAutoRealTradeService
         }
 
         // 4. Condition Match Check
-        if (!isSellSignal && metConditionsCount < settings.MinConditionsMatch)
+        if (!isSellSignal && metConditionsCount < minConditionsMatch)
         {
             await LogAuditAsync(symbol, "REAL_SIGNAL_SKIPPED", entryPrice, 0,
-                $"Condition score {metConditionsCount}/11 below required {settings.MinConditionsMatch}/11", userId);
+                $"Condition score {metConditionsCount}/{totalConditions} below required {minConditionsMatch}/{totalConditions}", userId);
             return false;
         }
 
@@ -1179,7 +1184,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     RejectionReason = statusCheck.Message,
                     TradeType = TradeType.Auto,
                     IsShort = true,
-                    Remarks = $"[LIVE REAL MONEY] Zerodha SHORT Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                    Remarks = $"[LIVE REAL MONEY] Zerodha SHORT Order #{brokerOrderId} (Met {metConditionsCount}/{totalConditions})"
                 });
 
                 await LogAuditAsync(symbol, "ORDER_REJECTED", entryPrice, quantity,
@@ -1205,7 +1210,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                     FilledPrice = 0m,
                     TradeType = TradeType.Auto,
                     IsShort = true,
-                    Remarks = $"[LIVE REAL MONEY] Zerodha SHORT Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                    Remarks = $"[LIVE REAL MONEY] Zerodha SHORT Order #{brokerOrderId} (Met {metConditionsCount}/{totalConditions})"
                 });
 
                 await TryRecordFillDetailsAsync(openShortOrder.Id, entryPrice, null);
@@ -1243,7 +1248,7 @@ public class AutoRealTradeService : IAutoRealTradeService
                 FilledAt = DateTime.UtcNow,
                 TradeType = TradeType.Auto,
                 IsShort = true,
-                Remarks = $"[LIVE REAL MONEY] Zerodha SHORT Order #{brokerOrderId} (Met {metConditionsCount}/11)"
+                Remarks = $"[LIVE REAL MONEY] Zerodha SHORT Order #{brokerOrderId} (Met {metConditionsCount}/{totalConditions})"
             });
             await TryRecordFillDetailsAsync(order.Id, entryPrice, fill.Quantity);
 

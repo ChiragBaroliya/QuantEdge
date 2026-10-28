@@ -63,6 +63,8 @@ public static class SwingDecisionEngine
     /// When <see cref="QuantEdge.Domain.Entities.SwingStrategySettings.RequireNiftyMarketFilter"/> is true
     /// (default) a failed NIFTY filter - or missing/insufficient NIFTY data - REJECTS every stock.
     /// When false, the legacy soft mode applies (score penalty + reduced position size, never a reject).
+    /// <paramref name="skipHardFilterGate"/>: score all 8 factors even when a hard filter fails (the hard-filter flags are
+    /// still filled in) - only for <see cref="TradeConditionRules"/>, whose user profile may switch those filters off.
     /// </summary>
     public static SwingEvaluationResult Evaluate(
         StockMaster stock,
@@ -70,7 +72,8 @@ public static class SwingDecisionEngine
         List<MarketCandle> stockCandles15m,
         List<MarketCandle> stockCandles60m,
         List<MarketCandle> niftyCandles1d,
-        QuantEdge.Domain.Entities.SwingStrategySettings? settings = null)
+        QuantEdge.Domain.Entities.SwingStrategySettings? settings = null,
+        bool skipHardFilterGate = false)
     {
         settings ??= QuantEdge.Domain.Entities.SwingStrategySettings.Default;
         int buyScoreThreshold = settings.BuyScoreThreshold;
@@ -160,7 +163,8 @@ public static class SwingDecisionEngine
         result.Ema50_1d = Math.Round(curEma50_1d, 2);
 
         // Check Hard Filter Gate - NIFTY (mandatory mode) + stock-level filters.
-        if (niftyGateFailed || !emaTrendPassed || !adxPassed)
+        bool hardFiltersPassed = !niftyGateFailed && emaTrendPassed && adxPassed;
+        if (!hardFiltersPassed && !skipHardFilterGate)
         {
             result.HardFiltersPassed = false;
             result.Decision = "REJECT";
@@ -181,11 +185,11 @@ public static class SwingDecisionEngine
             return result;
         }
 
-        result.HardFiltersPassed = true;
+        result.HardFiltersPassed = hardFiltersPassed;
         if (niftyPassed)
             result.PassedRules.Add(requireNifty ? "Hard Filter 1: NIFTY Market Filter (Passed)" : "Market Context: NIFTY Market Filter (Passed)");
-        result.PassedRules.Add("Hard Filter 2: EMA Trend Alignment (Passed 1D)");
-        result.PassedRules.Add($"Hard Filter 3: ADX Trend Strength (Passed {curAdx_1d:F1} >= 20)");
+        if (emaTrendPassed) result.PassedRules.Add("Hard Filter 2: EMA Trend Alignment (Passed 1D)");
+        if (adxPassed) result.PassedRules.Add($"Hard Filter 3: ADX Trend Strength (Passed {curAdx_1d:F1} >= 20)");
         if (!niftyPassed)
             result.FailedRules.Add($"Market Context: NIFTY Market Filter (Failed - Defensive Mode, -{marketContextScorePenalty} pt score penalty applied, not a block)");
 

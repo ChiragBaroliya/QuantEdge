@@ -522,6 +522,22 @@ ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS require_nifty_marke
 
 INSERT INTO swing_strategy_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
+-- Table: trade_condition_profiles (Trade Conditions page) - which of the 11 BUY / SHORT conditions each user's
+-- Auto Paper / Auto Real bot applies. No row = all 11 on with the mode settings' min_conditions_match.
+-- user_ref: auto_trade_settings.user_id for AUTO_PAPER, real_trade_settings.user_id for AUTO_REAL.
+CREATE TABLE IF NOT EXISTS trade_condition_profiles (
+    user_ref VARCHAR(50) NOT NULL,
+    trade_mode VARCHAR(20) NOT NULL,
+    side VARCHAR(10) NOT NULL,
+    disabled_conditions TEXT[] NOT NULL DEFAULT '{}',   -- TradeConditionRules keys switched OFF
+    min_conditions_match INT NULL,                       -- counted over the conditions that are ON; NULL = mode setting
+    risk_accepted_at TIMESTAMP WITH TIME ZONE NULL,      -- AUTO_REAL: user confirmed running with a hard filter OFF
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_ref, trade_mode, side),
+    CONSTRAINT chk_tcp_trade_mode CHECK (trade_mode IN ('AUTO_PAPER', 'AUTO_REAL')),
+    CONSTRAINT chk_tcp_side CHECK (side IN ('BUY', 'SHORT'))
+);
+
 -- Table: market_structure_settings (single-row global tuning for MarketStructureAnalysisService -
 -- Support/Resistance, Buyer/Seller Strength, Volume Confirmation analysis on the Signal Dashboard chart)
 CREATE TABLE IF NOT EXISTS market_structure_settings (
