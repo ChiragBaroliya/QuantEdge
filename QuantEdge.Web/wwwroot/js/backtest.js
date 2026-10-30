@@ -34,6 +34,9 @@
     const ymd = s => s ? new Date(String(s).slice(0, 10) + "T00:00:00Z").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit", timeZone: "UTC" }) : "–";
 
     const VERDICT = { PASS: "Edge found", FAIL: "No edge - lost money", NOT_PROVEN: "Not proven" };
+    const SIDE = { BUY: "Buy", SHORT: "Short", BOTH: "Buy and Short" };
+    // Runs stored before shorts could be tested have no side on their trades or rows: they were all BUY.
+    const sideOf = x => SIDE[(x && x.side) || "BUY"];
     const ACTIVE = new Set(["QUEUED", "RUNNING", "CANCEL_REQUESTED"]);
 
     let runs = [], viewingId = null, pollTimer = null, equityChart = null;
@@ -57,7 +60,8 @@
     async function submit(e) {
         e.preventDefault();
         const body = {
-            fromDate: el("btFrom").value, toDate: el("btTo").value,
+            fromDate: el("btFrom").value, toDate: el("btTo").value, side: val("btSide", false),
+            shortEntryCutoff: val("btShortCutoff", false), shortSquareOffTime: val("btShortSquareOff", false),
             gateMode: val("btGate", false), buyScoreThreshold: val("btBuy"), minConditionsMatch: val("btMin"),
             capital: val("btCapital"), amountPerTrade: val("btAmount"), sizingMode: val("btSizing", false), riskPct: val("btRisk"),
             maxPositions: val("btMaxPos"), slippagePct: val("btSlip"),
@@ -186,14 +190,39 @@
         const s = run.summary || {}, k = s.kpis || {}, p = run.params || {}, c = s.coverage || {};
         const kpi = (label, value, note, css = "") => `<div class="bt-kpi"><span>${label}</span><b class="${css}">${value}</b>${note ? `<small>${note}</small>` : ""}</div>`;
         const threshold = p.gateMode === "REGIME" ? null : p.buyScoreThreshold;
+        const sides = s.sides || [];
+        const direction = s.direction || [];
+        const checks = s.logicChecks || [];
+        const failedChecks = checks.filter(x => x.failed > 0);
+
+        // The direct answer per side: is the logic obeyed, did the price go the signal's way, and did it make money after costs?
+        const sideCards = sides.map(x => {
+            const ofSide = checks.filter(c => c.side === x.side);
+            const broken = ofSide.filter(c => c.failed > 0).length;
+            const sameDay = direction.find(d => d.side === x.side && d.horizon === "Same-day close");
+            return `<div class="bt-kpi">
+                <span>${esc(SIDE[x.side])} logic</span>
+                <b><span class="bt-badge bt-${x.verdict}">${esc(VERDICT[x.verdict] || x.verdict)}</span></b>
+                <small>${esc(x.verdictReason)}</small>
+                <small>${x.kpis.trades} trades from ${x.signals} signals · win rate ${num(x.kpis.winRatePct)}% · expectancy ${r(x.kpis.expectancyR)} · net ${signedMoney(x.kpis.netPnl)}</small>
+                <small>${sameDay ? `Price went the signal's way by the close ${num(sameDay.rightPct)}% of the time (avg ${num(sameDay.avgMovePct, 2)}%)` : "No signals to measure direction"}</small>
+                <small class="${broken ? "bt-neg" : ""}">${!ofSide.length ? "No trades to check rules on" : broken ? `${broken} of ${ofSide.length} rule checks FAILED` : `All ${ofSide.length} rule checks passed`}</small>
+            </div>`;
+        }).join("");
+
+        const directionRows = direction.map(d => `<tr><td>${esc(SIDE[d.side])}</td><td>${esc(d.horizon)}</td><td class="num">${d.signals}</td>
+            <td class="num">${num(d.rightPct)}%</td><td class="num ${cls(d.avgMovePct)}">${d.avgMovePct > 0 ? "+" : ""}${num(d.avgMovePct, 2)}%</td></tr>`);
+        const checkRows = checks.map(c => `<tr><td>${esc(SIDE[c.side])}</td><td>${esc(c.rule)}${(c.examples || []).map(e => `<div class="bt-note bt-neg">${esc(e)}</div>`).join("")}</td>
+            <td class="num">${c.checked}</td><td class="num ${c.failed ? "bt-neg" : ""}">${c.failed}</td>
+            <td><span class="bt-badge bt-${c.failed ? "FAIL" : c.checked ? "PASS" : "CANCELLED"}">${c.failed ? "Failed" : c.checked ? "OK" : "Not used"}</span></td></tr>`);
 
         const sweepRows = (s.thresholdSweep || []).map(x => `<tr class="${x.threshold === threshold ? "hl" : ""}">
-            <td>score ≥ ${x.threshold}</td><td class="num">${x.trades}</td><td class="num">${num(x.winRatePct)}%</td>
+            <td>${esc(sideOf(x))} · score ≥ ${x.threshold}</td><td class="num">${x.trades}</td><td class="num">${num(x.winRatePct)}%</td>
             <td class="num ${cls(x.expectancyR)}">${r(x.expectancyR)}</td><td class="num">${pf(x.profitFactor)}</td>
             <td class="num ${cls(x.netPnl)}">${signedMoney(x.netPnl)}</td><td class="num">${num(x.maxDrawdownPct)}%</td></tr>`);
         const factorRows = (s.factorEdge || []).map(f => {
             const helps = f.tradesWith >= 10 && f.tradesWithout >= 10 ? (f.expectancyWithR > f.expectancyWithoutR ? "✓ helps" : "✗ doesn't help") : "too few trades";
-            return `<tr><td>${esc(f.code)}</td><td class="num">${f.tradesWith}</td><td class="num ${cls(f.expectancyWithR)}">${r(f.expectancyWithR)}</td>
+            return `<tr><td>${esc(sideOf(f))} · ${esc(f.code)}</td><td class="num">${f.tradesWith}</td><td class="num ${cls(f.expectancyWithR)}">${r(f.expectancyWithR)}</td>
                 <td class="num">${f.tradesWithout}</td><td class="num ${cls(f.expectancyWithoutR)}">${r(f.expectancyWithoutR)}</td><td>${helps}</td></tr>`;
         });
         const skipped = Object.entries(s.skipped || {});
@@ -203,7 +232,7 @@
             <div class="bt-head">
                 <div>
                     <h2>Run #${run.id} - ${esc(run.label || "")}</h2>
-                    <p>${esc(p.gateMode === "REGIME" ? "Market regime gate" : `NIFTY filter · BUY ≥ ${p.buyScoreThreshold} or ≥ ${p.minConditionsMatch}/11 conditions`)}
+                    <p>${esc(SIDE[p.side || "BUY"])} · ${esc(p.gateMode === "REGIME" ? "Market regime gate" : `NIFTY filter · signal ≥ ${p.buyScoreThreshold} or ≥ ${p.minConditionsMatch}/11 conditions`)}
                        · ${ymd(p.fromDate)} → ${ymd(p.toDate)} · capital ${money(p.capital)} · ${p.sizingMode === "RISK" ? `risk ${p.riskPct}% (max ${money(p.amountPerTrade)})` : `${money(p.amountPerTrade)} per trade`}
                        · max ${p.maxPositions} open · slippage ${p.slippagePct}% / side · exits ${esc(p.exitMode)} (SL ${p.stopLossAtrMult}×, target ${p.targetAtrMult}×, trail ${p.trailAtrMult}× ATR, ${p.maxDurationDays} days)</p>
                 </div>
@@ -211,6 +240,22 @@
             </div>
             <div class="bt-verdict ${s.verdict}"><b>${esc(VERDICT[s.verdict] || s.verdict)}</b>${esc(s.verdictReason || "")}</div>
         </section>
+
+        ${sides.length ? `<section class="bt-card">
+            <h3 class="bt-sub">Is the logic correct? <small>each side on its own</small></h3>
+            <div class="bt-grid2">${sideCards}</div>
+        </section>` : ""}
+
+        ${checks.length || direction.length ? `<section class="bt-card bt-grid2">
+            <div>
+                <h3 class="bt-sub">Rule checks <small>${failedChecks.length ? `${failedChecks.length} failed - the logic or the data is wrong, whatever the profit says` : "every simulated trade obeyed these rules"}</small></h3>
+                ${table([{ label: "Side" }, { label: "Rule" }, { label: "Trades", num: 1 }, { label: "Broken", num: 1 }, { label: "" }], checkRows, "No trades to check.")}
+            </div>
+            <div>
+                <h3 class="bt-sub">Direction <small>first signal per stock per day, before costs and regardless of stop or target. Costs are about 0.3–0.4% a round trip, so a small average move isn't enough</small></h3>
+                ${table([{ label: "Side" }, { label: "After" }, { label: "Signals", num: 1 }, { label: "Went its way", num: 1 }, { label: "Avg move", num: 1 }], directionRows, "No signals.")}
+            </div>
+        </section>` : ""}
 
         <section class="bt-card">
             <div class="bt-kpis">
@@ -284,12 +329,13 @@
     function renderTrades(trades, limit) {
         const rows = trades.slice(0, limit).map(t => `<tr>
             <td><b>${esc(t.symbol)}</b><div class="bt-note">${esc(t.sector || "")}</div></td>
+            <td>${esc(sideOf(t))}</td>
             <td>${timeIst(t.entryTime)}</td><td>${timeIst(t.exitTime)}</td><td class="num">${t.sessionsHeld}</td>
             <td class="num">${num(t.entryPrice, 2)}</td><td class="num">${num(t.exitPrice, 2)}</td><td class="num">${t.quantity}</td>
             <td>${esc(t.exitCategory)}<div class="bt-note">${esc(t.exitReason)}</div></td>
             <td class="num ${cls(t.netPnl)}">${signedMoney(t.netPnl)}<div class="bt-note">charges ${money(t.charges)}</div></td>
             <td class="num ${cls(t.rMultiple)}">${r(t.rMultiple)}</td><td class="num">${t.score}</td><td>${esc(t.regime || "")}</td></tr>`);
-        el("btTrades").innerHTML = table([{ label: "Stock" }, { label: "Entry" }, { label: "Exit" }, { label: "Days", num: 1 }, { label: "Entry ₹", num: 1 },
+        el("btTrades").innerHTML = table([{ label: "Stock" }, { label: "Side" }, { label: "Entry" }, { label: "Exit" }, { label: "Days", num: 1 }, { label: "Entry ₹", num: 1 },
             { label: "Exit ₹", num: 1 }, { label: "Qty", num: 1 }, { label: "Exit" }, { label: "Net", num: 1 }, { label: "R", num: 1 }, { label: "Score", num: 1 }, { label: "Regime" }], rows)
             + (trades.length > limit ? `<div class="bt-actions"><button type="button" class="bt-link" id="btMore">Show all ${trades.length} trades</button></div>` : "");
         const more = el("btMore");

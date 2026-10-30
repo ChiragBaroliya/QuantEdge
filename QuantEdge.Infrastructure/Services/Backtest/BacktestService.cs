@@ -9,6 +9,7 @@ using Dapper;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Infrastructure.DTOs;
 using QuantEdge.Infrastructure.Persistence;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 
@@ -52,6 +53,7 @@ public class BacktestService : IBacktestService
     private const string NiftySymbol = "NIFTY 50";
     private const string VixSymbol = "INDIA VIX";
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private static volatile bool _sideColumnEnsured;
 
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IStockMasterRepository _stockRepository;
@@ -74,12 +76,22 @@ public class BacktestService : IBacktestService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>Adds backtest_trades.side on first use (data_fixes/2026-10-30_backtest_short_side.sql does the same by hand). Earlier trades were all BUY.</summary>
+    private async Task EnsureSideColumnAsync()
+    {
+        if (_sideColumnEnsured) return;
+        using var connection = _connectionFactory.CreateConnection();
+        await connection.ExecuteAsync("ALTER TABLE backtest_trades ADD COLUMN IF NOT EXISTS side VARCHAR(10) NOT NULL DEFAULT 'BUY';");
+        _sideColumnEnsured = true;
+    }
+
     // ------------------------------------------------------------------------------------------
     // Queue / read
     // ------------------------------------------------------------------------------------------
 
     public async Task<int> QueueAsync(BacktestParams input, int userId)
     {
+        await EnsureSideColumnAsync();
         var p = await ResolveAsync(input, userId);
         using var connection = _connectionFactory.CreateConnection();
         return await connection.ExecuteScalarAsync<int>(@"
@@ -100,6 +112,10 @@ public class BacktestService : IBacktestService
         if (p.FromDate > p.ToDate) throw new ArgumentException("From date must be on or before the To date.");
         if ((p.ToDate - p.FromDate).TotalDays > 366 * 5) throw new ArgumentException("At most 5 years per run.");
         p.Symbols = (p.Symbols ?? new()).Select(s => s.Trim().ToUpperInvariant()).Where(s => s.Length > 0).Distinct().ToList();
+
+        p.Side = string.IsNullOrWhiteSpace(p.Side) ? BacktestSide.Buy : p.Side.Trim().ToUpperInvariant();
+        if (p.Side != BacktestSide.Buy && p.Side != BacktestSide.Short && p.Side != BacktestSide.Both)
+            throw new ArgumentException("Side must be BUY, SHORT or BOTH.");
 
         p.GateMode = string.IsNullOrWhiteSpace(p.GateMode) ? strategy.MarketGateMode : p.GateMode.Trim().ToUpperInvariant();
         if (p.GateMode != SwingStrategySettings.GateModeNiftyFilter && p.GateMode != SwingStrategySettings.GateModeRegime)
@@ -128,8 +144,12 @@ public class BacktestService : IBacktestService
         p.TargetAtrMult ??= real.TargetAtrMult;
         p.ProfitTargetPct ??= real.ProfitTargetPct;
         p.MaxDurationDays ??= real.MaxDurationDays;
+        p.ShortEntryCutoff = string.IsNullOrWhiteSpace(p.ShortEntryCutoff) ? real.ShortEntryCutoff : p.ShortEntryCutoff.Trim();
+        p.ShortSquareOffTime = string.IsNullOrWhiteSpace(p.ShortSquareOffTime) ? real.ShortSquareOffTime : p.ShortSquareOffTime.Trim();
+        var shortTimeErrors = ShortSellingSettingsValidator.Validate(p.ShortEntryCutoff, p.ShortSquareOffTime).ToList();
+        if (BacktestSide.IncludesShort(p.Side) && shortTimeErrors.Count > 0) throw new ArgumentException(string.Join(" ", shortTimeErrors));
         p.Label = string.IsNullOrWhiteSpace(p.Label)
-            ? $"{p.GateMode} · score ≥ {p.BuyScoreThreshold} · {p.FromDate:dd-MMM-yy} → {p.ToDate:dd-MMM-yy}"
+            ? $"{p.Side} · {p.GateMode} · score ≥ {p.BuyScoreThreshold} · {p.FromDate:dd-MMM-yy} → {p.ToDate:dd-MMM-yy}"
             : p.Label.Trim();
         return p;
     }
@@ -159,9 +179,10 @@ public class BacktestService : IBacktestService
 
     public async Task<IReadOnlyList<BacktestTrade>> GetTradesAsync(int runId)
     {
+        await EnsureSideColumnAsync();
         using var connection = _connectionFactory.CreateConnection();
         var rows = await connection.QueryAsync<BacktestTrade>(@"
-            SELECT symbol, sector, regime, signal_time AS SignalTime, entry_time AS EntryTime, entry_price AS EntryPrice,
+            SELECT symbol, side, sector, regime, signal_time AS SignalTime, entry_time AS EntryTime, entry_price AS EntryPrice,
                    exit_time AS ExitTime, exit_price AS ExitPrice, exit_reason AS ExitReason, exit_category AS ExitCategory,
                    quantity, stop_loss AS StopLoss, target, score, met_count AS MetCount, sessions_held AS SessionsHeld,
                    gross_pnl AS GrossPnl, charges, net_pnl AS NetPnl, r_multiple AS RMultiple, mfe_pct AS MfePct, mae_pct AS MaePct,
@@ -221,6 +242,7 @@ public class BacktestService : IBacktestService
         var started = DateTime.UtcNow;
         try
         {
+            await EnsureSideColumnAsync();
             var p = JsonSerializer.Deserialize<BacktestParams>(run.ParamsJson, Json) ?? throw new InvalidOperationException("Run has no parameters.");
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var (summary, trades) = await ExecuteAsync(run.Id, p, Math.Max(1, maxThreads), cts);
@@ -230,15 +252,15 @@ public class BacktestService : IBacktestService
             using var tx = connection.BeginTransaction();
             await connection.ExecuteAsync("DELETE FROM backtest_trades WHERE run_id = @id;", new { id = run.Id }, tx);
             await connection.ExecuteAsync(@"
-                INSERT INTO backtest_trades (run_id, symbol, sector, regime, signal_time, entry_time, entry_price, exit_time, exit_price,
+                INSERT INTO backtest_trades (run_id, symbol, side, sector, regime, signal_time, entry_time, entry_price, exit_time, exit_price,
                     exit_reason, exit_category, quantity, stop_loss, target, score, met_count, sessions_held, gross_pnl, charges, net_pnl,
                     r_multiple, mfe_pct, mae_pct, factors, end_of_data)
-                VALUES (@RunId, @Symbol, @Sector, @Regime, @SignalTime, @EntryTime, @EntryPrice, @ExitTime, @ExitPrice,
+                VALUES (@RunId, @Symbol, @Side, @Sector, @Regime, @SignalTime, @EntryTime, @EntryPrice, @ExitTime, @ExitPrice,
                     LEFT(@ExitReason, 200), @ExitCategory, @Quantity, @StopLoss, @Target, @Score, @MetCount, @SessionsHeld, @GrossPnl, @Charges, @NetPnl,
                     @RMultiple, @MfePct, @MaePct, LEFT(@Factors, 400), @EndOfData);",
                 trades.Select(t => new
                 {
-                    RunId = run.Id, t.Symbol, t.Sector, t.Regime, t.SignalTime, t.EntryTime, t.EntryPrice, t.ExitTime, t.ExitPrice,
+                    RunId = run.Id, t.Symbol, t.Side, t.Sector, t.Regime, t.SignalTime, t.EntryTime, t.EntryPrice, t.ExitTime, t.ExitPrice,
                     t.ExitReason, t.ExitCategory, t.Quantity, t.StopLoss, t.Target, t.Score, t.MetCount, t.SessionsHeld, t.GrossPnl, t.Charges,
                     t.NetPnl, t.RMultiple, t.MfePct, t.MaePct, t.Factors, t.EndOfData
                 }), tx);
@@ -343,6 +365,10 @@ public class BacktestService : IBacktestService
             MinConditionsMatch = p.MinConditionsMatch!.Value,
             SweepFloor = Math.Min(60, p.BuyScoreThreshold!.Value),
             TradeParams = tradeParams,
+            TestBuy = BacktestSide.IncludesBuy(p.Side),
+            TestShort = BacktestSide.IncludesShort(p.Side),
+            ShortEntryCutoff = p.ShortEntryCutoff ?? "15:00",
+            ShortSquareOffTime = p.ShortSquareOffTime ?? "15:15",
             WindowStart = p.TradingWindowStart!,
             WindowEnd = p.TradingWindowEnd!,
             EntryDelayMinutes = p.EntryDelayMinutes!.Value,
@@ -455,24 +481,52 @@ public class BacktestService : IBacktestService
         var (verdict, reason) = BacktestPortfolio.Verdict(kpis, halves);
 
         await ReportProgressAsync(runId, 96, "Threshold sweep");
+        var testedSides = new[] { false, true }.Where(isShort => isShort ? ctx.TestShort : ctx.TestBuy).ToList();
         var sweep = new List<BacktestSweepRow>();
+        foreach (bool isShort in testedSides)
         foreach (int threshold in new[] { 60, 65, 70, 75, 80, 85, 90 }.Where(t => t >= ctx.SweepFloor))
         {
             token.ThrowIfCancellationRequested();
-            var subset = ordered.Where(s => s.HardFiltersPassed && s.GateAllows && s.Score >= threshold && (!s.PolicyRequiresRs || s.BeatsNifty));
+            var subset = ordered.Where(s => s.IsShort == isShort && s.HardFiltersPassed && s.GateAllows && s.Score >= threshold && (!s.PolicyRequiresRs || s.BeatsNifty));
             var r = BacktestPortfolio.Run(subset, ExitOf, ps, SectorOf);
             var eq = BacktestPortfolio.EquityCurve(r.Trades, p.Capital, testSessions, CloseOn, out decimal ex);
             var k = BacktestPortfolio.Kpis(r.Trades, eq, p.Capital, p.FromDate, p.ToDate, ex);
             sweep.Add(new BacktestSweepRow
             {
+                Side = BacktestSide.Of(isShort),
                 Threshold = threshold, Trades = k.Trades, WinRatePct = k.WinRatePct, ExpectancyR = k.ExpectancyR,
                 ProfitFactor = k.ProfitFactor, NetPnl = k.NetPnl, MaxDrawdownPct = k.MaxDrawdownPct
             });
         }
 
+        // Each side's own answer, from the trades the shared portfolio took (the same cash and position limits as the live bot).
+        var sideResults = testedSides.Select(isShort =>
+        {
+            string side = BacktestSide.Of(isShort);
+            var ofSide = main.Trades.Where(t => t.Side == side).ToList();
+            var sideEquity = BacktestPortfolio.EquityCurve(ofSide, p.Capital, testSessions, CloseOn, out decimal sideExposure);
+            var sideKpis = BacktestPortfolio.Kpis(ofSide, sideEquity, p.Capital, p.FromDate, p.ToDate, sideExposure);
+            var sideHalves = BacktestPortfolio.Group(ofSide, t => BacktestEngine.IstDate(t.EntryTime) < mid
+                ? $"1st half ({p.FromDate:MMM yy} – {mid:MMM yy})" : $"2nd half ({mid:MMM yy} – {p.ToDate:MMM yy})", sortByKey: true);
+            var (sideVerdict, sideReason) = BacktestPortfolio.Verdict(sideKpis, sideHalves);
+            return new BacktestSideResult
+            {
+                Side = side,
+                Verdict = sideVerdict,
+                VerdictReason = sideReason,
+                Signals = liveSignals.Count(s => s.IsShort == isShort),
+                Kpis = sideKpis,
+                ByHalf = sideHalves,
+                ByExit = BacktestPortfolio.Group(ofSide, t => t.ExitCategory)
+            };
+        }).ToList();
+
         var firstLast = intradayDates.ToList();
         var summary = new BacktestSummary
         {
+            Sides = sideResults,
+            Direction = BacktestEngine.DirectionAccuracy(liveSignals, symbol => tapes.GetValueOrDefault(symbol)),
+            LogicChecks = BacktestLogicAudit.Run(main.Trades, ctx.ShortEntryCutoff, ctx.ShortSquareOffTime),
             Verdict = verdict,
             VerdictReason = reason,
             Kpis = kpis,
@@ -504,22 +558,32 @@ public class BacktestService : IBacktestService
         return (summary, main.Trades);
     }
 
-    private static List<string> Assumptions(BacktestParams p, bool regimeMode, int splits, int regimeDays) => new()
+    private static List<string> Assumptions(BacktestParams p, bool regimeMode, int splits, int regimeDays)
     {
-        "Data: stored Zerodha candles (15m, 60m, daily) - no Zerodha calls. Past daily bars are NSE's official values where the bhavcopy was loaded.",
-        "Signals: the live SwingDecisionEngine at every 15-minute bar close, seeing only what existed at that moment (today's daily bar is built from the 15m bars so far).",
-        $"Entries: at the next 15m bar's open + {p.SlippagePct:0.##}% slippage; skipped if that open is ≥2% away from the signal price (live guard 12).",
-        "Exits: the live SwingTradeRules on 15m bars. Inside a bar the price is assumed to go open→low→high→close (up bar) or open→high→low→close (down bar), and a bar touching both the stop and the target counts as a stop; a level crossed inside a bar fills at the level, a gap fills at the open.",
-        $"Costs: Zerodha charges from charge_rates (same-day round trips at intraday rates) + {p.SlippagePct:0.##}% slippage on each side. R = net P&L ÷ (quantity × (entry − stop)).",
-        regimeMode
-            ? $"Market gate: REGIME - the regime is recomputed for each day from the same daily data ({regimeDays} days) and the previous session's reading applies, like the live bot."
-            : "Market gate: NIFTY_FILTER - the engine's mandatory NIFTY trend filter, evaluated on NIFTY's daily bars up to that moment.",
-        "Universe: today's active stocks. Stocks dropped from the list earlier are not tested (survivorship bias - real results are usually somewhat worse).",
-        "Daily loss limit counts realised losses only. Order rejections, partial fills, circuit limits and liquidity are not modelled.",
-        splits > 0
-            ? $"{splits} suspected unadjusted split/bonus gap(s): signals in the {BacktestEngine.SplitExclusionSessions} sessions after one and trades held across one are excluded."
-            : "No unadjusted split/bonus gaps found in the data."
-    };
+        var list = new List<string>
+        {
+            "Data: stored Zerodha candles (15m, 60m, daily) - no Zerodha calls. Past daily bars are NSE's official values where the bhavcopy was loaded.",
+            "Signals: the live SwingDecisionEngine (BUY) and SwingShortDecisionEngine (SHORT) at every 15-minute bar close, seeing only what existed at that moment (today's daily bar is built from the 15m bars so far).",
+            "Trade Conditions: the default rules with all 11 conditions ON. A custom Trade Conditions profile is not applied, so a profile with conditions switched off can trade differently live.",
+            $"Entries: at the next 15m bar's open with {p.SlippagePct:0.##}% slippage against the trade; skipped if that open is ≥2% away from the signal price (live guard 12).",
+            "Exits: the live SwingTradeRules on 15m bars. Inside a bar the price is assumed to go open→low→high→close (up bar) or open→high→low→close (down bar), and a bar touching both the stop and the target counts as a stop; a level crossed inside a bar fills at the level, a gap fills at the open.",
+            $"Costs: Zerodha charges from charge_rates (same-day round trips at intraday rates) + {p.SlippagePct:0.##}% slippage on each side. R = net P&L ÷ (quantity × the distance from entry to stop).",
+            regimeMode
+                ? $"Market gate: REGIME - the regime is recomputed for each day from the same daily data ({regimeDays} days) and the previous session's reading applies, like the live bot."
+                : "Market gate: NIFTY_FILTER - the engine's mandatory NIFTY trend filter, evaluated on NIFTY's daily bars up to that moment.",
+            "Universe: today's active stocks. Stocks dropped from the list earlier are not tested (survivorship bias - real results are usually somewhat worse).",
+            "Daily loss limit counts realised losses only. Order rejections, partial fills, circuit limits and liquidity are not modelled.",
+            splits > 0
+                ? $"{splits} suspected unadjusted split/bonus gap(s): signals in the {BacktestEngine.SplitExclusionSessions} sessions after one and trades held across one are excluded."
+                : "No unadjusted split/bonus gaps found in the data."
+        };
+        if (BacktestSide.IncludesShort(p.Side))
+        {
+            list.Add($"Shorts: intraday only - no new short at/after {p.ShortEntryCutoff}, bought back at the first 15m bar starting at/after {p.ShortSquareOffTime}, with live stops. Shorts use the mirrored NIFTY-bearish filter in every gate mode, as live (regime limits apply to BUYs only). The money blocked for a short is the full position value, as on the paper account; real MIS margin is lower.");
+            list.Add("Not modelled for shorts: stocks that can't be shorted that day (Zerodha's MIS ban list, upper circuit) and intraday square-off penalties. Real results can be worse.");
+        }
+        return list;
+    }
 
     // ------------------------------------------------------------------------------------------
     // Data

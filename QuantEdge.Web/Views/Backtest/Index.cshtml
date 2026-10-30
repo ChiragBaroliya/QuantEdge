@@ -79,26 +79,26 @@
     <section class="bt-card">
         <div class="bt-head">
             <div>
-                <h2>Backtest the swing strategy</h2>
+                <h2>Backtest the Buy and Short Selling logic</h2>
                 <p>
                     Replays the <b>live</b> strategy over past days, 15 minutes at a time, using only candles already stored in QuantEdge
                     (<b>no Zerodha calls</b>). Every scan sees only what existed at that moment, so the result is what the bot would really have done.
-                    Blank fields use your current Swing and Real-trade settings.
+                    Each side gets its own verdict. Blank fields use your current Swing and Real-trade settings.
                 </p>
             </div>
         </div>
         <div class="bt-flow">
             <div class="bt-node"><b>Stored candles</b><span>15m · 60m · daily · NIFTY, from the database</span></div>
             <div class="bt-arrow">→</div>
-            <div class="bt-node same"><b>Same scan</b><span>SwingDecisionEngine at every 15m close, point in time</span></div>
+            <div class="bt-node same"><b>Same scan</b><span>Buy and Short engines at every 15m close, point in time</span></div>
             <div class="bt-arrow">→</div>
             <div class="bt-node same"><b>Same market gate</b><span>NIFTY filter or market regime + policy</span></div>
             <div class="bt-arrow">→</div>
             <div class="bt-node same"><b>Same guards</b><span>held? trade cap · loss limit · max positions · cash · size</span></div>
             <div class="bt-arrow">→</div>
-            <div class="bt-node"><b>Buy next bar</b><span>next 15m open + slippage; skipped if moved ≥2%</span></div>
+            <div class="bt-node"><b>Enter next bar</b><span>next 15m open with slippage; skipped if moved ≥2%</span></div>
             <div class="bt-arrow">→</div>
-            <div class="bt-node same"><b>Same exits</b><span>target · emergency · closing stop · trail · max days</span></div>
+            <div class="bt-node same"><b>Same exits</b><span>Buy: target · emergency · closing stop · trail · max days. Short: target · live stop · trail · square-off</span></div>
             <div class="bt-arrow">→</div>
             <div class="bt-node"><b>Net result</b><span>Zerodha charges + slippage → R, drawdown, verdict</span></div>
         </div>
@@ -110,6 +110,14 @@
             <div class="bt-form">
                 <div class="bt-field"><label for="btFrom">From</label><input type="date" id="btFrom" required></div>
                 <div class="bt-field"><label for="btTo">To</label><input type="date" id="btTo" required></div>
+                <div class="bt-field">
+                    <label for="btSide">Logic to test</label>
+                    <select id="btSide">
+                        <option value="BOTH">Buy and Short Selling</option>
+                        <option value="BUY">Buy only</option>
+                        <option value="SHORT">Short Selling only</option>
+                    </select>
+                </div>
                 <div class="bt-field">
                     <label for="btGate">Market gate</label>
                     <select id="btGate">
@@ -140,6 +148,8 @@
                     <div class="bt-field"><label for="btDays">Max days held</label><input type="number" id="btDays" min="0" max="120" placeholder="current"></div>
                     <div class="bt-field"><label for="btTradesDay">Max trades per day</label><input type="number" id="btTradesDay" min="1" max="50" placeholder="current"></div>
                     <div class="bt-field"><label for="btLoss">Daily loss limit (₹)</label><input type="number" id="btLoss" min="0" placeholder="10% of capital"></div>
+                    <div class="bt-field"><label for="btShortCutoff">No new short after</label><input type="time" id="btShortCutoff"><small>blank = current setting</small></div>
+                    <div class="bt-field"><label for="btShortSquareOff">Short square-off</label><input type="time" id="btShortSquareOff"><small>blank = current setting</small></div>
                     <div class="bt-field bt-wide"><label for="btSymbols">Only these stocks (comma separated, blank = all active)</label><input type="text" id="btSymbols" placeholder="e.g. RELIANCE, TCS, INFY"></div>
                     <div class="bt-field bt-wide"><label for="btLabel">Label</label><input type="text" id="btLabel" maxlength="200" placeholder="optional, e.g. Regime · score 75"></div>
                 </div>

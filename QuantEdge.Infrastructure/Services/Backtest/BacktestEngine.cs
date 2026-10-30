@@ -51,6 +51,10 @@ public sealed class BacktestContext
     /// <summary>Hard-filter-passing scans with at least this score are kept too, for the threshold sweep.</summary>
     public int SweepFloor { get; init; } = 60;
     public SwingTradeParams TradeParams { get; init; } = null!;
+    public bool TestBuy { get; init; } = true;
+    public bool TestShort { get; init; }
+    public string ShortEntryCutoff { get; init; } = "15:00";
+    public string ShortSquareOffTime { get; init; } = "15:15";
     public string WindowStart { get; init; } = "09:15";
     public string WindowEnd { get; init; } = "15:30";
     public int EntryDelayMinutes { get; init; } = 15;
@@ -77,11 +81,13 @@ public sealed class SymbolBacktestResult
 /// <see cref="SwingDecisionEngine.Evaluate"/> exactly what the live scan would have had at that moment: the last 100
 /// closed 15m bars, the last 100 closed 60m bars, 299 earlier daily bars plus today's daily bar built from the 15m bars
 /// so far, and NIFTY the same way. Nothing from later in the day is visible. Exits use <see cref="SwingTradeRules.EvaluateExit"/>,
-/// the function the live monitors call.
+/// the function the live monitors call. Shorts go the same way through <see cref="SwingShortDecisionEngine.Evaluate"/>
+/// and <see cref="SwingTradeRules.EvaluateShortExit"/>.
 /// </summary>
 public static class BacktestEngine
 {
     public const int SplitExclusionSessions = 200;
+    private const string DriftSkipReason = "price moved ≥2% before the order (guard 12)";
     private static readonly TimeSpan Ist = TimeSpan.FromMinutes(330);
     private static readonly TimeSpan Bar15 = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan Bar60 = TimeSpan.FromMinutes(60);
@@ -167,7 +173,11 @@ public static class BacktestEngine
                 DateTime scanIst = ToIst(scanUtc);
                 if (!SwingTradeRules.IsWithinTradingWindow(ctx.WindowStart, ctx.WindowEnd, scanIst)) continue;
                 if (!SwingTradeRules.IsPastEntryDelay(ctx.WindowStart, ctx.EntryDelayMinutes, scanIst)) continue;
-                if (precheck != null && !precheck.Passes(bar.Close)) { result.Scans++; continue; }   // engine would REJECT on the EMA trend
+                // Where the engine would REJECT on the EMA trend anyway, skip the full evaluation.
+                bool scanBuy = ctx.TestBuy && (precheck == null || precheck.Passes(bar.Close));
+                bool scanShort = ctx.TestShort && SwingTradeRules.IsBeforeShortEntryCutoff(ctx.ShortEntryCutoff, scanIst)
+                    && (precheck == null || precheck.PassesDowntrend(bar.Close));
+                if (!scanBuy && !scanShort) { result.Scans++; continue; }
 
                 var dailyNow = new List<MarketCandle>(dailyPrev.Count + 1);
                 dailyNow.AddRange(dailyPrev);
@@ -189,52 +199,95 @@ public static class BacktestEngine
                 int from60 = Math.Max(0, h60Ptr - RealTradeSchedule.CandleHistoryCount);
                 var h60Now = h60.GetRange(from60, h60Ptr - from60);
 
-                var r = SwingDecisionEngine.Evaluate(stock, dailyNow, m15Now, h60Now, niftyNow, ctx.EngineSettings);
                 result.Scans++;
-                int met = r.Checklist?.MetCount ?? 0;
-                bool beatsNifty = r.Factors.Any(f => f.Code == "RELATIVE_STRENGTH" && f.Points > 0);
-
-                bool gateAllows = !ctx.RegimeMode || (policy != null && policy.MaxPositions > 0);
-                bool live = ctx.RegimeMode
-                    ? gateAllows && RegimeGate.Evaluate(r, policy!).Allowed
-                    : r.IsBuySignal || met >= ctx.MinConditionsMatch;
-                bool sweep = r.HardFiltersPassed && gateAllows && r.Score >= ctx.SweepFloor;
-                if (!live && !sweep) continue;
-
                 // Live order goes in ~20 s after the bar close, i.e. at the next bar's open.
                 decimal entryRaw = m15[k + 1].Open;
-                string? skip = SwingTradeRules.CheckSignalDrift(r.EntryPrice, entryRaw) != null ? "price moved ≥2% before the order (guard 12)"
-                    : inSplitZone ? "suspected split/bonus in the indicator history"
-                    : null;
-                decimal delta = entryRaw - r.EntryPrice;
-                var levels = SwingTradeRules.ComputeEntryLevels(entryRaw, r.DailyAtr > 0m ? r.DailyAtr : null,
-                    r.StopLoss > 0m ? r.StopLoss + delta : null, r.Target1 > 0m ? r.Target1 + delta : null, null, null, ctx.TradeParams);
+                string? splitSkip = inSplitZone ? "suspected split/bonus in the indicator history" : null;
 
-                result.Signals.Add(new BacktestSignal
+                if (scanBuy)
                 {
-                    Symbol = symbol,
-                    SignalTimeUtc = scanUtc,
-                    EntryTimeUtc = m15[k + 1].CandleTime,
-                    SessionDate = day,
-                    Score = r.Score,
-                    MetCount = met,
-                    HardFiltersPassed = r.HardFiltersPassed,
-                    BeatsNifty = beatsNifty,
-                    IsLiveCandidate = live,
-                    Regime = regime,
-                    GateAllows = gateAllows,
-                    PolicyRequiresRs = policy?.RequireRelativeStrength ?? false,
-                    PolicyMaxPositions = policy?.MaxPositions ?? int.MaxValue,
-                    PolicyRiskPct = policy?.RiskPct ?? 0m,
-                    PolicyMaxExposurePct = policy?.MaxExposurePct,
-                    FactorPoints = PackFactors(r.Factors),
-                    SignalPrice = r.EntryPrice,
-                    EntryRaw = entryRaw,
-                    StopLoss = levels.StopLoss,
-                    Target = levels.TakeProfit,
-                    EntryIndex = k + 1,
-                    SkipReason = skip
-                });
+                    var r = SwingDecisionEngine.Evaluate(stock, dailyNow, m15Now, h60Now, niftyNow, ctx.EngineSettings);
+                    int met = r.Checklist?.MetCount ?? 0;
+                    bool beatsNifty = r.Factors.Any(f => f.Code == "RELATIVE_STRENGTH" && f.Points > 0);
+
+                    bool gateAllows = !ctx.RegimeMode || (policy != null && policy.MaxPositions > 0);
+                    bool live = ctx.RegimeMode
+                        ? gateAllows && RegimeGate.Evaluate(r, policy!).Allowed
+                        : r.IsBuySignal || met >= ctx.MinConditionsMatch;
+                    bool sweep = r.HardFiltersPassed && gateAllows && r.Score >= ctx.SweepFloor;
+                    if (live || sweep)
+                    {
+                        string? skip = SwingTradeRules.CheckSignalDrift(r.EntryPrice, entryRaw) != null ? DriftSkipReason : splitSkip;
+                        decimal delta = entryRaw - r.EntryPrice;
+                        var levels = SwingTradeRules.ComputeEntryLevels(entryRaw, r.DailyAtr > 0m ? r.DailyAtr : null,
+                            r.StopLoss > 0m ? r.StopLoss + delta : null, r.Target1 > 0m ? r.Target1 + delta : null, null, null, ctx.TradeParams);
+
+                        result.Signals.Add(new BacktestSignal
+                        {
+                            Symbol = symbol,
+                            SignalTimeUtc = scanUtc,
+                            EntryTimeUtc = m15[k + 1].CandleTime,
+                            SessionDate = day,
+                            Score = r.Score,
+                            MetCount = met,
+                            HardFiltersPassed = r.HardFiltersPassed,
+                            BeatsNifty = beatsNifty,
+                            IsLiveCandidate = live,
+                            Regime = regime,
+                            GateAllows = gateAllows,
+                            PolicyRequiresRs = policy?.RequireRelativeStrength ?? false,
+                            PolicyMaxPositions = policy?.MaxPositions ?? int.MaxValue,
+                            PolicyRiskPct = policy?.RiskPct ?? 0m,
+                            PolicyMaxExposurePct = policy?.MaxExposurePct,
+                            FactorPoints = PackFactors(r.Factors, FactorCodes),
+                            SignalPrice = r.EntryPrice,
+                            EntryRaw = entryRaw,
+                            StopLoss = levels.StopLoss,
+                            Target = levels.TakeProfit,
+                            EntryIndex = k + 1,
+                            SkipReason = skip
+                        });
+                    }
+                }
+
+                if (scanShort)
+                {
+                    // Live, shorts have their own NIFTY-bearish gate in every gate mode: the regime policy sizes and limits BUYs only.
+                    var r = SwingShortDecisionEngine.Evaluate(stock, dailyNow, m15Now, h60Now, niftyNow, ctx.EngineSettings);
+                    int met = r.Checklist?.MetCount ?? 0;
+                    bool live = r.HardFiltersPassed && (r.IsSellSignal || met >= ctx.MinConditionsMatch);
+                    bool sweep = r.HardFiltersPassed && r.Score >= ctx.SweepFloor;
+                    if (live || sweep)
+                    {
+                        string? skip = SwingTradeRules.CheckShortSignalDrift(r.EntryPrice, entryRaw) != null ? DriftSkipReason : splitSkip;
+                        decimal delta = entryRaw - r.EntryPrice;
+                        var levels = SwingTradeRules.ComputeShortEntryLevels(entryRaw, r.DailyAtr > 0m ? r.DailyAtr : null,
+                            r.StopLoss > 0m ? r.StopLoss + delta : null, r.Target1 > 0m ? r.Target1 + delta : null, ctx.TradeParams);
+
+                        result.Signals.Add(new BacktestSignal
+                        {
+                            Symbol = symbol,
+                            IsShort = true,
+                            SignalTimeUtc = scanUtc,
+                            EntryTimeUtc = m15[k + 1].CandleTime,
+                            SessionDate = day,
+                            Score = r.Score,
+                            MetCount = met,
+                            HardFiltersPassed = r.HardFiltersPassed,
+                            IsLiveCandidate = live,
+                            Regime = regime,
+                            GateAllows = true,
+                            PolicyMaxPositions = int.MaxValue,
+                            FactorPoints = PackFactors(r.Factors, ShortFactorCodes),
+                            SignalPrice = r.EntryPrice,
+                            EntryRaw = entryRaw,
+                            StopLoss = levels.StopLoss,
+                            Target = levels.TakeProfit,
+                            EntryIndex = k + 1,
+                            SkipReason = skip
+                        });
+                    }
+                }
             }
         }
 
@@ -250,6 +303,8 @@ public static class BacktestEngine
     /// </summary>
     public static BacktestExit? SimulateExit(IntradayTape tape, BacktestSignal s, BacktestContext ctx, out string? skipReason)
     {
+        if (s.IsShort) return SimulateShortExit(tape, s, ctx, out skipReason);
+
         skipReason = null;
         var p = ctx.TradeParams;
         var levels = SwingTradeRules.ComputeEntryLevels(s.EntryRaw, null, null, null, null, null, p);   // only for the INTRADAY trail start
@@ -300,6 +355,74 @@ public static class BacktestEngine
             Pct(hi, s.EntryRaw), Pct(lo, s.EntryRaw), true);
     }
 
+    /// <summary>
+    /// <see cref="SimulateExit"/> for a short, through <see cref="SwingTradeRules.EvaluateShortExit"/> - mirrored, so a bar
+    /// reaching the target visits its high first and a bar touching both still counts as a stop. Like the live monitor it
+    /// isn't limited to the trading window. Bars are 15 minutes, so the square-off happens at the open of the first bar
+    /// starting at/after the square-off time; a short still open next day (a missing bar) goes at that day's first bar.
+    /// </summary>
+    private static BacktestExit? SimulateShortExit(IntradayTape tape, BacktestSignal s, BacktestContext ctx, out string? skipReason)
+    {
+        skipReason = null;
+        var p = ctx.TradeParams;
+        var levels = SwingTradeRules.ComputeShortEntryLevels(s.EntryRaw, null, null, null, p);   // only for the INTRADAY trail start
+        var pos = new ExitPositionView(s.EntryRaw, s.StopLoss, s.Target, p.IsSwingClose ? null : levels.TrailingStopLoss, null, s.EntryTimeUtc);
+        int entrySession = tape.Session[s.EntryIndex];
+        decimal hi = s.EntryRaw, lo = s.EntryRaw;
+        Span<decimal> path = stackalloc decimal[4];
+
+        for (int j = s.EntryIndex; j < tape.Count; j++)
+        {
+            int session = tape.Session[j];
+            if (session > entrySession && tape.SplitSessions.Contains(session))
+            {
+                skipReason = "trade held across a suspected split/bonus";
+                return null;
+            }
+            DateTime barIst = ToIst(tape.TimeUtc(j));
+
+            decimal o = IntradayTape.Price(tape.Open[j]), h = IntradayTape.Price(tape.High[j]),
+                    l = IntradayTape.Price(tape.Low[j]), c = IntradayTape.Price(tape.Close[j]);
+            path[0] = o;
+            bool highFirst = c < o || (pos.TakeProfit is decimal tp && l <= tp);
+            if (highFirst) { path[1] = h; path[2] = l; } else { path[1] = l; path[2] = h; }
+            path[3] = c;
+
+            int daysOpen = session - entrySession;
+            decimal prev = o;
+            for (int q = 0; q < 4; q++)
+            {
+                decimal price = path[q];
+                hi = Math.Max(hi, price); lo = Math.Min(lo, price);
+                var d = SwingTradeRules.EvaluateShortExit(pos, price, barIst, ctx.ShortSquareOffTime, p);
+                if (d.ShouldExit)
+                {
+                    decimal fill = ShortFillPrice(d.Reason, pos, prev, price);
+                    return new BacktestExit(tape.TimeUtc(j), IstDate(tape.TimeUtc(j)), fill, d.Reason, Category(d.Reason), daysOpen,
+                        ShortPct(lo, s.EntryRaw), ShortPct(hi, s.EntryRaw), false);
+                }
+                if (d.NewTrailingStopLoss.HasValue) pos = pos with { TrailingStopLoss = d.NewTrailingStopLoss };
+                prev = price;
+            }
+        }
+
+        int last = tape.Count - 1;
+        return new BacktestExit(tape.TimeUtc(last) + Bar15, IstDate(tape.TimeUtc(last)), IntradayTape.Price(tape.Close[last]),
+            "Still open at the end of the test (valued at the last close)", "End of test", tape.Session[last] - entrySession,
+            ShortPct(lo, s.EntryRaw), ShortPct(hi, s.EntryRaw), true);
+    }
+
+    private static decimal ShortFillPrice(string reason, ExitPositionView pos, decimal prev, decimal price)
+    {
+        if (reason.StartsWith("Target", StringComparison.Ordinal) && pos.TakeProfit is decimal tp)
+            return prev > tp && price <= tp ? tp : price;
+
+        decimal? level = reason.StartsWith("Trailing SL", StringComparison.Ordinal) ? pos.TrailingStopLoss
+            : reason.StartsWith("Stop Loss", StringComparison.Ordinal) ? pos.StopLoss
+            : null;
+        return level is decimal lv && prev < lv && price >= lv ? lv : price;
+    }
+
     private static decimal FillPrice(string reason, ExitPositionView pos, decimal prev, decimal price, SwingTradeParams p)
     {
         if (reason.StartsWith("Target", StringComparison.Ordinal) && pos.TakeProfit is decimal tp)
@@ -318,6 +441,7 @@ public static class BacktestEngine
         : reason.StartsWith("Trailing SL", StringComparison.Ordinal) ? "Trailing stop"
         : reason.StartsWith("Stop Loss", StringComparison.Ordinal) ? "Stop loss"
         : reason.StartsWith("Max Duration", StringComparison.Ordinal) ? "Max days"
+        : reason == SwingTradeRules.ShortSquareOffReason ? "Square-off"
         : "Other";
 
     /// <summary>
@@ -365,6 +489,17 @@ public static class BacktestEngine
             bool ema200Stable = !hasEma200History || e200 >= _e200[_n - _rules.LongEmaSlopeBars] * (1m - _rules.LongEmaToleranceFactor);
             return todayClose > e20 && e20 > e50 && rising20 && rising50 && ema200Stable;
         }
+
+        /// <summary><see cref="Passes"/> mirrored: the short engine's daily downtrend hard filter (Price &lt; fast EMA &lt; slow EMA, both falling, long EMA not rising).</summary>
+        public bool PassesDowntrend(decimal todayClose)
+        {
+            decimal e20 = Step(_e20, todayClose, _rules.TrendEmaFast), e50 = Step(_e50, todayClose, _rules.TrendEmaSlow), e200 = Step(_e200, todayClose, _rules.TrendEmaLong);
+            bool falling20 = e20 < _e20[_n - _rules.TrendSlopeBars];
+            bool falling50 = e50 < _e50[_n - _rules.TrendSlopeBars];
+            bool hasEma200History = _n + 1 >= _rules.MinBarsForLongEma;
+            bool ema200NotRising = !hasEma200History || e200 <= _e200[_n - _rules.LongEmaSlopeBars] * (1m + _rules.LongEmaToleranceFactor);
+            return todayClose < e20 && e20 < e50 && falling20 && falling50 && ema200NotRising;
+        }
     }
 
     /// <summary>The engine's scoring factors, in the order <see cref="PackFactors"/> stores them.</summary>
@@ -373,21 +508,96 @@ public static class BacktestEngine
         "BREAKOUT_GROUP", "VOL_CONFIRMATION", "RELATIVE_STRENGTH", "MULTITIMEFRAME", "RSI_MOMENTUM", "MACD_BULLISH", "BULLISH_CANDLE", "RISK_REWARD"
     };
 
-    public static long PackFactors(IEnumerable<SwingFactorScore> factors)
+    /// <summary>The short engine's scoring factors, each in the same slot as its BUY counterpart.</summary>
+    public static readonly string[] ShortFactorCodes =
+    {
+        "BREAKDOWN_GROUP", "VOL_CONFIRMATION", "RELATIVE_WEAKNESS", "MULTITIMEFRAME", "RSI_MOMENTUM", "MACD_BEARISH", "BEARISH_CANDLE", "RISK_REWARD"
+    };
+
+    public static long PackFactors(IEnumerable<SwingFactorScore> factors, string[] codes)
     {
         long packed = 0;
         foreach (var f in factors)
         {
-            int idx = Array.IndexOf(FactorCodes, f.Code);
+            int idx = Array.IndexOf(codes, f.Code);
             if (idx >= 0) packed |= (long)Math.Clamp(f.Points, 0, 63) << (6 * idx);
         }
         return packed;
     }
 
-    public static string FactorsText(long packed) =>
-        string.Join(",", FactorCodes.Select((code, idx) => $"{code}:{(packed >> (6 * idx)) & 63}"));
+    public static string FactorsText(long packed, bool isShort) =>
+        string.Join(",", (isShort ? ShortFactorCodes : FactorCodes).Select((code, idx) => $"{code}:{(packed >> (6 * idx)) & 63}"));
+
+    /// <summary>
+    /// For each side and horizon: did the price go the signal's way? Counts each stock once a day (its first signal) so a
+    /// setup that re-fires every 15 minutes isn't counted many times, and leaves out signals the live guards would skip.
+    /// Horizons past the end of the data or across a suspected split are left out. Before costs.
+    /// </summary>
+    public static List<BacktestDirectionRow> DirectionAccuracy(IEnumerable<BacktestSignal> signals, Func<string, IntradayTape?> tapeOf)
+    {
+        var horizons = new (string Name, Func<IntradayTape, int, int> IndexOf)[]
+        {
+            ("1 hour later", (t, e) => e + 3 < t.Count && t.Session[e + 3] == t.Session[e] ? e + 3 : -1),
+            ("Same-day close", (t, e) => LastBarOfSession(t, e, 0)),
+            ("Next-day close", (t, e) => LastBarOfSession(t, e, 1)),
+            ("5 days later", (t, e) => LastBarOfSession(t, e, 5))
+        };
+
+        var rows = new List<BacktestDirectionRow>();
+        var firstPerDay = signals.Where(s => s.IsLiveCandidate && s.SkipReason == null)
+            .GroupBy(s => (s.IsShort, s.Symbol, s.SessionDate))
+            .Select(g => g.OrderBy(s => s.EntryTimeUtc).First())
+            .ToList();
+
+        foreach (bool isShort in new[] { false, true })
+        {
+            var ofSide = firstPerDay.Where(s => s.IsShort == isShort).ToList();
+            if (ofSide.Count == 0) continue;
+            foreach (var (name, indexOf) in horizons)
+            {
+                int counted = 0, right = 0;
+                decimal moveSum = 0m;
+                foreach (var s in ofSide)
+                {
+                    var tape = tapeOf(s.Symbol);
+                    if (tape == null || s.EntryRaw <= 0m) continue;
+                    int at = indexOf(tape, s.EntryIndex);
+                    if (at < 0) continue;
+                    int entrySession = tape.Session[s.EntryIndex];
+                    if (tape.SplitSessions.Any(x => x > entrySession && x <= tape.Session[at])) continue;
+
+                    decimal move = (IntradayTape.Price(tape.Close[at]) - s.EntryRaw) / s.EntryRaw * 100m * (isShort ? -1m : 1m);
+                    counted++;
+                    if (move > 0m) right++;
+                    moveSum += move;
+                }
+                if (counted == 0) continue;
+                rows.Add(new BacktestDirectionRow
+                {
+                    Side = BacktestSide.Of(isShort),
+                    Horizon = name,
+                    Signals = counted,
+                    RightPct = Math.Round(100m * right / counted, 1),
+                    AvgMovePct = Math.Round(moveSum / counted, 2)
+                });
+            }
+        }
+        return rows;
+    }
+
+    private static int LastBarOfSession(IntradayTape t, int entry, int sessionsAhead)
+    {
+        int target = t.Session[entry] + sessionsAhead;
+        int found = -1;
+        for (int j = entry; j < t.Count && t.Session[j] <= target; j++)
+            if (t.Session[j] == target) found = j;
+        return found;
+    }
 
     private static decimal Pct(decimal price, decimal entry) => entry > 0m ? Math.Round((price - entry) / entry * 100m, 2) : 0m;
+
+    /// <summary>A short's gain at <paramref name="price"/>: positive when the price is below the entry.</summary>
+    private static decimal ShortPct(decimal price, decimal entry) => entry > 0m ? Math.Round((entry - price) / entry * 100m, 2) : 0m;
 
     private static int LowerBoundByDate(IReadOnlyList<MarketCandle> sorted, DateTime day)
     {

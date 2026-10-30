@@ -56,22 +56,29 @@ public static class BacktestPortfolio
         {
             foreach (var o in open.Where(o => o.Exit.ExitTimeUtc <= timeUtc).OrderBy(o => o.Exit.ExitTimeUtc).ToList())
             {
-                decimal exitFill = Math.Round(o.Exit.ExitRaw * (1m - slip), 2);
-                decimal proceeds = o.Qty * exitFill;
+                bool isShort = o.Signal.IsShort;
+                // Slippage always works against the trade: a short's buy-back fills higher.
+                decimal exitFill = Math.Round(o.Exit.ExitRaw * (isShort ? 1m + slip : 1m - slip), 2);
+                decimal exitValue = o.Qty * exitFill;
                 var entryIst = BacktestEngine.ToIst(o.Signal.EntryTimeUtc);
                 var exitIst = BacktestEngine.ToIst(o.Exit.ExitTimeUtc);
                 var rates = ChargesCalculator.RatesFor(ps.Rates, ChargesCalculator.ProductFor(entryIst, exitIst), exitIst);
-                decimal charges = ChargesCalculator.RoundTrip(o.Cost, proceeds, rates).Total;
-                decimal gross = proceeds - o.Cost;
+                decimal charges = (isShort
+                    ? ChargesCalculator.RoundTrip(buyValue: exitValue, sellValue: o.Cost, rates)
+                    : ChargesCalculator.RoundTrip(buyValue: o.Cost, sellValue: exitValue, rates)).Total;
+                decimal gross = isShort ? o.Cost - exitValue : exitValue - o.Cost;
                 decimal net = gross - charges;
-                cash += proceeds - charges;
+                cash += o.Cost + net;                     // the money blocked at entry comes back with the result
                 realizedByDay[o.Exit.SessionDate] = realizedByDay.GetValueOrDefault(o.Exit.SessionDate) + net;
 
-                decimal riskPerShare = o.Signal.EntryRaw - o.Signal.StopLoss;
+                decimal riskPerShare = isShort ? o.Signal.StopLoss - o.Signal.EntryRaw : o.Signal.EntryRaw - o.Signal.StopLoss;
                 if (riskPerShare <= 0m) riskPerShare = o.Signal.EntryRaw * SwingTradeRules.DefaultStopLossPct / 100m;
                 result.Trades.Add(new BacktestTrade
                 {
                     Symbol = o.Signal.Symbol,
+                    Side = BacktestSide.Of(isShort),
+                    EntryRaw = o.Signal.EntryRaw,
+                    ExitRaw = o.Exit.ExitRaw,
                     Sector = sectorOf(o.Signal.Symbol),
                     Regime = o.Signal.Regime,
                     SignalTime = o.Signal.SignalTimeUtc,
@@ -93,7 +100,7 @@ public static class BacktestPortfolio
                     RMultiple = Math.Round(net / (o.Qty * riskPerShare), 3),
                     MfePct = o.Exit.MfePct,
                     MaePct = o.Exit.MaePct,
-                    Factors = BacktestEngine.FactorsText(o.Signal.FactorPoints),
+                    Factors = BacktestEngine.FactorsText(o.Signal.FactorPoints, isShort),
                     EndOfData = o.Exit.EndOfData
                 });
                 open.Remove(o);
@@ -115,12 +122,12 @@ public static class BacktestPortfolio
             var exit = exitOf(s);
             if (exit == null) { Skip(s.SkipReason ?? "could not simulate"); continue; }
 
-            decimal entryFill = Math.Round(s.EntryRaw * (1m + slip), 2);
+            decimal entryFill = Math.Round(s.EntryRaw * (s.IsShort ? 1m - slip : 1m + slip), 2);
             decimal riskPct = s.PolicyRiskPct > 0m ? s.PolicyRiskPct : ps.RiskPct;
             decimal bookEquity = cash + open.Sum(o => o.Cost);
-            int qty = ps.RiskSizing
-                ? SwingTradeRules.RiskSizedQuantity(s.EntryRaw, s.StopLoss, bookEquity, ps.AmountPerTrade, riskPct).Quantity
-                : (int)Math.Floor(ps.AmountPerTrade / s.EntryRaw);
+            int qty = !ps.RiskSizing ? (int)Math.Floor(ps.AmountPerTrade / s.EntryRaw)
+                : s.IsShort ? SwingTradeRules.RiskSizedShortQuantity(s.EntryRaw, s.StopLoss, bookEquity, ps.AmountPerTrade, riskPct).Quantity
+                : SwingTradeRules.RiskSizedQuantity(s.EntryRaw, s.StopLoss, bookEquity, ps.AmountPerTrade, riskPct).Quantity;
             qty = Math.Min(qty, (int)Math.Floor(cash / entryFill));
             qty = SwingTradeRules.LimitQuantityByExposure(qty, s.EntryRaw, open.Sum(o => o.Cost), bookEquity, s.PolicyMaxExposurePct).Quantity;
             if (qty < 1) { Skip("quantity 0 at this price (guard 13)"); continue; }
@@ -155,7 +162,7 @@ public static class BacktestPortfolio
                 if (exitDay <= day) { realized += t.NetPnl; continue; }
                 if (entryDay > day) continue;
                 decimal mark = closeOn(t.Symbol, day) ?? t.EntryPrice;
-                unrealized += t.Quantity * (mark - t.EntryPrice);
+                unrealized += t.Quantity * (t.IsShort ? t.EntryPrice - mark : mark - t.EntryPrice);
                 invested += t.Quantity * mark;
             }
             decimal equity = capital + realized + unrealized;
@@ -234,7 +241,12 @@ public static class BacktestPortfolio
         score >= 85 ? "85+" : score >= 80 ? "80-84" : score >= 75 ? "75-79" : score >= 70 ? "70-74" : score >= 60 ? "60-69" : "<60";
 
     /// <summary>For each scoring factor: how the trades that earned its points did vs the trades that didn't.</summary>
-    public static List<BacktestFactorRow> FactorEdge(IReadOnlyList<BacktestTrade> trades)
+    public static List<BacktestFactorRow> FactorEdge(IReadOnlyList<BacktestTrade> trades) =>
+        trades.GroupBy(t => t.Side).OrderBy(g => g.Key)
+            .SelectMany(g => FactorEdgeOfSide(g.Key, g.ToList()))
+            .ToList();
+
+    private static List<BacktestFactorRow> FactorEdgeOfSide(string side, IReadOnlyList<BacktestTrade> trades)
     {
         var parsed = trades.Select(t => (Trade: t, Points: t.Factors.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(x => x.Split(':')).Where(x => x.Length == 2)
@@ -246,6 +258,7 @@ public static class BacktestPortfolio
             var without = parsed.Where(p => p.Points.GetValueOrDefault(code) <= 0).Select(p => p.Trade).ToList();
             return new BacktestFactorRow
             {
+                Side = side,
                 Code = code,
                 TradesWith = with.Count,
                 ExpectancyWithR = with.Count > 0 ? Math.Round(with.Average(t => t.RMultiple), 3) : 0m,

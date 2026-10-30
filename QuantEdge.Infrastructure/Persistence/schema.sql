@@ -1481,6 +1481,7 @@ CREATE TABLE IF NOT EXISTS backtest_trades (
     id BIGSERIAL PRIMARY KEY,
     run_id INT NOT NULL REFERENCES backtest_runs(id) ON DELETE CASCADE,
     symbol VARCHAR(50) NOT NULL,
+    side VARCHAR(10) NOT NULL DEFAULT 'BUY',
     sector VARCHAR(100),
     regime VARCHAR(30),
     signal_time TIMESTAMP WITH TIME ZONE NOT NULL,

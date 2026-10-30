@@ -67,11 +67,11 @@ public class BacktestController : ControllerBase
     public async Task<IActionResult> TradesCsv(int id)
     {
         var trades = await _backtestService.GetTradesAsync(id);
-        var sb = new StringBuilder("Symbol,Sector,Regime,Score,Entry (UTC),Entry price,Exit (UTC),Exit price,Exit,Qty,Stop,Target,Sessions,Gross,Charges,Net,R,MFE %,MAE %\n");
+        var sb = new StringBuilder("Symbol,Side,Sector,Regime,Score,Entry (UTC),Entry price,Exit (UTC),Exit price,Exit,Qty,Stop,Target,Sessions,Gross,Charges,Net,R,MFE %,MAE %\n");
         string Q(string? s) => "\"" + (s ?? string.Empty).Replace("\"", "\"\"") + "\"";
         foreach (var t in trades)
         {
-            sb.AppendLine(string.Join(",", Q(t.Symbol), Q(t.Sector), Q(t.Regime), t.Score,
+            sb.AppendLine(string.Join(",", Q(t.Symbol), Q(t.Side), Q(t.Sector), Q(t.Regime), t.Score,
                 t.EntryTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), t.EntryPrice.ToString(CultureInfo.InvariantCulture),
                 t.ExitTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), t.ExitPrice.ToString(CultureInfo.InvariantCulture),
                 Q(t.ExitReason), t.Quantity, t.StopLoss.ToString(CultureInfo.InvariantCulture), t.Target.ToString(CultureInfo.InvariantCulture),

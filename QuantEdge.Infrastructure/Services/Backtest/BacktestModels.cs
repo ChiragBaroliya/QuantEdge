@@ -3,6 +3,18 @@ using System.Collections.Generic;
 
 namespace QuantEdge.Infrastructure.Services.Backtest;
 
+/// <summary>Which side of the strategy a run tests. Runs stored before shorts could be tested have no side and mean BUY.</summary>
+public static class BacktestSide
+{
+    public const string Buy = "BUY";
+    public const string Short = "SHORT";
+    public const string Both = "BOTH";
+
+    public static bool IncludesBuy(string? side) => side != Short;
+    public static bool IncludesShort(string? side) => side == Short || side == Both;
+    public static string Of(bool isShort) => isShort ? Short : Buy;
+}
+
 /// <summary>
 /// One backtest's inputs (Plan Phase 7). Blank fields are filled from the live settings when the run is queued
 /// (swing_strategy_settings, real_trade_settings, regime_policy), and the fully resolved copy is stored with the run,
@@ -16,6 +28,8 @@ public class BacktestParams
     public DateTime ToDate { get; set; }
     /// <summary>Optional subset of symbols; empty = every active stock.</summary>
     public List<string> Symbols { get; set; } = new();
+    /// <summary>BUY, SHORT or BOTH (<see cref="BacktestSide"/>). Blank = BUY.</summary>
+    public string? Side { get; set; }
 
     // Strategy (swing_strategy_settings)
     /// <summary>NIFTY_FILTER or REGIME.</summary>
@@ -51,12 +65,17 @@ public class BacktestParams
     public decimal? TargetAtrMult { get; set; }
     public decimal? ProfitTargetPct { get; set; }
     public int? MaxDurationDays { get; set; }
+    /// <summary>No new short at/after this IST time.</summary>
+    public string? ShortEntryCutoff { get; set; }
+    /// <summary>Open shorts are bought back at the first 15m bar starting at/after this IST time.</summary>
+    public string? ShortSquareOffTime { get; set; }
 }
 
 /// <summary>A 15-minute scan that the strategy would have acted on (or that the threshold sweep needs), with its simulated trade.</summary>
 public sealed class BacktestSignal
 {
     public string Symbol { get; init; } = string.Empty;
+    public bool IsShort { get; init; }
     public DateTime SignalTimeUtc { get; init; }      // close of the signal bar = scan time
     public DateTime EntryTimeUtc { get; init; }       // open of the next bar
     public DateTime SessionDate { get; init; }        // IST date of the entry
@@ -95,6 +114,8 @@ public sealed record BacktestExit(DateTime ExitTimeUtc, DateTime SessionDate, de
 public sealed class BacktestTrade
 {
     public string Symbol { get; set; } = string.Empty;
+    /// <summary>BUY or SHORT. For a short, the entry is the sell and the exit is the buy-back.</summary>
+    public string Side { get; set; } = BacktestSide.Buy;
     public string? Sector { get; set; }
     public string? Regime { get; set; }
     public DateTime SignalTime { get; set; }
@@ -119,6 +140,10 @@ public sealed class BacktestTrade
     public decimal MaePct { get; set; }
     public string Factors { get; set; } = string.Empty;
     public bool EndOfData { get; set; }
+    /// <summary>Prices before slippage, for <see cref="BacktestLogicAudit"/> during the run; not stored.</summary>
+    public decimal EntryRaw { get; set; }
+    public decimal ExitRaw { get; set; }
+    public bool IsShort => Side == BacktestSide.Short;
 }
 
 public sealed class BacktestKpis
@@ -157,6 +182,7 @@ public sealed class BacktestGroupRow
 
 public sealed class BacktestSweepRow
 {
+    public string Side { get; set; } = BacktestSide.Buy;
     public int Threshold { get; set; }
     public int Trades { get; set; }
     public decimal WinRatePct { get; set; }
@@ -168,6 +194,7 @@ public sealed class BacktestSweepRow
 
 public sealed class BacktestFactorRow
 {
+    public string Side { get; set; } = BacktestSide.Buy;
     public string Code { get; set; } = string.Empty;
     public int TradesWith { get; set; }
     public decimal ExpectancyWithR { get; set; }
@@ -179,8 +206,46 @@ public sealed class BacktestFactorRow
 
 public sealed record BacktestEquityPoint(DateTime Date, decimal Equity, decimal DrawdownPct);
 
+/// <summary>Did the price go the way the signal said? Before costs, and independent of the stop, target and portfolio limits.</summary>
+public sealed class BacktestDirectionRow
+{
+    public string Side { get; set; } = BacktestSide.Buy;
+    public string Horizon { get; set; } = string.Empty;
+    public int Signals { get; set; }
+    /// <summary>Share of signals where the price moved the signal's way (up for BUY, down for SHORT).</summary>
+    public decimal RightPct { get; set; }
+    /// <summary>Average move from the entry, positive = the signal's way.</summary>
+    public decimal AvgMovePct { get; set; }
+}
+
+/// <summary>One rule the simulated trades must obey, and how many broke it.</summary>
+public sealed class BacktestLogicCheck
+{
+    public string Side { get; set; } = BacktestSide.Buy;
+    public string Rule { get; set; } = string.Empty;
+    public int Checked { get; set; }
+    public int Failed { get; set; }
+    /// <summary>The first few trades that broke the rule.</summary>
+    public List<string> Examples { get; set; } = new();
+}
+
+/// <summary>One side's own result, so BUY and SHORT each get an answer even when a run tests both.</summary>
+public sealed class BacktestSideResult
+{
+    public string Side { get; set; } = BacktestSide.Buy;
+    public string Verdict { get; set; } = "NOT_PROVEN";
+    public string VerdictReason { get; set; } = string.Empty;
+    public int Signals { get; set; }
+    public BacktestKpis Kpis { get; set; } = new();
+    public List<BacktestGroupRow> ByHalf { get; set; } = new();
+    public List<BacktestGroupRow> ByExit { get; set; } = new();
+}
+
 public sealed class BacktestSummary
 {
+    public List<BacktestSideResult> Sides { get; set; } = new();
+    public List<BacktestDirectionRow> Direction { get; set; } = new();
+    public List<BacktestLogicCheck> LogicChecks { get; set; } = new();
     /// <summary>PASS, NOT_PROVEN or FAIL against the plan's go-live rule (≥ 30 trades and expectancy ≥ +0.2R after costs).</summary>
     public string Verdict { get; set; } = "NOT_PROVEN";
     public string VerdictReason { get; set; } = string.Empty;
