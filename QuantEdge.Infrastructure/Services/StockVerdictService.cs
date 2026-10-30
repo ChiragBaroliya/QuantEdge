@@ -188,6 +188,7 @@ public class StockVerdictService : IStockVerdictService
         MarketContextScorePenalty = 0,
         MarketContextPositionSizeFactor = s.MarketContextPositionSizeFactor,
         MarketProtectionBufferPct = s.MarketProtectionBufferPct,
+        Rules = s.Rules,
         UpdatedAt = s.UpdatedAt
     };
 
