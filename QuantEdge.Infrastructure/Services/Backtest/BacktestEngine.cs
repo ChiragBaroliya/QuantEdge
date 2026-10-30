@@ -88,6 +88,7 @@ public static class BacktestEngine
 {
     public const int SplitExclusionSessions = 200;
     private const string DriftSkipReason = "price moved ≥2% before the order (guard 12)";
+    private const string MissingBarSquareOffReason = "Auto Square-off (no bar stored at the square-off time - last close of the day used)";
     private static readonly TimeSpan Ist = TimeSpan.FromMinutes(330);
     private static readonly TimeSpan Bar15 = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan Bar60 = TimeSpan.FromMinutes(60);
@@ -147,7 +148,9 @@ public static class BacktestEngine
 
             int session = ctx.SessionOf(day);
             bool inSplitZone = splitSessions.Any(s => session >= s && session - s < SplitExclusionSessions);
-            var (regime, policy) = ctx.RegimeFor(day);
+            var (regime, regimePolicy) = ctx.RegimeFor(day);
+            // In NIFTY_FILTER mode the regime is only reported, as live: its limits on positions, risk and exposure apply in REGIME mode alone.
+            var policy = ctx.RegimeMode ? regimePolicy : null;
 
             // Today's daily bar so far, built from the 15m bars (the live daily row is rebuilt from 15m the same way).
             decimal dHigh = decimal.MinValue, dLow = decimal.MaxValue; long dVol = 0;
@@ -347,6 +350,18 @@ public static class BacktestEngine
                 if (d.NewTrailingStopLoss.HasValue) pos = pos with { TrailingStopLoss = d.NewTrailingStopLoss };
                 prev = price;
             }
+
+            // The day's closing bar is missing from the stored candles. Live, the closing-basis checks still run on ticks, so
+            // they run here on the day's last close instead of waiting for the next day.
+            TimeSpan closingStart = SwingTradeRules.GetClosingWindowStart(p);
+            if (j + 1 < tape.Count && tape.Session[j + 1] > session && barIst.TimeOfDay < closingStart)
+            {
+                var d = SwingTradeRules.EvaluateExit(pos, c, barIst.Date + closingStart, daysOpen, ctx.MaxDurationDays, p);
+                if (d.ShouldExit)
+                    return new BacktestExit(tape.TimeUtc(j), IstDate(tape.TimeUtc(j)), c, d.Reason, Category(d.Reason), daysOpen,
+                        Pct(hi, s.EntryRaw), Pct(lo, s.EntryRaw), false);
+                if (d.NewTrailingStopLoss.HasValue) pos = pos with { TrailingStopLoss = d.NewTrailingStopLoss };
+            }
         }
 
         int last = tape.Count - 1;
@@ -359,7 +374,8 @@ public static class BacktestEngine
     /// <see cref="SimulateExit"/> for a short, through <see cref="SwingTradeRules.EvaluateShortExit"/> - mirrored, so a bar
     /// reaching the target visits its high first and a bar touching both still counts as a stop. Like the live monitor it
     /// isn't limited to the trading window. Bars are 15 minutes, so the square-off happens at the open of the first bar
-    /// starting at/after the square-off time; a short still open next day (a missing bar) goes at that day's first bar.
+    /// starting at/after the square-off time. If the stored candles have no such bar that day, it goes at the day's last
+    /// close: live, the square-off runs on ticks and never depends on a candle, so a short is never carried overnight.
     /// </summary>
     private static BacktestExit? SimulateShortExit(IntradayTape tape, BacktestSignal s, BacktestContext ctx, out string? skipReason)
     {
@@ -404,6 +420,10 @@ public static class BacktestEngine
                 if (d.NewTrailingStopLoss.HasValue) pos = pos with { TrailingStopLoss = d.NewTrailingStopLoss };
                 prev = price;
             }
+
+            if (j + 1 < tape.Count && tape.Session[j + 1] > session)
+                return new BacktestExit(tape.TimeUtc(j) + Bar15, IstDate(tape.TimeUtc(j)), c, MissingBarSquareOffReason, Category(MissingBarSquareOffReason), daysOpen,
+                    ShortPct(lo, s.EntryRaw), ShortPct(hi, s.EntryRaw), false);
         }
 
         int last = tape.Count - 1;
@@ -442,6 +462,7 @@ public static class BacktestEngine
         : reason.StartsWith("Stop Loss", StringComparison.Ordinal) ? "Stop loss"
         : reason.StartsWith("Max Duration", StringComparison.Ordinal) ? "Max days"
         : reason == SwingTradeRules.ShortSquareOffReason ? "Square-off"
+        : reason == MissingBarSquareOffReason ? "Square-off (missing bar)"
         : "Other";
 
     /// <summary>

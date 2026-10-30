@@ -121,14 +121,45 @@ public class BacktestShortSellingTests
     }
 
     [Fact]
-    public void ShortExit_MissingSquareOffBar_GoesAtNextDaysFirstBar()
+    public void ShortExit_MissingSquareOffBar_GoesAtThatDaysLastClose_NeverOvernight()
     {
         var day2 = Day1.AddDays(1);
-        var exit = Exit(Tape(Candle(Day1, 2, 100, 100.5m, 99.5m, 100m), Candle(day2, 0, 101m, 101.5m, 100.5m, 101m)), Signal(true, 103m, 95m));
+        var exit = Exit(Tape(Candle(Day1, 2, 100, 100.5m, 99.5m, 99.8m), Candle(day2, 0, 120m, 121m, 119m, 120m)), Signal(true, 103m, 95m));
 
-        Assert.Equal("Square-off", exit.Category);
+        Assert.Equal("Square-off (missing bar)", exit.Category);
+        Assert.Equal(99.8m, exit.ExitRaw);       // not next day's gap to 120
+        Assert.Equal(0, exit.SessionsHeld);
+        Assert.Equal(Day1, exit.SessionDate);
+    }
+
+    [Fact]
+    public void LongExit_MissingClosingBar_StillRunsTheClosingChecksThatDay()
+    {
+        var day2 = Day1.AddDays(1);
+        var day3 = Day1.AddDays(2);
+        var ctx = new BacktestContext { TradeParams = Swing, MaxDurationDays = 1 };
+
+        var exit = Exit(Tape(
+            Candle(Day1, 2, 100, 100.5m, 99.5m, 100m),
+            Candle(day2, 5, 101m, 101.5m, 100.5m, 101m),     // day 2 has no bar in the closing window
+            Candle(day3, 0, 110m, 111m, 109m, 110m)),
+            Signal(false, 97m, 130m), ctx);
+
+        Assert.Equal("Max days", exit.Category);
         Assert.Equal(101m, exit.ExitRaw);
         Assert.Equal(1, exit.SessionsHeld);
+    }
+
+    [Fact]
+    public void LongExit_MissingClosingBar_StillStopsOutOnTheClosingBasis()
+    {
+        var day2 = Day1.AddDays(1);
+
+        var exit = Exit(Tape(Candle(Day1, 5, 96m, 96.5m, 95.5m, 96m), Candle(day2, 0, 100m, 101m, 99m, 100m)), Signal(false, 97m, 130m));
+
+        Assert.Equal("Stop loss", exit.Category);
+        Assert.Equal(96m, exit.ExitRaw);
+        Assert.Equal(0, exit.SessionsHeld);
     }
 
     [Fact]
@@ -373,7 +404,8 @@ public class BacktestShortSellingTests
     // ---------------- signals, through the real engines ----------------
 
     /// <summary>Daily, 15m and 60m bars all trending by the given rates, ending before the 15m test day's last bars.</summary>
-    private static SymbolBacktestResult Generate(decimal dailyPct, decimal niftyPct, decimal barPct, bool testBuy, bool testShort, string cutoff = "15:00")
+    private static SymbolBacktestResult Generate(decimal dailyPct, decimal niftyPct, decimal barPct, bool testBuy, bool testShort, string cutoff = "15:00",
+        Func<DateTime, (string? Regime, RegimePolicy? Policy)>? regimeFor = null, bool regimeMode = false)
     {
         var testDay = Day1;
         var daily = new List<MarketCandle>();
@@ -421,6 +453,8 @@ public class BacktestShortSellingTests
             ToDate = testDay,
             NiftyDaily = nifty,
             SessionOf = d => dates.Append(testDay).ToList().IndexOf(d.Date),
+            RegimeFor = regimeFor ?? (_ => (null, null)),
+            RegimeMode = regimeMode,
             EntryDelayMinutes = 15
         };
         return BacktestEngine.GenerateSignals("T", daily, h60, m15, ctx);
@@ -435,6 +469,38 @@ public class BacktestShortSellingTests
         Assert.NotEmpty(live);
         Assert.All(live, s => Assert.True(s.IsShort));
         Assert.All(live, s => Assert.True(s.StopLoss > s.EntryRaw && s.Target < s.EntryRaw));
+    }
+
+    private static readonly RegimePolicy TightPolicy = new() { Regime = "BULLISH", MaxPositions = 2, RiskPct = 0.25m, MaxExposurePct = 5m, MinStockScore = 0, RequireRelativeStrength = true };
+
+    [Fact]
+    public void Signals_NiftyFilterMode_ReportTheRegimeButIgnoreItsLimits()
+    {
+        var r = Generate(0.25m, 0.2m, 0.02m, testBuy: true, testShort: false, regimeFor: _ => ("BULLISH", TightPolicy), regimeMode: false);
+
+        Assert.NotEmpty(r.Signals);
+        Assert.All(r.Signals, s =>
+        {
+            Assert.Equal("BULLISH", s.Regime);
+            Assert.Equal(int.MaxValue, s.PolicyMaxPositions);
+            Assert.Equal(0m, s.PolicyRiskPct);
+            Assert.Null(s.PolicyMaxExposurePct);
+            Assert.False(s.PolicyRequiresRs);
+        });
+    }
+
+    [Fact]
+    public void Signals_RegimeMode_ApplyTheRegimeLimits()
+    {
+        var r = Generate(0.25m, 0.2m, 0.02m, testBuy: true, testShort: false, regimeFor: _ => ("BULLISH", TightPolicy), regimeMode: true);
+
+        Assert.NotEmpty(r.Signals);
+        Assert.All(r.Signals, s =>
+        {
+            Assert.Equal(2, s.PolicyMaxPositions);
+            Assert.Equal(0.25m, s.PolicyRiskPct);
+            Assert.Equal(5m, s.PolicyMaxExposurePct);
+        });
     }
 
     [Fact]

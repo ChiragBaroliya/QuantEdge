@@ -585,7 +585,7 @@ public class BacktestService : IBacktestService
         };
         if (BacktestSide.IncludesShort(p.Side))
         {
-            list.Add($"Shorts: intraday only - no new short at/after {p.ShortEntryCutoff}, bought back at the first 15m bar starting at/after {p.ShortSquareOffTime}, with live stops. Shorts use the mirrored NIFTY-bearish filter in every gate mode, as live (regime limits apply to BUYs only). The money blocked for a short is the full position value, as on the paper account; real MIS margin is lower.");
+            list.Add($"Shorts: intraday only - no new short at/after {p.ShortEntryCutoff}, bought back at the first 15m bar starting at/after {p.ShortSquareOffTime} (at the day's last close if that bar isn't stored; \"By exit\" counts these as missing bar), with live stops. Shorts use the mirrored NIFTY-bearish filter in every gate mode, as live (regime limits apply to BUYs only). The money blocked for a short is the full position value, as on the paper account; real MIS margin is lower.");
             list.Add("Not modelled for shorts: stocks that can't be shorted that day (Zerodha's MIS ban list, upper circuit) and intraday square-off penalties. Real results can be worse.");
         }
         return list;
