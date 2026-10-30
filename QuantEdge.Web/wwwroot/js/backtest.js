@@ -100,6 +100,7 @@
             const viewed = runs.find(x => x.id === viewingId);
             if (viewed && viewed.status === "DONE" && el("btResult").dataset.run !== String(viewed.id)) showRun(viewed.id);
             else if (viewed && ACTIVE.has(viewed.status)) renderPending(viewed);
+            else if (viewed && viewed.status !== "DONE") renderEnded(viewed);
         } catch (err) {
             el("btRuns").innerHTML = `<tr><td colspan="10" class="bt-empty">Couldn't load runs - check the API is running and backtest_runs exists (schema.sql). ${esc(err.message)}</td></tr>`;
         }
@@ -154,6 +155,12 @@
         el("btResult").dataset.run = "";
         el("btResult").innerHTML = `<section class="bt-card"><div class="bt-head"><div><h2>Run #${run.id} - ${esc(run.label || "")}</h2>
             <p>${esc(run.message || "")} (${run.progressPct}%)</p></div></div><div class="bt-bar"><i style="width:${run.progressPct}%"></i></div></section>`;
+    }
+
+    function renderEnded(run) {
+        el("btResult").dataset.run = "";
+        el("btResult").innerHTML = `<section class="bt-card"><div class="bt-head"><div><h2>Run #${run.id} - ${esc(run.label || "")}</h2>
+            <p><span class="bt-badge bt-${run.status}">${esc(run.status)}</span> ${esc(run.error || run.message || "")}</p></div></div></section>`;
     }
 
     // ------------------------------------------------------------------ result
