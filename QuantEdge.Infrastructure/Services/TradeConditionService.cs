@@ -81,7 +81,7 @@ public class TradeConditionService : ITradeConditionService
                 DisabledConditions = TradeConditionRules.All.Where(c => disabled.Contains(c.Key)).Select(c => c.Key).ToList()
             };
 
-            if (TradeConditionRules.EnabledMaxPoints(profile, regimeMode) == 0)
+            if (TradeConditionRules.EnabledMaxPoints(profile, regimeMode, strategy.Rules) == 0)
                 return (false, $"{side}: turn on at least one scoring condition (4-11) - without one there is no score.", null);
 
             int enabled = TradeConditionRules.EnabledCount(profile, regimeMode);
@@ -154,7 +154,7 @@ public class TradeConditionService : ITradeConditionService
                 TotalCount = TradeConditionRules.ConfigurableCount(p.IsShort, regimeMode),
                 HardFiltersOn = hardFilters.Count(c => p.IsEnabled(c.Key)),
                 HardFiltersTotal = hardFilters.Count,
-                EnabledMaxPoints = TradeConditionRules.EnabledMaxPoints(p, regimeMode),
+                EnabledMaxPoints = TradeConditionRules.EnabledMaxPoints(p, regimeMode, strategy.Rules),
                 IsDefault = p.IsDefault,
                 RiskAcceptedAt = p.RiskAcceptedAt,
                 UpdatedAt = p.IsDefault ? null : p.UpdatedAt

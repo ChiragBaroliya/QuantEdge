@@ -107,6 +107,7 @@ public class BacktestService : IBacktestService
         p.BuyScoreThreshold ??= strategy.BuyScoreThreshold;
         p.WatchScoreThreshold ??= strategy.WatchScoreThreshold;
         p.MinConditionsMatch ??= real.MinConditionsMatch;
+        p.Rules ??= strategy.Rules;
 
         if (p.Capital <= 0m) throw new ArgumentException("Capital must be positive.");
         if (p.AmountPerTrade <= 0m) throw new ArgumentException("Amount per trade must be positive.");
@@ -286,6 +287,7 @@ public class BacktestService : IBacktestService
         strategy.BuyScoreThreshold = p.BuyScoreThreshold!.Value;
         strategy.WatchScoreThreshold = p.WatchScoreThreshold!.Value;
         strategy.MarketGateMode = p.GateMode;
+        strategy.Rules = p.Rules ?? strategy.Rules;
         var engineSettings = regimeMode ? RegimeGate.WithoutNiftyGate(strategy) : strategy;
         var tradeParams = SwingTradeParams.From(new RealTradeSettings
         {

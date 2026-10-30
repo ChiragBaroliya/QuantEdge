@@ -133,7 +133,7 @@ public static class BacktestEngine
             while (dailyPtr < daily.Count && IstDate(daily[dailyPtr].CandleTime) < day) dailyPtr++;
             if (dailyPtr < RealTradeSchedule.MinDailyCandles - 1) continue;
             var dailyPrev = daily.GetRange(Math.Max(0, dailyPtr - 299), Math.Min(299, dailyPtr));
-            var precheck = DailyEmaTrendPrecheck.For(dailyPrev);
+            var precheck = DailyEmaTrendPrecheck.For(dailyPrev, ctx.EngineSettings.Rules);
 
             int niftyPtr = LowerBoundByDate(ctx.NiftyDaily, day);
             var niftyPrev = Slice(ctx.NiftyDaily, Math.Max(0, niftyPtr - 299), Math.Min(299, niftyPtr));
@@ -320,28 +320,34 @@ public static class BacktestEngine
         : "Other";
 
     /// <summary>
-    /// The engine's daily EMA-trend hard filter (Price &gt; EMA20 &gt; EMA50, both rising over 2 bars, EMA200 stable over 5),
+    /// The engine's daily EMA-trend hard filter (Price &gt; fast EMA &gt; slow EMA, both rising, long EMA stable - the same rule numbers),
     /// computed incrementally: the 299 earlier daily bars are the same for every scan of a day, so their EMAs are computed
     /// once and only today's partial bar is stepped on - the same arithmetic, in the same order, as
     /// <see cref="IndicatorCalculator.CalculateEma"/>, so the answer is identical. A scan that fails it is rejected by the
     /// engine whatever else it holds, so the backtest skips the full evaluation (about 0.6 ms) for it. Scans that pass go
-    /// through <see cref="SwingDecisionEngine.Evaluate"/> as usual. Used only when there are at least 200 earlier bars.
+    /// through <see cref="SwingDecisionEngine.Evaluate"/> as usual. Used only when there are enough earlier bars for the long EMA.
     /// </summary>
     public sealed class DailyEmaTrendPrecheck
     {
         private readonly List<decimal> _e20, _e50, _e200;
         private readonly int _n;
+        private readonly SwingRuleParameters _rules;
 
-        public DailyEmaTrendPrecheck(List<decimal> previousCloses)
+        public DailyEmaTrendPrecheck(List<decimal> previousCloses, SwingRuleParameters rules)
         {
             _n = previousCloses.Count;
-            _e20 = IndicatorCalculator.CalculateEma(previousCloses, 20);
-            _e50 = IndicatorCalculator.CalculateEma(previousCloses, 50);
-            _e200 = IndicatorCalculator.CalculateEma(previousCloses, 200);
+            _rules = rules;
+            _e20 = IndicatorCalculator.CalculateEma(previousCloses, rules.TrendEmaFast);
+            _e50 = IndicatorCalculator.CalculateEma(previousCloses, rules.TrendEmaSlow);
+            _e200 = IndicatorCalculator.CalculateEma(previousCloses, rules.TrendEmaLong);
         }
 
-        public static DailyEmaTrendPrecheck? For(List<MarketCandle> previousDaily) =>
-            previousDaily.Count >= 200 ? new DailyEmaTrendPrecheck(previousDaily.Select(c => c.Close).ToList()) : null;
+        public static DailyEmaTrendPrecheck? For(List<MarketCandle> previousDaily, SwingRuleParameters? rules = null)
+        {
+            rules ??= new SwingRuleParameters();
+            int needed = Math.Max(200, Math.Max(rules.TrendEmaLong, Math.Max(rules.TrendSlopeBars, rules.LongEmaSlopeBars) + 1));
+            return previousDaily.Count >= needed ? new DailyEmaTrendPrecheck(previousDaily.Select(c => c.Close).ToList(), rules) : null;
+        }
 
         private static decimal Step(List<decimal> ema, decimal price, int period)
         {
@@ -351,11 +357,11 @@ public static class BacktestEngine
 
         public bool Passes(decimal todayClose)
         {
-            decimal e20 = Step(_e20, todayClose, 20), e50 = Step(_e50, todayClose, 50), e200 = Step(_e200, todayClose, 200);
-            bool rising20 = e20 > _e20[_n - 2];
-            bool rising50 = e50 > _e50[_n - 2];
-            bool hasEma200History = _n + 1 >= SwingDecisionEngine.MinBarsForEma200;
-            bool ema200Stable = !hasEma200History || e200 >= _e200[_n - 5] * 0.995m;
+            decimal e20 = Step(_e20, todayClose, _rules.TrendEmaFast), e50 = Step(_e50, todayClose, _rules.TrendEmaSlow), e200 = Step(_e200, todayClose, _rules.TrendEmaLong);
+            bool rising20 = e20 > _e20[_n - _rules.TrendSlopeBars];
+            bool rising50 = e50 > _e50[_n - _rules.TrendSlopeBars];
+            bool hasEma200History = _n + 1 >= _rules.MinBarsForLongEma;
+            bool ema200Stable = !hasEma200History || e200 >= _e200[_n - _rules.LongEmaSlopeBars] * (1m - _rules.LongEmaToleranceFactor);
             return todayClose > e20 && e20 > e50 && rising20 && rising50 && ema200Stable;
         }
     }

@@ -24,6 +24,85 @@
     </div>
 
     <div class="tc-toolbar">
+        <div class="tc-segment" role="tablist" aria-label="Page section" id="tcViewTabs">
+            <button type="button" class="tc-seg-btn active" data-view="conditions" role="tab" aria-selected="true">Which conditions</button>
+            <button type="button" class="tc-seg-btn" data-view="rules" role="tab" aria-selected="false">Rule numbers</button>
+        </div>
+    </div>
+
+    <div id="tcViewRules" hidden>
+        <div class="tc-alert tc-alert-info" id="srLoading">Loading rule numbers…</div>
+        <div id="srForm" class="sr-form" hidden>
+            <section class="tc-card sr-top">
+                <div class="tc-card-head">
+                    <div>
+                        <h3>Market gate and score</h3>
+                        <p>One set of numbers drives Auto Paper, Auto Real, the dashboards and new backtests. BUY and SHORT share them unless a field says otherwise.</p>
+                    </div>
+                    <span class="tc-dirty" id="srDirty" hidden></span>
+                </div>
+                <div class="sr-grid">
+                    <div class="sr-field sr-field-wide">
+                        <label for="srGate">Market gate for new BUYs</label>
+                        <select id="srGate" class="tc-input sr-select">
+                            <option value="NIFTY_FILTER">NIFTY filter (no BUY while NIFTY fails)</option>
+                            <option value="REGIME">Market regime (strong stocks allowed in a falling market)</option>
+                        </select>
+                        <p class="tc-hint" id="srGateHint"></p>
+                    </div>
+                    <div class="sr-field">
+                        <label for="srBuy">BUY / SHORT signal score</label>
+                        <div class="sr-input-row"><input type="number" id="srBuy" class="tc-input" min="0" max="100" step="1" /></div>
+                    </div>
+                    <div class="sr-field">
+                        <label for="srWatch">WATCH score</label>
+                        <div class="sr-input-row"><input type="number" id="srWatch" class="tc-input" min="0" max="100" step="1" /></div>
+                    </div>
+                    <div class="sr-field">
+                        <span class="sr-label">Scoring points total</span>
+                        <strong class="sr-points" id="srPointsText">100 / 100</strong>
+                        <p class="tc-hint" id="srPointsHint"></p>
+                    </div>
+                </div>
+            </section>
+
+            <div id="srGroups" class="sr-groups"></div>
+
+            <section class="tc-card">
+                <div class="tc-card-head">
+                    <div>
+                        <h3>Market regime</h3>
+                        <p>The terms for a BUY in each regime when the market gate is set to Market regime.</p>
+                    </div>
+                    <span class="tc-pill tc-pill-muted" id="srPolicyState"></span>
+                </div>
+                <div class="sr-table-wrap">
+                    <table class="sr-table">
+                        <thead>
+                            <tr><th scope="col">Regime</th><th scope="col">Min score</th><th scope="col">Must beat NIFTY</th><th scope="col">Max positions</th><th scope="col">Risk % (Auto Paper)</th></tr>
+                        </thead>
+                        <tbody id="srPolicyBody"></tbody>
+                    </table>
+                </div>
+                <p class="tc-alert tc-alert-warn sr-note"><strong>Auto Real ignores Risk %.</strong> In a weak market it still sizes each order from its own settings, so only the score, NIFTY and position limits above reduce its trading.</p>
+            </section>
+
+            <section class="tc-card sr-save">
+                <div id="srAlerts" class="tc-alerts" aria-live="polite"></div>
+                <label class="tc-risk">
+                    <input type="checkbox" id="srConfirm" />
+                    <span>I understand these numbers also apply to the <strong>real-money</strong> Auto Real bot, for every user, within 5 minutes of saving.</span>
+                </label>
+                <div class="sr-save-row">
+                    <button type="button" class="tc-btn tc-btn-ghost" id="srResetAll">Reset all to original</button>
+                    <button type="button" class="tc-btn tc-btn-primary" id="srSave" disabled>Save rule numbers</button>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="tcViewConditions" class="tc-view">
+    <div class="tc-toolbar">
         <div class="tc-segment" role="tablist" aria-label="Trading mode" id="tcModeTabs">
             <button type="button" class="tc-seg-btn active" data-mode="AUTO_PAPER" role="tab" aria-selected="true">Auto Paper</button>
             <button type="button" class="tc-seg-btn" data-mode="AUTO_REAL" role="tab" aria-selected="false">Auto Real <span class="tc-live">LIVE</span></button>
@@ -55,7 +134,7 @@
                 <div class="tc-card-head">
                     <div>
                         <h3>Scoring conditions</h3>
-                        <p>Each adds points to the score. A score of 70 or more is a signal; 50–69 is WATCH.</p>
+                        <p id="tcScoreIntro">Each adds points to the score. A score of 70 or more is a signal; 50–69 is WATCH.</p>
                     </div>
                     <div class="tc-bulk">
                         <button type="button" class="tc-link-btn" data-bulk="score" data-on="true">All on</button>
@@ -91,8 +170,8 @@
 
                 <div class="tc-thresholds">
                     <span class="tc-chip tc-chip-green" id="tcSignalChip">BUY ≥ 70</span>
-                    <span class="tc-chip tc-chip-amber">WATCH ≥ 50</span>
-                    <span class="tc-chip tc-chip-muted">Set in Swing settings</span>
+                    <span class="tc-chip tc-chip-amber" id="tcWatchChip">WATCH ≥ 50</span>
+                    <span class="tc-chip tc-chip-muted">Set in Rule numbers</span>
                 </div>
 
                 <div id="tcAlerts" class="tc-alerts" aria-live="polite"></div>
@@ -111,8 +190,10 @@
             </section>
         </aside>
     </div>
+    </div>
 </div>
 
 @section Scripts {
     <script src="~/js/trade-conditions.js" asp-append-version="true"></script>
+    <script src="~/js/strategy-rules.js" asp-append-version="true"></script>
 }

@@ -47,6 +47,9 @@ public class SwingStrategySettings
 
     public bool UsesRegimeGate => string.Equals(MarketGateMode, GateModeRegime, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The numbers behind the 11 conditions (Trade Conditions page, "Rule numbers"). Saved on its own - never by the Swing settings dialog.</summary>
+    public SwingRuleParameters Rules { get; set; } = new();
+
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public static SwingStrategySettings Default => new();

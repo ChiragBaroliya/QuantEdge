@@ -196,6 +196,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRealTradeCacheService, RealTradeCacheService>();
         services.AddSingleton<IAutoRealTradeService, AutoRealTradeService>();
         services.AddTransient<ITradeConditionService, TradeConditionService>();
+        services.AddTransient<IStrategyRulesService, StrategyRulesService>();
 
         // IRealOrderGateway: Zerodha only accepts orders from the static IPs registered on the Kite app.
         // When the API runs on a server whose IP isn't registered (RealOrderExecution:Mode = Remote), its

@@ -81,6 +81,7 @@ public static class SwingDecisionEngine
         bool requireNifty = settings.RequireNiftyMarketFilter;
         int marketContextScorePenalty = settings.MarketContextScorePenalty;
         decimal marketContextPositionSizeFactor = settings.MarketContextPositionSizeFactor;
+        var rules = settings.Rules;
 
         var result = new SwingEvaluationResult();
         string symbol = stock?.Symbol ?? "UNKNOWN";
@@ -93,10 +94,10 @@ public static class SwingDecisionEngine
         stockCandles15m = ClosedCandlesOnly(stockCandles15m, TimeSpan.FromMinutes(15), nowUtc);
         stockCandles60m = ClosedCandlesOnly(stockCandles60m, TimeSpan.FromMinutes(60), nowUtc);
 
-        if (stockCandles1d == null || stockCandles1d.Count < 50)
+        if (stockCandles1d == null || stockCandles1d.Count < rules.MinDailyCandles)
         {
             result.Decision = "REJECT";
-            result.Reason = "Insufficient daily candle history (minimum 50 required).";
+            result.Reason = $"Insufficient daily candle history (minimum {rules.MinDailyCandles} required).";
             result.Checklist = BuildEmptyChecklist("Insufficient daily data");
             return result;
         }
@@ -119,10 +120,10 @@ public static class SwingDecisionEngine
         }
 
         // Calculate 1D Indicators for Hard Filters
-        var ema20_1d = IndicatorCalculator.CalculateEma(closes1d, 20);
-        var ema50_1d = IndicatorCalculator.CalculateEma(closes1d, 50);
-        var ema200_1d = IndicatorCalculator.CalculateEma(closes1d, 200);
-        var adx14_1d = IndicatorCalculator.CalculateAdx(highs1d, lows1d, closes1d, 14);
+        var ema20_1d = IndicatorCalculator.CalculateEma(closes1d, rules.TrendEmaFast);
+        var ema50_1d = IndicatorCalculator.CalculateEma(closes1d, rules.TrendEmaSlow);
+        var ema200_1d = IndicatorCalculator.CalculateEma(closes1d, rules.TrendEmaLong);
+        var adx14_1d = IndicatorCalculator.CalculateAdx(highs1d, lows1d, closes1d, rules.AdxPeriod);
 
         decimal curEma20_1d = ema20_1d[idx1d];
         decimal curEma50_1d = ema50_1d[idx1d];
@@ -144,18 +145,18 @@ public static class SwingDecisionEngine
         bool niftyGateFailed = requireNifty && !niftyPassed;
 
         // Hard Filter 2 (Stock-Level): EMA_TREND (Price > EMA20 > EMA50, rising slopes, stable EMA200)
-        bool ema20Rising = idx1d >= 2 && ema20_1d[idx1d] > ema20_1d[idx1d - 2];
-        bool ema50Rising = idx1d >= 2 && ema50_1d[idx1d] > ema50_1d[idx1d - 2];
+        bool ema20Rising = idx1d >= rules.TrendSlopeBars && ema20_1d[idx1d] > ema20_1d[idx1d - rules.TrendSlopeBars];
+        bool ema50Rising = idx1d >= rules.TrendSlopeBars && ema50_1d[idx1d] > ema50_1d[idx1d - rules.TrendSlopeBars];
         // EMA200 is only meaningful with enough history (Plan D1): with fewer bars CalculateEma returns a running
         // average, not an EMA200. Callers now load 300 daily candles; a newer listing skips this check rather than
         // being judged on a fake EMA200.
-        bool hasEma200History = closes1d.Count >= MinBarsForEma200;
+        bool hasEma200History = closes1d.Count >= rules.MinBarsForLongEma;
         result.HasEma200History = hasEma200History;
-        bool ema200Stable = !hasEma200History || (idx1d >= 5 && ema200_1d[idx1d] >= ema200_1d[idx1d - 5] * 0.995m);
+        bool ema200Stable = !hasEma200History || (idx1d >= rules.LongEmaSlopeBars && ema200_1d[idx1d] >= ema200_1d[idx1d - rules.LongEmaSlopeBars] * (1m - rules.LongEmaToleranceFactor));
         bool emaTrendPassed = price1d > curEma20_1d && curEma20_1d > curEma50_1d && ema20Rising && ema50Rising && ema200Stable;
 
         // Hard Filter 3 (Stock-Level): ADX_STRENGTH (ADX 14 >= 20.0 - Filters out choppy markets)
-        bool adxPassed = curAdx_1d >= 20.0m;
+        bool adxPassed = curAdx_1d >= rules.AdxMin;
         result.EmaTrendPassed = emaTrendPassed;
         result.AdxPassed = adxPassed;
         result.Adx1d = Math.Round(curAdx_1d, 2);
@@ -172,15 +173,15 @@ public static class SwingDecisionEngine
             result.ConfidencePct = 0;
 
             var hardFailed = new List<string>();
-            if (niftyGateFailed) hardFailed.Add("NIFTY_MARKET_FILTER (Nifty 50 below 50 DMA / EMA20 < EMA50 or data unavailable - no new entries)");
-            if (!emaTrendPassed) hardFailed.Add("EMA_TREND (Price below EMA20/EMA50 or declining slope)");
-            if (!adxPassed) hardFailed.Add($"ADX_STRENGTH (ADX {curAdx_1d:F1} < 20.0 - Choppy / Weak Trend)");
+            if (niftyGateFailed) hardFailed.Add($"NIFTY_MARKET_FILTER (Nifty 50 below {rules.NiftySmaPeriod} DMA / EMA{rules.NiftyEmaFast} < EMA{rules.NiftyEmaSlow} or data unavailable - no new entries)");
+            if (!emaTrendPassed) hardFailed.Add($"EMA_TREND (Price below EMA{rules.TrendEmaFast}/EMA{rules.TrendEmaSlow} or declining slope)");
+            if (!adxPassed) hardFailed.Add($"ADX_STRENGTH (ADX {curAdx_1d:F1} < {rules.AdxMin:0.0} - Choppy / Weak Trend)");
 
             result.FailedRules = hardFailed;
             result.Reason = $"REJECTED by Hard Filter: {string.Join("; ", hardFailed)}";
             result.Checklist = BuildChecklist(
                 requireNifty, niftyPassed, emaTrendPassed, adxPassed, false, false, false, false, false, false, false, false,
-                currentPrice, curEma20_1d, curEma50_1d, 0m, curAdx_1d, 0m, 0m
+                currentPrice, curEma20_1d, curEma50_1d, 0m, curAdx_1d, 0m, 0m, rules
             );
             return result;
         }
@@ -189,7 +190,7 @@ public static class SwingDecisionEngine
         if (niftyPassed)
             result.PassedRules.Add(requireNifty ? "Hard Filter 1: NIFTY Market Filter (Passed)" : "Market Context: NIFTY Market Filter (Passed)");
         if (emaTrendPassed) result.PassedRules.Add("Hard Filter 2: EMA Trend Alignment (Passed 1D)");
-        if (adxPassed) result.PassedRules.Add($"Hard Filter 3: ADX Trend Strength (Passed {curAdx_1d:F1} >= 20)");
+        if (adxPassed) result.PassedRules.Add($"Hard Filter 3: ADX Trend Strength (Passed {curAdx_1d:F1} >= {rules.AdxMin:0.##})");
         if (!niftyPassed)
             result.FailedRules.Add($"Market Context: NIFTY Market Filter (Failed - Defensive Mode, -{marketContextScorePenalty} pt score penalty applied, not a block)");
 
@@ -212,26 +213,26 @@ public static class SwingDecisionEngine
         // Rule 4: BREAKOUT_GROUP (20 Pts Max)
         // Max of: Close > PDH / Swing High, OR 10-20D Consolidation Breakout, OR New 52W High / within 10%
         decimal prevDayHigh = idx1d >= 1 ? highs1d[idx1d - 1] : highs1d[idx1d];
-        decimal swingHigh = refIdx >= 15 ? refHighs.Skip(Math.Max(0, refIdx - 15)).Take(15).Max() : refHighs[refIdx];
+        decimal swingHigh = refIdx >= rules.SwingLookbackBars ? refHighs.Skip(Math.Max(0, refIdx - rules.SwingLookbackBars)).Take(rules.SwingLookbackBars).Max() : refHighs[refIdx];
         bool isPrevHighBreakout = currentPrice > prevDayHigh || currentPrice >= swingHigh;
 
         bool isConsolidationBreakout = false;
-        if (idx1d >= 15)
+        if (idx1d >= rules.ConsolidationBars + 1)
         {
-            var consHighs = highs1d.Skip(Math.Max(0, idx1d - 15)).Take(14).ToList();
-            var consLows = lows1d.Skip(Math.Max(0, idx1d - 15)).Take(14).ToList();
+            var consHighs = highs1d.Skip(Math.Max(0, idx1d - (rules.ConsolidationBars + 1))).Take(rules.ConsolidationBars).ToList();
+            var consLows = lows1d.Skip(Math.Max(0, idx1d - (rules.ConsolidationBars + 1))).Take(rules.ConsolidationBars).ToList();
             if (consHighs.Any() && consLows.Any())
             {
                 decimal cMax = consHighs.Max();
                 decimal cMin = consLows.Min();
                 decimal consRangePct = cMin > 0m ? (cMax - cMin) / cMin * 100m : 99m;
-                if (consRangePct <= 10.0m && currentPrice > cMax) isConsolidationBreakout = true;
+                if (consRangePct <= rules.ConsolidationMaxRangePct && currentPrice > cMax) isConsolidationBreakout = true;
             }
         }
 
         var high52W = IndicatorCalculator.Calculate52WeekHigh(highs1d, Math.Min(250, highs1d.Count));
         decimal cur52wHigh = high52W[idx1d];
-        bool isNear52WHigh = currentPrice >= 0.90m * cur52wHigh;
+        bool isNear52WHigh = currentPrice >= (1m - rules.Near52WeekPct / 100m) * cur52wHigh;
 
         bool breakoutGroupPassed = isPrevHighBreakout || isConsolidationBreakout || isNear52WHigh;
         int scoreBefore = score;
@@ -242,14 +243,14 @@ public static class SwingDecisionEngine
         }
         if (breakoutGroupPassed)
         {
-            score += 20;
-            passedRules.Add("BREAKOUT_GROUP (+20 pts): Confirmed Breakout over PDH/Swing/Consolidation/52W High");
+            score += rules.BreakoutPoints;
+            passedRules.Add($"BREAKOUT_GROUP (+{rules.BreakoutPoints} pts): Confirmed Breakout over PDH/Swing/Consolidation/52W High");
         }
         else
         {
-            failedRules.Add("BREAKOUT_GROUP (0/20 pts): Inside trading range, no breakout detected");
+            failedRules.Add($"BREAKOUT_GROUP (0/{rules.BreakoutPoints} pts): Inside trading range, no breakout detected");
         }
-        AddFactor("BREAKOUT_GROUP", "Breakout", 20, "15m");
+        AddFactor("BREAKOUT_GROUP", "Breakout", rules.BreakoutPoints, "15m");
 
         // Rule 5: VOL_CONFIRMATION (15 Pts Max)
         // Volume >= 2.5x the usual volume for this bar AND Volume > Prev Volume.
@@ -258,26 +259,26 @@ public static class SwingDecisionEngine
         // to the previous 20 bars when there are fewer than 3 earlier same-slot bars (or on daily candles).
         long curVol = refVolumes[refIdx];
         decimal avgVol20 = SameSlotAverageVolume(refCandles, refIdx)
-            ?? (refIdx > 0 ? (decimal)refVolumes.Skip(Math.Max(0, refIdx - 20)).Take(Math.Min(20, refIdx)).Average(v => (double)v) : 0m);
+            ?? (refIdx > 0 ? (decimal)refVolumes.Skip(Math.Max(0, refIdx - rules.VolumeAverageBars)).Take(Math.Min(rules.VolumeAverageBars, refIdx)).Average(v => (double)v) : 0m);
         decimal volMult = avgVol20 > 0m ? Math.Round((decimal)curVol / avgVol20, 2) : 0m;
-        bool volSpikePassed = volMult >= 1.5m; // 1.5x minimum, bonus 2.5x
+        bool volSpikePassed = volMult >= rules.VolumeGoodMultiple; // good volume, bonus for heavy volume
         bool volGreaterPrev = refIdx >= 1 && curVol > refVolumes[refIdx - 1];
 
-        if (volMult >= 2.5m && volGreaterPrev)
+        if (volMult >= rules.VolumeHeavyMultiple && volGreaterPrev)
         {
-            score += 15;
-            passedRules.Add($"VOL_CONFIRMATION (+15 pts): Heavy Volume Surge ({volMult:F1}x Avg Volume)");
+            score += rules.VolumePoints;
+            passedRules.Add($"VOL_CONFIRMATION (+{rules.VolumePoints} pts): Heavy Volume Surge ({volMult:F1}x Avg Volume)");
         }
         else if (volSpikePassed)
         {
-            score += 10;
-            passedRules.Add($"VOL_CONFIRMATION (+10 pts): Good Volume ({volMult:F1}x Avg Volume)");
+            score += rules.VolumeGoodPoints;
+            passedRules.Add($"VOL_CONFIRMATION (+{rules.VolumeGoodPoints} pts): Good Volume ({volMult:F1}x Avg Volume)");
         }
         else
         {
-            failedRules.Add($"VOL_CONFIRMATION (0/15 pts): Volume low ({volMult:F1}x Avg Volume)");
+            failedRules.Add($"VOL_CONFIRMATION (0/{rules.VolumePoints} pts): Volume low ({volMult:F1}x Avg Volume)");
         }
-        AddFactor("VOL_CONFIRMATION", "Volume", 15, "15m");
+        AddFactor("VOL_CONFIRMATION", "Volume", rules.VolumePoints, "15m");
         result.VolumeMultiple = volMult;
 
         // Rule 6: RELATIVE_STRENGTH (15 Pts Max)
@@ -285,10 +286,10 @@ public static class SwingDecisionEngine
         // Both returns are measured over the SAME dates (Plan D11): NIFTY's close is looked up on the stock's start and
         // end dates (latest NIFTY close on or before each), so a stale or extra NIFTY row can't skew the comparison.
         bool rsPassed = false;
-        if (idx1d >= 20 && niftyCandles1d != null && niftyCandles1d.Count >= 21)
+        if (idx1d >= rules.RelativeStrengthBars && niftyCandles1d != null && niftyCandles1d.Count >= rules.RelativeStrengthBars + 1)
         {
-            decimal stockRet1M = (price1d - closes1d[idx1d - 20]) / closes1d[idx1d - 20];
-            decimal? niftyStart = NiftyCloseOnOrBefore(niftyCandles1d, stockCandles1d[idx1d - 20].CandleTime);
+            decimal stockRet1M = (price1d - closes1d[idx1d - rules.RelativeStrengthBars]) / closes1d[idx1d - rules.RelativeStrengthBars];
+            decimal? niftyStart = NiftyCloseOnOrBefore(niftyCandles1d, stockCandles1d[idx1d - rules.RelativeStrengthBars].CandleTime);
             decimal? niftyEnd = NiftyCloseOnOrBefore(niftyCandles1d, stockCandles1d[idx1d].CandleTime);
             if (niftyStart > 0m && niftyEnd > 0m)
             {
@@ -298,134 +299,134 @@ public static class SwingDecisionEngine
         }
         if (rsPassed)
         {
-            score += 15;
-            passedRules.Add("RELATIVE_STRENGTH (+15 pts): Outperforming NIFTY 50 Benchmark");
+            score += rules.RelativeStrengthPoints;
+            passedRules.Add($"RELATIVE_STRENGTH (+{rules.RelativeStrengthPoints} pts): Outperforming NIFTY 50 Benchmark");
         }
         else
         {
-            failedRules.Add("RELATIVE_STRENGTH (0/15 pts): Underperforming NIFTY 50 Benchmark");
+            failedRules.Add($"RELATIVE_STRENGTH (0/{rules.RelativeStrengthPoints} pts): Underperforming NIFTY 50 Benchmark");
         }
-        AddFactor("RELATIVE_STRENGTH", "Relative strength", 15, "1d");
+        AddFactor("RELATIVE_STRENGTH", "Relative strength", rules.RelativeStrengthPoints, "1d");
 
         // Rule 7: MULTITIMEFRAME (15 Pts Max)
         // 60m Close > 60m EMA20 AND 60m RSI >= 40
         // Fails closed (no points) when there isn't enough 60m data to confirm - a data gap
         // should never be scored as bullish confirmation.
-        bool hasMtfData = stockCandles60m != null && stockCandles60m.Count >= 20;
+        bool hasMtfData = stockCandles60m != null && stockCandles60m.Count >= rules.Mtf60mEmaPeriod;
         bool mtfPassed = false;
         if (hasMtfData)
         {
             var closes60m = stockCandles60m!.Select(c => c.Close).ToList();
-            var ema20_60m = IndicatorCalculator.CalculateEma(closes60m, 20);
-            var rsi_60m = IndicatorCalculator.CalculateRsi(closes60m, 14);
+            var ema20_60m = IndicatorCalculator.CalculateEma(closes60m, rules.Mtf60mEmaPeriod);
+            var rsi_60m = IndicatorCalculator.CalculateRsi(closes60m, rules.Mtf60mRsiPeriod);
 
             int idx60m = stockCandles60m!.Count - 1;
             decimal close60m = closes60m[idx60m];
             decimal ema20_60mVal = ema20_60m[idx60m];
             decimal rsi60mVal = rsi_60m[idx60m];
 
-            mtfPassed = close60m > ema20_60mVal && rsi60mVal >= 40m;
+            mtfPassed = close60m > ema20_60mVal && rsi60mVal >= rules.Mtf60mRsiMinBuy;
             result.Rsi60m = Math.Round(rsi60mVal, 2);
             result.Is60mAboveEma20 = close60m > ema20_60mVal;
         }
         result.Has60mData = hasMtfData;
         if (mtfPassed)
         {
-            score += 15;
-            passedRules.Add("MULTITIMEFRAME (+15 pts): 60m Hourly Trend Alignment (Close > EMA20)");
+            score += rules.Mtf60mPoints;
+            passedRules.Add($"MULTITIMEFRAME (+{rules.Mtf60mPoints} pts): 60m Hourly Trend Alignment (Close > EMA{rules.Mtf60mEmaPeriod})");
         }
         else if (!hasMtfData)
         {
-            failedRules.Add("MULTITIMEFRAME (0/15 pts): Insufficient 60m data - confirmation withheld");
+            failedRules.Add($"MULTITIMEFRAME (0/{rules.Mtf60mPoints} pts): Insufficient 60m data - confirmation withheld");
         }
         else
         {
-            failedRules.Add("MULTITIMEFRAME (0/15 pts): 60m Hourly Trend Bearish");
+            failedRules.Add($"MULTITIMEFRAME (0/{rules.Mtf60mPoints} pts): 60m Hourly Trend Bearish");
         }
-        AddFactor("MULTITIMEFRAME", "60m trend", 15, "60m");
+        AddFactor("MULTITIMEFRAME", "60m trend", rules.Mtf60mPoints, "60m");
 
         // Rule 8: RSI_MOMENTUM (10 Pts Max)
         // RSI(14) between 50 and 75 (Sweet spot: 55-70)
-        var rsi14 = IndicatorCalculator.CalculateRsi(refCloses, 14);
+        var rsi14 = IndicatorCalculator.CalculateRsi(refCloses, rules.RsiPeriod);
         decimal curRsi = rsi14[refIdx];
-        bool rsiPassed = curRsi >= 50m && curRsi <= 75m;
-        if (curRsi >= 55m && curRsi <= 70m)
+        bool rsiPassed = curRsi >= rules.RsiBuyOkLow && curRsi <= rules.RsiBuyOkHigh;
+        if (curRsi >= rules.RsiBuyBestLow && curRsi <= rules.RsiBuyBestHigh)
         {
-            score += 10;
-            passedRules.Add($"RSI_MOMENTUM (+10 pts): Sweet Spot Zone ({curRsi:F1})");
+            score += rules.RsiPoints;
+            passedRules.Add($"RSI_MOMENTUM (+{rules.RsiPoints} pts): Sweet Spot Zone ({curRsi:F1})");
         }
         else if (rsiPassed)
         {
-            score += 7;
-            passedRules.Add($"RSI_MOMENTUM (+7 pts): Acceptable Zone ({curRsi:F1})");
+            score += rules.RsiGoodPoints;
+            passedRules.Add($"RSI_MOMENTUM (+{rules.RsiGoodPoints} pts): Acceptable Zone ({curRsi:F1})");
         }
         else
         {
-            failedRules.Add($"RSI_MOMENTUM (0/10 pts): Outside 50-75 Zone ({curRsi:F1})");
+            failedRules.Add($"RSI_MOMENTUM (0/{rules.RsiPoints} pts): Outside {rules.RsiBuyOkLow:0.##}-{rules.RsiBuyOkHigh:0.##} Zone ({curRsi:F1})");
         }
-        AddFactor("RSI_MOMENTUM", "RSI", 10, "15m");
+        AddFactor("RSI_MOMENTUM", "RSI", rules.RsiPoints, "15m");
         result.Rsi15m = Math.Round(curRsi, 2);
 
         // Rule 9: MACD_BULLISH (10 Pts Max)
         // MACD Line > Signal Line OR fresh bullish crossover
-        var (macd, macdSignal) = IndicatorCalculator.CalculateMacd(refCloses);
+        var (macd, macdSignal) = IndicatorCalculator.CalculateMacd(refCloses, rules.MacdFast, rules.MacdSlow, rules.MacdSignal);
         decimal curMacd = macd[refIdx];
         decimal curMacdSignal = macdSignal[refIdx];
         bool macdPassed = curMacd > curMacdSignal;
         if (macdPassed)
         {
-            score += 10;
-            passedRules.Add($"MACD_BULLISH (+10 pts): MACD Bullish Alignment ({curMacd:F2} > Signal {curMacdSignal:F2})");
+            score += rules.MacdPoints;
+            passedRules.Add($"MACD_BULLISH (+{rules.MacdPoints} pts): MACD Bullish Alignment ({curMacd:F2} > Signal {curMacdSignal:F2})");
         }
         else
         {
-            failedRules.Add("MACD_BULLISH (0/10 pts): Bearish MACD Line below Signal");
+            failedRules.Add($"MACD_BULLISH (0/{rules.MacdPoints} pts): Bearish MACD Line below Signal");
         }
-        AddFactor("MACD_BULLISH", "MACD", 10, "15m");
+        AddFactor("MACD_BULLISH", "MACD", rules.MacdPoints, "15m");
 
         // Rule 10: BULLISH_CANDLE (8 Pts Max)
         // Bullish Engulfing / Marubozu / Breakout candle (>1.5x ATR) / Close near High
-        var atr14 = IndicatorCalculator.CalculateAtr(refHighs, refLows, refCloses, 14);
+        var atr14 = IndicatorCalculator.CalculateAtr(refHighs, refLows, refCloses, rules.AtrPeriod);
         decimal curAtr = Math.Max(0.1m, atr14[refIdx]);
 
         decimal openPrice = refOpens[refIdx];
         decimal highPrice = refHighs[refIdx];
         decimal lowPrice = refLows[refIdx];
-        bool isCloseNearHigh = (highPrice - lowPrice) > 0m && ((currentPrice - lowPrice) / (highPrice - lowPrice)) >= 0.75m;
-        bool isBreakoutCandle = (currentPrice - openPrice) >= (1.2m * curAtr);
+        bool isCloseNearHigh = (highPrice - lowPrice) > 0m && ((currentPrice - lowPrice) / (highPrice - lowPrice)) >= 1m - rules.CandleCloseZonePct / 100m;
+        bool isBreakoutCandle = (currentPrice - openPrice) >= (rules.CandleBodyAtrMultiple * curAtr);
         bool candlePassed = (currentPrice > openPrice) && (isCloseNearHigh || isBreakoutCandle);
 
         if (candlePassed)
         {
-            score += 8;
-            passedRules.Add("BULLISH_CANDLE (+8 pts): Strong Bullish Candle Pattern (Close near High / ATR Expansion)");
+            score += rules.CandlePoints;
+            passedRules.Add($"BULLISH_CANDLE (+{rules.CandlePoints} pts): Strong Bullish Candle Pattern (Close near High / ATR Expansion)");
         }
         else
         {
-            failedRules.Add("BULLISH_CANDLE (0/8 pts): Weak or indecisive candle pattern");
+            failedRules.Add($"BULLISH_CANDLE (0/{rules.CandlePoints} pts): Weak or indecisive candle pattern");
         }
-        AddFactor("BULLISH_CANDLE", "Candle", 8, "15m");
+        AddFactor("BULLISH_CANDLE", "Candle", rules.CandlePoints, "15m");
 
         // Rule 11: RISK_REWARD (7 Pts Max)
         // Target (Price + 2.0*curAtr) vs SL (Price - 1.5*curAtr) ratio >= 1:2.0
-        result.StopLoss = Math.Round(Math.Max(0.01m, currentPrice - (1.5m * curAtr)), 2);
+        result.StopLoss = Math.Round(Math.Max(0.01m, currentPrice - (rules.StopAtrMultiple * curAtr)), 2);
         decimal risk = Math.Max(0.01m, currentPrice - result.StopLoss);
-        result.Target1 = Math.Round(currentPrice + (2.0m * risk), 2);
-        result.Target2 = Math.Round(currentPrice + (3.0m * risk), 2);
+        result.Target1 = Math.Round(currentPrice + (rules.Target1R * risk), 2);
+        result.Target2 = Math.Round(currentPrice + (rules.Target2R * risk), 2);
         decimal reward = result.Target1 - currentPrice;
         result.RiskRewardRatio = risk > 0m ? Math.Round(reward / risk, 2) : 0m;
-        bool rrPassed = result.RiskRewardRatio >= 2.0m;
+        bool rrPassed = result.RiskRewardRatio >= rules.MinRiskReward;
 
         if (rrPassed)
         {
-            score += 7;
-            passedRules.Add($"RISK_REWARD (+7 pts): Valid R:R Ratio (1:{result.RiskRewardRatio:F1} >= 1:2.0)");
+            score += rules.RiskRewardPoints;
+            passedRules.Add($"RISK_REWARD (+{rules.RiskRewardPoints} pts): Valid R:R Ratio (1:{result.RiskRewardRatio:F1} >= 1:{rules.MinRiskReward:0.0})");
         }
         else
         {
-            failedRules.Add($"RISK_REWARD (0/7 pts): Low R:R Ratio (1:{result.RiskRewardRatio:F1})");
+            failedRules.Add($"RISK_REWARD (0/{rules.RiskRewardPoints} pts): Low R:R Ratio (1:{result.RiskRewardRatio:F1})");
         }
-        AddFactor("RISK_REWARD", "Risk:reward", 7, "15m");
+        AddFactor("RISK_REWARD", "Risk:reward", rules.RiskRewardPoints, "15m");
 
         // --------------------------------------------------------------------
         // STAGE C: MARKET CONTEXT RISK ADJUSTMENT + SIGNAL DECISION THRESHOLDS
@@ -480,7 +481,7 @@ public static class SwingDecisionEngine
         result.Checklist = BuildChecklist(
             requireNifty, niftyPassed, emaTrendPassed, adxPassed, breakoutGroupPassed, volSpikePassed, rsPassed,
             mtfPassed, rsiPassed, macdPassed, candlePassed, rrPassed,
-            currentPrice, curEma20_1d, curEma50_1d, volMult, curAdx_1d, curRsi, result.RiskRewardRatio
+            currentPrice, curEma20_1d, curEma50_1d, volMult, curAdx_1d, curRsi, result.RiskRewardRatio, rules
         );
 
         return result;
@@ -508,12 +509,13 @@ public static class SwingDecisionEngine
     public static bool IsNiftyMarketFilterPassed(List<MarketCandle>? niftyCandles, QuantEdge.Domain.Entities.SwingStrategySettings? settings = null)
     {
         settings ??= QuantEdge.Domain.Entities.SwingStrategySettings.Default;
-        if (niftyCandles == null || niftyCandles.Count < 50) return !settings.RequireNiftyMarketFilter;
+        var rules = settings.Rules;
+        if (niftyCandles == null || niftyCandles.Count < rules.MinNiftyCandles) return !settings.RequireNiftyMarketFilter;
 
         var closes = niftyCandles.Select(c => c.Close).ToList();
-        var sma50 = IndicatorCalculator.CalculateSma(closes, 50);
-        var ema20 = IndicatorCalculator.CalculateEma(closes, 20);
-        var ema50 = IndicatorCalculator.CalculateEma(closes, 50);
+        var sma50 = IndicatorCalculator.CalculateSma(closes, rules.NiftySmaPeriod);
+        var ema20 = IndicatorCalculator.CalculateEma(closes, rules.NiftyEmaFast);
+        var ema50 = IndicatorCalculator.CalculateEma(closes, rules.NiftyEmaSlow);
 
         int idx = niftyCandles.Count - 1;
         bool isAboveSma50 = closes[idx] > sma50[idx];
@@ -526,48 +528,48 @@ public static class SwingDecisionEngine
         bool requireNifty, bool niftyPassed, bool emaTrendPassed, bool adxPassed, bool breakoutPassed,
         bool volSpikePassed, bool rsPassed, bool mtfPassed, bool rsiPassed, bool macdPassed,
         bool candlePassed, bool rrPassed,
-        decimal price, decimal ema20, decimal ema50, decimal volMult, decimal adx, decimal rsi, decimal rr)
+        decimal price, decimal ema20, decimal ema50, decimal volMult, decimal adx, decimal rsi, decimal rr, SwingRuleParameters rules)
     {
         var niftyItem = requireNifty
-            ? new ConditionItemDto("HARD_NIFTY_MARKET_FILTER", "1. [HARD FILTER] Nifty Market Filter", "Nifty 50 Close > 50 DMA & EMA20 > EMA50 (mandatory - no stock is bought when this fails)",
-                niftyPassed ? "Passed (Market Uptrend)" : "Failed (Market Weak - No New Entries)", "Close > SMA50 & EMA20 > EMA50", niftyPassed)
-            : new ConditionItemDto("MARKET_CONTEXT_FILTER", "1. [MARKET CONTEXT - RISK FACTOR] Nifty Market Filter", "Nifty 50 Close > 50 DMA & EMA20 > EMA50 (does not block trade; applies score/size penalty when failed)",
-                niftyPassed ? "Passed (Market Uptrend)" : "Failed (Defensive Mode - Risk Adjustment Applied)", "Close > SMA50 & EMA20 > EMA50", niftyPassed);
+            ? new ConditionItemDto("HARD_NIFTY_MARKET_FILTER", "1. [HARD FILTER] Nifty Market Filter", $"Nifty 50 Close > {rules.NiftySmaPeriod} DMA & EMA{rules.NiftyEmaFast} > EMA{rules.NiftyEmaSlow} (mandatory - no stock is bought when this fails)",
+                niftyPassed ? "Passed (Market Uptrend)" : "Failed (Market Weak - No New Entries)", $"Close > SMA{rules.NiftySmaPeriod} & EMA{rules.NiftyEmaFast} > EMA{rules.NiftyEmaSlow}", niftyPassed)
+            : new ConditionItemDto("MARKET_CONTEXT_FILTER", "1. [MARKET CONTEXT - RISK FACTOR] Nifty Market Filter", $"Nifty 50 Close > {rules.NiftySmaPeriod} DMA & EMA{rules.NiftyEmaFast} > EMA{rules.NiftyEmaSlow} (does not block trade; applies score/size penalty when failed)",
+                niftyPassed ? "Passed (Market Uptrend)" : "Failed (Defensive Mode - Risk Adjustment Applied)", $"Close > SMA{rules.NiftySmaPeriod} & EMA{rules.NiftyEmaFast} > EMA{rules.NiftyEmaSlow}", niftyPassed);
 
         var conditions = new List<ConditionItemDto>
         {
             niftyItem,
 
-            new("HARD_EMA_TREND", "2. [HARD FILTER] EMA Trend Alignment", "Daily Close > EMA20 > EMA50 with rising slopes",
-                emaTrendPassed ? $"Passed (Close ₹{price:F1} > EMA20 ₹{ema20:F1} > EMA50 ₹{ema50:F1})" : $"Close ₹{price:F1}, EMA20 ₹{ema20:F1}",
-                "Close > EMA20 > EMA50", emaTrendPassed),
+            new("HARD_EMA_TREND", "2. [HARD FILTER] EMA Trend Alignment", $"Daily Close > EMA{rules.TrendEmaFast} > EMA{rules.TrendEmaSlow} with rising slopes",
+                emaTrendPassed ? $"Passed (Close ₹{price:F1} > EMA{rules.TrendEmaFast} ₹{ema20:F1} > EMA{rules.TrendEmaSlow} ₹{ema50:F1})" : $"Close ₹{price:F1}, EMA{rules.TrendEmaFast} ₹{ema20:F1}",
+                $"Close > EMA{rules.TrendEmaFast} > EMA{rules.TrendEmaSlow}", emaTrendPassed),
 
-            new("HARD_ADX_STRENGTH", "3. [HARD FILTER] ADX Trend Strength", "Daily ADX (14) >= 20.0 (Filters out choppy markets)",
-                $"{adx:F1} ({(adx >= 20m ? "Passed" : "Weak/Choppy")})", "ADX >= 20.0", adxPassed),
+            new("HARD_ADX_STRENGTH", "3. [HARD FILTER] ADX Trend Strength", $"Daily ADX ({rules.AdxPeriod}) >= {rules.AdxMin:0.0} (Filters out choppy markets)",
+                $"{adx:F1} ({(adx >= rules.AdxMin ? "Passed" : "Weak/Choppy")})", $"ADX >= {rules.AdxMin:0.0}", adxPassed),
 
-            new("BREAKOUT_GROUP", "4. Breakout Group (20 Pts)", "15m Close > Previous Day High / Consolidation / 52W High",
+            new("BREAKOUT_GROUP", $"4. Breakout Group ({rules.BreakoutPoints} Pts)", "15m Close > Previous Day High / Consolidation / 52W High",
                 breakoutPassed ? "Passed (Breakout Confirmed)" : "Inside Range", "Breakout Confirmed", breakoutPassed),
 
-            new("VOL_CONFIRMATION", "5. Volume Confirmation (15 Pts)", "15m Volume >= 1.5x the usual volume for this time of day (same slot on earlier days) & > Prev Vol",
-                volSpikePassed ? $"Passed ({volMult:F1}x Avg Vol)" : $"{volMult:F1}x Avg Vol", ">= 1.5x Avg Vol", volSpikePassed),
+            new("VOL_CONFIRMATION", $"5. Volume Confirmation ({rules.VolumePoints} Pts)", $"15m Volume >= {rules.VolumeGoodMultiple:0.0#}x the usual volume for this time of day (same slot on earlier days) & > Prev Vol",
+                volSpikePassed ? $"Passed ({volMult:F1}x Avg Vol)" : $"{volMult:F1}x Avg Vol", $">= {rules.VolumeGoodMultiple:0.0#}x Avg Vol", volSpikePassed),
 
-            new("RELATIVE_STRENGTH", "6. Relative Strength vs Nifty (15 Pts)", "Stock 1M / 3M Return > Nifty 50 Return",
+            new("RELATIVE_STRENGTH", $"6. Relative Strength vs Nifty ({rules.RelativeStrengthPoints} Pts)", rules.RelativeStrengthBars == 20 ? "Stock 1M / 3M Return > Nifty 50 Return" : $"Stock {rules.RelativeStrengthBars}-day Return > Nifty 50 Return",
                 rsPassed ? "Passed (Outperforming Nifty)" : "Underperforming", "Stock Return > Nifty Return", rsPassed),
 
-            new("MULTITIMEFRAME", "7. Multi-Timeframe Confirmation (15 Pts)", "60m Close > 60m EMA20 & 60m RSI >= 40",
-                mtfPassed ? "Passed (60m Hourly Bullish)" : "60m Bearish", "60m Close > EMA20", mtfPassed),
+            new("MULTITIMEFRAME", $"7. Multi-Timeframe Confirmation ({rules.Mtf60mPoints} Pts)", $"60m Close > 60m EMA{rules.Mtf60mEmaPeriod} & 60m RSI >= {rules.Mtf60mRsiMinBuy:0.##}",
+                mtfPassed ? "Passed (60m Hourly Bullish)" : "60m Bearish", $"60m Close > EMA{rules.Mtf60mEmaPeriod}", mtfPassed),
 
-            new("RSI_MOMENTUM", "8. RSI Momentum Zone (10 Pts)", "15m RSI (14) between 50 and 75 (Best: 55-70)",
-                $"{rsi:F1}", "50.0 - 75.0 Zone", rsiPassed),
+            new("RSI_MOMENTUM", $"8. RSI Momentum Zone ({rules.RsiPoints} Pts)", $"15m RSI ({rules.RsiPeriod}) between {rules.RsiBuyOkLow:0.##} and {rules.RsiBuyOkHigh:0.##} (Best: {rules.RsiBuyBestLow:0.##}-{rules.RsiBuyBestHigh:0.##})",
+                $"{rsi:F1}", $"{rules.RsiBuyOkLow:0.0} - {rules.RsiBuyOkHigh:0.0} Zone", rsiPassed),
 
-            new("MACD_BULLISH", "9. MACD Bullish Signal (10 Pts)", "15m MACD Line > Signal Line",
+            new("MACD_BULLISH", $"9. MACD Bullish Signal ({rules.MacdPoints} Pts)", "15m MACD Line > Signal Line",
                 macdPassed ? "Passed (MACD > Signal)" : "MACD Bearish", "MACD > Signal Line", macdPassed),
 
-            new("BULLISH_CANDLE", "10. Bullish Candle Pattern (8 Pts)", "15m Bullish Engulfing, Marubozu, or Close near High",
+            new("BULLISH_CANDLE", $"10. Bullish Candle Pattern ({rules.CandlePoints} Pts)", "15m Bullish Engulfing, Marubozu, or Close near High",
                 candlePassed ? "Passed (Bullish Candle)" : "Weak Candle", "Bullish Candle Pattern", candlePassed),
 
-            new("RISK_REWARD", "11. Risk/Reward Ratio (7 Pts)", "Suggested Target 1 vs Stop Loss Ratio >= 1:2.0",
-                rrPassed ? $"Passed (1:{rr:F1} R:R)" : $"Failed (1:{rr:F1} R:R)", "Risk Reward Ratio >= 1:2.0", rrPassed)
+            new("RISK_REWARD", $"11. Risk/Reward Ratio ({rules.RiskRewardPoints} Pts)", $"Suggested Target 1 vs Stop Loss Ratio >= 1:{rules.MinRiskReward:0.0}",
+                rrPassed ? $"Passed (1:{rr:F1} R:R)" : $"Failed (1:{rr:F1} R:R)", $"Risk Reward Ratio >= 1:{rules.MinRiskReward:0.0}", rrPassed)
         };
 
         int metCount = conditions.Count(c => c.IsMet);

@@ -92,8 +92,22 @@ public static class TradeConditionRules
     public static int EnabledCount(TradeConditionProfile profile, bool regimeMode) =>
         All.Count(c => IsApplied(profile, c, regimeMode));
 
-    public static int EnabledMaxPoints(TradeConditionProfile profile, bool regimeMode) =>
-        All.Where(c => !c.IsHardFilter && IsApplied(profile, c, regimeMode)).Sum(c => c.MaxPoints);
+    public static int EnabledMaxPoints(TradeConditionProfile profile, bool regimeMode, SwingRuleParameters? rules = null) =>
+        All.Where(c => !c.IsHardFilter && IsApplied(profile, c, regimeMode)).Sum(c => MaxPointsOf(c, rules ?? new SwingRuleParameters()));
+
+    /// <summary>The points a condition can earn under these rule numbers (hard filters earn none).</summary>
+    public static int MaxPointsOf(TradeCondition c, SwingRuleParameters rules) => c.Key switch
+    {
+        Breakout => rules.BreakoutPoints,
+        Volume => rules.VolumePoints,
+        RelativeStrength => rules.RelativeStrengthPoints,
+        Mtf60m => rules.Mtf60mPoints,
+        Rsi => rules.RsiPoints,
+        Macd => rules.MacdPoints,
+        Candle => rules.CandlePoints,
+        RiskReward => rules.RiskRewardPoints,
+        _ => 0
+    };
 
     /// <summary>The profile's min-conditions (or <paramref name="fallbackMinMatch"/>), kept within 1..conditions ON.</summary>
     public static int EffectiveMinMatch(TradeConditionProfile profile, bool regimeMode, int fallbackMinMatch) =>
@@ -153,7 +167,7 @@ public static class TradeConditionRules
                 continue;
             }
 
-            maxPoints += c.MaxPoints;
+            maxPoints += MaxPointsOf(c, settings.Rules);
             int points = FactorPoints(r, isShort ? c.ShortFactorCode : c.BuyFactorCode);
             earned += points;
             if (points > 0) met++;

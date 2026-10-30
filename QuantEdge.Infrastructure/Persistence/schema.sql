@@ -1444,6 +1444,9 @@ ON CONFLICT (regime) DO NOTHING;
 --   REGIME - market_regime_daily + regime_policy decide (strong stocks may still be bought in a weak market)
 ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS market_gate_mode VARCHAR(20) NOT NULL DEFAULT 'NIFTY_FILTER';
 
+-- The numbers behind the 11 swing conditions (SwingRuleParameters, Trade Conditions page > Rule numbers). NULL = the original values.
+ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS rule_parameters JSONB;
+
 -- ----------------------------------------------------------------------------
 -- Tables: backtest_runs / backtest_trades (Plan Phase 7 - backtesting)
 -- A run is queued from the Backtest page (status QUEUED), picked up by BacktestWorker in the plain "marketdatafeed"

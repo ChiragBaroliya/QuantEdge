@@ -60,9 +60,43 @@
           why: "The suggested target is worth the risk." }
     ];
 
+    // The saved rule numbers (strategy-rules.js): the points and rule text above are the originals, shown until these arrive.
+    const POINT_KEY = {
+        BREAKOUT: "breakoutPoints", VOLUME: "volumePoints", REL_STRENGTH: "relativeStrengthPoints", MTF_60M: "mtf60mPoints",
+        RSI: "rsiPoints", MACD: "macdPoints", CANDLE: "candlePoints", RISK_REWARD: "riskRewardPoints"
+    };
+    const LIVE_RULE = {
+        MARKET: (r, s) => s === "BUY"
+            ? `NIFTY 50 Close > ${r.niftySmaPeriod} DMA and EMA${r.niftyEmaFast} > EMA${r.niftyEmaSlow}`
+            : `NIFTY 50 Close < ${r.niftySmaPeriod} DMA and EMA${r.niftyEmaFast} < EMA${r.niftyEmaSlow}`,
+        TREND: (r, s) => s === "BUY"
+            ? `Daily Close > EMA${r.trendEmaFast} > EMA${r.trendEmaSlow}, both rising; EMA${r.trendEmaLong} not falling`
+            : `Daily Close < EMA${r.trendEmaFast} < EMA${r.trendEmaSlow}, both falling; EMA${r.trendEmaLong} not rising`,
+        ADX: (r) => `Daily ADX(${r.adxPeriod}) ≥ ${r.adxMin}`,
+        BREAKOUT: (r, s) => s === "BUY"
+            ? `Above previous day high or ${r.swingLookbackBars}-bar swing high, a ≤${r.consolidationMaxRangePct}% range breakout, or within ${r.near52WeekPct}% of the 52W high`
+            : `Below previous day low or swing low, a ≤${r.consolidationMaxRangePct}% range breakdown, or within ${r.near52WeekPct}% of the 52W low`,
+        VOLUME: (r) => `≥ ${r.volumeGoodMultiple}× usual volume for this time slot = ${r.volumeGoodPoints} pts; ≥ ${r.volumeHeavyMultiple}× and above the previous bar = ${r.volumePoints} pts`,
+        REL_STRENGTH: (r, s) => s === "BUY"
+            ? `Stock's ${r.relativeStrengthBars}-day return beats NIFTY 50's over the same dates`
+            : `Stock's ${r.relativeStrengthBars}-day return is below NIFTY 50's`,
+        MTF_60M: (r, s) => s === "BUY"
+            ? `60m Close > 60m EMA${r.mtf60mEmaPeriod} and 60m RSI ≥ ${r.mtf60mRsiMinBuy}`
+            : `60m Close < 60m EMA${r.mtf60mEmaPeriod} and 60m RSI ≤ ${r.mtf60mRsiMaxShort}`,
+        RSI: (r, s) => s === "BUY"
+            ? `RSI(${r.rsiPeriod}) ${r.rsiBuyBestLow}–${r.rsiBuyBestHigh} = ${r.rsiPoints} pts; ${r.rsiBuyOkLow}–${r.rsiBuyOkHigh} = ${r.rsiGoodPoints} pts`
+            : `RSI(${r.rsiPeriod}) ${r.rsiShortBestLow}–${r.rsiShortBestHigh} = ${r.rsiPoints} pts; ${r.rsiShortOkLow}–${r.rsiShortOkHigh} = ${r.rsiGoodPoints} pts`,
+        CANDLE: (r, s) => s === "BUY"
+            ? `Green candle closing in the top ${r.candleCloseZonePct}% of its range, or body ≥ ${r.candleBodyAtrMultiple}× ATR`
+            : `Red candle closing in the bottom ${r.candleCloseZonePct}% of its range, or body ≥ ${r.candleBodyAtrMultiple}× ATR`,
+        RISK_REWARD: (r) => `Stop ${r.stopAtrMultiple}× ATR, Target 1 = ${r.target1R}R → R:R ≥ 1:${r.minRiskReward}`
+    };
+
     // ---------------------------------------------------------------- state
     let apiBaseUrl = "";
     let realUserId = 1;
+    let liveRules = null;
+    let watchThreshold = 50;
     let buyThreshold = 70;
     let regimeMode = false;
     let loaded = false;
@@ -100,7 +134,9 @@
     const isRegimeManaged = (c, s) => regimeMode && s === "BUY" && c.key === "MARKET";
     const isApplied = (p, c) => p.enabled[c.key] && !isRegimeManaged(c, p.side);
     const appliedCount = (p) => CONDITIONS.filter(c => isApplied(p, c)).length;
-    const scoringPoints = (p) => CONDITIONS.filter(c => !c.hard && isApplied(p, c)).reduce((s, c) => s + c.pts, 0);
+    const pointsOf = (c) => liveRules && POINT_KEY[c.key] ? liveRules[POINT_KEY[c.key]] : c.pts;
+    const ruleText = (c, s) => liveRules && LIVE_RULE[c.key] ? LIVE_RULE[c.key](liveRules, s) : c.rule[s];
+    const scoringPoints = (p) => CONDITIONS.filter(c => !c.hard && isApplied(p, c)).reduce((s, c) => s + pointsOf(c), 0);
     const hardFilterOff = (p) => CONDITIONS.some(c => c.hard && !p.enabled[c.key] && !isRegimeManaged(c, p.side));
 
     // ---------------------------------------------------------------- API
@@ -170,10 +206,10 @@
                 el("div", { class: "tc-row-body" },
                     el("div", { class: "tc-row-title" },
                         el("span", { text: c.name[side] }),
-                        el("span", { class: `tc-badge ${c.hard ? "tc-badge-hard" : "tc-badge-score"}`, text: c.hard ? "Hard" : `${c.pts} pts` }),
+                        el("span", { class: `tc-badge ${c.hard ? "tc-badge-hard" : "tc-badge-score"}`, text: c.hard ? "Hard" : `${pointsOf(c)} pts` }),
                         el("span", { class: "tc-badge tc-badge-tf", text: c.tf }),
                         locked ? el("span", { class: "tc-badge tc-badge-lock", text: "Managed by market regime" }) : null),
-                    el("p", { class: "tc-row-rule", text: c.rule[side] }),
+                    el("p", { class: "tc-row-rule", text: ruleText(c, side) }),
                     el("p", { class: "tc-row-why", text: c.why })),
                 el("label", { class: "tc-switch" }, input, el("span", { class: "tc-slider" })));
 
@@ -205,6 +241,8 @@
         minInput.disabled = !loaded;
         $("tcMinMatchOf").textContent = `of ${applied.length} on`;
         $("tcSignalChip").textContent = `${side} ≥ ${buyThreshold}`;
+        $("tcWatchChip").textContent = `WATCH ≥ ${watchThreshold}`;
+        $("tcScoreIntro").textContent = `Each adds points to the score. A score of ${buyThreshold} or more is a signal; ${watchThreshold}–${buyThreshold - 1} is WATCH.`;
 
         const alerts = $("tcAlerts");
         alerts.replaceChildren();
@@ -381,6 +419,15 @@
         }
         render();
     }
+
+    document.addEventListener("strategyrules:changed", (e) => {
+        liveRules = e.detail.rules;
+        buyThreshold = e.detail.buyScoreThreshold;
+        watchThreshold = e.detail.watchScoreThreshold;
+        regimeMode = (e.detail.marketGateMode || "").toUpperCase() === "REGIME";
+        $("tcGateLabel").textContent = regimeMode ? "REGIME" : "NIFTY_FILTER";
+        render();
+    });
 
     document.addEventListener("DOMContentLoaded", init);
 })();

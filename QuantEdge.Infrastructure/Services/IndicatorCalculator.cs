@@ -112,22 +112,22 @@ public static class IndicatorCalculator
     /// <summary>
     /// Computes MACD and MACD Signal Line.
     /// </summary>
-    public static (List<decimal> Macd, List<decimal> Signal) CalculateMacd(List<decimal> prices)
+    public static (List<decimal> Macd, List<decimal> Signal) CalculateMacd(List<decimal> prices, int fastPeriod = 12, int slowPeriod = 26, int signalPeriod = 9)
     {
         var macd = new List<decimal>();
         var signal = new List<decimal>();
 
         if (prices.Count == 0) return (macd, signal);
 
-        var ema12 = CalculateEma(prices, 12);
-        var ema26 = CalculateEma(prices, 26);
+        var ema12 = CalculateEma(prices, fastPeriod);
+        var ema26 = CalculateEma(prices, slowPeriod);
 
         for (int i = 0; i < prices.Count; i++)
         {
             macd.Add(ema12[i] - ema26[i]);
         }
 
-        signal = CalculateEma(macd, 9);
+        signal = CalculateEma(macd, signalPeriod);
 
         return (macd, signal);
     }

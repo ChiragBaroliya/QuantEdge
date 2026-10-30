@@ -144,7 +144,7 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
             shortProfiles[u.UserId] = ProfileFor(storedProfiles, u.UserId, TradeConditionProfile.SideShort);
         }
 
-        bool niftyBearish = SwingShortDecisionEngine.IsNiftyBearishFilterPassed(niftyCandles);
+        bool niftyBearish = SwingShortDecisionEngine.IsNiftyBearishFilterPassed(niftyCandles, strategySettings);
         var shortUsers = activeUserSettings
             .Where(u => u.IsAutoShortEnabled && SwingTradeRules.IsBeforeShortEntryCutoff(u.ShortEntryCutoff, nowIst)
                 && (niftyBearish || !shortProfiles[u.UserId].IsEnabled(TradeConditionRules.Market)))

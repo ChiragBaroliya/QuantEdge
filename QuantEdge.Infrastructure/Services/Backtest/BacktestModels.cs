@@ -24,6 +24,8 @@ public class BacktestParams
     public int? WatchScoreThreshold { get; set; }
     /// <summary>NIFTY_FILTER mode: the bot also buys when at least this many of the 11 conditions are met (live rule).</summary>
     public int? MinConditionsMatch { get; set; }
+    /// <summary>The rule numbers this run used (blank = the live ones when queued; older runs have none and use the live ones).</summary>
+    public QuantEdge.Domain.Entities.SwingRuleParameters? Rules { get; set; }
 
     // Portfolio
     public decimal Capital { get; set; } = 100_000m;

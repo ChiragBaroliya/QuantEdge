@@ -49,6 +49,9 @@ public interface IMarketRegimeService
     Task<IReadOnlyList<MarketRegimeReading>> GetHistoryAsync(int days);
     Task<IReadOnlyList<RegimePolicy>> GetPoliciesAsync();
 
+    /// <summary>Saves the policies' score bar, relative-strength rule, max positions and risk. max_exposure_pct is left alone.</summary>
+    Task SavePoliciesAsync(IReadOnlyList<RegimePolicy> policies);
+
     /// <summary>Computes and stores every missing reading of the last <paramref name="backfillDays"/> sessions and always recomputes the latest one. DB only.</summary>
     Task<MarketRegimeReading?> ComputeAndStoreAsync(int backfillDays = 60);
 
@@ -112,6 +115,25 @@ public class MarketRegimeService : IMarketRegimeService
             _logger.LogWarning(ex, "regime_policy not readable (apply schema.sql) - using built-in defaults.");
             return RegimePolicy.Defaults;
         }
+    }
+
+    public async Task SavePoliciesAsync(IReadOnlyList<RegimePolicy> policies)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+        foreach (var p in policies)
+        {
+            await connection.ExecuteAsync(@"
+                INSERT INTO regime_policy (regime, min_stock_score, require_relative_strength, max_positions, risk_pct, max_exposure_pct, description)
+                VALUES (@Regime, @MinStockScore, @RequireRelativeStrength, @MaxPositions, @RiskPct, @MaxExposurePct, @Description)
+                ON CONFLICT (regime) DO UPDATE SET
+                    min_stock_score = EXCLUDED.min_stock_score,
+                    require_relative_strength = EXCLUDED.require_relative_strength,
+                    max_positions = EXCLUDED.max_positions,
+                    risk_pct = EXCLUDED.risk_pct;", p, transaction);
+        }
+        transaction.Commit();
     }
 
     public async Task<MarketRegimeReading?> ComputeAndStoreAsync(int backfillDays = 60)
@@ -252,6 +274,7 @@ public static class RegimeGate
         MarketContextPositionSizeFactor = 1m,
         MarketProtectionBufferPct = s.MarketProtectionBufferPct,
         MarketGateMode = s.MarketGateMode,
+        Rules = s.Rules,
         UpdatedAt = s.UpdatedAt
     };
 }

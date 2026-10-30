@@ -147,7 +147,7 @@ public class AutoTradeSignalScanWorker : BackgroundService
 
         bool shortGateOpen = settings.IsAutoShortEnabled
             && SwingTradeRules.IsBeforeShortEntryCutoff(settings.ShortEntryCutoff, SwingTradeRules.NowIst())
-            && (SwingShortDecisionEngine.IsNiftyBearishFilterPassed(niftyCandles) || !shortProfile.IsEnabled(TradeConditionRules.Market));
+            && (SwingShortDecisionEngine.IsNiftyBearishFilterPassed(niftyCandles, strategySettings) || !shortProfile.IsEnabled(TradeConditionRules.Market));
 
         MarketGateDecision? regimeGate = null;
         var engineSettings = strategySettings;

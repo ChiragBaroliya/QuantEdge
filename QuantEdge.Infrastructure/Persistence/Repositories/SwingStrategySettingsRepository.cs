@@ -1,9 +1,11 @@
 using System;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.Interfaces;
+using QuantEdge.Infrastructure.Services;
 
 namespace QuantEdge.Infrastructure.Persistence.Repositories;
 
@@ -52,6 +54,7 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
                     ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS market_protection_buffer_pct NUMERIC(6, 4) NOT NULL DEFAULT 0.005;
                     ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS require_nifty_market_filter BOOLEAN NOT NULL DEFAULT TRUE;
                     ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS market_gate_mode VARCHAR(20) NOT NULL DEFAULT 'NIFTY_FILTER';
+                    ALTER TABLE swing_strategy_settings ADD COLUMN IF NOT EXISTS rule_parameters JSONB;
                     INSERT INTO swing_strategy_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
                 ");
                 _tableEnsured = true;
@@ -78,6 +81,7 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
             "SELECT * FROM swing_strategy_settings WHERE id = 1;");
 
         var settings = row?.ToDomain() ?? SwingStrategySettings.Default;
+        settings.Rules = ReadRules(row?.RuleParameters);
 
         if (_cacheService != null)
         {
@@ -116,6 +120,49 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
         return await GetSettingsAsync();
     }
 
+    public async Task<SwingStrategySettings> UpdateRulesAsync(SwingRuleParameters rules, int buyScoreThreshold, int watchScoreThreshold, string marketGateMode)
+    {
+        EnsureTableCreated();
+
+        using var conn = _connectionFactory.CreateConnection();
+        await conn.ExecuteAsync(@"
+            INSERT INTO swing_strategy_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+            UPDATE swing_strategy_settings SET
+                rule_parameters = CAST(@json AS JSONB),
+                buy_score_threshold = @buyScoreThreshold,
+                watch_score_threshold = @watchScoreThreshold,
+                market_gate_mode = @marketGateMode,
+                updated_at = NOW()
+            WHERE id = 1;",
+            new { json = JsonSerializer.Serialize(rules), buyScoreThreshold, watchScoreThreshold, marketGateMode });
+
+        if (_cacheService != null)
+        {
+            await _cacheService.RemoveAsync(CacheKey);
+        }
+
+        return await GetSettingsAsync();
+    }
+
+    // Numbers that can't be read or used (say, hand-edited in the database) must never reach the engines: the original
+    // values are used instead, and the error says so. Fields missing from older JSON take their defaults.
+    private SwingRuleParameters ReadRules(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new SwingRuleParameters();
+        try
+        {
+            var rules = JsonSerializer.Deserialize<SwingRuleParameters>(json) ?? new SwingRuleParameters();
+            var errors = SwingRuleCatalog.Validate(rules);
+            if (errors.Count == 0) return rules;
+            _logger.LogError("swing_strategy_settings.rule_parameters is invalid - using the default rule numbers: {Errors}", string.Join(" ", errors));
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "swing_strategy_settings.rule_parameters could not be read - using the default rule numbers.");
+        }
+        return new SwingRuleParameters();
+    }
+
     private class SwingStrategySettingsRow
     {
         public int Id { get; set; }
@@ -126,6 +173,7 @@ public class SwingStrategySettingsRepository : ISwingStrategySettingsRepository
         public decimal MarketProtectionBufferPct { get; set; }
         public bool RequireNiftyMarketFilter { get; set; } = true;
         public string? MarketGateMode { get; set; }
+        public string? RuleParameters { get; set; }
         public DateTime UpdatedAt { get; set; }
 
         public SwingStrategySettings ToDomain() => new()
