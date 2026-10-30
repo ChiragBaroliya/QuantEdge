@@ -183,7 +183,8 @@ window.showToast = function (message, type, duration) {
     };
 
     var toast = document.createElement('div');
-    toast.className = 'toast toast-' + type;
+    // "show": Bootstrap's .toast:not(.show) { display: none } would otherwise hide every message.
+    toast.className = 'toast show toast-' + type;
     toast.innerHTML =
         '<div class="toast-icon">' + (icons[type] || icons.info) + '</div>' +
         '<div class="toast-msg">' + message + '</div>' +

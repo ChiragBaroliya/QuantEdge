@@ -149,6 +149,14 @@
         refreshSummary();
     }
 
+    // Shown next to Save and kept until the next change, so the result can't be missed.
+    function setSaveStatus(kind, text) {
+        const status = $("srSaveStatus");
+        status.hidden = !kind;
+        status.className = kind ? `tc-save-status is-${kind}` : "tc-save-status";
+        status.textContent = text || "";
+    }
+
     function refreshSummary() {
         const total = totalPoints();
         const need = server.requiredTotalPoints;
@@ -171,7 +179,14 @@
         const dirty = $("srDirty");
         dirty.hidden = changes === 0;
         dirty.textContent = `● Unsaved: ${changes} change${changes === 1 ? "" : "s"}`;
-        $("srSave").disabled = changes === 0 || invalid.length > 0 || total !== need || !$("srConfirm").checked;
+        const blocked = changes === 0 ? "No changes to save."
+            : invalid.length > 0 ? "Fix the fields marked in red to enable Save."
+            : total !== need ? `Scoring points must total ${need} to enable Save.`
+            : !$("srConfirm").checked ? "Tick the box above to enable Save."
+            : "";
+        $("srSave").disabled = blocked !== "";
+        $("srSaveHint").textContent = blocked;
+        if (changes > 0 && !$("srSaveStatus").classList.contains("is-saving") && !$("srSaveStatus").classList.contains("is-error")) setSaveStatus(null);
 
         const alerts = $("srAlerts");
         alerts.replaceChildren();
@@ -241,6 +256,7 @@
 
         const btn = $("srSave");
         btn.disabled = true;
+        setSaveStatus("saving", "Saving…");
         try {
             const res = await fetch(`${apiBaseUrl}/api/strategyrules`, {
                 method: "PUT",
@@ -251,14 +267,17 @@
                 let payload = null;
                 try { payload = await res.json(); } catch { /* not JSON */ }
                 serverErrors = payload?.errors?.length ? payload.errors : [payload?.message || `HTTP ${res.status}`];
+                setSaveStatus("error", `✗ Not saved: ${serverErrors.length === 1 ? serverErrors[0] : `${serverErrors.length} problems, listed above.`}`);
                 refreshSummary();
                 window.showToast?.("Not saved - see the problems listed above the Save button.", "error");
                 return;
             }
             accept(await res.json());
+            setSaveStatus("ok", `✓ Saved at ${new Date().toLocaleTimeString()}. Both bots use these numbers within 5 minutes, from their next scan.`);
             window.showToast?.("Rule numbers saved. Both bots use them within 5 minutes, from their next scan.", "success");
         } catch (err) {
             serverErrors = [err.message];
+            setSaveStatus("error", `✗ Not saved: ${err.message}`);
             refreshSummary();
             window.showToast?.(`Not saved: ${err.message}`, "error");
         }

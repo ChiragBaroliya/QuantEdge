@@ -377,7 +377,15 @@
     .tc-seg-btn { flex: 1; justify-content: center; }
 }
 
+/* What happened to the last Save: stays on the page, unlike a toast */
+.tc-save-status { margin: 10px 0 0; padding: 8px 12px; border-radius: 8px; border: 1px solid transparent; font-size: 12.5px; font-weight: 600; }
+.tc-save-status[hidden] { display: none; }
+.tc-save-status.is-saving { background: var(--bg-input); border-color: var(--border-subtle); color: var(--text-secondary); }
+.tc-save-status.is-ok { background: rgba(52, 211, 153, .1); border-color: rgba(52, 211, 153, .35); color: var(--accent-green); }
+.tc-save-status.is-error { background: rgba(248, 113, 113, .1); border-color: rgba(248, 113, 113, .4); color: var(--accent-red); }
+
 /* Rule numbers tab (strategy-rules.js) */
+.sr-save-hint { margin: 0; text-align: right; }
 .tc-view { display: flex; flex-direction: column; gap: 16px; }
 .tc-view[hidden], #tcViewRules[hidden], #srForm[hidden], .tc-risk[hidden] { display: none; }
 .sr-form, .sr-groups { display: flex; flex-direction: column; gap: 16px; }

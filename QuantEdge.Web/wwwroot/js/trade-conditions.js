@@ -176,6 +176,14 @@
         }
     }
 
+    // Shown next to Save and kept until the next change, so the result can't be missed.
+    function setSaveStatus(kind, text) {
+        const status = $("tcSaveStatus");
+        status.hidden = !kind;
+        status.className = kind ? `tc-save-status is-${kind}` : "tc-save-status";
+        status.textContent = text || "";
+    }
+
     function setStatus(text, kind) {
         const pill = $("tcStatusPill");
         pill.textContent = text;
@@ -300,6 +308,7 @@
     }
 
     function setEnabled(key, on) {
+        setSaveStatus(null);
         const p = profile();
         p.enabled[key] = on;
         if (clampMinMatch(p)) {
@@ -309,6 +318,7 @@
     }
 
     function setBulk(group, on) {
+        setSaveStatus(null);
         const p = profile();
         for (const c of CONDITIONS) {
             if ((group === "hard") === c.hard) p.enabled[c.key] = on;
@@ -327,6 +337,7 @@
 
     async function save() {
         if (mode === "AUTO_REAL" && SIDES.some(s => hardFilterOff(state.AUTO_REAL[s])) && !riskAccepted.AUTO_REAL) {
+            setSaveStatus("error", "✗ Not saved: a hard filter is OFF on Auto Real. Tick the risk confirmation above, then Save.");
             window.showToast?.("A hard filter is OFF on Auto Real - tick the risk confirmation before saving.", "warning");
             return;
         }
@@ -339,6 +350,7 @@
 
         const btn = $("tcSave");
         btn.disabled = true;
+        setSaveStatus("saving", "Saving…");
         try {
             const res = await fetch(`${apiBaseUrl}/api/tradeconditions?${modeQuery(mode)}`, {
                 method: "PUT",
@@ -346,13 +358,17 @@
                 body: JSON.stringify(body)
             });
             if (!res.ok) {
-                window.showToast?.(`Not saved: ${await readError(res)}`, "error");
+                const problem = await readError(res);
+                setSaveStatus("error", `✗ Not saved: ${problem}`);
+                window.showToast?.(`Not saved: ${problem}`, "error");
                 return;
             }
             fromDto(mode, await res.json());
             render();
+            setSaveStatus("ok", `✓ ${MODE_LABEL[mode]} saved at ${new Date().toLocaleTimeString()}. The bot uses it from its next scan.`);
             window.showToast?.(`${MODE_LABEL[mode]} Trade Conditions saved - the bot uses them from its next scan.`, "success");
         } catch (err) {
+            setSaveStatus("error", `✗ Not saved: ${err.message}`);
             window.showToast?.(`Not saved: ${err.message}`, "error");
         } finally {
             renderSummary();
@@ -379,6 +395,7 @@
             const total = appliedCount(p);
             const v = parseInt(e.target.value, 10);
             p.minMatch = Number.isFinite(v) ? Math.min(Math.max(v, 1), Math.max(1, total)) : p.minMatch;
+            setSaveStatus(null);
             render();
         });
 
