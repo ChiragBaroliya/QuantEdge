@@ -88,6 +88,9 @@ try
     // Enable CORS before authorization and endpoint mappings
     app.UseCors();
 
+    // After CORS, so a rejection still reaches the browser as a readable response.
+    app.UseMiddleware<QuantEdge.Infrastructure.Security.ApiAccessTokenMiddleware>();
+
     app.UseAuthorization();
 
     app.MapControllers();
@@ -122,10 +125,10 @@ try
 
             await context.Response.WriteAsync(json);
         }
-    });
+    }).AllowAnonymous();
 
     // Map SignalR Hub
-    app.MapHub<MarketDataHub>("/hubs/marketdata");
+    app.MapHub<MarketDataHub>("/hubs/marketdata").AllowAnonymous();
 
     await app.RunAsync();
 }

@@ -267,7 +267,7 @@ public class AutoTradeSignalScanWorker : BackgroundService
 
                             bool executed = await autoTradeService.EvaluateAndExecuteAutoBuyAsync(
                                 stock.Symbol, scored.EntryPrice, metCount, settings.UserId, isSignal || regimeGate?.Policy != null,
-                                scored.StopLoss, scored.Target1, scored.DailyAtr, regimeGate?.Policy?.RiskPct, conditionGate);
+                                scored.StopLoss, scored.Target1, scored.DailyAtr, regimeGate?.Policy?.RiskPct, conditionGate, regimeGate?.Policy?.MaxExposurePct);
 
                             if (executed)
                             {

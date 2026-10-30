@@ -233,6 +233,21 @@ public static class SwingTradeRules
             : (byAmount, $"fixed amount ₹{maxPositionValue:N0} (risk ₹{byAmount * riskPerShare:N0} ≤ ₹{riskBudget:N0} budget)");
     }
 
+    /// <summary>
+    /// The market regime's exposure limit: shares that fit in capital x <paramref name="maxExposurePct"/> % once the open
+    /// positions are counted at cost. It can only lower the quantity; 0 means no room. No limit without a percentage or capital.
+    /// </summary>
+    public static (int Quantity, string Reason) LimitQuantityByExposure(int quantity, decimal entryPrice, decimal openValue, decimal capital, decimal? maxExposurePct)
+    {
+        if (maxExposurePct == null || capital <= 0m || entryPrice <= 0m) return (quantity, string.Empty);
+
+        decimal limit = capital * maxExposurePct.Value / 100m;
+        int room = (int)Math.Floor(Math.Max(0m, limit - openValue) / entryPrice);
+        return room >= quantity
+            ? (quantity, string.Empty)
+            : (room, $"exposure limit: {maxExposurePct.Value:0.##}% of ₹{capital:N0} = ₹{limit:N0}, ₹{openValue:N0} already open");
+    }
+
     // ------------------------------------------------------------------------------------------
     // Entry levels
     // ------------------------------------------------------------------------------------------

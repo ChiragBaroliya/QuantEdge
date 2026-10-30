@@ -37,7 +37,8 @@ try
     // Add MVC
     builder.Services.AddControllersWithViews();
 
-    // Register a named HttpClient pointed at QuantEdge.API
+    // Register a named HttpClient pointed at QuantEdge.API (each call carries the Web server's access token)
+    builder.Services.AddTransient<QuantEdge.Web.Services.ApiServiceTokenHandler>();
     var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:44370";
     builder.Services.AddHttpClient("QuantEdgeApi", client =>
     {
@@ -47,7 +48,7 @@ try
     {
         // Accept self-signed dev certificates for localhost
         ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-    });
+    }).AddHttpMessageHandler<QuantEdge.Web.Services.ApiServiceTokenHandler>();
 
     var app = builder.Build();
 

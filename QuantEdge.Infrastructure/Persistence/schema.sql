@@ -1426,7 +1426,8 @@ CREATE TABLE IF NOT EXISTS market_regime_daily (
 --   min_stock_score          engine score needed for a BUY in this regime (replaces buy_score_threshold)
 --   require_relative_strength the stock must be outperforming NIFTY (engine RELATIVE_STRENGTH rule)
 --   max_positions            open positions allowed per user (0 = no new entries)
---   risk_pct                 % of capital risked per trade (Auto Paper sizing)
+--   risk_pct                 % of capital risked per trade (both bots)
+--   max_exposure_pct         most of the capital that may be in open positions (both bots)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS regime_policy (
     regime VARCHAR(20) PRIMARY KEY,

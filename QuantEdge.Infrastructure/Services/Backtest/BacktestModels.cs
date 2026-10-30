@@ -71,6 +71,8 @@ public sealed class BacktestSignal
     public bool PolicyRequiresRs { get; init; }
     public int PolicyMaxPositions { get; init; }
     public decimal PolicyRiskPct { get; init; }
+    /// <summary>The regime's limit on capital in open positions, %; null outside REGIME mode.</summary>
+    public decimal? PolicyMaxExposurePct { get; init; }
     /// <summary>Points per scoring factor, 6 bits each in <see cref="BacktestEngine.FactorCodes"/> order (kept small: a run can hold 100k+ signals).</summary>
     public long FactorPoints { get; init; }
 

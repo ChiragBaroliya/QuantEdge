@@ -20,6 +20,8 @@ public class StrategyRulesService : IStrategyRulesService
     private const int MaxPolicyPositions = 50;
     private const decimal MinPolicyRiskPct = 0.05m;
     private const decimal MaxPolicyRiskPct = 5m;
+    private const decimal MinPolicyExposurePct = 1m;
+    private const decimal MaxPolicyExposurePct = 100m;
 
     private readonly ISwingStrategySettingsRepository _settingsRepository;
     private readonly IMarketRegimeService _regimeService;
@@ -58,7 +60,7 @@ public class StrategyRulesService : IStrategyRulesService
                 RequireRelativeStrength = p.RequireRelativeStrength,
                 MaxPositions = p.MaxPositions,
                 RiskPct = p.RiskPct,
-                MaxExposurePct = existing?.MaxExposurePct ?? fallback.MaxExposurePct,
+                MaxExposurePct = p.MaxExposurePct,
                 Description = existing?.Description ?? fallback.Description
             };
         }).ToList();
@@ -96,6 +98,7 @@ public class StrategyRulesService : IStrategyRulesService
             if (p.MinStockScore is < 0 or > 100) errors.Add($"{p.Regime}: minimum score must be between 0 and 100.");
             if (p.MaxPositions is < 0 or > MaxPolicyPositions) errors.Add($"{p.Regime}: max positions must be between 0 and {MaxPolicyPositions}.");
             if (p.RiskPct < MinPolicyRiskPct || p.RiskPct > MaxPolicyRiskPct) errors.Add($"{p.Regime}: risk must be between {MinPolicyRiskPct}% and {MaxPolicyRiskPct}%.");
+            if (p.MaxExposurePct < MinPolicyExposurePct || p.MaxExposurePct > MaxPolicyExposurePct) errors.Add($"{p.Regime}: max exposure must be between {MinPolicyExposurePct}% and {MaxPolicyExposurePct}%.");
         }
         return errors;
     }
@@ -114,9 +117,9 @@ public class StrategyRulesService : IStrategyRulesService
         foreach (var p in dto.Policies!)
         {
             var old = beforePolicies.FirstOrDefault(x => x.Regime == p.Regime);
-            if (old == null || old.MinStockScore != p.MinStockScore || old.RequireRelativeStrength != p.RequireRelativeStrength || old.MaxPositions != p.MaxPositions || old.RiskPct != p.RiskPct)
+            if (old == null || old.MinStockScore != p.MinStockScore || old.RequireRelativeStrength != p.RequireRelativeStrength || old.MaxPositions != p.MaxPositions || old.RiskPct != p.RiskPct || old.MaxExposurePct != p.MaxExposurePct)
             {
-                changes.Add($"{p.Regime} policy {old?.MinStockScore}/{old?.RequireRelativeStrength}/{old?.MaxPositions}/{old?.RiskPct:0.##} -> {p.MinStockScore}/{p.RequireRelativeStrength}/{p.MaxPositions}/{p.RiskPct:0.##}");
+                changes.Add($"{p.Regime} policy {old?.MinStockScore}/{old?.RequireRelativeStrength}/{old?.MaxPositions}/{old?.RiskPct:0.##}/{old?.MaxExposurePct:0.##} -> {p.MinStockScore}/{p.RequireRelativeStrength}/{p.MaxPositions}/{p.RiskPct:0.##}/{p.MaxExposurePct:0.##}");
             }
         }
         return changes;

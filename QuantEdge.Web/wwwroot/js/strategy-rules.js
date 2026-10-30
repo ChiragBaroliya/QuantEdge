@@ -74,7 +74,7 @@
         state.policies.forEach((p, i) => {
             const o = saved.policies[i];
             if (Number(p.minStockScore) !== o.minStockScore || p.requireRelativeStrength !== o.requireRelativeStrength
-                || Number(p.maxPositions) !== o.maxPositions || Number(p.riskPct) !== o.riskPct) n++;
+                || Number(p.maxPositions) !== o.maxPositions || Number(p.riskPct) !== o.riskPct || Number(p.maxExposurePct) !== o.maxExposurePct) n++;
         });
         return n;
     }
@@ -125,7 +125,8 @@
                     onchange: (e) => { p.requireRelativeStrength = e.target.checked; refreshSummary(); }
                 })),
                 el("td", { "data-label": "Max positions" }, number("maxPositions", { label: "maximum positions", min: 0, max: 50, step: 1 })),
-                el("td", { "data-label": "Risk % (Auto Paper)" }, number("riskPct", { label: "risk percent, Auto Paper only", min: 0.05, max: 5, step: 0.05 }))));
+                el("td", { "data-label": "Risk per trade %" }, number("riskPct", { label: "risk per trade percent", min: 0.05, max: 5, step: 0.05 })),
+                el("td", { "data-label": "Max exposure %" }, number("maxExposurePct", { label: "maximum exposure percent", min: 1, max: 100, step: 1 }))));
         });
     }
 
@@ -229,7 +230,8 @@
                 minStockScore: Number(p.minStockScore),
                 requireRelativeStrength: p.requireRelativeStrength,
                 maxPositions: Number(p.maxPositions),
-                riskPct: Number(p.riskPct)
+                riskPct: Number(p.riskPct),
+                maxExposurePct: Number(p.maxExposurePct)
             })),
             buyScoreThreshold: Number(state.buyScoreThreshold),
             watchScoreThreshold: Number(state.watchScoreThreshold),

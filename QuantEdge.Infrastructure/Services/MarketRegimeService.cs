@@ -6,6 +6,7 @@ using Dapper;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
 using QuantEdge.Infrastructure.Constants;
+using QuantEdge.Infrastructure.Interfaces;
 using QuantEdge.Infrastructure.Persistence;
 using QuantEdge.Infrastructure.Persistence.Repositories;
 
@@ -49,7 +50,7 @@ public interface IMarketRegimeService
     Task<IReadOnlyList<MarketRegimeReading>> GetHistoryAsync(int days);
     Task<IReadOnlyList<RegimePolicy>> GetPoliciesAsync();
 
-    /// <summary>Saves the policies' score bar, relative-strength rule, max positions and risk. max_exposure_pct is left alone.</summary>
+    /// <summary>Saves the policies' score bar, relative-strength rule, max positions, risk and exposure limit.</summary>
     Task SavePoliciesAsync(IReadOnlyList<RegimePolicy> policies);
 
     /// <summary>Computes and stores every missing reading of the last <paramref name="backfillDays"/> sessions and always recomputes the latest one. DB only.</summary>
@@ -67,11 +68,13 @@ public class MarketRegimeService : IMarketRegimeService
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IMarketCandleRepository _candleRepository;
     private readonly IStockMasterRepository _stockRepository;
+    private readonly IMarketHoursService _marketHours;
     private readonly ILogger<MarketRegimeService> _logger;
 
     public MarketRegimeService(IDbConnectionFactory connectionFactory, IMarketCandleRepository candleRepository,
-        IStockMasterRepository stockRepository, ILogger<MarketRegimeService> logger)
+        IStockMasterRepository stockRepository, IMarketHoursService marketHours, ILogger<MarketRegimeService> logger)
     {
+        _marketHours = marketHours ?? throw new ArgumentNullException(nameof(marketHours));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _candleRepository = candleRepository ?? throw new ArgumentNullException(nameof(candleRepository));
         _stockRepository = stockRepository ?? throw new ArgumentNullException(nameof(stockRepository));
@@ -131,7 +134,8 @@ public class MarketRegimeService : IMarketRegimeService
                     min_stock_score = EXCLUDED.min_stock_score,
                     require_relative_strength = EXCLUDED.require_relative_strength,
                     max_positions = EXCLUDED.max_positions,
-                    risk_pct = EXCLUDED.risk_pct;", p, transaction);
+                    risk_pct = EXCLUDED.risk_pct,
+                    max_exposure_pct = EXCLUDED.max_exposure_pct;", p, transaction);
         }
         transaction.Commit();
     }
@@ -215,11 +219,36 @@ public class MarketRegimeService : IMarketRegimeService
             ?? RegimePolicy.Defaults.First(p => p.Regime == reading.Regime);
         decision.Reading = reading;
         decision.Policy = policy;
+
+        // An old reading could allow far more than today's market deserves (say, a Bullish reading while NIFTY falls), so
+        // new entries stop until the regime is computed again. Exits on open positions aren't affected.
+        if (await RegimeGate.IsReadingStaleAsync(reading.TradeDate, SwingTradeRules.NowIst(), IsTradingDayAsync))
+        {
+            decision.AllowsEntries = false;
+            decision.Reason = $"The market regime reading is out of date ({reading.Regime}, {reading.TradeDate:dd-MMM}) - no new entries until it is computed again.";
+            _logger.LogError("Market regime reading of {Date:yyyy-MM-dd} is out of date - blocking new entries in REGIME mode. Check NseBhavcopyWorker and the NIFTY 50 daily candles.", reading.TradeDate);
+            return decision;
+        }
+
         decision.AllowsEntries = policy.MaxPositions > 0;
         decision.Reason = decision.AllowsEntries
             ? $"{reading.Regime} (score {reading.Score}, {reading.TradeDate:dd-MMM}): score ≥ {policy.MinStockScore}{(policy.RequireRelativeStrength ? ", must beat NIFTY" : string.Empty)}, max {policy.MaxPositions} positions"
             : $"{reading.Regime} (score {reading.Score}): regime_policy allows 0 positions - no new entries.";
         return decision;
+    }
+
+    // If the holiday calendar can't be read, every weekday counts as a session: the stricter answer.
+    private async Task<bool> IsTradingDayAsync(DateOnly date)
+    {
+        try
+        {
+            return await _marketHours.IsTradingDayAsync(date);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not check whether {Date} is a trading day.", date);
+            return date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
+        }
     }
 
     private async Task UpsertAsync(MarketRegimeReading r)
@@ -251,6 +280,20 @@ public class MarketRegimeService : IMarketRegimeService
 /// <summary>Regime-mode check for one scored stock (Plan H): its score must reach the regime's bar and, where required, beat NIFTY.</summary>
 public static class RegimeGate
 {
+    /// <summary>Completed sessions a reading may miss: one failed evening's update doesn't stop trading the next day.</summary>
+    public const int MaxMissedSessions = 1;
+
+    /// <summary>Whether more than <see cref="MaxMissedSessions"/> trading sessions have finished since the reading's own date.</summary>
+    public static async Task<bool> IsReadingStaleAsync(DateTime readingDate, DateTime nowIst, Func<DateOnly, Task<bool>> isTradingDay)
+    {
+        int missed = 0;
+        for (DateTime day = readingDate.Date.AddDays(1); day < nowIst.Date; day = day.AddDays(1))
+        {
+            if (await isTradingDay(DateOnly.FromDateTime(day)) && ++missed > MaxMissedSessions) return true;
+        }
+        return false;
+    }
+
     public static (bool Allowed, string Reason) Evaluate(SwingEvaluationResult r, RegimePolicy p)
     {
         if (!r.HardFiltersPassed) return (false, "stock trend filters failed");

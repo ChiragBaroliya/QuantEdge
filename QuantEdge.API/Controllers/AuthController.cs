@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using QuantEdge.Domain.Entities;
@@ -30,6 +31,7 @@ public class AuthController : ControllerBase
     /// <summary>
     /// Authenticates a user using Username and Password.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
     {
@@ -98,6 +100,7 @@ public class AuthController : ControllerBase
     /// <summary>
     /// Registers a new user with Full Name, Username, and Password. Role is defaulted strictly to 'User'.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequestDto request)
     {

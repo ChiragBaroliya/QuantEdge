@@ -207,7 +207,7 @@
                        · ${ymd(p.fromDate)} → ${ymd(p.toDate)} · capital ${money(p.capital)} · ${p.sizingMode === "RISK" ? `risk ${p.riskPct}% (max ${money(p.amountPerTrade)})` : `${money(p.amountPerTrade)} per trade`}
                        · max ${p.maxPositions} open · slippage ${p.slippagePct}% / side · exits ${esc(p.exitMode)} (SL ${p.stopLossAtrMult}×, target ${p.targetAtrMult}×, trail ${p.trailAtrMult}× ATR, ${p.maxDurationDays} days)</p>
                 </div>
-                <a class="btn-trigger" href="${api(`runs/${run.id}/trades.csv`)}">Download trades (CSV)</a>
+                <a class="btn-trigger" data-auth-download href="${api(`runs/${run.id}/trades.csv`)}">Download trades (CSV)</a>
             </div>
             <div class="bt-verdict ${s.verdict}"><b>${esc(VERDICT[s.verdict] || s.verdict)}</b>${esc(s.verdictReason || "")}</div>
         </section>

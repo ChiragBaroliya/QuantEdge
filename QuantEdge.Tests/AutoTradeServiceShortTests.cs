@@ -202,6 +202,18 @@ public class AutoTradeServiceShortTests : ClockedTest
     }
 
     [Fact]
+    public async Task LongBuy_IsCutToFitTheRegimesExposure_AndSkippedWhenFull()
+    {
+        _positions.Add(new PaperPosition { Id = 1, Symbol = "INFY", Quantity = 250, AverageEntryPrice = 100m, TradeType = TradeType.Auto, Status = PositionStatus.OPEN });
+
+        Assert.True(await CreateService().EvaluateAndExecuteAutoBuyAsync("TCS", 100m, 11, User, isBuySignal: true, dailyAtr: 2m, maxExposurePct: 30m));
+        Assert.Equal(50, _positions.Single(p => p.Symbol == "TCS").Quantity); // 30000 limit - 25000 open = 5000 of room
+
+        Assert.False(await CreateService().EvaluateAndExecuteAutoBuyAsync("WIPRO", 100m, 11, User, isBuySignal: true, dailyAtr: 2m, maxExposurePct: 30m));
+        Assert.DoesNotContain(_positions, p => p.Symbol == "WIPRO");
+    }
+
+    [Fact]
     public async Task LongBuy_IsUnchanged()
     {
         bool executed = await CreateService().EvaluateAndExecuteAutoBuyAsync("TCS", 100m, 11, User, isBuySignal: true, dailyAtr: 2m);

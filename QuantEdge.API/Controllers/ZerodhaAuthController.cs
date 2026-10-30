@@ -1,4 +1,5 @@
 using KiteConnect;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -268,6 +269,7 @@ public class ZerodhaAuthController : ControllerBase
     /// Callback endpoint receiving the request_token from Zerodha, exchanging it for an access_token,
     /// and persisting it securely for the specific user.
     /// </summary>
+    [AllowAnonymous] // Zerodha redirects the browser here
     [HttpGet("callback")]
     public async Task<IActionResult> Callback([FromQuery(Name = "request_token")] string requestToken,
         [FromQuery(Name = "action")] string? action = null,

@@ -374,7 +374,8 @@ public class AutoRealTradeSignalScanWorker : BackgroundService
             {
                 bool executed = await realTradeService.EvaluateAndExecuteRealBuyAsync(
                     candidate.Stock.Symbol, candidate.EntryPrice, candidate.MetCount, userSettings.UserId, candidate.IsSignal,
-                    candidate.EngineStopLoss, candidate.EngineTarget, dailyAtr: candidate.DailyAtr, conditionGate: candidate.Gate);
+                    candidate.EngineStopLoss, candidate.EngineTarget, dailyAtr: candidate.DailyAtr, conditionGate: candidate.Gate,
+                    riskPct: regimeGate?.Policy?.RiskPct, maxExposurePct: regimeGate?.Policy?.MaxExposurePct);
 
                 if (executed)
                 {

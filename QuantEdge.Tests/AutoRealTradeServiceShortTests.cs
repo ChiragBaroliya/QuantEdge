@@ -259,6 +259,49 @@ public class AutoRealTradeServiceShortTests : ClockedTest
         Assert.Equal(TradeSide.BUY, Assert.Single(_positions).Side);
     }
 
+    // ---------------- Market regime limits on a BUY ----------------
+
+    // Capital 10000, stop 3 below the entry (dailyAtr 2 x 1.5): 1% risk allows 33 shares, so the 1000 cap (10 shares) decides.
+    [Fact]
+    public async Task LongBuy_FollowsTheRegimesRiskPct()
+    {
+        Assert.True(await CreateService().EvaluateAndExecuteRealBuyAsync("TCS", 100m, 11, User, isBuySignal: true, dailyAtr: 2m, riskPct: 0.1m));
+
+        Assert.Equal(("TCS", TradeSide.BUY, 3, "CNC"), Assert.Single(_placed)); // 0.1% of 10000 = 10 / 3 per share
+    }
+
+    [Fact]
+    public async Task LongBuy_IsCutToFitTheRegimesExposure()
+    {
+        _positions.Add(new RealPosition { Id = 1, Symbol = "INFY", Quantity = 25, AverageEntryPrice = 100m, Status = PositionStatus.OPEN });
+
+        Assert.True(await CreateService().EvaluateAndExecuteRealBuyAsync("TCS", 100m, 11, User, isBuySignal: true, dailyAtr: 2m, maxExposurePct: 30m));
+
+        Assert.Equal(("TCS", TradeSide.BUY, 5, "CNC"), Assert.Single(_placed)); // 3000 limit - 2500 open = 500 of room
+    }
+
+    [Fact]
+    public async Task LongBuy_IsSkippedWhenTheRegimesExposureIsFull()
+    {
+        _positions.Add(new RealPosition { Id = 1, Symbol = "INFY", Quantity = 30, AverageEntryPrice = 100m, Status = PositionStatus.OPEN });
+
+        Assert.False(await CreateService().EvaluateAndExecuteRealBuyAsync("TCS", 100m, 11, User, isBuySignal: true, dailyAtr: 2m, maxExposurePct: 30m));
+
+        Assert.Empty(_placed);
+        Assert.Contains(_logs, l => l.ActionType == "REAL_SIGNAL_SKIPPED" && l.Reason!.Contains("exposure limit"));
+    }
+
+    [Fact]
+    public async Task ManualBuy_IgnoresTheRegimeLimits()
+    {
+        _positions.Add(new RealPosition { Id = 1, Symbol = "INFY", Quantity = 30, AverageEntryPrice = 100m, Status = PositionStatus.OPEN });
+
+        Assert.True(await CreateService().EvaluateAndExecuteRealBuyAsync("TCS", 100m, 11, User, isBuySignal: true, isManualTrade: true, manualQuantity: 4,
+            manualStopLossPct: 2m, manualTrailingSlPct: 1m, dailyAtr: 2m, riskPct: 0.1m, maxExposurePct: 30m));
+
+        Assert.Equal(("TCS", TradeSide.BUY, 4, "CNC"), Assert.Single(_placed));
+    }
+
     // ---------------- Exit ----------------
 
     [Fact]

@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Configuration;
@@ -18,6 +19,7 @@ namespace QuantEdge.API.Controllers;
 [ApiController]
 [Route("internal/broadcast")]
 [ApiExplorerSettings(IgnoreApi = true)]
+[AllowAnonymous] // checks its own shared secret
 public class InternalBroadcastController : ControllerBase
 {
     private readonly IHubContext<MarketDataHub> _hubContext;

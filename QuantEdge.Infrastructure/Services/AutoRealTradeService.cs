@@ -445,11 +445,11 @@ public class AutoRealTradeService : IAutoRealTradeService
     public async Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
         decimal? engineStopLoss = null, decimal? engineTarget = null,
         bool isManualTrade = false, int? manualQuantity = null, decimal? manualStopLossPct = null, decimal? manualTrailingSlPct = null,
-        decimal? dailyAtr = null, ConditionGate? conditionGate = null)
+        decimal? dailyAtr = null, ConditionGate? conditionGate = null, decimal? riskPct = null, decimal? maxExposurePct = null)
     {
         Task<bool> RunCoreLocked() => WithTradeLockAsync(EntryLockKey(userId), false, () =>
             EvaluateAndExecuteRealBuyCoreAsync(symbol, entryPrice, metConditionsCount, userId, isBuySignal,
-                engineStopLoss, engineTarget, dailyAtr, isManualTrade, manualQuantity, manualStopLossPct, manualTrailingSlPct, conditionGate));
+                engineStopLoss, engineTarget, dailyAtr, isManualTrade, manualQuantity, manualStopLossPct, manualTrailingSlPct, conditionGate, riskPct, maxExposurePct));
 
         if (!isManualTrade)
         {
@@ -476,7 +476,8 @@ public class AutoRealTradeService : IAutoRealTradeService
 
     private async Task<bool> EvaluateAndExecuteRealBuyCoreAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId, bool isBuySignal,
         decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr,
-        bool isManualTrade, int? manualQuantity, decimal? manualStopLossPct, decimal? manualTrailingSlPct, ConditionGate? conditionGate)
+        bool isManualTrade, int? manualQuantity, decimal? manualStopLossPct, decimal? manualTrailingSlPct, ConditionGate? conditionGate,
+        decimal? riskPct, decimal? maxExposurePct)
     {
         symbol = symbol.ToUpper().Trim();
         var settings = await GetSettingsAsync(userId);
@@ -689,11 +690,19 @@ public class AutoRealTradeService : IAutoRealTradeService
         decimal stopLoss = levels.StopLoss;
         decimal? trailingSl = levels.TrailingStopLoss;
 
-        // 9b. Risk-based size, same as Auto Paper: at most FixedAmountPerTrade of stock AND at most
-        // DefaultRiskPerTradePct of capital lost if the stop is hit - a wide stop gets fewer shares.
+        // 9b. Risk-based size, same as Auto Paper: at most FixedAmountPerTrade of stock AND at most the risk % of
+        // capital lost if the stop is hit - a wide stop gets fewer shares. In REGIME mode the market regime sets the risk %
+        // (smaller in weak markets) and the most capital that may be in open positions; otherwise the default 1%, no limit.
         if (!isManualTrade)
         {
-            var sizing = SwingTradeRules.RiskSizedQuantity(entryPrice, stopLoss, settings.AvailableCapital, settings.FixedAmountPerTrade);
+            var sizing = SwingTradeRules.RiskSizedQuantity(entryPrice, stopLoss, settings.AvailableCapital, settings.FixedAmountPerTrade,
+                riskPct ?? SwingTradeRules.DefaultRiskPerTradePct);
+            if (maxExposurePct.HasValue)
+            {
+                decimal openValue = (await _repository.GetOpenPositionsAsync(userId)).Sum(p => p.Quantity * p.AverageEntryPrice);
+                var limited = SwingTradeRules.LimitQuantityByExposure(sizing.Quantity, entryPrice, openValue, settings.AvailableCapital, maxExposurePct);
+                if (limited.Quantity < sizing.Quantity) sizing = limited;
+            }
             quantity = sizing.Quantity;
             if (quantity < 1)
             {

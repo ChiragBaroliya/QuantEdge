@@ -226,6 +226,7 @@ public static class BacktestEngine
                     PolicyRequiresRs = policy?.RequireRelativeStrength ?? false,
                     PolicyMaxPositions = policy?.MaxPositions ?? int.MaxValue,
                     PolicyRiskPct = policy?.RiskPct ?? 0m,
+                    PolicyMaxExposurePct = policy?.MaxExposurePct,
                     FactorPoints = PackFactors(r.Factors),
                     SignalPrice = r.EntryPrice,
                     EntryRaw = entryRaw,

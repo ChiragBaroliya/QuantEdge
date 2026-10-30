@@ -293,9 +293,9 @@ public class AutoTradeService : IAutoTradeService
     // orders, broker margin) are replaced by their paper-account equivalents.
     public Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
         decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null,
-        ConditionGate? conditionGate = null) =>
+        ConditionGate? conditionGate = null, decimal? maxExposurePct = null) =>
         EvaluateAndExecuteAutoEntryAsync(TradeSide.BUY, symbol, entryPrice, metConditionsCount, userId, isBuySignal,
-            engineStopLoss, engineTarget, dailyAtr, riskPct, conditionGate);
+            engineStopLoss, engineTarget, dailyAtr, riskPct, conditionGate, maxExposurePct);
 
     // Auto Short Selling - one entry path with BUY, so a short passes exactly the same gates, plus the short switch and
     // the short entry cut-off. Paper only: a simulated SELL on the paper account, never a broker order.
@@ -303,10 +303,10 @@ public class AutoTradeService : IAutoTradeService
         decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null,
         ConditionGate? conditionGate = null) =>
         EvaluateAndExecuteAutoEntryAsync(TradeSide.SELL, symbol, entryPrice, metConditionsCount, userId, isSellSignal,
-            engineStopLoss, engineTarget, dailyAtr, riskPct, conditionGate);
+            engineStopLoss, engineTarget, dailyAtr, riskPct, conditionGate, maxExposurePct: null);
 
     private async Task<bool> EvaluateAndExecuteAutoEntryAsync(TradeSide side, string symbol, decimal entryPrice, int metConditionsCount, string userId,
-        bool isBuySignal, decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr, decimal? riskPct, ConditionGate? conditionGate)
+        bool isBuySignal, decimal? engineStopLoss, decimal? engineTarget, decimal? dailyAtr, decimal? riskPct, ConditionGate? conditionGate, decimal? maxExposurePct)
     {
         bool isShort = side == TradeSide.SELL;
         string label = isShort ? "SHORT" : "BUY";
@@ -453,6 +453,10 @@ public class AutoTradeService : IAutoTradeService
                 riskPct ?? SwingTradeRules.DefaultRiskPerTradePct)
             : SwingTradeRules.RiskSizedQuantity(entryPrice, stopLoss, settings.AvailableCapital, settings.FixedAmountPerTrade,
                 riskPct ?? SwingTradeRules.DefaultRiskPerTradePct);
+        // REGIME mode: the most capital that may be in open positions in this market.
+        var limited = SwingTradeRules.LimitQuantityByExposure(sizing.Quantity, entryPrice,
+            openAutoPositions.Sum(p => p.Quantity * p.AverageEntryPrice), settings.AvailableCapital, maxExposurePct);
+        if (limited.Quantity < sizing.Quantity) sizing = limited;
         int quantity = sizing.Quantity;
         if (quantity < 1)
         {

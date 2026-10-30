@@ -122,6 +122,7 @@ public static class BacktestPortfolio
                 ? SwingTradeRules.RiskSizedQuantity(s.EntryRaw, s.StopLoss, bookEquity, ps.AmountPerTrade, riskPct).Quantity
                 : (int)Math.Floor(ps.AmountPerTrade / s.EntryRaw);
             qty = Math.Min(qty, (int)Math.Floor(cash / entryFill));
+            qty = SwingTradeRules.LimitQuantityByExposure(qty, s.EntryRaw, open.Sum(o => o.Cost), bookEquity, s.PolicyMaxExposurePct).Quantity;
             if (qty < 1) { Skip("quantity 0 at this price (guard 13)"); continue; }
 
             decimal cost = qty * entryFill;

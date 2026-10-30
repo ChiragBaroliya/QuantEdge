@@ -206,6 +206,17 @@ public class AccountController : Controller
     }
 
     /// <summary>
+    /// A fresh API access token for the logged-in user (api-auth.js renews with this while a page stays open).
+    /// </summary>
+    [HttpGet]
+    [Authorize]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public IActionResult ApiToken([FromServices] IConfiguration configuration)
+    {
+        return Json(new { token = QuantEdge.Infrastructure.Security.ApiAccessToken.ForUser(configuration, User) });
+    }
+
+    /// <summary>
     /// Displays Change Password View.
     /// </summary>
     [HttpGet]

@@ -38,7 +38,7 @@ public interface IAutoRealTradeService
     Task<bool> EvaluateAndExecuteRealBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, int userId = 1, bool isBuySignal = false,
         decimal? engineStopLoss = null, decimal? engineTarget = null,
         bool isManualTrade = false, int? manualQuantity = null, decimal? manualStopLossPct = null, decimal? manualTrailingSlPct = null,
-        decimal? dailyAtr = null, Services.ConditionGate? conditionGate = null);
+        decimal? dailyAtr = null, Services.ConditionGate? conditionGate = null, decimal? riskPct = null, decimal? maxExposurePct = null);
 
     /// <summary>
     /// Auto Short Selling (real money, intraday MIS): runs the same pre-trade guards as

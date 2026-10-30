@@ -288,7 +288,7 @@ public class SwingRuleParametersTests
     private static StrategyRulesSaveDto ValidSave() => new()
     {
         Rules = new SwingRuleParameters(),
-        Policies = RegimePolicy.Defaults.Select(p => new RegimePolicy { Regime = p.Regime, MinStockScore = p.MinStockScore, RequireRelativeStrength = p.RequireRelativeStrength, MaxPositions = p.MaxPositions, RiskPct = p.RiskPct }).ToList(),
+        Policies = RegimePolicy.Defaults.Select(p => new RegimePolicy { Regime = p.Regime, MinStockScore = p.MinStockScore, RequireRelativeStrength = p.RequireRelativeStrength, MaxPositions = p.MaxPositions, RiskPct = p.RiskPct, MaxExposurePct = p.MaxExposurePct }).ToList(),
         BuyScoreThreshold = 70,
         WatchScoreThreshold = 50,
         MarketGateMode = "regime",
@@ -296,7 +296,7 @@ public class SwingRuleParametersTests
     };
 
     [Fact]
-    public async Task Save_StoresTheNumbers_AndKeepsTheExposureItDoesNotEdit()
+    public async Task Save_StoresTheNumbers_IncludingTheExposureLimit()
     {
         var (service, repo, regime) = NewService();
         IReadOnlyList<RegimePolicy>? stored = null;
@@ -304,6 +304,7 @@ public class SwingRuleParametersTests
         var dto = ValidSave();
         dto.Rules!.AdxMin = 25m;
         dto.Policies!.Single(p => p.Regime == MarketRegimes.Bearish).MinStockScore = 75;
+        dto.Policies!.Single(p => p.Regime == MarketRegimes.Bearish).MaxExposurePct = 40m;
 
         var (success, errors, saved) = await service.SaveAsync(dto);
 
@@ -313,7 +314,7 @@ public class SwingRuleParametersTests
         repo.Verify(x => x.UpdateRulesAsync(It.Is<SwingRuleParameters>(r => r.AdxMin == 25m), 70, 50, "REGIME"), Times.Once);
         var bearish = stored!.Single(p => p.Regime == MarketRegimes.Bearish);
         Assert.Equal(75, bearish.MinStockScore);
-        Assert.Equal(30m, bearish.MaxExposurePct);
+        Assert.Equal(40m, bearish.MaxExposurePct);
     }
 
     public static TheoryData<Action<StrategyRulesSaveDto>, string> BadSaves => new()
@@ -329,6 +330,8 @@ public class SwingRuleParametersTests
         { d => d.Policies![0].MinStockScore = 101, "minimum score" },
         { d => d.Policies![0].MaxPositions = -1, "max positions" },
         { d => d.Policies![0].RiskPct = 6m, "risk must be" },
+        { d => d.Policies![0].MaxExposurePct = 0m, "max exposure" },
+        { d => d.Policies![0].MaxExposurePct = 101m, "max exposure" },
     };
 
     [Theory]

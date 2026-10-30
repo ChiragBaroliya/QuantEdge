@@ -22,7 +22,7 @@ public interface IAutoTradeService
     /// <param name="conditionGate">The user's Trade Conditions min / total for the condition-match guard; null = mode settings, out of 11.</param>
     Task<bool> EvaluateAndExecuteAutoBuyAsync(string symbol, decimal entryPrice, int metConditionsCount, string userId = "default_user", bool isBuySignal = false,
         decimal? engineStopLoss = null, decimal? engineTarget = null, decimal? dailyAtr = null, decimal? riskPct = null,
-        Services.ConditionGate? conditionGate = null);
+        Services.ConditionGate? conditionGate = null, decimal? maxExposurePct = null);
 
     /// <summary>
     /// Auto Short Selling (paper): places a simulated paper SHORT SELL after the same entry gates as
