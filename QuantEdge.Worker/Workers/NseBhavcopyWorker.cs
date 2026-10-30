@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +14,7 @@ namespace QuantEdge.Worker.Workers;
 /// Loads NSE's official end-of-day bhavcopy (Plan L.1 P9) - an NSE download, never a Zerodha call. From 18:30 IST on
 /// weekdays it tries every 30 minutes until today's file is published, and also fills any of the last
 /// <see cref="CatchUpDays"/> weekdays that are missing (an NSE 404 = holiday or not yet published, skipped quietly).
+/// Days go oldest first and stop at the first failure: the split / bonus check compares a day with the session before it.
 /// Runs in the plain "marketdatafeed" worker process only (not the per-timeframe ones) so the file is fetched once.
 /// </summary>
 public class NseBhavcopyWorker : BackgroundService
@@ -65,36 +67,10 @@ public class NseBhavcopyWorker : BackgroundService
             DateTime day = nowIst.Date.AddDays(-back);
             if (day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) continue;
             if (back == 0 && nowIst.TimeOfDay < PublishedAfterIst) continue;   // today's file isn't out yet
-            if (await service.IsLoadedAsync(day)) continue;
-
-            try
+            if (!await ProcessDayAsync(day, back == 0, nowIst, service,
+                    scope.ServiceProvider.GetRequiredService<ICorporateActionService>(), recorder, _logger, stoppingToken))
             {
-                var result = await service.LoadAsync(day, stoppingToken);
-                if (result.Published)
-                {
-                    // Splits / bonuses show up as NSE's adjusted previous close - adjust our history and positions.
-                    var corporateActions = scope.ServiceProvider.GetRequiredService<ICorporateActionService>();
-                    await corporateActions.DetectAndApplyAsync(day);
-
-                    if (result.CloseMismatches > 0)
-                    {
-                        recorder.RecordFailure(BrokerApiSource.Nse, "daily close check",
-                            $"{result.CloseMismatches} stock(s) had a stored close more than 0.5% away from NSE's official close on {day:dd-MMM-yyyy} - replaced with the official values. Details on the Reconciliation page.",
-                            level: "warning");
-                    }
-                }
-                else if (back == 0 && nowIst.TimeOfDay >= new TimeSpan(22, 0, 0))
-                {
-                    recorder.RecordFailure(BrokerApiSource.Nse, "bhavcopy",
-                        $"NSE bhavcopy for {day:dd-MMM-yyyy} not published by 22:00 IST (holiday?). Daily closes stay as the last traded price until it loads.",
-                        level: "warning");
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogWarning(ex, "NSE bhavcopy load failed for {Day:yyyy-MM-dd}.", day);
-                recorder.RecordFailure(BrokerApiSource.Nse, "bhavcopy",
-                    $"NSE bhavcopy download for {day:dd-MMM-yyyy} failed: {ex.Message}. Daily closes stay as the last traded price; retrying in 30 min.");
+                break;   // retried in 30 minutes, from this same day
             }
         }
 
@@ -125,4 +101,80 @@ public class NseBhavcopyWorker : BackgroundService
 
     private bool _regimeComputedOnce;
     private DateTime _regimeComputedForIstDate = DateTime.MinValue;
+
+    /// <summary>
+    /// Stores one day if it is missing, then runs its split / bonus check if that hasn't finished. Each failure is reported
+    /// as what actually failed. False = stop here and retry this day on the next cycle.
+    /// </summary>
+    public static async Task<bool> ProcessDayAsync(DateTime day, bool isToday, DateTime nowIst, INseBhavcopyService service,
+        ICorporateActionService corporateActions, IBrokerApiEventRecorder recorder, ILogger logger, CancellationToken stoppingToken)
+    {
+        if (!await service.IsLoadedAsync(day))
+        {
+            IReadOnlyList<NseBhavcopyRow>? rows;
+            try
+            {
+                rows = await service.DownloadAsync(day, stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "NSE bhavcopy download failed for {Day:yyyy-MM-dd}.", day);
+                recorder.RecordFailure(BrokerApiSource.Nse, "bhavcopy",
+                    $"NSE bhavcopy download for {day:dd-MMM-yyyy} failed: {Describe(ex)}. Daily closes stay as the last traded price; retrying in 30 min.");
+                return false;
+            }
+
+            if (rows == null)
+            {
+                if (isToday && nowIst.TimeOfDay >= new TimeSpan(22, 0, 0))
+                {
+                    recorder.RecordFailure(BrokerApiSource.Nse, "bhavcopy",
+                        $"NSE bhavcopy for {day:dd-MMM-yyyy} not published by 22:00 IST (holiday?). Daily closes stay as the last traded price until it loads.",
+                        level: "warning");
+                }
+                return true;   // holiday or not out yet: nothing to compare later days against, so they can still load
+            }
+
+            BhavcopyLoadResult result;
+            try
+            {
+                result = await service.StoreAsync(day, rows);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Saving the NSE bhavcopy failed for {Day:yyyy-MM-dd}.", day);
+                recorder.RecordFailure(BrokerApiSource.Nse, "bhavcopy database",
+                    $"NSE bhavcopy for {day:dd-MMM-yyyy} downloaded, but saving it to the database failed: {Describe(ex)}. Daily closes stay as the last traded price; retrying in 30 min.");
+                return false;
+            }
+
+            if (result.CloseMismatches > 0)
+            {
+                recorder.RecordFailure(BrokerApiSource.Nse, "daily close check",
+                    $"{result.CloseMismatches} stock(s) had a stored close more than 0.5% away from NSE's official close on {day:dd-MMM-yyyy} - replaced with the official values. Details on the Reconciliation page.",
+                    level: "warning");
+            }
+        }
+
+        try
+        {
+            if (await service.IsCorporateActionCheckDoneAsync(day)) return true;
+
+            // Splits / bonuses show up as NSE's adjusted previous close - adjust our history and positions.
+            await corporateActions.DetectAndApplyAsync(day);
+            await service.MarkCorporateActionCheckDoneAsync(day);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Split / bonus check failed for {Day:yyyy-MM-dd}.", day);
+            recorder.RecordFailure(BrokerApiSource.Nse, "corporate action",
+                $"Split / bonus check for {day:dd-MMM-yyyy} failed: {Describe(ex)}. The NSE file is stored; retrying the check in 30 min.");
+            return false;
+        }
+    }
+
+    // Npgsql's outer message ("Exception while reading from stream") hides the reason, such as a timeout, in the inner one.
+    private static string Describe(Exception ex) =>
+        ex.InnerException == null ? ex.Message : $"{ex.Message} ({ex.InnerException.Message})";
 }

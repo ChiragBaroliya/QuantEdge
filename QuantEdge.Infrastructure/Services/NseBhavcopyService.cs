@@ -31,26 +31,35 @@ public sealed class NseBhavcopyRow
     public decimal? Turnover { get; set; }
 }
 
-/// <summary>Outcome of loading one trading day.</summary>
-public sealed record BhavcopyLoadResult(DateTime TradeDate, bool Published, int Rows, int DailyCandlesUpdated, int CloseMismatches = 0);
+/// <summary>Outcome of storing one trading day.</summary>
+public sealed record BhavcopyLoadResult(DateTime TradeDate, int Rows, int DailyCandlesUpdated, int CloseMismatches = 0);
 
 public interface INseBhavcopyService
 {
-    /// <summary>
-    /// Downloads NSE's bhavcopy for <paramref name="tradeDate"/> (IST date), stores it in nse_bhavcopy and overwrites that
-    /// day's market_candles_1d rows (EQ series) with the official OHLC / volume. Published = false when NSE has no file
-    /// for the date (holiday, or not out yet). No Zerodha call.
-    /// </summary>
-    Task<BhavcopyLoadResult> LoadAsync(DateTime tradeDate, CancellationToken cancellationToken = default);
+    /// <summary>Downloads and parses NSE's bhavcopy for this IST date; null when NSE has no file (holiday, or not out yet). No Zerodha call.</summary>
+    Task<IReadOnlyList<NseBhavcopyRow>?> DownloadAsync(DateTime tradeDate, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores the rows in nse_bhavcopy and overwrites that day's market_candles_1d rows (EQ series) with the official OHLC / volume, all or nothing.</summary>
+    Task<BhavcopyLoadResult> StoreAsync(DateTime tradeDate, IReadOnlyList<NseBhavcopyRow> rows);
 
     /// <summary>True when this trading day is already stored.</summary>
     Task<bool> IsLoadedAsync(DateTime tradeDate);
+
+    /// <summary>True when this day's split / bonus check has finished, so a failed check is retried even though the day is stored.</summary>
+    Task<bool> IsCorporateActionCheckDoneAsync(DateTime tradeDate);
+
+    Task MarkCorporateActionCheckDoneAsync(DateTime tradeDate);
 }
 
 public class NseBhavcopyService : INseBhavcopyService
 {
     public const string HttpClientName = "NseArchives";
     private const string UrlFormat = "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{0:yyyyMMdd}_F_0000.csv.zip";
+
+    // A whole day's write is more than the connection's default 30 seconds should have to cover over a remote link.
+    private const int StoreCommandTimeoutSeconds = 180;
+
+    private static bool _checksTableEnsured;
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IDbConnectionFactory _connectionFactory;
@@ -70,14 +79,41 @@ public class NseBhavcopyService : INseBhavcopyService
             "SELECT EXISTS (SELECT 1 FROM nse_bhavcopy WHERE trade_date = @d);", new { d = tradeDate.Date });
     }
 
-    public async Task<BhavcopyLoadResult> LoadAsync(DateTime tradeDate, CancellationToken cancellationToken = default)
+    public async Task<bool> IsCorporateActionCheckDoneAsync(DateTime tradeDate)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        await EnsureChecksTableAsync(connection);
+        return await connection.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM nse_corporate_action_checks WHERE trade_date = @d);", new { d = tradeDate.Date });
+    }
+
+    public async Task MarkCorporateActionCheckDoneAsync(DateTime tradeDate)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        await EnsureChecksTableAsync(connection);
+        await connection.ExecuteAsync(
+            "INSERT INTO nse_corporate_action_checks (trade_date) VALUES (@d) ON CONFLICT (trade_date) DO NOTHING;", new { d = tradeDate.Date });
+    }
+
+    private static async Task EnsureChecksTableAsync(System.Data.IDbConnection connection)
+    {
+        if (_checksTableEnsured) return;
+        await connection.ExecuteAsync(@"
+            CREATE TABLE IF NOT EXISTS nse_corporate_action_checks (
+                trade_date DATE PRIMARY KEY,
+                checked_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            );");
+        _checksTableEnsured = true;
+    }
+
+    public async Task<IReadOnlyList<NseBhavcopyRow>?> DownloadAsync(DateTime tradeDate, CancellationToken cancellationToken = default)
     {
         tradeDate = tradeDate.Date;
         var client = _httpClientFactory.CreateClient(HttpClientName);
         using var response = await client.GetAsync(string.Format(CultureInfo.InvariantCulture, UrlFormat, tradeDate), cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            return new BhavcopyLoadResult(tradeDate, false, 0, 0);   // holiday / not published yet
+            return null;   // holiday / not published yet
         }
         response.EnsureSuccessStatusCode();
 
@@ -88,17 +124,51 @@ public class NseBhavcopyService : INseBhavcopyService
         using var reader = new StreamReader(entry.Open());
         var rows = Parse(reader).ToList();
         if (rows.Count == 0) throw new InvalidDataException("NSE bhavcopy CSV has no rows.");
+        return rows;
+    }
+
+    public async Task<BhavcopyLoadResult> StoreAsync(DateTime tradeDate, IReadOnlyList<NseBhavcopyRow> rows)
+    {
+        tradeDate = tradeDate.Date;
+        var (dayStartUtc, dayEndUtc) = IstDayBoundsUtc(tradeDate);
+
+        // One statement can't touch the same key twice, so a repeated line in the file must collapse to one row.
+        var unique = rows.Where(r => r.TradeDate.Date == tradeDate)
+            .GroupBy(r => (r.Symbol, r.Series)).Select(g => g.Last()).ToList();
 
         using var connection = _connectionFactory.CreateConnection();
         connection.Open();
         using var tx = connection.BeginTransaction();
+
+        // All rows in one statement: row-by-row meant thousands of round trips to the database inside this transaction.
         const string upsert = @"
             INSERT INTO nse_bhavcopy (trade_date, symbol, series, isin, open, high, low, close, last, prev_close, volume, turnover, loaded_at)
-            VALUES (@TradeDate, @Symbol, @Series, @Isin, @Open, @High, @Low, @Close, @Last, @PrevClose, @Volume, @Turnover, NOW())
+            SELECT @d::date, x.symbol, x.series, x.isin, x.open, x.high, x.low, x.close, x.last, x.prev_close, x.volume, x.turnover, NOW()
+            FROM UNNEST(@Symbols::VARCHAR[], @Series::VARCHAR[], @Isins::VARCHAR[], @Opens::NUMERIC[], @Highs::NUMERIC[], @Lows::NUMERIC[], @Closes::NUMERIC[],
+                        @Lasts::NUMERIC[], @PrevCloses::NUMERIC[], @Volumes::BIGINT[], @Turnovers::NUMERIC[])
+                 AS x(symbol, series, isin, open, high, low, close, last, prev_close, volume, turnover)
             ON CONFLICT (trade_date, symbol, series) DO UPDATE
             SET isin = EXCLUDED.isin, open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low, close = EXCLUDED.close,
                 last = EXCLUDED.last, prev_close = EXCLUDED.prev_close, volume = EXCLUDED.volume, turnover = EXCLUDED.turnover, loaded_at = NOW();";
-        await connection.ExecuteAsync(upsert, rows, tx);
+        await connection.ExecuteAsync(upsert, new
+        {
+            d = tradeDate,
+            Symbols = unique.Select(r => r.Symbol).ToArray(),
+            Series = unique.Select(r => r.Series).ToArray(),
+            Isins = unique.Select(r => r.Isin).ToArray(),
+            Opens = unique.Select(r => r.Open).ToArray(),
+            Highs = unique.Select(r => r.High).ToArray(),
+            Lows = unique.Select(r => r.Low).ToArray(),
+            Closes = unique.Select(r => r.Close).ToArray(),
+            Lasts = unique.Select(r => r.Last).ToArray(),
+            PrevCloses = unique.Select(r => r.PrevClose).ToArray(),
+            Volumes = unique.Select(r => r.Volume).ToArray(),
+            Turnovers = unique.Select(r => r.Turnover).ToArray()
+        }, tx, StoreCommandTimeoutSeconds);
+
+        // The two statements below use the (symbol, candle_time) index: a function on either column would scan the whole
+        // table instead, past the command timeout. Stored symbols are always upper case (every read depends on that too).
+        var day = new { d = tradeDate, dayStartUtc, dayEndUtc };
 
         // Reconciliation (Plan L.7): before overwriting, log every stored daily close more than 0.5% away from NSE's.
         const string recordMismatches = @"
@@ -107,10 +177,10 @@ public class NseBhavcopyService : INseBhavcopyService
                    ROUND((c.close - b.close) / b.close * 100, 4),
                    'Stored daily close vs NSE official close (replaced with the official value)'
             FROM nse_bhavcopy b
-            JOIN market_candles_1d c ON UPPER(c.symbol) = b.symbol AND (c.candle_time AT TIME ZONE 'Asia/Kolkata')::date = @d
+            JOIN market_candles_1d c ON c.symbol = b.symbol AND c.candle_time >= @dayStartUtc AND c.candle_time < @dayEndUtc
             WHERE b.trade_date = @d AND b.series = 'EQ' AND b.close > 0
               AND ABS(c.close - b.close) / b.close > 0.005;";
-        int mismatches = await connection.ExecuteAsync(recordMismatches, new { d = tradeDate }, tx);
+        int mismatches = await connection.ExecuteAsync(recordMismatches, day, tx, StoreCommandTimeoutSeconds);
 
         // The day's stored daily candles become NSE's official values (close = official close, not the last trade).
         const string applyToCandles = @"
@@ -118,14 +188,21 @@ public class NseBhavcopyService : INseBhavcopyService
             SET open = b.open, high = b.high, low = b.low, close = b.close, volume = b.volume
             FROM nse_bhavcopy b
             WHERE b.trade_date = @d AND b.series = 'EQ'
-              AND UPPER(c.symbol) = b.symbol
-              AND (c.candle_time AT TIME ZONE 'Asia/Kolkata')::date = @d;";
-        int updated = await connection.ExecuteAsync(applyToCandles, new { d = tradeDate }, tx);
+              AND c.symbol = b.symbol
+              AND c.candle_time >= @dayStartUtc AND c.candle_time < @dayEndUtc;";
+        int updated = await connection.ExecuteAsync(applyToCandles, day, tx, StoreCommandTimeoutSeconds);
         tx.Commit();
 
         _logger.LogInformation("NSE bhavcopy {Date:yyyy-MM-dd}: {Rows} rows stored, {Updated} daily candles set to official values, {Mismatches} differed by >0.5%.",
-            tradeDate, rows.Count, updated, mismatches);
-        return new BhavcopyLoadResult(tradeDate, true, rows.Count, updated, mismatches);
+            tradeDate, unique.Count, updated, mismatches);
+        return new BhavcopyLoadResult(tradeDate, unique.Count, updated, mismatches);
+    }
+
+    /// <summary>The start of this IST date and of the next one, in UTC.</summary>
+    public static (DateTime StartUtc, DateTime EndUtc) IstDayBoundsUtc(DateTime tradeDate)
+    {
+        DateTime Utc(DateTime day) => TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(day, DateTimeKind.Unspecified), Helpers.TimeZoneHelper.IndianTimeZone);
+        return (Utc(tradeDate.Date), Utc(tradeDate.Date.AddDays(1)));
     }
 
     /// <summary>Parses NSE's UDiFF CM bhavcopy CSV (columns located by header name, so column order changes don't break it).</summary>

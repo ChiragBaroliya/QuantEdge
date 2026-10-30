@@ -34,16 +34,19 @@ public class CorporateActionService : ICorporateActionService
 {
     private const decimal MinGap = 0.05m;          // ignore anything closer than 5% (dividends, rounding)
     private const decimal RatioTolerance = 0.005m; // factor must be within 0.5% of p/q to auto-apply
+    private const int ApplyCommandTimeoutSeconds = 300; // the 1m / 5m candle tables are large
     private static readonly string[] CandleTimeframes = { "1m", "5m", "15m", "60m", "1d" };
 
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IIndicatorService _indicatorService;
     private readonly IBrokerApiEventRecorder _recorder;
+    private readonly IMarketHoursService _marketHours;
     private readonly ILogger<CorporateActionService> _logger;
 
     public CorporateActionService(IDbConnectionFactory connectionFactory, IIndicatorService indicatorService,
-        IBrokerApiEventRecorder recorder, ILogger<CorporateActionService> logger)
+        IBrokerApiEventRecorder recorder, IMarketHoursService marketHours, ILogger<CorporateActionService> logger)
     {
+        _marketHours = marketHours ?? throw new ArgumentNullException(nameof(marketHours));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _indicatorService = indicatorService ?? throw new ArgumentNullException(nameof(indicatorService));
         _recorder = recorder ?? throw new ArgumentNullException(nameof(recorder));
@@ -54,6 +57,19 @@ public class CorporateActionService : ICorporateActionService
     {
         tradeDate = tradeDate.Date;
         using var connection = _connectionFactory.CreateConnection();
+
+        // prev_close is the close of the session just before this one. Compared across a missing session, an ordinary
+        // price move looks like a split (a 10% fall = 9:10) and would rewrite candles and open positions, so don't guess.
+        var previousDay = await connection.ExecuteScalarAsync<DateTime?>(
+            "SELECT MAX(trade_date)::timestamp FROM nse_bhavcopy WHERE trade_date < @d;", new { d = tradeDate });
+        if (previousDay.HasValue && await SessionsBetweenAsync(previousDay.Value, tradeDate) > 0)
+        {
+            _recorder.RecordFailure(BrokerApiSource.Nse, "corporate action",
+                $"Split / bonus check skipped for {tradeDate:dd-MMM-yyyy}: the previous stored NSE file is {previousDay.Value:dd-MMM-yyyy}, so a session is missing. Check that day's splits and bonuses manually.",
+                level: "warning");
+            return Array.Empty<CorporateAction>();
+        }
+
         const string detectSql = @"
             SELECT t.symbol, t.prev_close / p.close AS factor
             FROM nse_bhavcopy t
@@ -78,29 +94,54 @@ public class CorporateActionService : ICorporateActionService
                 Status = ratio.HasValue ? "APPLIED" : "NEEDS_REVIEW"
             };
 
+            string details = $"bhavcopy prev_close / previous close = {rawFactor:0.########}";
             if (ratio.HasValue)
             {
-                await ApplyAsync(action);
+                await ApplyAsync(action, details);
                 _recorder.RecordFailure(BrokerApiSource.Nse, "corporate action",
                     $"{symbol}: split/bonus on {tradeDate:dd-MMM-yyyy} ({action.RatioText}). Older candles and open positions were adjusted (price x {action.Factor:0.####}, quantity / {action.Factor:0.####}).",
                     symbol: symbol, level: "warning");
             }
             else
             {
+                await connection.ExecuteAsync(InsertActionSql, ActionArgs(action, details));
                 _recorder.RecordFailure(BrokerApiSource.Nse, "corporate action",
                     $"{symbol}: NSE adjusted the previous close by {rawFactor:0.####} on {tradeDate:dd-MMM-yyyy} (rights issue or unusual ratio?). Not applied automatically - check and adjust manually.",
                     symbol: symbol, level: "warning");
             }
 
-            await connection.ExecuteAsync(@"
-                INSERT INTO corporate_actions (symbol, ex_date, factor, ratio_text, status, details, applied_at)
-                VALUES (@Symbol, @ExDate, @Factor, @RatioText, @Status, @Details, CASE WHEN @Status = 'APPLIED' THEN NOW() END)
-                ON CONFLICT (symbol, ex_date) DO NOTHING;",
-                new { action.Symbol, action.ExDate, action.Factor, action.RatioText, action.Status,
-                      Details = $"bhavcopy prev_close / previous close = {rawFactor:0.########}" });
             actions.Add(action);
         }
         return actions;
+    }
+
+    private const string InsertActionSql = @"
+        INSERT INTO corporate_actions (symbol, ex_date, factor, ratio_text, status, details, applied_at)
+        VALUES (@Symbol, @ExDate, @Factor, @RatioText, @Status, @Details, CASE WHEN @Status = 'APPLIED' THEN NOW() END)
+        ON CONFLICT (symbol, ex_date) DO NOTHING;";
+
+    private static object ActionArgs(CorporateAction action, string details) =>
+        new { action.Symbol, action.ExDate, action.Factor, action.RatioText, action.Status, Details = details };
+
+    // Trading days strictly between two dates. If the calendar can't be read, every weekday counts: the safer answer here.
+    private async Task<int> SessionsBetweenAsync(DateTime from, DateTime to)
+    {
+        int sessions = 0;
+        for (DateTime day = from.Date.AddDays(1); day < to.Date; day = day.AddDays(1))
+        {
+            bool isSession;
+            try
+            {
+                isSession = await _marketHours.IsTradingDayAsync(DateOnly.FromDateTime(day));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not check whether {Day:yyyy-MM-dd} is a trading day.", day);
+                isSession = day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
+            }
+            if (isSession) sessions++;
+        }
+        return sessions;
     }
 
     /// <summary>Closest p/q (1..10) to the factor when within 0.5%; null otherwise.</summary>
@@ -126,8 +167,11 @@ public class CorporateActionService : ICorporateActionService
         return bestErr <= RatioTolerance ? best : null;
     }
 
-    /// <summary>Adjusts everything recorded before the ex-date so it's comparable with prices after it.</summary>
-    private async Task ApplyAsync(CorporateAction action)
+    /// <summary>
+    /// Adjusts everything recorded before the ex-date so it's comparable with prices after it. Recording the action and
+    /// adjusting are one transaction: a retry can never adjust the same split twice.
+    /// </summary>
+    private async Task ApplyAsync(CorporateAction action, string details)
     {
         DateTime exStartUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(action.ExDate, DateTimeKind.Unspecified),
             Helpers.TimeZoneHelper.IndianTimeZone);
@@ -136,12 +180,19 @@ public class CorporateActionService : ICorporateActionService
         using var connection = _connectionFactory.CreateConnection();
         connection.Open();
         using var tx = connection.BeginTransaction();
+        if (await connection.ExecuteAsync(InsertActionSql, ActionArgs(action, details), tx) == 0)
+        {
+            tx.Rollback();
+            return;   // already recorded, so already adjusted
+        }
+
+        // Plain symbol match so the (symbol, candle_time) index is used. Bhavcopy and stored symbols are both upper case.
         foreach (var tf in CandleTimeframes)
         {
             await connection.ExecuteAsync($@"
                 UPDATE market_candles_{tf}
                 SET open = open * @f, high = high * @f, low = low * @f, close = close * @f, volume = ROUND(volume / @f)
-                WHERE UPPER(symbol) = UPPER(@s) AND candle_time < @t;", args, tx);
+                WHERE symbol = @s AND candle_time < @t;", args, tx, ApplyCommandTimeoutSeconds);
         }
 
         // Open positions bought before the ex-date: same value, more (or fewer) shares at a lower (or higher) price.

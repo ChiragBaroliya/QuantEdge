@@ -1340,6 +1340,12 @@ CREATE TABLE IF NOT EXISTS nse_bhavcopy (
     PRIMARY KEY (trade_date, symbol, series)
 );
 
+-- Days whose split / bonus check has finished, so a failed check is retried even though the day's file is stored.
+CREATE TABLE IF NOT EXISTS nse_corporate_action_checks (
+    trade_date DATE PRIMARY KEY,
+    checked_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
 -- ----------------------------------------------------------------------------
 -- Table: corporate_actions (Plan L.1 P10 - splits / bonuses)
 -- Detected from NSE's own bhavcopy: on an ex-date NSE publishes an ADJUSTED previous close, so
