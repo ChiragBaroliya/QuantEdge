@@ -52,6 +52,19 @@ public class BacktestShortSellingTests
     private static BacktestExit Exit(IntradayTape tape, BacktestSignal s, BacktestContext? ctx = null) =>
         BacktestEngine.SimulateExit(tape, s, ctx ?? Ctx(), out _)!;
 
+    // ---------------- run label ----------------
+
+    [Theory]
+    [InlineData("", "All stocks")]
+    [InlineData("TCS", "TCS")]
+    [InlineData("TCS,WIPRO,INFY", "TCS, WIPRO, INFY")]
+    [InlineData("TCS,WIPRO,INFY,SBIN,ITC", "TCS, WIPRO, INFY +2 more")]
+    public void RunLabel_SaysWhichStocksWereTested(string symbols, string expected)
+    {
+        var list = symbols.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(expected, BacktestService.StocksText(list));
+    }
+
     // ---------------- exits ----------------
 
     [Fact]

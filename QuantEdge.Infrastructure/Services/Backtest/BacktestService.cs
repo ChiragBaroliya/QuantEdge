@@ -149,10 +149,16 @@ public class BacktestService : IBacktestService
         var shortTimeErrors = ShortSellingSettingsValidator.Validate(p.ShortEntryCutoff, p.ShortSquareOffTime).ToList();
         if (BacktestSide.IncludesShort(p.Side) && shortTimeErrors.Count > 0) throw new ArgumentException(string.Join(" ", shortTimeErrors));
         p.Label = string.IsNullOrWhiteSpace(p.Label)
-            ? $"{p.Side} · {p.GateMode} · score ≥ {p.BuyScoreThreshold} · {p.FromDate:dd-MMM-yy} → {p.ToDate:dd-MMM-yy}"
+            ? $"{p.Side} · {StocksText(p.Symbols)} · {p.GateMode} · score ≥ {p.BuyScoreThreshold} · {p.FromDate:dd-MMM-yy} → {p.ToDate:dd-MMM-yy}"
             : p.Label.Trim();
         return p;
     }
+
+    /// <summary>The stock list for a run's label, so runs over different stocks can be told apart in the list.</summary>
+    public static string StocksText(IReadOnlyList<string> symbols) =>
+        symbols.Count == 0 ? "All stocks"
+        : symbols.Count <= 3 ? string.Join(", ", symbols)
+        : $"{string.Join(", ", symbols.Take(3))} +{symbols.Count - 3} more";
 
     private const string SelectRun = @"
         SELECT id, user_id AS UserId, label, status, progress_pct AS ProgressPct, message, params::text AS ParamsJson,

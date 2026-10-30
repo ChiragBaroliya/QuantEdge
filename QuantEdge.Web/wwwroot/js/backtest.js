@@ -129,7 +129,7 @@
                 <td class="num ${k ? cls(k.netPnl) : ""}">${k ? signedMoney(k.netPnl) : "–"}</td>
                 <td class="num">${k ? num(k.maxDrawdownPct) + "%" : "–"}</td>
                 <td>${verdict ? `<span class="bt-badge bt-${verdict}">${esc(VERDICT[verdict] || verdict)}</span>` : ""}</td>
-                <td><button type="button" class="bt-link" data-del="${x.id}">${action}</button></td>
+                <td>${x.status === "CANCEL_REQUESTED" ? "" : `<button type="button" class="bt-link" data-del="${x.id}">${action}</button>`}</td>
             </tr>`;
         }).join("");
     }
@@ -141,15 +141,42 @@
             const id = Number(del.dataset.del);
             const run = runs.find(x => x.id === id);
             const verb = run && ACTIVE.has(run.status) ? "Stop" : "Delete";
-            if (!confirm(`${verb} run #${id}?`)) return;
-            await fetch(api(`runs/${id}`), { method: "DELETE" });
-            if (viewingId === id && verb === "Delete") { viewingId = null; el("btResult").innerHTML = ""; el("btResult").dataset.run = ""; }
+            if (!await confirmRunAction(verb, id, run)) return;
+            const res = await fetch(api(`runs/${id}`), { method: "DELETE" });
+            if (!res.ok) alert(`Couldn't ${verb.toLowerCase()} run #${id} - it may have just finished. The list has been refreshed.`);
+            else if (viewingId === id && verb === "Delete") { viewingId = null; el("btResult").innerHTML = ""; el("btResult").dataset.run = ""; }
             loadRuns();
             return;
         }
         const row = e.target.closest("tr.click");
         if (row) showRun(Number(row.dataset.id));
     });
+
+    // Styled confirmation (SweetAlert2, loaded by _Layout); falls back to confirm().
+    async function confirmRunAction(verb, id, run) {
+        if (typeof Swal === "undefined") return confirm(`${verb} run #${id}?`);
+        const stopping = verb === "Stop";
+        const result = await Swal.fire({
+            icon: "warning",
+            title: `${verb} run #${id}?`,
+            html: `<div style="font-size:14px; color:#cbd5e1;">
+                       <p style="margin-bottom:10px;"><strong>${esc(run ? run.label : "")}</strong></p>
+                       <p style="margin:0;">${stopping
+                           ? "It stops at its next checkpoint, which can take a little while, and nothing from it is saved."
+                           : "Its result and trades are deleted. <strong style=\"color:#f87171;\">This cannot be undone.</strong>"}</p>
+                   </div>`,
+            showCancelButton: true,
+            confirmButtonText: stopping ? "Yes, stop it" : "Yes, delete it",
+            cancelButtonText: stopping ? "Keep running" : "Keep it",
+            confirmButtonColor: "#dc2626",
+            cancelButtonColor: "#64748b",
+            reverseButtons: true,
+            focusCancel: true,
+            background: "var(--bg-card, #121824)",
+            color: "#f1f5f9"
+        });
+        return result.isConfirmed;
+    }
 
     function renderPending(run) {
         el("btResult").dataset.run = "";
@@ -239,7 +266,7 @@
             <div class="bt-head">
                 <div>
                     <h2>Run #${run.id} - ${esc(run.label || "")}</h2>
-                    <p>${esc(SIDE[p.side || "BUY"])} · ${esc(p.gateMode === "REGIME" ? "Market regime gate" : `NIFTY filter · signal ≥ ${p.buyScoreThreshold} or ≥ ${p.minConditionsMatch}/11 conditions`)}
+                    <p><b>${(p.symbols || []).length ? `Stocks: ${esc(p.symbols.join(", "))}` : "All active stocks"}</b> · ${esc(SIDE[p.side || "BUY"])} · ${esc(p.gateMode === "REGIME" ? "Market regime gate" : `NIFTY filter · signal ≥ ${p.buyScoreThreshold} or ≥ ${p.minConditionsMatch}/11 conditions`)}
                        · ${ymd(p.fromDate)} → ${ymd(p.toDate)} · capital ${money(p.capital)} · ${p.sizingMode === "RISK" ? `risk ${p.riskPct}% (max ${money(p.amountPerTrade)})` : `${money(p.amountPerTrade)} per trade`}
                        · max ${p.maxPositions} open · slippage ${p.slippagePct}% / side · exits ${esc(p.exitMode)} (SL ${p.stopLossAtrMult}×, target ${p.targetAtrMult}×, trail ${p.trailAtrMult}× ATR, ${p.maxDurationDays} days)</p>
                 </div>
