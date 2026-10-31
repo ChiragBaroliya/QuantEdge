@@ -157,17 +157,18 @@ public static class SwingShortDecisionEngine
         else failedRules.Add($"BREAKDOWN_GROUP (0/{rules.BreakoutPoints} pts): Inside trading range, no breakdown detected");
         AddFactor("BREAKDOWN_GROUP", "Breakdown", rules.BreakoutPoints, "15m");
 
-        // VOL_CONFIRMATION (15): same volume rule as the long engine (the candle rule below supplies the direction).
+        // VOL_CONFIRMATION: same volume-spike test as the long engine (the candle rule below supplies the
+        // direction), but its own (SHORT) point weights - see ShortVolumePoints/ShortVolumeGoodPoints.
         long curVol = refVolumes[refIdx];
         decimal avgVol = SwingDecisionEngine.SameSlotAverageVolume(refCandles, refIdx)
             ?? (refIdx > 0 ? (decimal)refVolumes.Skip(Math.Max(0, refIdx - rules.VolumeAverageBars)).Take(Math.Min(rules.VolumeAverageBars, refIdx)).Average(v => (double)v) : 0m);
         decimal volMult = avgVol > 0m ? Math.Round(curVol / avgVol, 2) : 0m;
         bool volSpikePassed = volMult >= rules.VolumeGoodMultiple;
         bool volGreaterPrev = refIdx >= 1 && curVol > refVolumes[refIdx - 1];
-        if (volMult >= rules.VolumeHeavyMultiple && volGreaterPrev) { score += rules.VolumePoints; passedRules.Add($"VOL_CONFIRMATION (+{rules.VolumePoints} pts): Heavy Volume Surge ({volMult:F1}x Avg Volume)"); }
-        else if (volSpikePassed) { score += rules.VolumeGoodPoints; passedRules.Add($"VOL_CONFIRMATION (+{rules.VolumeGoodPoints} pts): Good Volume ({volMult:F1}x Avg Volume)"); }
-        else failedRules.Add($"VOL_CONFIRMATION (0/{rules.VolumePoints} pts): Volume low ({volMult:F1}x Avg Volume)");
-        AddFactor("VOL_CONFIRMATION", "Volume", rules.VolumePoints, "15m");
+        if (volMult >= rules.VolumeHeavyMultiple && volGreaterPrev) { score += rules.ShortVolumePoints; passedRules.Add($"VOL_CONFIRMATION (+{rules.ShortVolumePoints} pts): Heavy Volume Surge ({volMult:F1}x Avg Volume)"); }
+        else if (volSpikePassed) { score += rules.ShortVolumeGoodPoints; passedRules.Add($"VOL_CONFIRMATION (+{rules.ShortVolumeGoodPoints} pts): Good Volume ({volMult:F1}x Avg Volume)"); }
+        else failedRules.Add($"VOL_CONFIRMATION (0/{rules.ShortVolumePoints} pts): Volume low ({volMult:F1}x Avg Volume)");
+        AddFactor("VOL_CONFIRMATION", "Volume", rules.ShortVolumePoints, "15m");
         result.VolumeMultiple = volMult;
 
         // RELATIVE_WEAKNESS (15): stock 1M return below NIFTY's over the same dates.
@@ -306,7 +307,7 @@ public static class SwingShortDecisionEngine
                 $"{adx:F1} ({(adx >= rules.AdxMin ? "Passed" : "Weak/Choppy")})", $"ADX >= {rules.AdxMin:0.0}", adxPassed),
             new("BREAKDOWN_GROUP", $"4. Breakdown Group ({rules.BreakoutPoints} Pts)", "15m Close < Previous Day Low / Swing Low / Consolidation / near 52W Low",
                 breakdownPassed ? "Passed (Breakdown Confirmed)" : "Inside Range", "Breakdown Confirmed", breakdownPassed),
-            new("VOL_CONFIRMATION", $"5. Volume Confirmation ({rules.VolumePoints} Pts)", $"15m Volume >= {rules.VolumeGoodMultiple:0.0#}x the usual volume for this time of day & > Prev Vol",
+            new("VOL_CONFIRMATION", $"5. Volume Confirmation ({rules.ShortVolumePoints} Pts)", $"15m Volume >= {rules.VolumeGoodMultiple:0.0#}x the usual volume for this time of day & > Prev Vol",
                 volSpikePassed ? $"Passed ({volMult:F1}x Avg Vol)" : $"{volMult:F1}x Avg Vol", $">= {rules.VolumeGoodMultiple:0.0#}x Avg Vol", volSpikePassed),
             new("RELATIVE_WEAKNESS", $"6. Relative Weakness vs Nifty ({rules.RelativeStrengthPoints} Pts)", rules.RelativeStrengthBars == 20 ? "Stock 1M Return < Nifty 50 Return" : $"Stock {rules.RelativeStrengthBars}-day Return < Nifty 50 Return",
                 rwPassed ? "Passed (Underperforming Nifty)" : "Not weaker", "Stock Return < Nifty Return", rwPassed),
