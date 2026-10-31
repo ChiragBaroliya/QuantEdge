@@ -66,6 +66,12 @@ public sealed class BacktestContext
     /// <summary>Regime in force on a trading day = the reading of the previous session (computed the evening before).</summary>
     public Func<DateTime, (string? Regime, RegimePolicy? Policy)> RegimeFor { get; init; } = _ => (null, null);
     public Func<DateTime, int> SessionOf { get; init; } = _ => 0;
+    /// <summary>
+    /// Price slippage per side, % (0 = disabled - the default here is intentionally not the run default of 0.10,
+    /// so every test that builds a BacktestContext without setting this keeps its exact pre-fix behavior; the real
+    /// pipeline (BacktestService) always sets this explicitly from the run's BacktestParams.SlippagePct).
+    /// </summary>
+    public decimal SlippagePct { get; init; } = 0m;
 }
 
 public sealed class SymbolBacktestResult
@@ -205,6 +211,9 @@ public static class BacktestEngine
                 result.Scans++;
                 // Live order goes in ~20 s after the bar close, i.e. at the next bar's open.
                 decimal entryRaw = m15[k + 1].Open;
+                // Slippage always works against the trade (same direction/formula as BacktestPortfolio's exit-side
+                // slippage): a BUY fills higher, a SHORT (sell to open) fills lower.
+                decimal slip = ctx.SlippagePct / 100m;
                 string? splitSkip = inSplitZone ? "suspected split/bonus in the indicator history" : null;
 
                 if (scanBuy)
@@ -251,6 +260,7 @@ public static class BacktestEngine
                             SignalDailyAtr = r.DailyAtr,
                             SignalPrice = r.EntryPrice,
                             EntryRaw = entryRaw,
+                            EntryFill = Math.Round(entryRaw * (1m + slip), 2),
                             StopLoss = levels.StopLoss,
                             Target = levels.TakeProfit,
                             EntryIndex = k + 1,
@@ -300,6 +310,7 @@ public static class BacktestEngine
                             SignalDailyAtr = r.DailyAtr,
                             SignalPrice = r.EntryPrice,
                             EntryRaw = entryRaw,
+                            EntryFill = Math.Round(entryRaw * (1m - slip), 2),
                             StopLoss = levels.StopLoss,
                             Target = levels.TakeProfit,
                             EntryIndex = k + 1,
@@ -326,10 +337,14 @@ public static class BacktestEngine
 
         skipReason = null;
         var p = ctx.TradeParams;
-        var levels = SwingTradeRules.ComputeEntryLevels(s.EntryRaw, null, null, null, null, null, p);   // only for the INTRADAY trail start
-        var pos = new ExitPositionView(s.EntryRaw, s.StopLoss, s.Target, p.IsSwingClose ? null : levels.TrailingStopLoss, null, s.EntryTimeUtc);
+        // EntryFill (not EntryRaw) is the real simulated cost basis, including entry slippage - everything the exit
+        // rules measure "from entry" (breakeven floor, ATR inference, emergency stop, trail activation) must use it.
+        // StopLoss/Target stay anchored to the raw signal price: they're the position's already-placed order levels,
+        // not a live cost-basis reference - same split live trading already has (ExitPositionView.From(RealPosition)).
+        var levels = SwingTradeRules.ComputeEntryLevels(s.EntryFill, null, null, null, null, null, p);   // only for the INTRADAY trail start
+        var pos = new ExitPositionView(s.EntryFill, s.StopLoss, s.Target, p.IsSwingClose ? null : levels.TrailingStopLoss, null, s.EntryTimeUtc);
         int entrySession = tape.Session[s.EntryIndex];
-        decimal hi = s.EntryRaw, lo = s.EntryRaw;
+        decimal hi = s.EntryFill, lo = s.EntryFill;
         Span<decimal> path = stackalloc decimal[4];
 
         for (int j = s.EntryIndex; j < tape.Count; j++)
@@ -361,7 +376,7 @@ public static class BacktestEngine
                 {
                     decimal fill = FillPrice(d.Reason, pos, prev, price, p);
                     return new BacktestExit(tape.TimeUtc(j), IstDate(tape.TimeUtc(j)), fill, d.Reason, Category(d.Reason), daysOpen,
-                        Pct(hi, s.EntryRaw), Pct(lo, s.EntryRaw), false);
+                        Pct(hi, s.EntryFill), Pct(lo, s.EntryFill), false);
                 }
                 if (d.NewTrailingStopLoss.HasValue) pos = pos with { TrailingStopLoss = d.NewTrailingStopLoss };
                 prev = price;
@@ -375,7 +390,7 @@ public static class BacktestEngine
                 var d = SwingTradeRules.EvaluateExit(pos, c, barIst.Date + closingStart, daysOpen, ctx.MaxDurationDays, p);
                 if (d.ShouldExit)
                     return new BacktestExit(tape.TimeUtc(j), IstDate(tape.TimeUtc(j)), c, d.Reason, Category(d.Reason), daysOpen,
-                        Pct(hi, s.EntryRaw), Pct(lo, s.EntryRaw), false);
+                        Pct(hi, s.EntryFill), Pct(lo, s.EntryFill), false);
                 if (d.NewTrailingStopLoss.HasValue) pos = pos with { TrailingStopLoss = d.NewTrailingStopLoss };
             }
         }
@@ -383,7 +398,7 @@ public static class BacktestEngine
         int last = tape.Count - 1;
         return new BacktestExit(tape.TimeUtc(last) + Bar15, IstDate(tape.TimeUtc(last)), IntradayTape.Price(tape.Close[last]),
             "Still open at the end of the test (valued at the last close)", "End of test", tape.Session[last] - entrySession,
-            Pct(hi, s.EntryRaw), Pct(lo, s.EntryRaw), true);
+            Pct(hi, s.EntryFill), Pct(lo, s.EntryFill), true);
     }
 
     /// <summary>
@@ -397,10 +412,12 @@ public static class BacktestEngine
     {
         skipReason = null;
         var p = ctx.TradeParams;
-        var levels = SwingTradeRules.ComputeShortEntryLevels(s.EntryRaw, null, null, null, p);   // only for the INTRADAY trail start
-        var pos = new ExitPositionView(s.EntryRaw, s.StopLoss, s.Target, p.IsSwingClose ? null : levels.TrailingStopLoss, null, s.EntryTimeUtc);
+        // EntryFill (not EntryRaw) is the real simulated cost basis, including entry slippage - see the LONG-side
+        // comment in SimulateExit for the full rationale; StopLoss/Target stay anchored to the raw signal price.
+        var levels = SwingTradeRules.ComputeShortEntryLevels(s.EntryFill, null, null, null, p);   // only for the INTRADAY trail start
+        var pos = new ExitPositionView(s.EntryFill, s.StopLoss, s.Target, p.IsSwingClose ? null : levels.TrailingStopLoss, null, s.EntryTimeUtc);
         int entrySession = tape.Session[s.EntryIndex];
-        decimal hi = s.EntryRaw, lo = s.EntryRaw;
+        decimal hi = s.EntryFill, lo = s.EntryFill;
         Span<decimal> path = stackalloc decimal[4];
 
         for (int j = s.EntryIndex; j < tape.Count; j++)
@@ -431,7 +448,7 @@ public static class BacktestEngine
                 {
                     decimal fill = ShortFillPrice(d.Reason, pos, prev, price);
                     return new BacktestExit(tape.TimeUtc(j), IstDate(tape.TimeUtc(j)), fill, d.Reason, Category(d.Reason), daysOpen,
-                        ShortPct(lo, s.EntryRaw), ShortPct(hi, s.EntryRaw), false);
+                        ShortPct(lo, s.EntryFill), ShortPct(hi, s.EntryFill), false);
                 }
                 if (d.NewTrailingStopLoss.HasValue) pos = pos with { TrailingStopLoss = d.NewTrailingStopLoss };
                 prev = price;
@@ -439,13 +456,13 @@ public static class BacktestEngine
 
             if (j + 1 < tape.Count && tape.Session[j + 1] > session)
                 return new BacktestExit(tape.TimeUtc(j) + Bar15, IstDate(tape.TimeUtc(j)), c, MissingBarSquareOffReason, Category(MissingBarSquareOffReason), daysOpen,
-                    ShortPct(lo, s.EntryRaw), ShortPct(hi, s.EntryRaw), false);
+                    ShortPct(lo, s.EntryFill), ShortPct(hi, s.EntryFill), false);
         }
 
         int last = tape.Count - 1;
         return new BacktestExit(tape.TimeUtc(last) + Bar15, IstDate(tape.TimeUtc(last)), IntradayTape.Price(tape.Close[last]),
             "Still open at the end of the test (valued at the last close)", "End of test", tape.Session[last] - entrySession,
-            ShortPct(lo, s.EntryRaw), ShortPct(hi, s.EntryRaw), true);
+            ShortPct(lo, s.EntryFill), ShortPct(hi, s.EntryFill), true);
     }
 
     private static decimal ShortFillPrice(string reason, ExitPositionView pos, decimal prev, decimal price)

@@ -112,6 +112,10 @@ public sealed class BacktestSignal
 
     public decimal SignalPrice { get; init; }
     public decimal EntryRaw { get; init; }
+    /// <summary>EntryRaw adjusted for entry-side slippage - the real simulated cost basis. The exit-decision engine
+    /// (breakeven floor/ceiling, ATR inference, emergency stop, trail activation) must use this, not EntryRaw, for
+    /// anything measured "from entry" - stop/target levels stay anchored to EntryRaw (see BacktestEngine.SimulateExit).</summary>
+    public decimal EntryFill { get; init; }
     public decimal StopLoss { get; init; }
     public decimal Target { get; init; }
     /// <summary>Index of the entry bar in the symbol's <see cref="IntradayTape"/>.</summary>

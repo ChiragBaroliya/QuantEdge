@@ -34,7 +34,7 @@ public class BacktestShortSellingTests
         return new IntradayTape("T", bars, d => days.IndexOf(d.Date), new HashSet<int>());
     }
 
-    private static BacktestSignal Signal(bool isShort, decimal stop, decimal target, int entrySlot = 2) => new()
+    private static BacktestSignal Signal(bool isShort, decimal stop, decimal target, int entrySlot = 2, decimal? entryFill = null) => new()
     {
         Symbol = "T",
         IsShort = isShort,
@@ -44,6 +44,7 @@ public class BacktestShortSellingTests
         IsLiveCandidate = true,
         PolicyMaxPositions = int.MaxValue,
         EntryRaw = Entry,
+        EntryFill = entryFill ?? Entry, // no slippage unless a test asks for it - matches every pre-existing test's assumption
         StopLoss = stop,
         Target = target,
         EntryIndex = 0
@@ -197,7 +198,10 @@ public class BacktestShortSellingTests
     [Fact]
     public void ShortPortfolio_MakesMoneyWhenThePriceFalls_AndSlippageGoesAgainstIt()
     {
-        var t = RunOne(Signal(true, 103m, 95m), 95m);
+        // Entry slippage is now baked into the signal itself (BacktestEngine computes EntryFill at signal time,
+        // the same way live would via BacktestContext.SlippagePct) rather than reapplied inside the portfolio run -
+        // 100 x (1 - 0.10%) = 99.90, same number this test always expected.
+        var t = RunOne(Signal(true, 103m, 95m, entryFill: 99.90m), 95m);
 
         Assert.Equal(BacktestSide.Short, t.Side);
         Assert.Equal(100, t.Quantity);
@@ -240,6 +244,120 @@ public class BacktestShortSellingTests
         var t = BacktestPortfolio.Run(new[] { s }, _ => exit, ps, _ => null).Trades.Single();
 
         Assert.Equal(200, t.Quantity);         // ₹1,000 risk ÷ ₹5 a share
+    }
+
+    // ---------------- entry-fill (slippage-adjusted entry) bug fix ----------------
+    // Regression coverage for: the exit-decision engine used to receive EntryRaw (the pre-slippage signal
+    // price) instead of EntryFill (the real simulated cost basis) as "entry" for anything measured from
+    // entry - breakeven floor/ceiling, ATR inference, emergency stop, trail activation. Each pair below holds
+    // everything constant except EntryFill, and shows the exit decision actually changes - proving the fix is
+    // wired end to end through BacktestEngine.SimulateExit/SimulateShortExit, not just correct in isolation.
+
+    // These two candles put the discriminating check at the bar's open (the very first price point evaluated),
+    // deliberately before any within-bar ratcheting - the INTRADAY trail only ever ratchets towards the current
+    // price, so a later check in the same bar would converge both the fixed and buggy seed to the same value
+    // and hide the bug. Checking at the open isolates exactly the seed value itself.
+
+    [Fact]
+    public void LongIntradayTrail_SeedsFromTheRealEntryFill_NotTheRawSignalPrice()
+    {
+        // EntryFill 105 (as if 5% slippage) -> INTRADAY trail seeds at 105 x 0.98 = 102.90. The bar opens at
+        // 100, already below that seed, so it must exit on the very first check.
+        var intraday = SwingTradeParams.From(new RealTradeSettings { ExitMode = "INTRADAY" });
+        var ctx = new BacktestContext { TradeParams = intraday, MaxDurationDays = 20 };
+        var tape = Tape(Candle(Day1, 2, 100m, 101m, 100m, 100.5m));
+        var s = Signal(false, 50m, 200m, entryFill: 105m);
+
+        var exit = Exit(tape, s, ctx);
+
+        Assert.Contains("Trailing SL Hit", exit.Reason);
+    }
+
+    [Fact]
+    public void LongIntradayTrail_WithoutSlippage_DoesNotBreachAtTheSamePrice()
+    {
+        // Same bar, but EntryFill == EntryRaw (no slippage) -> seed is 100 x 0.98 = 98, below every price in
+        // the bar - this is the old (pre-fix) EntryRaw-only behavior, kept as the contrast case.
+        var intraday = SwingTradeParams.From(new RealTradeSettings { ExitMode = "INTRADAY" });
+        var ctx = new BacktestContext { TradeParams = intraday, MaxDurationDays = 20 };
+        var tape = Tape(Candle(Day1, 2, 100m, 101m, 100m, 100.5m));
+        var s = Signal(false, 50m, 200m); // entryFill defaults to EntryRaw (100)
+
+        var exit = Exit(tape, s, ctx);
+
+        Assert.DoesNotContain("Trailing SL Hit", exit.Reason);
+    }
+
+    [Fact]
+    public void ShortIntradayTrail_SeedsFromTheRealEntryFill_NotTheRawSignalPrice()
+    {
+        // EntryFill 95 (as if 5% slippage) -> INTRADAY trail seeds at 95 x 1.02 = 96.90 (short trail sits
+        // above entry). The bar opens at 97, already above that seed, so it must exit on the very first check.
+        var intraday = SwingTradeParams.From(new RealTradeSettings { ExitMode = "INTRADAY" });
+        var ctx = new BacktestContext { TradeParams = intraday, MaxDurationDays = 20 };
+        var tape = Tape(Candle(Day1, 2, 97m, 97m, 94m, 95m));
+        var s = Signal(true, 150m, 10m, entryFill: 95m);
+
+        var exit = Exit(tape, s, ctx);
+
+        Assert.Contains("Trailing SL Hit", exit.Reason);
+    }
+
+    [Fact]
+    public void ShortIntradayTrail_WithoutSlippage_DoesNotBreachAtTheSamePrice()
+    {
+        // Same bar, but EntryFill == EntryRaw (no slippage) -> seed is 100 x 1.02 = 102, above every price in
+        // the bar - this is the old (pre-fix) EntryRaw-only behavior, kept as the contrast case.
+        var intraday = SwingTradeParams.From(new RealTradeSettings { ExitMode = "INTRADAY" });
+        var ctx = new BacktestContext { TradeParams = intraday, MaxDurationDays = 20 };
+        var tape = Tape(Candle(Day1, 2, 97m, 97m, 94m, 95m));
+        var s = Signal(true, 150m, 10m); // entryFill defaults to EntryRaw (100)
+
+        var exit = Exit(tape, s, ctx);
+
+        Assert.DoesNotContain("Trailing SL Hit", exit.Reason);
+    }
+
+    [Fact]
+    public void LongEmergencyStop_UsesTheRealEntryFill_NotTheRawSignalPrice()
+    {
+        // EntryFill 105, StopLoss 98 -> ATR = (105-98)/1.5 = 4.667, emergency = 105 - 2.5x4.667 = 93.33
+        // (well inside the 12%-of-entry cap, so the ATR-based value governs, not the cap). A live dip to 95
+        // at 09:45 IST (well outside the closing window, so only the live emergency check applies) must NOT
+        // trigger once the floor is anchored to the real fill.
+        var tape = Tape(Candle(Day1, 2, 105m, 106m, 95m, 100m));
+        var s = Signal(false, 98m, 200m, entryFill: 105m);
+
+        var exit = Exit(tape, s); // default Ctx() uses SWING_CLOSE (Swing)
+
+        Assert.DoesNotContain("Emergency Stop", exit.Reason);
+    }
+
+    [Fact]
+    public void LongEmergencyStop_WithoutSlippage_TriggersAtTheSamePrice()
+    {
+        // Same dip to 95, but EntryFill == EntryRaw (no slippage) -> ATR = (100-98)/1.5 = 1.333, emergency =
+        // 100 - 2.5x1.333 = 96.67, so 95 breaches it - this is the old (pre-fix) EntryRaw-only behavior, kept
+        // as the contrast case.
+        var tape = Tape(Candle(Day1, 2, 105m, 106m, 95m, 100m));
+        var s = Signal(false, 98m, 200m); // entryFill defaults to EntryRaw (100)
+
+        var exit = Exit(tape, s);
+
+        Assert.Contains("Emergency Stop", exit.Reason);
+    }
+
+    [Fact]
+    public void Portfolio_RMultiple_UsesTheRealEntryFill_NotTheRawSignalPrice()
+    {
+        // EntryRaw 100, EntryFill 105 (as if 5% slippage), StopLoss 95 -> risk-per-share must be the real
+        // cost basis to the stop, 105-95=10, not the pre-fix 100-95=5 (half the true risk, so double the
+        // reported R-multiple).
+        var s = Signal(false, 95m, 200m, entryFill: 105m);
+        var t = RunOne(s, 115m, slippagePct: 0m); // clean exit fill (no exit-side slippage) isolates this check
+
+        decimal expectedRiskPerShare = 105m - 95m;
+        Assert.Equal(Math.Round(t.NetPnl / (t.Quantity * expectedRiskPerShare), 3), t.RMultiple);
     }
 
     [Fact]

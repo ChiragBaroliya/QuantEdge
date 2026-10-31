@@ -391,7 +391,8 @@ public class BacktestService : IBacktestService
             NiftyDaily = nifty,
             Nifty15mByDate = nifty15ByDate,
             RegimeFor = RegimeFor,
-            SessionOf = SessionOf
+            SessionOf = SessionOf,
+            SlippagePct = p.SlippagePct
         };
 
         // --- Replay every symbol (dedicated low-priority threads so the live feed in this process keeps its CPU) ---

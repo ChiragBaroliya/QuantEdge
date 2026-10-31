@@ -71,8 +71,8 @@ public static class BacktestPortfolio
                 cash += o.Cost + net;                     // the money blocked at entry comes back with the result
                 realizedByDay[o.Exit.SessionDate] = realizedByDay.GetValueOrDefault(o.Exit.SessionDate) + net;
 
-                decimal riskPerShare = isShort ? o.Signal.StopLoss - o.Signal.EntryRaw : o.Signal.EntryRaw - o.Signal.StopLoss;
-                if (riskPerShare <= 0m) riskPerShare = o.Signal.EntryRaw * SwingTradeRules.DefaultStopLossPct / 100m;
+                decimal riskPerShare = isShort ? o.Signal.StopLoss - o.EntryFill : o.EntryFill - o.Signal.StopLoss;
+                if (riskPerShare <= 0m) riskPerShare = o.EntryFill * SwingTradeRules.DefaultStopLossPct / 100m;
                 result.Trades.Add(new BacktestTrade
                 {
                     Symbol = o.Signal.Symbol,
@@ -128,7 +128,7 @@ public static class BacktestPortfolio
             var exit = exitOf(s);
             if (exit == null) { Skip(s.SkipReason ?? "could not simulate"); continue; }
 
-            decimal entryFill = Math.Round(s.EntryRaw * (s.IsShort ? 1m - slip : 1m + slip), 2);
+            decimal entryFill = s.EntryFill; // single source of truth - computed once at signal time (BacktestEngine), same formula this used to duplicate here
             decimal riskPct = s.PolicyRiskPct > 0m ? s.PolicyRiskPct : ps.RiskPct;
             decimal bookEquity = cash + open.Sum(o => o.Cost);
             int qty = !ps.RiskSizing ? (int)Math.Floor(ps.AmountPerTrade / s.EntryRaw)
