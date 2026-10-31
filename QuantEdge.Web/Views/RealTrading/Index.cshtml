@@ -614,6 +614,13 @@
                                 </div>
                             </div>
                             <small class="form-hint">ATR = the stock's daily Average True Range (14). Defaults: SL 1.5, Trail 3, Target 3. The Stop Loss is capped at 8% below entry.</small>
+                            <div class="row mt-2">
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpTrailActivationPct">Trail Activation (% gain)</label>
+                                    <input type="number" step="0.1" min="0" max="10" class="form-control qe-input" id="inpTrailActivationPct" name="TrailActivationPct" />
+                                </div>
+                            </div>
+                            <small class="form-hint">0 = use the default 1x-ATR activation. e.g. 1.5 = start locking in a gain (floored at breakeven) as soon as the price is up 1.5% from entry, instead of waiting for the default 1x-ATR move. LONG (swing) only - shorts are unaffected.</small>
                         </div>
 
                         <div class="mt-3">

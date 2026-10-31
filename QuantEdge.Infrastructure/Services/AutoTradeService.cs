@@ -76,6 +76,7 @@ public class AutoTradeService : IAutoTradeService
         existing.StopLossAtrMult = updateDto.StopLossAtrMult;
         existing.TrailAtrMult = updateDto.TrailAtrMult;
         existing.TargetAtrMult = updateDto.TargetAtrMult;
+        existing.TrailActivationPct = updateDto.TrailActivationPct;
         existing.MaxDurationDays = updateDto.MaxDurationDays;
         existing.MaxTradesPerDay = updateDto.MaxTradesPerDay;
         existing.FixedAmountPerTrade = updateDto.FixedAmountPerTrade;

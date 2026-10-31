@@ -148,6 +148,11 @@ public static class SwingShortDecisionEngine
         bool isNear52WLow = low52W > 0m && currentPrice <= (1m + rules.Near52WeekPct / 100m) * low52W;
 
         bool breakdownPassed = isPrevLowBreakdown || isConsolidationBreakdown || isNear52WLow;
+        var breakdownSubTypes = new List<string>();
+        if (isPrevLowBreakdown) breakdownSubTypes.Add("PRIOR_LOW");
+        if (isConsolidationBreakdown) breakdownSubTypes.Add("CONSOLIDATION");
+        if (isNear52WLow) breakdownSubTypes.Add("NEAR_52W_LOW");
+        result.BreakdownSubType = breakdownSubTypes.Count > 0 ? string.Join(",", breakdownSubTypes) : "NONE";
         if (breakdownPassed) { score += rules.BreakoutPoints; passedRules.Add($"BREAKDOWN_GROUP (+{rules.BreakoutPoints} pts): Breakdown below PDL/Swing Low/Consolidation/near 52W Low"); }
         else failedRules.Add($"BREAKDOWN_GROUP (0/{rules.BreakoutPoints} pts): Inside trading range, no breakdown detected");
         AddFactor("BREAKDOWN_GROUP", "Breakdown", rules.BreakoutPoints, "15m");

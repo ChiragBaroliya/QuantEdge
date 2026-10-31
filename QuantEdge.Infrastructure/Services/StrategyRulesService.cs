@@ -61,6 +61,10 @@ public class StrategyRulesService : IStrategyRulesService
                 MaxPositions = p.MaxPositions,
                 RiskPct = p.RiskPct,
                 MaxExposurePct = p.MaxExposurePct,
+                // Previously dropped here, silently resetting every regime's SHORT policy back to the class's
+                // 82/3 property-initializer defaults on every single Trade Conditions save.
+                ShortMinStockScore = p.ShortMinStockScore,
+                ShortMaxPositions = p.ShortMaxPositions,
                 Description = existing?.Description ?? fallback.Description
             };
         }).ToList();
@@ -97,6 +101,8 @@ public class StrategyRulesService : IStrategyRulesService
         {
             if (p.MinStockScore is < 0 or > 100) errors.Add($"{p.Regime}: minimum score must be between 0 and 100.");
             if (p.MaxPositions is < 0 or > MaxPolicyPositions) errors.Add($"{p.Regime}: max positions must be between 0 and {MaxPolicyPositions}.");
+            if (p.ShortMinStockScore is < 0 or > 100) errors.Add($"{p.Regime}: short minimum score must be between 0 and 100.");
+            if (p.ShortMaxPositions is < 0 or > MaxPolicyPositions) errors.Add($"{p.Regime}: short max positions must be between 0 and {MaxPolicyPositions}.");
             if (p.RiskPct < MinPolicyRiskPct || p.RiskPct > MaxPolicyRiskPct) errors.Add($"{p.Regime}: risk must be between {MinPolicyRiskPct}% and {MaxPolicyRiskPct}%.");
             if (p.MaxExposurePct < MinPolicyExposurePct || p.MaxExposurePct > MaxPolicyExposurePct) errors.Add($"{p.Regime}: max exposure must be between {MinPolicyExposurePct}% and {MaxPolicyExposurePct}%.");
         }
@@ -120,6 +126,10 @@ public class StrategyRulesService : IStrategyRulesService
             if (old == null || old.MinStockScore != p.MinStockScore || old.RequireRelativeStrength != p.RequireRelativeStrength || old.MaxPositions != p.MaxPositions || old.RiskPct != p.RiskPct || old.MaxExposurePct != p.MaxExposurePct)
             {
                 changes.Add($"{p.Regime} policy {old?.MinStockScore}/{old?.RequireRelativeStrength}/{old?.MaxPositions}/{old?.RiskPct:0.##}/{old?.MaxExposurePct:0.##} -> {p.MinStockScore}/{p.RequireRelativeStrength}/{p.MaxPositions}/{p.RiskPct:0.##}/{p.MaxExposurePct:0.##}");
+            }
+            if (old == null || old.ShortMinStockScore != p.ShortMinStockScore || old.ShortMaxPositions != p.ShortMaxPositions)
+            {
+                changes.Add($"{p.Regime} short policy {old?.ShortMinStockScore}/{old?.ShortMaxPositions} -> {p.ShortMinStockScore}/{p.ShortMaxPositions}");
             }
         }
         return changes;

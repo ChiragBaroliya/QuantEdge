@@ -317,6 +317,28 @@ public class SwingRuleParametersTests
         Assert.Equal(40m, bearish.MaxExposurePct);
     }
 
+    [Fact]
+    public async Task Save_PreservesShortPolicyFields_InsteadOfResettingThemToDefaults()
+    {
+        // Regression test: SaveAsync used to rebuild each RegimePolicy without copying ShortMinStockScore/
+        // ShortMaxPositions, silently resetting every regime's SHORT policy to the class's 82/3 defaults on
+        // every single Trade Conditions save.
+        var (service, repo, regime) = NewService();
+        IReadOnlyList<RegimePolicy>? stored = null;
+        regime.Setup(x => x.SavePoliciesAsync(It.IsAny<IReadOnlyList<RegimePolicy>>())).Callback<IReadOnlyList<RegimePolicy>>(p => stored = p).Returns(Task.CompletedTask);
+        var dto = ValidSave();
+        var bearishDto = dto.Policies!.Single(p => p.Regime == MarketRegimes.Bearish);
+        bearishDto.ShortMinStockScore = 90;
+        bearishDto.ShortMaxPositions = 1;
+
+        var (success, errors, _) = await service.SaveAsync(dto);
+
+        Assert.True(success, string.Join(" ", errors));
+        var bearish = stored!.Single(p => p.Regime == MarketRegimes.Bearish);
+        Assert.Equal(90, bearish.ShortMinStockScore);
+        Assert.Equal(1, bearish.ShortMaxPositions);
+    }
+
     public static TheoryData<Action<StrategyRulesSaveDto>, string> BadSaves => new()
     {
         { d => d.ConfirmLive = false, "real-money" },
@@ -329,6 +351,8 @@ public class SwingRuleParametersTests
         { d => d.Policies![0].Regime = "BEARISH", "exactly one policy" },
         { d => d.Policies![0].MinStockScore = 101, "minimum score" },
         { d => d.Policies![0].MaxPositions = -1, "max positions" },
+        { d => d.Policies![0].ShortMinStockScore = 101, "short minimum score" },
+        { d => d.Policies![0].ShortMaxPositions = -1, "short max positions" },
         { d => d.Policies![0].RiskPct = 6m, "risk must be" },
         { d => d.Policies![0].MaxExposurePct = 0m, "max exposure" },
         { d => d.Policies![0].MaxExposurePct = 101m, "max exposure" },

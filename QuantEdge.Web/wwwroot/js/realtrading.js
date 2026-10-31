@@ -352,6 +352,7 @@ function populateSettingsForm(s) {
     setVal("inpSlAtrMult", s.stopLossAtrMult);
     setVal("inpTrailAtrMult", s.trailAtrMult);
     setVal("inpTargetAtrMult", s.targetAtrMult);
+    setVal("inpTrailActivationPct", s.trailActivationPct ?? 0);
     setVal("inpShortEntryCutoff", s.shortEntryCutoff || "15:00");
     setVal("inpShortSquareOffTime", s.shortSquareOffTime || "15:05");
     setVal("inpShortSlAtrMult", s.shortStopLossAtrMult ?? 0.6);
@@ -1182,6 +1183,7 @@ function setupEventListeners() {
                 StopLossAtrMult: parseFloat(document.getElementById("inpSlAtrMult")?.value || "1.5"),
                 TrailAtrMult: parseFloat(document.getElementById("inpTrailAtrMult")?.value || "3"),
                 TargetAtrMult: parseFloat(document.getElementById("inpTargetAtrMult")?.value || "3"),
+                TrailActivationPct: parseFloat(document.getElementById("inpTrailActivationPct")?.value || "0"),
                 ShortEntryCutoff: document.getElementById("inpShortEntryCutoff")?.value || "15:00",
                 ShortSquareOffTime: document.getElementById("inpShortSquareOffTime")?.value || "15:05",
                 ShortStopLossAtrMult: parseFloat(document.getElementById("inpShortSlAtrMult")?.value || "0.6"),

@@ -43,6 +43,8 @@ public class TradeLogicRulesDto
     public decimal StopLossAtrMult { get; set; }
     public decimal TrailAtrMult { get; set; }
     public decimal TargetAtrMult { get; set; }
+    /// <summary>0 = disabled (falls back to the fixed <see cref="DefaultTrailActivationAtrMult"/> below).</summary>
+    public decimal TrailActivationPct { get; set; }
     public int MaxDurationDays { get; set; }
 
     // Global swing strategy settings
@@ -57,7 +59,7 @@ public class TradeLogicRulesDto
     public int MaxConcurrentPositions { get; set; }
     public decimal MaxSignalDriftPct { get; set; }
     public decimal EmergencyExtraAtrMult { get; set; }
-    public decimal TrailActivationAtrMult { get; set; }
+    public decimal DefaultTrailActivationAtrMult { get; set; }
     public decimal MaxStopLossPct { get; set; }
     public decimal MaxEmergencyStopPct { get; set; }
     public decimal GapBreachThresholdPct { get; set; }
@@ -95,6 +97,7 @@ public class TradeLogicRulesDto
             StopLossAtrMult = p.StopLossAtrMult,
             TrailAtrMult = p.TrailAtrMult,
             TargetAtrMult = p.TargetAtrMult,
+            TrailActivationPct = p.TrailActivationPct,
             MaxDurationDays = settings.MaxDurationDays,
 
             BuyScoreThreshold = strategy.BuyScoreThreshold,
@@ -107,7 +110,7 @@ public class TradeLogicRulesDto
             MaxConcurrentPositions = SwingTradeRules.MaxConcurrentPositions,
             MaxSignalDriftPct = SwingTradeRules.MaxSignalDriftPct,
             EmergencyExtraAtrMult = SwingTradeRules.EmergencyExtraAtrMult,
-            TrailActivationAtrMult = SwingTradeRules.TrailActivationAtrMult,
+            DefaultTrailActivationAtrMult = SwingTradeRules.DefaultTrailActivationAtrMult,
             MaxStopLossPct = SwingTradeRules.MaxStopLossPct,
             MaxEmergencyStopPct = SwingTradeRules.MaxEmergencyStopPct,
             GapBreachThresholdPct = SwingTradeRules.GapBreachThresholdPct,

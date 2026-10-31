@@ -40,6 +40,11 @@ public class AutoTradeSettingsUpdateDto : IValidatableObject
     [Range(typeof(decimal), "0.5", "20.0", ErrorMessage = "Target ATR multiple must be between 0.5 and 20.")]
     public decimal TargetAtrMult { get; set; } = 3.0m;
 
+    // 0 = disabled (default entry + 1x ATR activation). Set to e.g. 1.5 to start protecting the gain once price
+    // is up 1.5% from entry instead.
+    [Range(typeof(decimal), "0", "10.0", ErrorMessage = "Trail Activation % must be between 0 and 10.")]
+    public decimal TrailActivationPct { get; set; } = 0m;
+
     [Range(1, 365, ErrorMessage = "Max Duration must be between 1 and 365 days.")]
     public int MaxDurationDays { get; set; } = 20;
 

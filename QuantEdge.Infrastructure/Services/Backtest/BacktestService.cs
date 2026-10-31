@@ -145,6 +145,7 @@ public class BacktestService : IBacktestService
         p.ShortStopLossAtrMult ??= real.ShortStopLossAtrMult;
         p.ShortTrailAtrMult ??= real.ShortTrailAtrMult;
         p.ShortTargetAtrMult ??= real.ShortTargetAtrMult;
+        p.TrailActivationPct ??= real.TrailActivationPct;
         p.ProfitTargetPct ??= real.ProfitTargetPct;
         p.MaxDurationDays ??= real.MaxDurationDays;
         p.ShortEntryCutoff = string.IsNullOrWhiteSpace(p.ShortEntryCutoff) ? real.ShortEntryCutoff : p.ShortEntryCutoff.Trim();
@@ -195,7 +196,8 @@ public class BacktestService : IBacktestService
                    exit_time AS ExitTime, exit_price AS ExitPrice, exit_reason AS ExitReason, exit_category AS ExitCategory,
                    quantity, stop_loss AS StopLoss, target, score, met_count AS MetCount, sessions_held AS SessionsHeld,
                    gross_pnl AS GrossPnl, charges, net_pnl AS NetPnl, r_multiple AS RMultiple, mfe_pct AS MfePct, mae_pct AS MaePct,
-                   factors, end_of_data AS EndOfData
+                   factors, end_of_data AS EndOfData, sub_type AS SubType, rsi_15m AS Rsi15m, rsi_60m AS Rsi60m,
+                   volume_multiple AS VolumeMultiple, adx_1d AS Adx1d, signal_daily_atr AS SignalDailyAtr
             FROM backtest_trades WHERE run_id = @runId ORDER BY entry_time;", new { runId });
         return rows.ToList();
     }
@@ -263,15 +265,15 @@ public class BacktestService : IBacktestService
             await connection.ExecuteAsync(@"
                 INSERT INTO backtest_trades (run_id, symbol, side, sector, regime, signal_time, entry_time, entry_price, exit_time, exit_price,
                     exit_reason, exit_category, quantity, stop_loss, target, score, met_count, sessions_held, gross_pnl, charges, net_pnl,
-                    r_multiple, mfe_pct, mae_pct, factors, end_of_data)
+                    r_multiple, mfe_pct, mae_pct, factors, end_of_data, sub_type, rsi_15m, rsi_60m, volume_multiple, adx_1d, signal_daily_atr)
                 VALUES (@RunId, @Symbol, @Side, @Sector, @Regime, @SignalTime, @EntryTime, @EntryPrice, @ExitTime, @ExitPrice,
                     LEFT(@ExitReason, 200), @ExitCategory, @Quantity, @StopLoss, @Target, @Score, @MetCount, @SessionsHeld, @GrossPnl, @Charges, @NetPnl,
-                    @RMultiple, @MfePct, @MaePct, LEFT(@Factors, 400), @EndOfData);",
+                    @RMultiple, @MfePct, @MaePct, LEFT(@Factors, 400), @EndOfData, @SubType, @Rsi15m, @Rsi60m, @VolumeMultiple, @Adx1d, @SignalDailyAtr);",
                 trades.Select(t => new
                 {
                     RunId = run.Id, t.Symbol, t.Side, t.Sector, t.Regime, t.SignalTime, t.EntryTime, t.EntryPrice, t.ExitTime, t.ExitPrice,
                     t.ExitReason, t.ExitCategory, t.Quantity, t.StopLoss, t.Target, t.Score, t.MetCount, t.SessionsHeld, t.GrossPnl, t.Charges,
-                    t.NetPnl, t.RMultiple, t.MfePct, t.MaePct, t.Factors, t.EndOfData
+                    t.NetPnl, t.RMultiple, t.MfePct, t.MaePct, t.Factors, t.EndOfData, t.SubType, t.Rsi15m, t.Rsi60m, t.VolumeMultiple, t.Adx1d, t.SignalDailyAtr
                 }), tx);
             await connection.ExecuteAsync(@"
                 UPDATE backtest_runs SET status = 'DONE', progress_pct = 100, summary = CAST(@json AS jsonb), message = @message,
@@ -325,6 +327,7 @@ public class BacktestService : IBacktestService
             ExitMode = p.ExitMode!, CloseCheckTime = p.CloseCheckTime!, TradingWindowEnd = p.TradingWindowEnd!,
             StopLossAtrMult = p.StopLossAtrMult!.Value, TrailAtrMult = p.TrailAtrMult!.Value, TargetAtrMult = p.TargetAtrMult!.Value,
             ShortStopLossAtrMult = p.ShortStopLossAtrMult!.Value, ShortTrailAtrMult = p.ShortTrailAtrMult!.Value, ShortTargetAtrMult = p.ShortTargetAtrMult!.Value,
+            TrailActivationPct = p.TrailActivationPct.GetValueOrDefault(),
             ProfitTargetPct = p.ProfitTargetPct!.Value
         });
         var policies = await _regimeService.GetPoliciesAsync();

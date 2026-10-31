@@ -40,6 +40,9 @@ public class RealTradeSettings
     public decimal StopLossAtrMult { get; set; } = 1.5m;
     public decimal TrailAtrMult { get; set; } = 3.0m;
     public decimal TargetAtrMult { get; set; } = 3.0m;
+    // 0 = disabled (trailing SL activates at the default entry + 1x ATR, as before). Set to e.g. 1.5 to instead
+    // start protecting the gain as soon as price is up 1.5% from entry - still floors at breakeven, same as today.
+    public decimal TrailActivationPct { get; set; } = 0m;
     // Auto Short Selling (intraday only, always MIS) - OFF by default and only active while the real master switch
     // is ON too. No new short at/after ShortEntryCutoff; every open short is bought back (auto square-off) at
     // ShortSquareOffTime IST, before Zerodha's own MIS square-off. Same entry gates and risk limits as a BUY.

@@ -67,7 +67,7 @@ public class BacktestController : ControllerBase
     public async Task<IActionResult> TradesCsv(int id)
     {
         var trades = await _backtestService.GetTradesAsync(id);
-        var sb = new StringBuilder("Symbol,Side,Sector,Regime,Score,Entry (UTC),Entry price,Exit (UTC),Exit price,Exit,Qty,Stop,Target,Sessions,Gross,Charges,Net,R,MFE %,MAE %\n");
+        var sb = new StringBuilder("Symbol,Side,Sector,Regime,Score,Entry (UTC),Entry price,Exit (UTC),Exit price,Exit,Qty,Stop,Target,Sessions,Gross,Charges,Net,R,MFE %,MAE %,Sub Type,Factors,RSI 15m,RSI 60m,Volume x,ADX,ATR\n");
         string Q(string? s) => "\"" + (s ?? string.Empty).Replace("\"", "\"\"") + "\"";
         foreach (var t in trades)
         {
@@ -77,7 +77,10 @@ public class BacktestController : ControllerBase
                 Q(t.ExitReason), t.Quantity, t.StopLoss.ToString(CultureInfo.InvariantCulture), t.Target.ToString(CultureInfo.InvariantCulture),
                 t.SessionsHeld, t.GrossPnl.ToString(CultureInfo.InvariantCulture), t.Charges.ToString(CultureInfo.InvariantCulture),
                 t.NetPnl.ToString(CultureInfo.InvariantCulture), t.RMultiple.ToString(CultureInfo.InvariantCulture),
-                t.MfePct.ToString(CultureInfo.InvariantCulture), t.MaePct.ToString(CultureInfo.InvariantCulture)));
+                t.MfePct.ToString(CultureInfo.InvariantCulture), t.MaePct.ToString(CultureInfo.InvariantCulture),
+                Q(t.SubType), Q(t.Factors), t.Rsi15m.ToString(CultureInfo.InvariantCulture), t.Rsi60m?.ToString(CultureInfo.InvariantCulture) ?? "",
+                t.VolumeMultiple.ToString(CultureInfo.InvariantCulture), t.Adx1d.ToString(CultureInfo.InvariantCulture),
+                t.SignalDailyAtr.ToString(CultureInfo.InvariantCulture)));
         }
         return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", $"backtest-{id}-trades.csv");
     }

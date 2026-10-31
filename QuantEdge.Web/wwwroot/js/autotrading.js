@@ -256,6 +256,7 @@ function populateSettingsForm(s) {
     setVal("txtSlAtrMult", s.stopLossAtrMult ?? s.StopLossAtrMult ?? 1.5);
     setVal("txtTrailAtrMult", s.trailAtrMult ?? s.TrailAtrMult ?? 3);
     setVal("txtTargetAtrMult", s.targetAtrMult ?? s.TargetAtrMult ?? 3);
+    setVal("txtTrailActivationPct", s.trailActivationPct ?? s.TrailActivationPct ?? 0);
     setVal("txtShortEntryCutoff", s.shortEntryCutoff ?? s.ShortEntryCutoff ?? "15:00");
     setVal("txtShortSquareOffTime", s.shortSquareOffTime ?? s.ShortSquareOffTime ?? "15:15");
     setVal("txtShortSlAtrMult", s.shortStopLossAtrMult ?? s.ShortStopLossAtrMult ?? 0.6);
@@ -743,6 +744,7 @@ function setupEventListeners() {
                 stopLossAtrMult: num("txtSlAtrMult", 1.5),
                 trailAtrMult: num("txtTrailAtrMult", 3),
                 targetAtrMult: num("txtTargetAtrMult", 3),
+                trailActivationPct: num("txtTrailActivationPct", 0),
                 isAutoShortEnabled: document.getElementById("chkAutoShortEnabled")?.checked === true,
                 shortEntryCutoff: document.getElementById("txtShortEntryCutoff")?.value || "15:00",
                 shortSquareOffTime: document.getElementById("txtShortSquareOffTime")?.value || "15:15",

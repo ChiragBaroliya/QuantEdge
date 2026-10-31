@@ -74,6 +74,8 @@ public class BacktestParams
     public decimal? ShortStopLossAtrMult { get; set; }
     public decimal? ShortTrailAtrMult { get; set; }
     public decimal? ShortTargetAtrMult { get; set; }
+    // 0/null = disabled (default entry + 1x ATR activation). LONG only - see SwingTradeRules.GetTrailActivationPrice.
+    public decimal? TrailActivationPct { get; set; }
 }
 
 /// <summary>A 15-minute scan that the strategy would have acted on (or that the threshold sweep needs), with its simulated trade.</summary>
@@ -99,6 +101,14 @@ public sealed class BacktestSignal
     public decimal? PolicyMaxExposurePct { get; init; }
     /// <summary>Points per scoring factor, 6 bits each in <see cref="BacktestEngine.FactorCodes"/> order (kept small: a run can hold 100k+ signals).</summary>
     public long FactorPoints { get; init; }
+    /// <summary>Which BREAKOUT_GROUP/BREAKDOWN_GROUP sub-condition(s) fired - "NONE" otherwise (<see cref="SwingEvaluationResult.BreakoutSubType"/>/<see cref="SwingEvaluationResult.BreakdownSubType"/>).</summary>
+    public string SubType { get; init; } = "NONE";
+    // Indicator snapshot at the scan that produced this signal, for rule-level analysis of winners vs losers.
+    public decimal Rsi15m { get; init; }
+    public decimal? Rsi60m { get; init; }
+    public decimal VolumeMultiple { get; init; }
+    public decimal Adx1d { get; init; }
+    public decimal SignalDailyAtr { get; init; }
 
     public decimal SignalPrice { get; init; }
     public decimal EntryRaw { get; init; }
@@ -144,6 +154,12 @@ public sealed class BacktestTrade
     public decimal MfePct { get; set; }
     public decimal MaePct { get; set; }
     public string Factors { get; set; } = string.Empty;
+    public string SubType { get; set; } = "NONE";
+    public decimal Rsi15m { get; set; }
+    public decimal? Rsi60m { get; set; }
+    public decimal VolumeMultiple { get; set; }
+    public decimal Adx1d { get; set; }
+    public decimal SignalDailyAtr { get; set; }
     public bool EndOfData { get; set; }
     /// <summary>Prices before slippage, for <see cref="BacktestLogicAudit"/> during the run; not stored.</summary>
     public decimal EntryRaw { get; set; }

@@ -101,6 +101,12 @@ public static class BacktestPortfolio
                     MfePct = o.Exit.MfePct,
                     MaePct = o.Exit.MaePct,
                     Factors = BacktestEngine.FactorsText(o.Signal.FactorPoints, isShort),
+                    SubType = o.Signal.SubType,
+                    Rsi15m = o.Signal.Rsi15m,
+                    Rsi60m = o.Signal.Rsi60m,
+                    VolumeMultiple = o.Signal.VolumeMultiple,
+                    Adx1d = o.Signal.Adx1d,
+                    SignalDailyAtr = o.Signal.SignalDailyAtr,
                     EndOfData = o.Exit.EndOfData
                 });
                 open.Remove(o);

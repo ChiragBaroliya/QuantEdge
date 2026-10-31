@@ -30,6 +30,9 @@ public class AutoTradeSettings
     public decimal StopLossAtrMult { get; set; } = 1.5m;
     public decimal TrailAtrMult { get; set; } = 3.0m;
     public decimal TargetAtrMult { get; set; } = 3.0m;
+    // 0 = disabled (trailing SL activates at the default entry + 1x ATR, as before). Set to e.g. 1.5 to instead
+    // start protecting the gain as soon as price is up 1.5% from entry - still floors at breakeven, same as today.
+    public decimal TrailActivationPct { get; set; } = 0m;
     // Auto Short Selling (intraday only) - OFF by default. When ON, the scan may also open shorts (sell first, buy
     // back later) on bearish setups: no new short at/after ShortEntryCutoff, and every open short is bought back
     // (auto square-off) at ShortSquareOffTime IST. Same entry gates and risk limits as a BUY.

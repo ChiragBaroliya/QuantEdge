@@ -19,25 +19,26 @@ public sealed record SwingTradeParams(
     decimal ProfitTargetPct,
     decimal ShortStopLossAtrMult,
     decimal ShortTrailAtrMult,
-    decimal ShortTargetAtrMult)
+    decimal ShortTargetAtrMult,
+    decimal TrailActivationPct)
 {
     public bool IsSwingClose => !string.Equals(ExitMode, SwingTradeRules.ExitModeIntraday, StringComparison.OrdinalIgnoreCase);
 
     public static SwingTradeParams From(RealTradeSettings s) =>
         Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct,
-            s.ShortStopLossAtrMult, s.ShortTrailAtrMult, s.ShortTargetAtrMult);
+            s.ShortStopLossAtrMult, s.ShortTrailAtrMult, s.ShortTargetAtrMult, s.TrailActivationPct);
 
     public static SwingTradeParams From(AutoTradeSettings s) =>
         Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct,
-            s.ShortStopLossAtrMult, s.ShortTrailAtrMult, s.ShortTargetAtrMult);
+            s.ShortStopLossAtrMult, s.ShortTrailAtrMult, s.ShortTargetAtrMult, s.TrailActivationPct);
 
     public static SwingTradeParams From(ManualPaperTradeSettings s) =>
         Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct,
-            0m, 0m, 0m);
+            0m, 0m, 0m, 0m);
 
     private static SwingTradeParams Create(string? exitMode, string? closeCheckTime, string? windowEnd,
         decimal slMult, decimal trailMult, decimal targetMult, decimal profitTargetPct,
-        decimal shortSlMult, decimal shortTrailMult, decimal shortTargetMult)
+        decimal shortSlMult, decimal shortTrailMult, decimal shortTargetMult, decimal trailActivationPct)
     {
         return new SwingTradeParams(
             string.IsNullOrWhiteSpace(exitMode) ? SwingTradeRules.ExitModeSwingClose : exitMode.Trim().ToUpperInvariant(),
@@ -49,7 +50,8 @@ public sealed record SwingTradeParams(
             Math.Abs(profitTargetPct),
             shortSlMult > 0 ? shortSlMult : SwingTradeRules.DefaultShortStopLossAtrMult,
             shortTrailMult > 0 ? shortTrailMult : SwingTradeRules.DefaultShortTrailAtrMult,
-            shortTargetMult > 0 ? shortTargetMult : SwingTradeRules.DefaultShortTargetAtrMult);
+            shortTargetMult > 0 ? shortTargetMult : SwingTradeRules.DefaultShortTargetAtrMult,
+            Math.Max(0m, trailActivationPct)); // 0 = disabled -> fall back to the default 1x-ATR activation
     }
 }
 
@@ -126,7 +128,10 @@ public static class SwingTradeRules
 
     // Fixed parts of the SWING_CLOSE policy (the tunable parts live on the settings).
     public const decimal EmergencyExtraAtrMult = 1.0m;
-    public const decimal TrailActivationAtrMult = 1.0m;
+    // Default LONG trail-activation distance (1x ATR, ~3.8% of entry on this bot's typical universe), used
+    // whenever TrailActivationPct is left at 0 (disabled) on the settings. SHORT's activation keeps using this
+    // same constant directly (unaffected by TrailActivationPct, which is LONG-only - see GetTrailActivationPrice).
+    public const decimal DefaultTrailActivationAtrMult = 1.0m;
     public const decimal MinAtrPct = 1.0m;
     public const decimal MaxStopLossPct = 8.0m;
     public const decimal MaxEmergencyStopPct = 12.0m;
@@ -492,9 +497,15 @@ public static class SwingTradeRules
         return start > latestStart ? latestStart : start;
     }
 
-    /// <summary>Price at which a SWING_CLOSE trailing SL may first be set (entry + 1 x ATR).</summary>
+    /// <summary>
+    /// Price at which a SWING_CLOSE trailing SL may first be set: entry + 1 x ATR by default, or a flat
+    /// gain of <see cref="SwingTradeParams.TrailActivationPct"/>% when that's set (LONG only - SHORT keeps
+    /// the default ATR-based activation regardless of this setting).
+    /// </summary>
     public static decimal GetTrailActivationPrice(ExitPositionView pos, SwingTradeParams p) =>
-        pos.EntryPrice + TrailActivationAtrMult * InferAtr(pos, p);
+        p.TrailActivationPct > 0
+            ? pos.EntryPrice * (1m + p.TrailActivationPct / 100m)
+            : pos.EntryPrice + DefaultTrailActivationAtrMult * InferAtr(pos, p);
 
     /// <summary>
     /// The position's volatility unit. The Stop Loss was placed StopLossAtrMult x ATR below entry, so
@@ -684,7 +695,7 @@ public static class SwingTradeRules
 
             if (!trailActive)
             {
-                decimal activationPrice = entry - TrailActivationAtrMult * atr;
+                decimal activationPrice = entry - DefaultTrailActivationAtrMult * atr;
                 return ltp <= activationPrice
                     ? new ExitDecision(false, string.Empty, false, candidate)
                     : ExitDecision.Hold;

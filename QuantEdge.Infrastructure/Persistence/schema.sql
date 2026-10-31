@@ -1150,6 +1150,12 @@ ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_stop_loss_atr_mul
 ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_trail_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.20;
 ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_target_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.20;
 
+-- 0 = disabled (LONG trailing SL activates at the default entry + 1x ATR, as before). Set to e.g. 1.5 to instead
+-- start protecting the gain as soon as price is up 1.5% from entry (SwingTradeRules.GetTrailActivationPrice).
+-- SHORT's activation is unaffected by this column - it always uses the fixed ATR-based default.
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS trail_activation_pct NUMERIC(5, 2) NOT NULL DEFAULT 0;
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS trail_activation_pct NUMERIC(5, 2) NOT NULL DEFAULT 0;
+
 -- real_orders.is_short marks both legs of a short (entry SELL, covering BUY): with shorts, the side alone no longer
 -- says whether a fill opens or closes a position. Existing rows are all longs (FALSE).
 ALTER TABLE real_orders ADD COLUMN IF NOT EXISTS is_short BOOLEAN NOT NULL DEFAULT FALSE;
@@ -1526,6 +1532,22 @@ CREATE TABLE IF NOT EXISTS backtest_trades (
     mfe_pct NUMERIC(10, 2),
     mae_pct NUMERIC(10, 2),
     factors VARCHAR(400),
-    end_of_data BOOLEAN NOT NULL DEFAULT FALSE
+    end_of_data BOOLEAN NOT NULL DEFAULT FALSE,
+    sub_type VARCHAR(40),
+    rsi_15m NUMERIC(6, 2),
+    rsi_60m NUMERIC(6, 2),
+    volume_multiple NUMERIC(8, 2),
+    adx_1d NUMERIC(6, 2),
+    signal_daily_atr NUMERIC(18, 4)
 );
 CREATE INDEX IF NOT EXISTS idx_backtest_trades_run ON backtest_trades (run_id, entry_time);
+
+-- Rule-level detail for signal-quality analysis: which BREAKOUT_GROUP/BREAKDOWN_GROUP sub-condition fired
+-- (e.g. a stock qualifying only by being near its 52-week extreme - a materially different, riskier setup
+-- than a fresh breakout/breakdown) plus the raw indicator readings behind the signal.
+ALTER TABLE backtest_trades ADD COLUMN IF NOT EXISTS sub_type VARCHAR(40);
+ALTER TABLE backtest_trades ADD COLUMN IF NOT EXISTS rsi_15m NUMERIC(6, 2);
+ALTER TABLE backtest_trades ADD COLUMN IF NOT EXISTS rsi_60m NUMERIC(6, 2);
+ALTER TABLE backtest_trades ADD COLUMN IF NOT EXISTS volume_multiple NUMERIC(8, 2);
+ALTER TABLE backtest_trades ADD COLUMN IF NOT EXISTS adx_1d NUMERIC(6, 2);
+ALTER TABLE backtest_trades ADD COLUMN IF NOT EXISTS signal_daily_atr NUMERIC(18, 4);

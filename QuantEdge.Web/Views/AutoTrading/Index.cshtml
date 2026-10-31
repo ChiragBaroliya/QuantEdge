@@ -357,6 +357,12 @@
                     </div>
 
                     <div class="form-group col-full">
+                        <label class="form-label" title="0 = default 1x-ATR trail activation. e.g. 1.5 = lock in a gain (at breakeven) as soon as price is up 1.5% from entry. LONG only.">Trail Activation (% gain)</label>
+                        <input type="number" id="txtTrailActivationPct" class="form-input" value="0" min="0" max="10" step="0.1" disabled="@readOnly" />
+                        <small class="form-help-text">0 = use the default 1x-ATR activation instead of a flat % gain. LONG (swing) only - shorts are unaffected.</small>
+                    </div>
+
+                    <div class="form-group col-full">
                         <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" id="chkAutoShortEnabled" style="cursor: pointer; width: 14px; height: 14px;" disabled="@readOnly" />
                             Auto Short Selling (Intraday)

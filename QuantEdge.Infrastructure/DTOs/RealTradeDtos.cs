@@ -59,6 +59,11 @@ public class RealTradeSettingsUpdateDto : IValidatableObject
     [Range(typeof(decimal), "0.5", "20.0", ErrorMessage = "Target ATR multiple must be between 0.5 and 20.")]
     public decimal TargetAtrMult { get; set; } = 3.0m;
 
+    // 0 = disabled (default entry + 1x ATR activation). Set to e.g. 1.5 to start protecting the gain once price
+    // is up 1.5% from entry instead.
+    [Range(typeof(decimal), "0", "10.0", ErrorMessage = "Trail Activation % must be between 0 and 10.")]
+    public decimal TrailActivationPct { get; set; } = 0m;
+
     // Auto Short Selling's ON/OFF is its own switch (ToggleAutoShortRequestDto), not part of this form.
     [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Entry Cut-off must be HH:mm.")]
     public string ShortEntryCutoff { get; set; } = "15:00";
