@@ -628,6 +628,20 @@
                                     <input type="time" class="form-control qe-input" id="inpShortSquareOffTime" name="ShortSquareOffTime" max="15:10" />
                                 </div>
                             </div>
+                            <div class="row">
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpShortSlAtrMult">Short SL (× ATR)</label>
+                                    <input type="number" step="0.1" min="0.1" max="5" class="form-control qe-input" id="inpShortSlAtrMult" name="ShortStopLossAtrMult" />
+                                </div>
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpShortTrailAtrMult">Short Trail (× ATR)</label>
+                                    <input type="number" step="0.1" min="0.1" max="10" class="form-control qe-input" id="inpShortTrailAtrMult" name="ShortTrailAtrMult" />
+                                </div>
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpShortTargetAtrMult">Short Target (× ATR)</label>
+                                    <input type="number" step="0.1" min="0.1" max="20" class="form-control qe-input" id="inpShortTargetAtrMult" name="ShortTargetAtrMult" />
+                                </div>
+                            </div>
                             <small class="form-hint">
                                 Turned ON / OFF with the "Auto Short" switch at the top (ON only outside market hours, OFF any time),
                                 and only active while the Live Trading switch is also ON. When ON, the bot may place
@@ -635,6 +649,8 @@
                                 the stock in a daily downtrend - with the same guards and limits as a BUY. No new short after the cut-off;
                                 every open short is bought back at the Square-off time (15:10 at the latest - Zerodha blocks MIS orders for some stocks from ~15:12).
                                 If Zerodha squares a short off itself, QuantEdge books it at Zerodha's real buy price within a minute.
+                                Short SL/Trail/Target use their own (smaller) ATR multiples above, sized for the few intraday hours a short gets - not
+                                the swing SL/Trail/Target above, which size a multi-day BUY hold. Defaults: SL 0.6, Trail 1.2, Target 1.2.
                             </small>
                         </div>
 

@@ -95,8 +95,8 @@ public class AutoTradeServiceShortTests : ClockedTest
         Assert.Equal(TradeType.Auto, order.TradeType);
         var pos = Assert.Single(_positions);
         Assert.Equal(TradeSide.SELL, pos.Side);
-        Assert.Equal(103m, pos.StopLoss);   // 100 + 1.5 x ATR 2
-        Assert.Equal(94m, pos.TakeProfit);  // 100 - 3 x ATR 2
+        Assert.Equal(101.2m, pos.StopLoss);   // 100 + 0.6 (ShortStopLossAtrMult) x ATR 2
+        Assert.Equal(97.6m, pos.TakeProfit);  // 100 - 1.2 (ShortTargetAtrMult) x ATR 2
         Assert.True(pos.Quantity > 0);
         var entryRow = Assert.Single(_history);
         Assert.Equal(TradeSide.SELL, entryRow.Side);

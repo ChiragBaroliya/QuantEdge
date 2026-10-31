@@ -142,6 +142,9 @@ public class BacktestService : IBacktestService
         p.StopLossAtrMult ??= real.StopLossAtrMult;
         p.TrailAtrMult ??= real.TrailAtrMult;
         p.TargetAtrMult ??= real.TargetAtrMult;
+        p.ShortStopLossAtrMult ??= real.ShortStopLossAtrMult;
+        p.ShortTrailAtrMult ??= real.ShortTrailAtrMult;
+        p.ShortTargetAtrMult ??= real.ShortTargetAtrMult;
         p.ProfitTargetPct ??= real.ProfitTargetPct;
         p.MaxDurationDays ??= real.MaxDurationDays;
         p.ShortEntryCutoff = string.IsNullOrWhiteSpace(p.ShortEntryCutoff) ? real.ShortEntryCutoff : p.ShortEntryCutoff.Trim();
@@ -321,6 +324,7 @@ public class BacktestService : IBacktestService
         {
             ExitMode = p.ExitMode!, CloseCheckTime = p.CloseCheckTime!, TradingWindowEnd = p.TradingWindowEnd!,
             StopLossAtrMult = p.StopLossAtrMult!.Value, TrailAtrMult = p.TrailAtrMult!.Value, TargetAtrMult = p.TargetAtrMult!.Value,
+            ShortStopLossAtrMult = p.ShortStopLossAtrMult!.Value, ShortTrailAtrMult = p.ShortTrailAtrMult!.Value, ShortTargetAtrMult = p.ShortTargetAtrMult!.Value,
             ProfitTargetPct = p.ProfitTargetPct!.Value
         });
         var policies = await _regimeService.GetPoliciesAsync();

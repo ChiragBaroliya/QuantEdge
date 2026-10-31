@@ -258,6 +258,9 @@ function populateSettingsForm(s) {
     setVal("txtTargetAtrMult", s.targetAtrMult ?? s.TargetAtrMult ?? 3);
     setVal("txtShortEntryCutoff", s.shortEntryCutoff ?? s.ShortEntryCutoff ?? "15:00");
     setVal("txtShortSquareOffTime", s.shortSquareOffTime ?? s.ShortSquareOffTime ?? "15:15");
+    setVal("txtShortSlAtrMult", s.shortStopLossAtrMult ?? s.ShortStopLossAtrMult ?? 0.6);
+    setVal("txtShortTrailAtrMult", s.shortTrailAtrMult ?? s.ShortTrailAtrMult ?? 1.2);
+    setVal("txtShortTargetAtrMult", s.shortTargetAtrMult ?? s.ShortTargetAtrMult ?? 1.2);
     const chkShort = document.getElementById("chkAutoShortEnabled");
     if (chkShort) chkShort.checked = (s.isAutoShortEnabled ?? s.IsAutoShortEnabled) === true;
     currentExitMode = s.exitMode ?? s.ExitMode ?? "SWING_CLOSE";
@@ -742,7 +745,10 @@ function setupEventListeners() {
                 targetAtrMult: num("txtTargetAtrMult", 3),
                 isAutoShortEnabled: document.getElementById("chkAutoShortEnabled")?.checked === true,
                 shortEntryCutoff: document.getElementById("txtShortEntryCutoff")?.value || "15:00",
-                shortSquareOffTime: document.getElementById("txtShortSquareOffTime")?.value || "15:15"
+                shortSquareOffTime: document.getElementById("txtShortSquareOffTime")?.value || "15:15",
+                shortStopLossAtrMult: num("txtShortSlAtrMult", 0.6),
+                shortTrailAtrMult: num("txtShortTrailAtrMult", 1.2),
+                shortTargetAtrMult: num("txtShortTargetAtrMult", 1.2)
             };
 
             try {

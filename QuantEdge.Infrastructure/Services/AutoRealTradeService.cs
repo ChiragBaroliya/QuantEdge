@@ -189,6 +189,9 @@ public class AutoRealTradeService : IAutoRealTradeService
         // IsAutoShortEnabled is left as saved - it has its own switch (ToggleAutoShortAsync).
         existing.ShortEntryCutoff = shortEntryCutoff;
         existing.ShortSquareOffTime = shortSquareOffTime;
+        existing.ShortStopLossAtrMult = updateDto.ShortStopLossAtrMult;
+        existing.ShortTrailAtrMult = updateDto.ShortTrailAtrMult;
+        existing.ShortTargetAtrMult = updateDto.ShortTargetAtrMult;
 
         var updated = await _repository.UpsertSettingsAsync(existing);
 

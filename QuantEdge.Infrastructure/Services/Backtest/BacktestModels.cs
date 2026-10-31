@@ -69,6 +69,11 @@ public class BacktestParams
     public string? ShortEntryCutoff { get; set; }
     /// <summary>Open shorts are bought back at the first 15m bar starting at/after this IST time.</summary>
     public string? ShortSquareOffTime { get; set; }
+    // Shorts are intraday-only, so they get their own - much smaller - ATR multiples than StopLossAtrMult/
+    // TrailAtrMult/TargetAtrMult above, which size the multi-day swing LONG.
+    public decimal? ShortStopLossAtrMult { get; set; }
+    public decimal? ShortTrailAtrMult { get; set; }
+    public decimal? ShortTargetAtrMult { get; set; }
 }
 
 /// <summary>A 15-minute scan that the strategy would have acted on (or that the threshold sweep needs), with its simulated trade.</summary>

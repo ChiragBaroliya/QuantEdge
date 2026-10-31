@@ -165,8 +165,8 @@ public class BacktestShortSellingTests
     [Fact]
     public void ShortExit_TrailActivatesThenStopsTheTradeOut_AtOrBelowEntry()
     {
-        // ATR from the stop: 3 / 1.5 = 2. Falls past 98 (activation) -> trail at breakeven, then the price comes back.
-        var exit = Exit(Tape(Candle(Day1, 2, 100, 100, 97m, 97.5m), Candle(Day1, 3, 97.5m, 100.5m, 97.5m, 100.2m)), Signal(true, 103m, 90m));
+        // ATR from the stop: 3 / 0.6 (ShortStopLossAtrMult) = 5. Falls past 95 (activation) -> trail at breakeven, then the price recovers.
+        var exit = Exit(Tape(Candle(Day1, 2, 100, 100, 94m, 94.5m), Candle(Day1, 3, 95m, 100.5m, 95m, 100.2m)), Signal(true, 103m, 90m));
 
         Assert.Equal("Trailing stop", exit.Category);
         Assert.Equal(100m, exit.ExitRaw);

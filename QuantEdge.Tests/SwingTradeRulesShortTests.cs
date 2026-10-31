@@ -20,17 +20,17 @@ public class SwingTradeRulesShortTests : ClockedTest
     {
         var levels = SwingTradeRules.ComputeShortEntryLevels(100m, dailyAtr: 2m, null, null, SwingParams());
 
-        Assert.Equal(103m, levels.StopLoss);     // 100 + 1.5 x 2
-        Assert.Equal(94m, levels.TakeProfit);    // 100 - 3 x 2
+        Assert.Equal(101.2m, levels.StopLoss);   // 100 + 0.6 x 2 (shorts use their own, smaller ATR multiples)
+        Assert.Equal(97.6m, levels.TakeProfit);  // 100 - 1.2 x 2
         Assert.Null(levels.TrailingStopLoss);    // trail only after the trade moves 1 ATR in our favour
     }
 
     [Fact]
     public void ShortLevels_CapStopAtMaxStopLossPct()
     {
-        var levels = SwingTradeRules.ComputeShortEntryLevels(100m, dailyAtr: 10m, null, null, SwingParams());
+        var levels = SwingTradeRules.ComputeShortEntryLevels(100m, dailyAtr: 20m, null, null, SwingParams());
 
-        Assert.Equal(108m, levels.StopLoss);     // 1.5 x 10 = 15% capped at 8%
+        Assert.Equal(108m, levels.StopLoss);     // 0.6 x 20 = 12% capped at 8%
         Assert.True(levels.TakeProfit < 100m);
     }
 
@@ -54,6 +54,25 @@ public class SwingTradeRulesShortTests : ClockedTest
         var levels = SwingTradeRules.ComputeEntryLevels(100m, 2m, null, null, null, null, SwingParams());
         Assert.Equal(97m, levels.StopLoss);
         Assert.Equal(106m, levels.TakeProfit);
+    }
+
+    [Fact]
+    public void ShortAndLongAtrMultiples_AreIndependentlyConfigurable()
+    {
+        // A much wider LONG swing setting must not change the SHORT's (still intraday-sized) levels, and vice versa.
+        var p = SwingTradeParams.From(new AutoTradeSettings
+        {
+            StopLossAtrMult = 1.5m, TargetAtrMult = 3.0m,               // long (swing) - unchanged
+            ShortStopLossAtrMult = 0.6m, ShortTargetAtrMult = 1.2m      // short (intraday) - independent
+        });
+
+        var longLevels = SwingTradeRules.ComputeEntryLevels(100m, 2m, null, null, null, null, p);
+        Assert.Equal(97m, longLevels.StopLoss);      // 100 - 1.5 x 2
+        Assert.Equal(106m, longLevels.TakeProfit);   // 100 + 3.0 x 2
+
+        var shortLevels = SwingTradeRules.ComputeShortEntryLevels(100m, 2m, null, null, p);
+        Assert.Equal(101.2m, shortLevels.StopLoss);  // 100 + 0.6 x 2 - much tighter than the long's 1.5x
+        Assert.Equal(97.6m, shortLevels.TakeProfit); // 100 - 1.2 x 2 - much closer than the long's 3.0x
     }
 
     [Fact]
@@ -139,15 +158,15 @@ public class SwingTradeRulesShortTests : ClockedTest
     [Fact]
     public void ShortExit_SwingTrail_ActivatesAtBreakevenAfterOneAtrAndOnlyMovesDown()
     {
-        // ATR inferred from the stop: (103 - 100) / 1.5 = 2. Activation at 100 - 2 = 98.
-        var notYet = SwingTradeRules.EvaluateShortExit(Short(100m, 103m, 90m), 98.5m, TradingDayIst, "15:15", SwingParams());
+        // ATR inferred from the stop: (103 - 100) / 0.6 (ShortStopLossAtrMult) = 5. Activation at 100 - 5 = 95.
+        var notYet = SwingTradeRules.EvaluateShortExit(Short(100m, 103m, 90m), 95.1m, TradingDayIst, "15:15", SwingParams());
         Assert.Null(notYet.NewTrailingStopLoss);
 
-        var activated = SwingTradeRules.EvaluateShortExit(Short(100m, 103m, 90m), 97.9m, TradingDayIst, "15:15", SwingParams());
+        var activated = SwingTradeRules.EvaluateShortExit(Short(100m, 103m, 90m), 94.9m, TradingDayIst, "15:15", SwingParams());
         Assert.False(activated.ShouldExit);
-        Assert.Equal(100m, activated.NewTrailingStopLoss); // ltp + 3 ATR = 103.9 -> capped at breakeven
+        Assert.Equal(100m, activated.NewTrailingStopLoss); // ltp + 1.2 x 5 ATR = 100.9 -> capped at breakeven
 
-        // Price far lower: trail follows down (ltp + 6 = 90.5 when ltp is 84.5 - but the target exits first, so use no target).
+        // Price far lower: trail follows down (ltp + 1.2 x 5 = 6 -> 98 when ltp is 92).
         var lower = SwingTradeRules.EvaluateShortExit(Short(100m, 103m, null, tsl: 100m), 92m, TradingDayIst, "15:15", SwingParams());
         Assert.Equal(98m, lower.NewTrailingStopLoss);
 

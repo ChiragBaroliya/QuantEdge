@@ -85,6 +85,9 @@ public class AutoTradeService : IAutoTradeService
         existing.IsAutoShortEnabled = updateDto.IsAutoShortEnabled;
         existing.ShortEntryCutoff = string.IsNullOrWhiteSpace(updateDto.ShortEntryCutoff) ? "15:00" : updateDto.ShortEntryCutoff;
         existing.ShortSquareOffTime = string.IsNullOrWhiteSpace(updateDto.ShortSquareOffTime) ? "15:15" : updateDto.ShortSquareOffTime;
+        existing.ShortStopLossAtrMult = updateDto.ShortStopLossAtrMult;
+        existing.ShortTrailAtrMult = updateDto.ShortTrailAtrMult;
+        existing.ShortTargetAtrMult = updateDto.ShortTargetAtrMult;
 
         var updated = await _repository.UpsertSettingsAsync(existing);
 

@@ -23,14 +23,19 @@ public sealed class RegimePolicy
     public decimal MaxExposurePct { get; set; } = 50m;
     public string? Description { get; set; }
 
+    // SHORT's own gate - the exact mirror of the BUY columns above, since before this a SHORT faced no regime-based
+    // throttle at all (only its own NIFTY-bearish hard filter), while a BUY was throttled hard in every regime.
+    public int ShortMinStockScore { get; set; } = 82;
+    public int ShortMaxPositions { get; set; } = 3;
+
     // Same values as the regime_policy seed in schema.sql - used when the table isn't there yet.
     public static IReadOnlyList<RegimePolicy> Defaults { get; } = new[]
     {
-        new RegimePolicy { Regime = MarketRegimes.Bullish, MinStockScore = 70, RequireRelativeStrength = false, MaxPositions = 10, RiskPct = 1.0m, MaxExposurePct = 100, Description = "Normal trading" },
-        new RegimePolicy { Regime = MarketRegimes.BullishWeakening, MinStockScore = 75, RequireRelativeStrength = true, MaxPositions = 7, RiskPct = 0.75m, MaxExposurePct = 70, Description = "Fewer, stronger trades; only stocks beating NIFTY" },
-        new RegimePolicy { Regime = MarketRegimes.Sideways, MinStockScore = 78, RequireRelativeStrength = true, MaxPositions = 5, RiskPct = 0.75m, MaxExposurePct = 50, Description = "High-quality setups only" },
-        new RegimePolicy { Regime = MarketRegimes.Bearish, MinStockScore = 82, RequireRelativeStrength = true, MaxPositions = 3, RiskPct = 0.5m, MaxExposurePct = 30, Description = "Only leaders that keep rising while NIFTY falls; half risk" },
-        new RegimePolicy { Regime = MarketRegimes.StrongBearish, MinStockScore = 88, RequireRelativeStrength = true, MaxPositions = 1, RiskPct = 0.25m, MaxExposurePct = 15, Description = "Exceptional strength only, quarter risk" },
+        new RegimePolicy { Regime = MarketRegimes.Bullish, MinStockScore = 70, RequireRelativeStrength = false, MaxPositions = 10, RiskPct = 1.0m, MaxExposurePct = 100, Description = "Normal trading", ShortMinStockScore = 95, ShortMaxPositions = 0 },
+        new RegimePolicy { Regime = MarketRegimes.BullishWeakening, MinStockScore = 75, RequireRelativeStrength = true, MaxPositions = 7, RiskPct = 0.75m, MaxExposurePct = 70, Description = "Fewer, stronger trades; only stocks beating NIFTY", ShortMinStockScore = 90, ShortMaxPositions = 1 },
+        new RegimePolicy { Regime = MarketRegimes.Sideways, MinStockScore = 78, RequireRelativeStrength = true, MaxPositions = 5, RiskPct = 0.75m, MaxExposurePct = 50, Description = "High-quality setups only", ShortMinStockScore = 82, ShortMaxPositions = 3 },
+        new RegimePolicy { Regime = MarketRegimes.Bearish, MinStockScore = 82, RequireRelativeStrength = true, MaxPositions = 3, RiskPct = 0.5m, MaxExposurePct = 30, Description = "Only leaders that keep rising while NIFTY falls; half risk", ShortMinStockScore = 75, ShortMaxPositions = 7 },
+        new RegimePolicy { Regime = MarketRegimes.StrongBearish, MinStockScore = 88, RequireRelativeStrength = true, MaxPositions = 1, RiskPct = 0.25m, MaxExposurePct = 15, Description = "Exceptional strength only, quarter risk", ShortMinStockScore = 70, ShortMaxPositions = 10 },
     };
 }
 
@@ -109,7 +114,8 @@ public class MarketRegimeService : IMarketRegimeService
             using var connection = _connectionFactory.CreateConnection();
             var rows = (await connection.QueryAsync<RegimePolicy>(@"
                 SELECT regime, min_stock_score AS MinStockScore, require_relative_strength AS RequireRelativeStrength,
-                       max_positions AS MaxPositions, risk_pct AS RiskPct, max_exposure_pct AS MaxExposurePct, description
+                       max_positions AS MaxPositions, risk_pct AS RiskPct, max_exposure_pct AS MaxExposurePct, description,
+                       short_min_stock_score AS ShortMinStockScore, short_max_positions AS ShortMaxPositions
                 FROM regime_policy;")).ToList();
             return rows.Count > 0 ? rows : RegimePolicy.Defaults;
         }
@@ -128,14 +134,18 @@ public class MarketRegimeService : IMarketRegimeService
         foreach (var p in policies)
         {
             await connection.ExecuteAsync(@"
-                INSERT INTO regime_policy (regime, min_stock_score, require_relative_strength, max_positions, risk_pct, max_exposure_pct, description)
-                VALUES (@Regime, @MinStockScore, @RequireRelativeStrength, @MaxPositions, @RiskPct, @MaxExposurePct, @Description)
+                INSERT INTO regime_policy (regime, min_stock_score, require_relative_strength, max_positions, risk_pct, max_exposure_pct, description,
+                    short_min_stock_score, short_max_positions)
+                VALUES (@Regime, @MinStockScore, @RequireRelativeStrength, @MaxPositions, @RiskPct, @MaxExposurePct, @Description,
+                    @ShortMinStockScore, @ShortMaxPositions)
                 ON CONFLICT (regime) DO UPDATE SET
                     min_stock_score = EXCLUDED.min_stock_score,
                     require_relative_strength = EXCLUDED.require_relative_strength,
                     max_positions = EXCLUDED.max_positions,
                     risk_pct = EXCLUDED.risk_pct,
-                    max_exposure_pct = EXCLUDED.max_exposure_pct;", p, transaction);
+                    max_exposure_pct = EXCLUDED.max_exposure_pct,
+                    short_min_stock_score = EXCLUDED.short_min_stock_score,
+                    short_max_positions = EXCLUDED.short_max_positions;", p, transaction);
         }
         transaction.Commit();
     }
@@ -304,6 +314,15 @@ public static class RegimeGate
             if (!beatsNifty) return (false, $"not outperforming NIFTY (required in {p.Regime})");
         }
         return (true, $"score {r.Score} ≥ {p.MinStockScore} in {p.Regime}");
+    }
+
+    /// <summary><see cref="Evaluate"/> for a SHORT: the regime's own (mirrored) score bar. No relative-strength
+    /// requirement - that is a BUY-specific "beats NIFTY" concept, not meaningful for a falling stock.</summary>
+    public static (bool Allowed, string Reason) EvaluateShort(SwingEvaluationResult r, RegimePolicy p)
+    {
+        if (!r.HardFiltersPassed) return (false, "stock trend filters failed");
+        if (r.Score < p.ShortMinStockScore) return (false, $"score {r.Score} < {p.ShortMinStockScore} needed in {p.Regime}");
+        return (true, $"score {r.Score} >= {p.ShortMinStockScore} in {p.Regime}");
     }
 
     /// <summary>The engine settings to score with in regime mode: no NIFTY hard gate or penalty - the regime policy replaces both.</summary>

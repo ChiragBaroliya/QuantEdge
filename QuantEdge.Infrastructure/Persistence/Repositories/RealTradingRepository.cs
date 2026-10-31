@@ -77,7 +77,10 @@ public class RealTradingRepository : IRealTradingRepository
                 @TargetAtrMult,
                 @IsAutoShortEnabled,
                 @ShortEntryCutoff,
-                @ShortSquareOffTime
+                @ShortSquareOffTime,
+                @ShortStopLossAtrMult,
+                @ShortTrailAtrMult,
+                @ShortTargetAtrMult
             );";
 
         return await connection.QuerySingleAsync<RealTradeSettings>(sql, settings);

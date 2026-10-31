@@ -354,6 +354,9 @@ function populateSettingsForm(s) {
     setVal("inpTargetAtrMult", s.targetAtrMult);
     setVal("inpShortEntryCutoff", s.shortEntryCutoff || "15:00");
     setVal("inpShortSquareOffTime", s.shortSquareOffTime || "15:05");
+    setVal("inpShortSlAtrMult", s.shortStopLossAtrMult ?? 0.6);
+    setVal("inpShortTrailAtrMult", s.shortTrailAtrMult ?? 1.2);
+    setVal("inpShortTargetAtrMult", s.shortTargetAtrMult ?? 1.2);
     currentExitMode = s.exitMode || "SWING_CLOSE";
 
     // Stop Loss % / Trailing Stop Loss % are no longer settings-page fields - they're configured
@@ -1180,7 +1183,10 @@ function setupEventListeners() {
                 TrailAtrMult: parseFloat(document.getElementById("inpTrailAtrMult")?.value || "3"),
                 TargetAtrMult: parseFloat(document.getElementById("inpTargetAtrMult")?.value || "3"),
                 ShortEntryCutoff: document.getElementById("inpShortEntryCutoff")?.value || "15:00",
-                ShortSquareOffTime: document.getElementById("inpShortSquareOffTime")?.value || "15:05"
+                ShortSquareOffTime: document.getElementById("inpShortSquareOffTime")?.value || "15:05",
+                ShortStopLossAtrMult: parseFloat(document.getElementById("inpShortSlAtrMult")?.value || "0.6"),
+                ShortTrailAtrMult: parseFloat(document.getElementById("inpShortTrailAtrMult")?.value || "1.2"),
+                ShortTargetAtrMult: parseFloat(document.getElementById("inpShortTargetAtrMult")?.value || "1.2")
             };
 
             try {

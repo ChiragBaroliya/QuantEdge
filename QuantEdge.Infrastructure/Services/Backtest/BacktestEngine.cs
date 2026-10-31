@@ -255,11 +255,15 @@ public static class BacktestEngine
 
                 if (scanShort)
                 {
-                    // Live, shorts have their own NIFTY-bearish gate in every gate mode: the regime policy sizes and limits BUYs only.
+                    // Shorts have their own NIFTY-bearish gate in every gate mode; in REGIME mode they are also
+                    // throttled by the regime policy's own (mirrored) Short* columns, same mechanism as BUYs.
                     var r = SwingShortDecisionEngine.Evaluate(stock, dailyNow, m15Now, h60Now, niftyNow, ctx.EngineSettings);
                     int met = r.Checklist?.MetCount ?? 0;
-                    bool live = r.HardFiltersPassed && (r.IsSellSignal || met >= ctx.MinConditionsMatch);
-                    bool sweep = r.HardFiltersPassed && r.Score >= ctx.SweepFloor;
+                    bool shortGateAllows = !ctx.RegimeMode || (policy != null && policy.ShortMaxPositions > 0);
+                    bool live = ctx.RegimeMode
+                        ? shortGateAllows && RegimeGate.EvaluateShort(r, policy!).Allowed
+                        : r.HardFiltersPassed && (r.IsSellSignal || met >= ctx.MinConditionsMatch);
+                    bool sweep = r.HardFiltersPassed && shortGateAllows && r.Score >= ctx.SweepFloor;
                     if (live || sweep)
                     {
                         string? skip = SwingTradeRules.CheckShortSignalDrift(r.EntryPrice, entryRaw) != null ? DriftSkipReason : splitSkip;
@@ -279,8 +283,8 @@ public static class BacktestEngine
                             HardFiltersPassed = r.HardFiltersPassed,
                             IsLiveCandidate = live,
                             Regime = regime,
-                            GateAllows = true,
-                            PolicyMaxPositions = int.MaxValue,
+                            GateAllows = shortGateAllows,
+                            PolicyMaxPositions = policy?.ShortMaxPositions ?? int.MaxValue,
                             FactorPoints = PackFactors(r.Factors, ShortFactorCodes),
                             SignalPrice = r.EntryPrice,
                             EntryRaw = entryRaw,

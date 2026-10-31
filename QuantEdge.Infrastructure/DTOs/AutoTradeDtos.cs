@@ -64,6 +64,16 @@ public class AutoTradeSettingsUpdateDto : IValidatableObject
     [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Square-off Time must be HH:mm.")]
     public string ShortSquareOffTime { get; set; } = "15:15";
 
+    // Shorts are intraday-only, so they get their own (smaller) ATR multiples than the swing SL/Trail/Target above.
+    [Range(typeof(decimal), "0.1", "5.0", ErrorMessage = "Short Stop Loss ATR multiple must be between 0.1 and 5.")]
+    public decimal ShortStopLossAtrMult { get; set; } = 0.6m;
+
+    [Range(typeof(decimal), "0.1", "10.0", ErrorMessage = "Short Trailing ATR multiple must be between 0.1 and 10.")]
+    public decimal ShortTrailAtrMult { get; set; } = 1.2m;
+
+    [Range(typeof(decimal), "0.1", "20.0", ErrorMessage = "Short Target ATR multiple must be between 0.1 and 20.")]
+    public decimal ShortTargetAtrMult { get; set; } = 1.2m;
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext) =>
         ShortSellingSettingsValidator.Validate(ShortEntryCutoff, ShortSquareOffTime);
 }

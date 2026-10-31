@@ -16,21 +16,28 @@ public sealed record SwingTradeParams(
     decimal StopLossAtrMult,
     decimal TrailAtrMult,
     decimal TargetAtrMult,
-    decimal ProfitTargetPct)
+    decimal ProfitTargetPct,
+    decimal ShortStopLossAtrMult,
+    decimal ShortTrailAtrMult,
+    decimal ShortTargetAtrMult)
 {
     public bool IsSwingClose => !string.Equals(ExitMode, SwingTradeRules.ExitModeIntraday, StringComparison.OrdinalIgnoreCase);
 
     public static SwingTradeParams From(RealTradeSettings s) =>
-        Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct);
+        Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct,
+            s.ShortStopLossAtrMult, s.ShortTrailAtrMult, s.ShortTargetAtrMult);
 
     public static SwingTradeParams From(AutoTradeSettings s) =>
-        Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct);
+        Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct,
+            s.ShortStopLossAtrMult, s.ShortTrailAtrMult, s.ShortTargetAtrMult);
 
     public static SwingTradeParams From(ManualPaperTradeSettings s) =>
-        Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct);
+        Create(s.ExitMode, s.CloseCheckTime, s.TradingWindowEnd, s.StopLossAtrMult, s.TrailAtrMult, s.TargetAtrMult, s.ProfitTargetPct,
+            0m, 0m, 0m);
 
     private static SwingTradeParams Create(string? exitMode, string? closeCheckTime, string? windowEnd,
-        decimal slMult, decimal trailMult, decimal targetMult, decimal profitTargetPct)
+        decimal slMult, decimal trailMult, decimal targetMult, decimal profitTargetPct,
+        decimal shortSlMult, decimal shortTrailMult, decimal shortTargetMult)
     {
         return new SwingTradeParams(
             string.IsNullOrWhiteSpace(exitMode) ? SwingTradeRules.ExitModeSwingClose : exitMode.Trim().ToUpperInvariant(),
@@ -39,7 +46,10 @@ public sealed record SwingTradeParams(
             slMult > 0 ? slMult : SwingTradeRules.DefaultStopLossAtrMult,
             trailMult > 0 ? trailMult : SwingTradeRules.DefaultTrailAtrMult,
             targetMult > 0 ? targetMult : SwingTradeRules.DefaultTargetAtrMult,
-            Math.Abs(profitTargetPct));
+            Math.Abs(profitTargetPct),
+            shortSlMult > 0 ? shortSlMult : SwingTradeRules.DefaultShortStopLossAtrMult,
+            shortTrailMult > 0 ? shortTrailMult : SwingTradeRules.DefaultShortTrailAtrMult,
+            shortTargetMult > 0 ? shortTargetMult : SwingTradeRules.DefaultShortTargetAtrMult);
     }
 }
 
@@ -95,6 +105,15 @@ public static class SwingTradeRules
     public const decimal DefaultStopLossAtrMult = 1.5m;
     public const decimal DefaultTrailAtrMult = 3.0m;
     public const decimal DefaultTargetAtrMult = 3.0m;
+
+    // SHORTs are intraday-only (bought back same day - see the "Auto Short Selling" section below), so they get their
+    // own, much smaller ATR multiples than the multi-day swing LONG above: sized for a few intraday hours of movement,
+    // not a multi-day move. Daily ATR is typically ~3.5-4% of entry on the stocks this bot trades, so these come out to
+    // roughly a 2-2.5% stop and a 4-5% target/trail - reachable intraday, unlike the swing-sized 5.65%/11.7% these
+    // replaced. Starting values only; tune via Real/Auto Trading settings once a fresh backtest confirms the fit.
+    public const decimal DefaultShortStopLossAtrMult = 0.6m;
+    public const decimal DefaultShortTrailAtrMult = 1.2m;
+    public const decimal DefaultShortTargetAtrMult = 1.2m;
 
     // Entry gates shared by both engines.
     public const int MaxConcurrentPositions = 10;
@@ -548,9 +567,10 @@ public static class SwingTradeRules
         RiskSizedQuantity(entryPrice, entryPrice - (stopLoss - entryPrice), capital, maxPositionValue, riskPct);
 
     /// <summary>
-    /// <see cref="ComputeEntryLevels"/> for a short. SWING_CLOSE: Stop Loss StopLossAtrMult x daily ATR above the entry
-    /// (at most MaxStopLossPct), Target TargetAtrMult x ATR below. INTRADAY: the short engine's own levels, else the
-    /// fixed %s, with a trail from entry.
+    /// <see cref="ComputeEntryLevels"/> for a short. SWING_CLOSE: Stop Loss ShortStopLossAtrMult x daily ATR above the
+    /// entry (at most MaxStopLossPct), Target ShortTargetAtrMult x ATR below - its own, smaller multiples than the
+    /// multi-day LONG swing above, because a short must be closed the same day. INTRADAY: the short engine's own
+    /// levels, else the fixed %s, with a trail from entry.
     /// </summary>
     public static EntryLevels ComputeShortEntryLevels(decimal entryPrice, decimal? dailyAtr, decimal? engineStopLoss,
         decimal? engineTarget, SwingTradeParams p)
@@ -565,10 +585,10 @@ public static class SwingTradeRules
             if (dailyAtr.HasValue && dailyAtr.Value > 0)
             {
                 decimal atr = Math.Max(dailyAtr.Value, entryPrice * MinAtrPct / 100m);
-                decimal atrStop = entryPrice + p.StopLossAtrMult * atr;
+                decimal atrStop = entryPrice + p.ShortStopLossAtrMult * atr;
                 decimal cappedStop = entryPrice * (1m + MaxStopLossPct / 100m);
                 stopLoss = Math.Round(Math.Min(atrStop, cappedStop), 2);
-                takeProfit = Math.Round(entryPrice - p.TargetAtrMult * atr, 2);
+                takeProfit = Math.Round(entryPrice - p.ShortTargetAtrMult * atr, 2);
             }
 
             // No trailing SL at entry - it activates once the trade has moved in our favor (price fell 1 ATR).
@@ -659,7 +679,7 @@ public static class SwingTradeRules
             decimal atr = InferShortAtr(pos, p);
             candidate = pos.ManualTrailingSlPct.HasValue && pos.ManualTrailingSlPct.Value > 0
                 ? ltp * (1m + Math.Abs(pos.ManualTrailingSlPct.Value) / 100m)
-                : ltp + p.TrailAtrMult * atr;
+                : ltp + p.ShortTrailAtrMult * atr;
             candidate = Math.Round(Math.Min(entry, candidate), 2); // breakeven ceiling
 
             if (!trailActive)
@@ -685,14 +705,14 @@ public static class SwingTradeRules
             : ExitDecision.Hold;
     }
 
-    /// <summary><see cref="InferAtr"/> for a short: the Stop Loss sits StopLossAtrMult x ATR ABOVE the entry.</summary>
+    /// <summary><see cref="InferAtr"/> for a short: the Stop Loss sits ShortStopLossAtrMult x ATR ABOVE the entry.</summary>
     public static decimal InferShortAtr(ExitPositionView pos, SwingTradeParams p)
     {
         decimal entry = pos.EntryPrice;
         decimal slDistance = pos.StopLoss.HasValue && pos.StopLoss.Value > entry
             ? pos.StopLoss.Value - entry
             : entry * DefaultStopLossPct / 100m;
-        return Math.Max(slDistance / p.StopLossAtrMult, entry * MinAtrPct / 100m);
+        return Math.Max(slDistance / p.ShortStopLossAtrMult, entry * MinAtrPct / 100m);
     }
 
     // ------------------------------------------------------------------------------------------

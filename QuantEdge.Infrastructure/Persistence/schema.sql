@@ -1140,6 +1140,16 @@ UPDATE real_trade_settings SET short_square_off_time = '15:05' WHERE short_squar
 -- warning: when they last accepted it. NULL = never.
 ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_risk_accepted_at TIMESTAMP WITH TIME ZONE NULL;
 
+-- Shorts are intraday-only (bought back the same day), so they get their own - much smaller - ATR multiples than
+-- the multi-day swing stop_loss_atr_mult/trail_atr_mult/target_atr_mult above: sized for a few intraday hours of
+-- movement, not a multi-day move (see SwingTradeRules.ComputeShortEntryLevels).
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS short_stop_loss_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 0.60;
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS short_trail_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.20;
+ALTER TABLE auto_trade_settings ADD COLUMN IF NOT EXISTS short_target_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.20;
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_stop_loss_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 0.60;
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_trail_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.20;
+ALTER TABLE real_trade_settings ADD COLUMN IF NOT EXISTS short_target_atr_mult NUMERIC(5, 2) NOT NULL DEFAULT 1.20;
+
 -- real_orders.is_short marks both legs of a short (entry SELL, covering BUY): with shorts, the side alone no longer
 -- says whether a fill opens or closes a position. Existing rows are all longs (FALSE).
 ALTER TABLE real_orders ADD COLUMN IF NOT EXISTS is_short BOOLEAN NOT NULL DEFAULT FALSE;
@@ -1445,6 +1455,18 @@ INSERT INTO regime_policy (regime, min_stock_score, require_relative_strength, m
     ('BEARISH',           82, TRUE,   3, 0.500,  30, 'Only leaders that keep rising while NIFTY falls; half risk'),
     ('STRONG_BEARISH',    88, TRUE,   1, 0.250,  15, 'Exceptional strength only, quarter risk (set max_positions = 0 to stop new entries)')
 ON CONFLICT (regime) DO NOTHING;
+
+-- SHORT's own (mirrored) regime gate - before this a SHORT faced no regime-based throttle in any regime (only its
+-- own NIFTY-bearish hard filter), while a BUY was throttled hard in every regime. short_min_stock_score /
+-- short_max_positions are the exact mirror of min_stock_score / max_positions above: generous where the regime
+-- genuinely favors shorting, restrictive where it doesn't.
+ALTER TABLE regime_policy ADD COLUMN IF NOT EXISTS short_min_stock_score INT NOT NULL DEFAULT 82;
+ALTER TABLE regime_policy ADD COLUMN IF NOT EXISTS short_max_positions INT NOT NULL DEFAULT 3;
+UPDATE regime_policy SET short_min_stock_score = 95, short_max_positions = 0 WHERE regime = 'BULLISH';
+UPDATE regime_policy SET short_min_stock_score = 90, short_max_positions = 1 WHERE regime = 'BULLISH_WEAKENING';
+UPDATE regime_policy SET short_min_stock_score = 82, short_max_positions = 3 WHERE regime = 'SIDEWAYS';
+UPDATE regime_policy SET short_min_stock_score = 75, short_max_positions = 7 WHERE regime = 'BEARISH';
+UPDATE regime_policy SET short_min_stock_score = 70, short_max_positions = 10 WHERE regime = 'STRONG_BEARISH';
 
 -- How the scan workers gate new entries on market conditions:
 --   NIFTY_FILTER (default, previous behaviour) - require_nifty_market_filter decides (all-or-nothing)

@@ -36,5 +36,10 @@ public class AutoTradeSettings
     public bool IsAutoShortEnabled { get; set; } = false;
     public string ShortEntryCutoff { get; set; } = "15:00";
     public string ShortSquareOffTime { get; set; } = "15:15";
+    // Shorts are intraday-only (bought back the same day), so they get their own - much smaller - ATR multiples
+    // than the multi-day swing SL/Trail/Target above: sized for a few intraday hours, not a multi-day move.
+    public decimal ShortStopLossAtrMult { get; set; } = 0.6m;
+    public decimal ShortTrailAtrMult { get; set; } = 1.2m;
+    public decimal ShortTargetAtrMult { get; set; } = 1.2m;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
