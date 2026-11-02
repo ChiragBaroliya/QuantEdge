@@ -65,6 +65,16 @@ public class BacktestShortSellingTests
         Assert.Equal(expected, BacktestService.StocksText(list));
     }
 
+    [Fact]
+    public void WorkerBuild_NamesTheMachineAndCodeVersion()
+    {
+        string build = BacktestService.WorkerBuild();
+
+        Assert.Contains(Environment.MachineName, build);
+        Assert.Contains("build ", build);
+        Assert.DoesNotContain("unknown", build);
+    }
+
     // ---------------- exits ----------------
 
     [Fact]

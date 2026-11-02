@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -564,10 +565,18 @@ public class BacktestService : IBacktestService
         return (summary, main.Trades);
     }
 
+    /// <summary>Which machine and code version replayed a run, so a result can be traced to a deployment.</summary>
+    public static string WorkerBuild()
+    {
+        var version = typeof(BacktestService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+        return $"{Environment.MachineName}, build {version}";
+    }
+
     private static List<string> Assumptions(BacktestParams p, bool regimeMode, int splits, int regimeDays)
     {
         var list = new List<string>
         {
+            $"Run by: {WorkerBuild()}.",
             "Data: stored Zerodha candles (15m, 60m, daily) - no Zerodha calls. Past daily bars are NSE's official values where the bhavcopy was loaded.",
             "Signals: the live SwingDecisionEngine (BUY) and SwingShortDecisionEngine (SHORT) at every 15-minute bar close, seeing only what existed at that moment (today's daily bar is built from the 15m bars so far).",
             "Trade Conditions: the default rules with all 11 conditions ON. A custom Trade Conditions profile is not applied, so a profile with conditions switched off can trade differently live.",
