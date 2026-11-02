@@ -213,6 +213,72 @@ public class SwingRuleParametersTests
         }
     }
 
+    // ---------------- SHORT volume-confirmation mirror (ShortVolumePoints/ShortVolumeGoodPoints) ----------------
+
+    [Fact]
+    public void ShortVolumePoints_DefaultsMatchTheOriginalSharedValues()
+    {
+        // Proves existing saved configurations (old JSON with no shortVolume* keys, which JSON deserialization
+        // fills with these C# defaults) score SHORT volume confirmation exactly as before the split.
+        var r = new SwingRuleParameters();
+
+        Assert.Equal(r.VolumePoints, r.ShortVolumePoints);
+        Assert.Equal(r.VolumeGoodPoints, r.ShortVolumeGoodPoints);
+    }
+
+    [Fact]
+    public void ShortVolumeConfirmation_DefaultSettings_ScoresIdenticallyToTheOriginalSharedField()
+    {
+        var daily = Daily(-0.6m); var m15 = M15(-0.15m); var m60 = M60(-0.15m); var nifty = Nifty(-0.1m);
+
+        var withDefaults = SwingShortDecisionEngine.Evaluate(Stock, daily, m15, m60, nifty, new SwingStrategySettings(), skipHardFilterGate: true);
+        // Force the SHORT-only fields to the (different, easy-to-tell-apart) original shared ones' values is not
+        // needed - defaults already match (see test above) - so scoring with plain defaults already proves this
+        // path behaves exactly like the pre-split shared-field code did, for whichever volume tier this data hits.
+        var withSharedCopiedIn = SwingShortDecisionEngine.Evaluate(Stock, daily, m15, m60, nifty,
+            With(r => { r.ShortVolumePoints = r.VolumePoints; r.ShortVolumeGoodPoints = r.VolumeGoodPoints; }), skipHardFilterGate: true);
+
+        Assert.Equal(withDefaults.Score, withSharedCopiedIn.Score);
+        Assert.Equal(withDefaults.Factors.Single(f => f.Code == "VOL_CONFIRMATION").Points,
+            withSharedCopiedIn.Factors.Single(f => f.Code == "VOL_CONFIRMATION").Points);
+    }
+
+    [Fact]
+    public void ShortVolumePoints_SetToZero_RemovesOnlyTheShortVolumeContribution()
+    {
+        var daily = Daily(-0.6m); var m15 = M15(-0.15m); var m60 = M60(-0.15m); var nifty = Nifty(-0.1m);
+        var baseline = SwingShortDecisionEngine.Evaluate(Stock, daily, m15, m60, nifty, new SwingStrategySettings(), skipHardFilterGate: true);
+        var zeroed = SwingShortDecisionEngine.Evaluate(Stock, daily, m15, m60, nifty,
+            With(r => { r.ShortVolumePoints = 0; r.ShortVolumeGoodPoints = 0; }), skipHardFilterGate: true);
+
+        var baselineVol = baseline.Factors.Single(f => f.Code == "VOL_CONFIRMATION").Points;
+        var zeroedVol = zeroed.Factors.Single(f => f.Code == "VOL_CONFIRMATION").Points;
+        Assert.True(baselineVol > 0, "fixture should trigger a non-zero volume tier so zeroing it is actually observable");
+        Assert.Equal(0, zeroedVol);
+        Assert.Equal(baseline.Score - baselineVol, zeroed.Score);
+
+        // Every other SHORT factor is byte-identical - only VOL_CONFIRMATION moved.
+        var baselineOthers = baseline.Factors.Where(f => f.Code != "VOL_CONFIRMATION").Select(f => (f.Code, f.Points)).OrderBy(f => f.Code).ToList();
+        var zeroedOthers = zeroed.Factors.Where(f => f.Code != "VOL_CONFIRMATION").Select(f => (f.Code, f.Points)).OrderBy(f => f.Code).ToList();
+        Assert.Equal(baselineOthers, zeroedOthers);
+    }
+
+    [Fact]
+    public void ShortVolumePoints_SetToZero_DoesNotAffectBuyVolumeScoring()
+    {
+        var daily = Daily(0.6m); var m15 = M15(0.15m); var m60 = M60(0.15m); var nifty = Nifty(0.2m);
+        var buyWithDefaults = SwingDecisionEngine.Evaluate(Stock, daily, m15, m60, nifty, new SwingStrategySettings(), skipHardFilterGate: true);
+        var buyWithShortVolumeZeroed = SwingDecisionEngine.Evaluate(Stock, daily, m15, m60, nifty,
+            With(r => { r.ShortVolumePoints = 0; r.ShortVolumeGoodPoints = 0; }), skipHardFilterGate: true);
+
+        Assert.Equal(buyWithDefaults.Score, buyWithShortVolumeZeroed.Score);
+        Assert.Equal(buyWithDefaults.Factors.Single(f => f.Code == "VOL_CONFIRMATION").Points,
+            buyWithShortVolumeZeroed.Factors.Single(f => f.Code == "VOL_CONFIRMATION").Points);
+        var allFactorsBaseline = buyWithDefaults.Factors.Select(f => (f.Code, f.Points)).OrderBy(f => f.Code).ToList();
+        var allFactorsZeroed = buyWithShortVolumeZeroed.Factors.Select(f => (f.Code, f.Points)).OrderBy(f => f.Code).ToList();
+        Assert.Equal(allFactorsBaseline, allFactorsZeroed);
+    }
+
     // ---------------- validation ----------------
     public static TheoryData<Action<SwingRuleParameters>, string> BadNumbers => new()
     {
@@ -225,6 +291,7 @@ public class SwingRuleParametersTests
         { r => r.MacdFast = 30, "MACD" },
         { r => { r.VolumeGoodPoints = 16; }, "good-volume points" },
         { r => r.VolumeGoodMultiple = 3m, "good-volume multiple" },
+        { r => { r.ShortVolumeGoodPoints = 16; }, "SHORT good-volume points" },
         { r => r.RsiGoodPoints = 11, "acceptable-zone points" },
         { r => r.RsiBuyOkLow = 60m, "BUY best zone" },
         { r => r.RsiShortBestHigh = 55m, "SHORT best zone" },
@@ -317,6 +384,28 @@ public class SwingRuleParametersTests
         Assert.Equal(40m, bearish.MaxExposurePct);
     }
 
+    [Fact]
+    public async Task Save_PreservesShortPolicyFields_InsteadOfResettingThemToDefaults()
+    {
+        // Regression test: SaveAsync used to rebuild each RegimePolicy without copying ShortMinStockScore/
+        // ShortMaxPositions, silently resetting every regime's SHORT policy to the class's 82/3 defaults on
+        // every single Trade Conditions save.
+        var (service, repo, regime) = NewService();
+        IReadOnlyList<RegimePolicy>? stored = null;
+        regime.Setup(x => x.SavePoliciesAsync(It.IsAny<IReadOnlyList<RegimePolicy>>())).Callback<IReadOnlyList<RegimePolicy>>(p => stored = p).Returns(Task.CompletedTask);
+        var dto = ValidSave();
+        var bearishDto = dto.Policies!.Single(p => p.Regime == MarketRegimes.Bearish);
+        bearishDto.ShortMinStockScore = 90;
+        bearishDto.ShortMaxPositions = 1;
+
+        var (success, errors, _) = await service.SaveAsync(dto);
+
+        Assert.True(success, string.Join(" ", errors));
+        var bearish = stored!.Single(p => p.Regime == MarketRegimes.Bearish);
+        Assert.Equal(90, bearish.ShortMinStockScore);
+        Assert.Equal(1, bearish.ShortMaxPositions);
+    }
+
     public static TheoryData<Action<StrategyRulesSaveDto>, string> BadSaves => new()
     {
         { d => d.ConfirmLive = false, "real-money" },
@@ -329,6 +418,8 @@ public class SwingRuleParametersTests
         { d => d.Policies![0].Regime = "BEARISH", "exactly one policy" },
         { d => d.Policies![0].MinStockScore = 101, "minimum score" },
         { d => d.Policies![0].MaxPositions = -1, "max positions" },
+        { d => d.Policies![0].ShortMinStockScore = 101, "short minimum score" },
+        { d => d.Policies![0].ShortMaxPositions = -1, "short max positions" },
         { d => d.Policies![0].RiskPct = 6m, "risk must be" },
         { d => d.Policies![0].MaxExposurePct = 0m, "max exposure" },
         { d => d.Policies![0].MaxExposurePct = 101m, "max exposure" },

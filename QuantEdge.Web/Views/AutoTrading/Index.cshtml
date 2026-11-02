@@ -357,6 +357,12 @@
                     </div>
 
                     <div class="form-group col-full">
+                        <label class="form-label" title="0 = default 1x-ATR trail activation. e.g. 1.5 = lock in a gain (at breakeven) as soon as price is up 1.5% from entry. LONG only.">Trail Activation (% gain)</label>
+                        <input type="number" id="txtTrailActivationPct" class="form-input" value="0" min="0" max="10" step="0.1" disabled="@readOnly" />
+                        <small class="form-help-text">0 = use the default 1x-ATR activation instead of a flat % gain. LONG (swing) only - shorts are unaffected.</small>
+                    </div>
+
+                    <div class="form-group col-full">
                         <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" id="chkAutoShortEnabled" style="cursor: pointer; width: 14px; height: 14px;" disabled="@readOnly" />
                             Auto Short Selling (Intraday)
@@ -376,6 +382,22 @@
                     <div class="form-group col-half">
                         <label class="form-label" title="Every open short is bought back at this time (IST). 15:20 at the latest.">Short Square-off</label>
                         <input type="time" id="txtShortSquareOffTime" class="form-input" value="15:15" max="15:20" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Short Stop Loss distance above entry, in its own (smaller, intraday-sized) ATRs.">Short SL (× ATR)</label>
+                        <input type="number" id="txtShortSlAtrMult" class="form-input" value="0.6" min="0.1" max="5" step="0.1" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-half">
+                        <label class="form-label" title="Short Trailing SL distance, in its own (smaller, intraday-sized) ATRs.">Short Trail (× ATR)</label>
+                        <input type="number" id="txtShortTrailAtrMult" class="form-input" value="1.2" min="0.1" max="10" step="0.1" disabled="@readOnly" />
+                    </div>
+
+                    <div class="form-group col-full">
+                        <label class="form-label" title="Short Target distance below entry, in its own (smaller, intraday-sized) ATRs.">Short Target (× ATR)</label>
+                        <input type="number" id="txtShortTargetAtrMult" class="form-input" value="1.2" min="0.1" max="20" step="0.1" disabled="@readOnly" />
+                        <small class="form-help-text">Shorts are intraday-only, so they size off their own (much smaller) ATR multiples, not the swing SL/Trail/Target above.</small>
                     </div>
 
                     @if (!readOnly)

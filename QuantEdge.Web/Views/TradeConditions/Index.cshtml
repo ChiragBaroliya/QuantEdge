@@ -79,12 +79,12 @@
                 <div class="sr-table-wrap">
                     <table class="sr-table">
                         <thead>
-                            <tr><th scope="col">Regime</th><th scope="col">Min score</th><th scope="col">Must beat NIFTY</th><th scope="col">Max positions</th><th scope="col">Risk per trade %</th><th scope="col">Max exposure %</th></tr>
+                            <tr><th scope="col">Regime</th><th scope="col">Min score</th><th scope="col">Must beat NIFTY</th><th scope="col">Max positions</th><th scope="col">Risk per trade %</th><th scope="col">Max exposure %</th><th scope="col">Short min score</th><th scope="col">Short max positions</th></tr>
                         </thead>
                         <tbody id="srPolicyBody"></tbody>
                     </table>
                 </div>
-                <p class="tc-hint">Applies to new BUYs on both bots. Max exposure is the most of the bot's capital that may be in open positions: an order is made smaller to fit, or skipped if nothing fits. If the regime reading misses more than one session, the bots take no new BUYs in this mode until it is computed again.</p>
+                <p class="tc-hint">Applies to new BUYs on both bots. Max exposure is the most of the bot's capital that may be in open positions: an order is made smaller to fit, or skipped if nothing fits. If the regime reading misses more than one session, the bots take no new BUYs in this mode until it is computed again. The two Short columns are the mirror gate for SHORT entries - used in backtests today when the market gate above is set to Market regime; they aren't yet consulted by live/paper SHORT trading.</p>
             </section>
 
             <section class="tc-card sr-save">

@@ -265,7 +265,12 @@
             N("slS", 4, 3, "bad", "SELL · Stop Loss", "closing basis", "The stock closed below its stop loss."),
             N("days", 3, 4, "dec", `Held ≥ ${R.maxDurationDays}\ntrading days?`, "", "Counts trading days only, skipping weekends and holidays.", `${R.maxDurationDays} days`),
             N("daysS", 4, 4, "warn", "SELL · Max Days", "time limit reached", "The position has been held for MaxDurationDays."),
-            N("trail", 2, 4, "info", "Raise trailing SL", `from +${num(R.trailActivationAtrMult)} ATR · ≥ entry`, `Starts once the price is ${num(R.trailActivationAtrMult)} ATR above entry, trails ${num(R.trailAtrMult)} ATR below the price, never drops below entry, only moves up, and never on the entry day.`, `${num(R.trailAtrMult)} × ATR`),
+            N("trail", 2, 4, "info", "Raise trailing SL",
+                R.trailActivationPct > 0 ? `from +${num(R.trailActivationPct)}% · ≥ entry` : `from +${num(R.defaultTrailActivationAtrMult)} ATR · ≥ entry`,
+                R.trailActivationPct > 0
+                    ? `Starts once the price is ${num(R.trailActivationPct)}% above entry (TrailActivationPct override), trails ${num(R.trailAtrMult)} ATR below the price, never drops below entry, only moves up, and never on the entry day.`
+                    : `Starts once the price is ${num(R.defaultTrailActivationAtrMult)} ATR above entry, trails ${num(R.trailAtrMult)} ATR below the price, never drops below entry, only moves up, and never on the entry day.`,
+                `${num(R.trailAtrMult)} × ATR`),
             N("holdB", 1, 4, "end", "HOLD", `check again in ${R.monitorIntervalSeconds} s`, `Nothing to do. The monitor checks again in ${R.monitorIntervalSeconds} seconds.`)
         ],
         edges: [

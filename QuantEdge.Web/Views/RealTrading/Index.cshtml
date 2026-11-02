@@ -614,6 +614,13 @@
                                 </div>
                             </div>
                             <small class="form-hint">ATR = the stock's daily Average True Range (14). Defaults: SL 1.5, Trail 3, Target 3. The Stop Loss is capped at 8% below entry.</small>
+                            <div class="row mt-2">
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpTrailActivationPct">Trail Activation (% gain)</label>
+                                    <input type="number" step="0.1" min="0" max="10" class="form-control qe-input" id="inpTrailActivationPct" name="TrailActivationPct" />
+                                </div>
+                            </div>
+                            <small class="form-hint">0 = use the default 1x-ATR activation. e.g. 1.5 = start locking in a gain (floored at breakeven) as soon as the price is up 1.5% from entry, instead of waiting for the default 1x-ATR move. LONG (swing) only - shorts are unaffected.</small>
                         </div>
 
                         <div class="mt-3">
@@ -628,6 +635,20 @@
                                     <input type="time" class="form-control qe-input" id="inpShortSquareOffTime" name="ShortSquareOffTime" max="15:10" />
                                 </div>
                             </div>
+                            <div class="row">
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpShortSlAtrMult">Short SL (× ATR)</label>
+                                    <input type="number" step="0.1" min="0.1" max="5" class="form-control qe-input" id="inpShortSlAtrMult" name="ShortStopLossAtrMult" />
+                                </div>
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpShortTrailAtrMult">Short Trail (× ATR)</label>
+                                    <input type="number" step="0.1" min="0.1" max="10" class="form-control qe-input" id="inpShortTrailAtrMult" name="ShortTrailAtrMult" />
+                                </div>
+                                <div class="col-4 mb-2">
+                                    <label class="form-label" for="inpShortTargetAtrMult">Short Target (× ATR)</label>
+                                    <input type="number" step="0.1" min="0.1" max="20" class="form-control qe-input" id="inpShortTargetAtrMult" name="ShortTargetAtrMult" />
+                                </div>
+                            </div>
                             <small class="form-hint">
                                 Turned ON / OFF with the "Auto Short" switch at the top (ON only outside market hours, OFF any time),
                                 and only active while the Live Trading switch is also ON. When ON, the bot may place
@@ -635,6 +656,8 @@
                                 the stock in a daily downtrend - with the same guards and limits as a BUY. No new short after the cut-off;
                                 every open short is bought back at the Square-off time (15:10 at the latest - Zerodha blocks MIS orders for some stocks from ~15:12).
                                 If Zerodha squares a short off itself, QuantEdge books it at Zerodha's real buy price within a minute.
+                                Short SL/Trail/Target use their own (smaller) ATR multiples above, sized for the few intraday hours a short gets - not
+                                the swing SL/Trail/Target above, which size a multi-day BUY hold. Defaults: SL 0.6, Trail 1.2, Target 1.2.
                             </small>
                         </div>
 

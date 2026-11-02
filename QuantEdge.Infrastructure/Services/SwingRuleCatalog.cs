@@ -52,6 +52,10 @@ public static class SwingRuleCatalog
         Num(nameof(SwingRuleParameters.VolumeHeavyMultiple), TradeConditionRules.Volume, "Heavy volume at least", "Times the usual volume, and above the previous bar.", 0.1m, 20m, 0.1m, "×", r => r.VolumeHeavyMultiple),
         Num(nameof(SwingRuleParameters.VolumeGoodMultiple), TradeConditionRules.Volume, "Good volume at least", "Times the usual volume.", 0.1m, 10m, 0.1m, "×", r => r.VolumeGoodMultiple),
         Int(nameof(SwingRuleParameters.VolumeAverageBars), TradeConditionRules.Volume, "Fallback average", "Used only when a time slot has too little history.", 5, 60, "bars", r => r.VolumeAverageBars),
+        // Min 0 (unlike the BUY points above, which are all Min 1) - deliberately: this field exists specifically
+        // to let an experiment disable SHORT volume confirmation entirely without touching the BUY-shared points.
+        Int(nameof(SwingRuleParameters.ShortVolumePoints), TradeConditionRules.Volume, "SHORT points: heavy volume", "SHORT's own mirror of the heavy-volume points above. 0 disables SHORT volume confirmation.", 0, 60, "pts", r => r.ShortVolumePoints),
+        Int(nameof(SwingRuleParameters.ShortVolumeGoodPoints), TradeConditionRules.Volume, "SHORT points: good volume", "SHORT's own mirror of the good-volume points above. 0 disables SHORT volume confirmation.", 0, 60, "pts", r => r.ShortVolumeGoodPoints),
 
         Int(nameof(SwingRuleParameters.RelativeStrengthPoints), TradeConditionRules.RelativeStrength, "Points", "", 1, 60, "pts", r => r.RelativeStrengthPoints),
         Int(nameof(SwingRuleParameters.RelativeStrengthBars), TradeConditionRules.RelativeStrength, "Compare returns over", "20 trading days is about 1 month.", 5, 120, "days", r => r.RelativeStrengthBars),
@@ -116,6 +120,7 @@ public static class SwingRuleCatalog
         Require(r.MacdFast < r.MacdSlow, "MACD: the fast EMA must be shorter than the slow EMA.");
         Require(r.VolumeGoodPoints <= r.VolumePoints, "Volume: good-volume points cannot be more than heavy-volume points.");
         Require(r.VolumeGoodMultiple <= r.VolumeHeavyMultiple, "Volume: the good-volume multiple cannot be above the heavy-volume multiple.");
+        Require(r.ShortVolumeGoodPoints <= r.ShortVolumePoints, "Volume: SHORT good-volume points cannot be more than SHORT heavy-volume points.");
         Require(r.RsiGoodPoints <= r.RsiPoints, "RSI: acceptable-zone points cannot be more than best-zone points.");
         Require(r.RsiBuyOkLow <= r.RsiBuyBestLow && r.RsiBuyBestLow < r.RsiBuyBestHigh && r.RsiBuyBestHigh <= r.RsiBuyOkHigh, "RSI: the BUY best zone must sit inside the BUY acceptable zone.");
         Require(r.RsiShortOkLow <= r.RsiShortBestLow && r.RsiShortBestLow < r.RsiShortBestHigh && r.RsiShortBestHigh <= r.RsiShortOkHigh, "RSI: the SHORT best zone must sit inside the SHORT acceptable zone.");

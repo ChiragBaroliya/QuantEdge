@@ -40,6 +40,11 @@ public class SwingRuleParameters
     public decimal VolumeGoodMultiple { get; set; } = 1.5m;
     public decimal VolumeHeavyMultiple { get; set; } = 2.5m;
     public int VolumeAverageBars { get; set; } = 20;
+    /// <summary>SHORT's own mirror of VolumePoints/VolumeGoodPoints - defaults match them exactly, so an
+    /// existing saved configuration scores SHORT volume confirmation identically until changed. The volume
+    /// multiples/lookback above stay shared (BUY and SHORT use the same "how much is a volume spike" test).</summary>
+    public int ShortVolumePoints { get; set; } = 15;
+    public int ShortVolumeGoodPoints { get; set; } = 10;
 
     // 6. Relative strength / weakness vs NIFTY
     public int RelativeStrengthPoints { get; set; } = 15;

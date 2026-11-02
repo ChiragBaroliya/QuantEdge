@@ -74,7 +74,8 @@
         state.policies.forEach((p, i) => {
             const o = saved.policies[i];
             if (Number(p.minStockScore) !== o.minStockScore || p.requireRelativeStrength !== o.requireRelativeStrength
-                || Number(p.maxPositions) !== o.maxPositions || Number(p.riskPct) !== o.riskPct || Number(p.maxExposurePct) !== o.maxExposurePct) n++;
+                || Number(p.maxPositions) !== o.maxPositions || Number(p.riskPct) !== o.riskPct || Number(p.maxExposurePct) !== o.maxExposurePct
+                || Number(p.shortMinStockScore) !== o.shortMinStockScore || Number(p.shortMaxPositions) !== o.shortMaxPositions) n++;
         });
         return n;
     }
@@ -126,7 +127,9 @@
                 })),
                 el("td", { "data-label": "Max positions" }, number("maxPositions", { label: "maximum positions", min: 0, max: 50, step: 1 })),
                 el("td", { "data-label": "Risk per trade %" }, number("riskPct", { label: "risk per trade percent", min: 0.05, max: 5, step: 0.05 })),
-                el("td", { "data-label": "Max exposure %" }, number("maxExposurePct", { label: "maximum exposure percent", min: 1, max: 100, step: 1 }))));
+                el("td", { "data-label": "Max exposure %" }, number("maxExposurePct", { label: "maximum exposure percent", min: 1, max: 100, step: 1 })),
+                el("td", { "data-label": "Short min score" }, number("shortMinStockScore", { label: "short minimum score", min: 0, max: 100, step: 1 })),
+                el("td", { "data-label": "Short max positions" }, number("shortMaxPositions", { label: "short maximum positions", min: 0, max: 50, step: 1 }))));
         });
     }
 
@@ -246,7 +249,9 @@
                 requireRelativeStrength: p.requireRelativeStrength,
                 maxPositions: Number(p.maxPositions),
                 riskPct: Number(p.riskPct),
-                maxExposurePct: Number(p.maxExposurePct)
+                maxExposurePct: Number(p.maxExposurePct),
+                shortMinStockScore: Number(p.shortMinStockScore),
+                shortMaxPositions: Number(p.shortMaxPositions)
             })),
             buyScoreThreshold: Number(state.buyScoreThreshold),
             watchScoreThreshold: Number(state.watchScoreThreshold),

@@ -63,7 +63,11 @@ public class AutoTradeRepository : IAutoTradeRepository
                 @TargetAtrMult,
                 @IsAutoShortEnabled,
                 @ShortEntryCutoff,
-                @ShortSquareOffTime
+                @ShortSquareOffTime,
+                @ShortStopLossAtrMult,
+                @ShortTrailAtrMult,
+                @ShortTargetAtrMult,
+                @TrailActivationPct
             );";
 
         return await connection.QuerySingleAsync<AutoTradeSettings>(sql, settings);

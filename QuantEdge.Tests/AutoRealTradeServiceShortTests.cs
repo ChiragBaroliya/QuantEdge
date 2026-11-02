@@ -142,8 +142,8 @@ public class AutoRealTradeServiceShortTests : ClockedTest
         Assert.Equal(PaperOrderStatus.Filled, order.Status);
         var pos = Assert.Single(_positions);
         Assert.Equal(TradeSide.SELL, pos.Side);
-        Assert.Equal(103m, pos.StopLoss);
-        Assert.Equal(94m, pos.TakeProfit);
+        Assert.Equal(101.2m, pos.StopLoss);   // 100 + 0.6 (ShortStopLossAtrMult) x ATR 2
+        Assert.Equal(97.6m, pos.TakeProfit);  // 100 - 1.2 (ShortTargetAtrMult) x ATR 2
         Assert.False(Assert.Single(_history).IsExit);
         Assert.Contains(_logs, l => l.ActionType == "REAL_SHORT");
     }

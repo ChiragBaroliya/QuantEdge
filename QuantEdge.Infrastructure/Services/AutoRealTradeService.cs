@@ -186,9 +186,13 @@ public class AutoRealTradeService : IAutoRealTradeService
         existing.StopLossAtrMult = updateDto.StopLossAtrMult;
         existing.TrailAtrMult = updateDto.TrailAtrMult;
         existing.TargetAtrMult = updateDto.TargetAtrMult;
+        existing.TrailActivationPct = updateDto.TrailActivationPct;
         // IsAutoShortEnabled is left as saved - it has its own switch (ToggleAutoShortAsync).
         existing.ShortEntryCutoff = shortEntryCutoff;
         existing.ShortSquareOffTime = shortSquareOffTime;
+        existing.ShortStopLossAtrMult = updateDto.ShortStopLossAtrMult;
+        existing.ShortTrailAtrMult = updateDto.ShortTrailAtrMult;
+        existing.ShortTargetAtrMult = updateDto.ShortTargetAtrMult;
 
         var updated = await _repository.UpsertSettingsAsync(existing);
 

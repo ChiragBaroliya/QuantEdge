@@ -50,6 +50,13 @@ public class SwingEvaluationResult
     public decimal VolumeMultiple { get; set; }
     /// <summary>False when fewer than MinBarsForEma200 daily candles were given - the EMA200 check was skipped.</summary>
     public bool HasEma200History { get; set; }
+
+    // Which BREAKOUT_GROUP (BUY) / BREAKDOWN_GROUP (SHORT) sub-condition(s) actually fired - the group as a
+    // whole only records pass/fail via Factors, which can't tell a fresh breakout apart from a stock simply
+    // being near its 52-week extreme (a materially different, riskier setup). "NONE" when the group failed.
+    // BUY sets BreakoutSubType, SHORT sets BreakdownSubType - the other stays "NONE" on a shared result.
+    public string BreakoutSubType { get; set; } = "NONE";
+    public string BreakdownSubType { get; set; } = "NONE";
 }
 
 /// <summary>Points one scoring factor earned (0..MaxPoints) and the timeframe it was measured on.</summary>
@@ -235,6 +242,11 @@ public static class SwingDecisionEngine
         bool isNear52WHigh = currentPrice >= (1m - rules.Near52WeekPct / 100m) * cur52wHigh;
 
         bool breakoutGroupPassed = isPrevHighBreakout || isConsolidationBreakout || isNear52WHigh;
+        var breakoutSubTypes = new List<string>();
+        if (isPrevHighBreakout) breakoutSubTypes.Add("PRIOR_HIGH");
+        if (isConsolidationBreakout) breakoutSubTypes.Add("CONSOLIDATION");
+        if (isNear52WHigh) breakoutSubTypes.Add("NEAR_52W_HIGH");
+        result.BreakoutSubType = breakoutSubTypes.Count > 0 ? string.Join(",", breakoutSubTypes) : "NONE";
         int scoreBefore = score;
         void AddFactor(string code, string name, int max, string timeframe)
         {

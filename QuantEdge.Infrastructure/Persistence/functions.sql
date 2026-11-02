@@ -1548,7 +1548,11 @@ CREATE OR REPLACE FUNCTION fn_upsert_auto_trade_settings(
     p_target_atr_mult NUMERIC DEFAULT 3.00,
     p_is_auto_short_enabled BOOLEAN DEFAULT FALSE,
     p_short_entry_cutoff VARCHAR DEFAULT '15:00',
-    p_short_square_off_time VARCHAR DEFAULT '15:15'
+    p_short_square_off_time VARCHAR DEFAULT '15:15',
+    p_short_stop_loss_atr_mult NUMERIC DEFAULT 0.60,
+    p_short_trail_atr_mult NUMERIC DEFAULT 1.20,
+    p_short_target_atr_mult NUMERIC DEFAULT 1.20,
+    p_trail_activation_pct NUMERIC DEFAULT 0
 )
 RETURNS TABLE (
     Id INT,
@@ -1574,6 +1578,10 @@ RETURNS TABLE (
     IsAutoShortEnabled BOOLEAN,
     ShortEntryCutoff VARCHAR,
     ShortSquareOffTime VARCHAR,
+    ShortStopLossAtrMult NUMERIC,
+    ShortTrailAtrMult NUMERIC,
+    ShortTargetAtrMult NUMERIC,
+    TrailActivationPct NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1586,7 +1594,8 @@ BEGIN
         trading_window_start, trading_window_end, trailing_sl_pct,
         entry_delay_minutes, max_daily_loss_limit, exit_mode, close_check_time,
         stop_loss_atr_mult, trail_atr_mult, target_atr_mult,
-        is_auto_short_enabled, short_entry_cutoff, short_square_off_time, updated_at
+        is_auto_short_enabled, short_entry_cutoff, short_square_off_time,
+        short_stop_loss_atr_mult, short_trail_atr_mult, short_target_atr_mult, trail_activation_pct, updated_at
     )
     VALUES (
         p_user_id, p_is_auto_trade_enabled, p_available_capital, p_profit_target_pct, p_stop_loss_pct,
@@ -1594,7 +1603,9 @@ BEGIN
         p_trading_window_start, p_trading_window_end, p_trailing_sl_pct,
         p_entry_delay_minutes, p_max_daily_loss_limit, p_exit_mode, p_close_check_time,
         p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult,
-        COALESCE(p_is_auto_short_enabled, FALSE), COALESCE(p_short_entry_cutoff, '15:00'), COALESCE(p_short_square_off_time, '15:15'), NOW()
+        COALESCE(p_is_auto_short_enabled, FALSE), COALESCE(p_short_entry_cutoff, '15:00'), COALESCE(p_short_square_off_time, '15:15'),
+        COALESCE(p_short_stop_loss_atr_mult, 0.60), COALESCE(p_short_trail_atr_mult, 1.20), COALESCE(p_short_target_atr_mult, 1.20),
+        COALESCE(p_trail_activation_pct, 0), NOW()
     )
     ON CONFLICT (user_id) DO UPDATE
     SET is_auto_trade_enabled = EXCLUDED.is_auto_trade_enabled,
@@ -1618,6 +1629,10 @@ BEGIN
         is_auto_short_enabled = EXCLUDED.is_auto_short_enabled,
         short_entry_cutoff = EXCLUDED.short_entry_cutoff,
         short_square_off_time = EXCLUDED.short_square_off_time,
+        short_stop_loss_atr_mult = EXCLUDED.short_stop_loss_atr_mult,
+        short_trail_atr_mult = EXCLUDED.short_trail_atr_mult,
+        short_target_atr_mult = EXCLUDED.short_target_atr_mult,
+        trail_activation_pct = EXCLUDED.trail_activation_pct,
         updated_at = NOW()
     RETURNING
         auto_trade_settings.id AS Id,
@@ -1643,6 +1658,10 @@ BEGIN
         auto_trade_settings.is_auto_short_enabled AS IsAutoShortEnabled,
         auto_trade_settings.short_entry_cutoff AS ShortEntryCutoff,
         auto_trade_settings.short_square_off_time AS ShortSquareOffTime,
+        auto_trade_settings.short_stop_loss_atr_mult AS ShortStopLossAtrMult,
+        auto_trade_settings.short_trail_atr_mult AS ShortTrailAtrMult,
+        auto_trade_settings.short_target_atr_mult AS ShortTargetAtrMult,
+        auto_trade_settings.trail_activation_pct AS TrailActivationPct,
         auto_trade_settings.updated_at AS UpdatedAt;
 END;
 $$;
@@ -1678,6 +1697,10 @@ RETURNS TABLE (
     IsAutoShortEnabled BOOLEAN,
     ShortEntryCutoff VARCHAR,
     ShortSquareOffTime VARCHAR,
+    ShortStopLossAtrMult NUMERIC,
+    ShortTrailAtrMult NUMERIC,
+    ShortTargetAtrMult NUMERIC,
+    TrailActivationPct NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1708,6 +1731,10 @@ BEGIN
         s.is_auto_short_enabled AS IsAutoShortEnabled,
         s.short_entry_cutoff AS ShortEntryCutoff,
         s.short_square_off_time AS ShortSquareOffTime,
+        s.short_stop_loss_atr_mult AS ShortStopLossAtrMult,
+        s.short_trail_atr_mult AS ShortTrailAtrMult,
+        s.short_target_atr_mult AS ShortTargetAtrMult,
+        s.trail_activation_pct AS TrailActivationPct,
         s.updated_at AS UpdatedAt
     FROM auto_trade_settings s
     WHERE s.user_id = p_user_id;
@@ -1745,6 +1772,10 @@ RETURNS TABLE (
     IsAutoShortEnabled BOOLEAN,
     ShortEntryCutoff VARCHAR,
     ShortSquareOffTime VARCHAR,
+    ShortStopLossAtrMult NUMERIC,
+    ShortTrailAtrMult NUMERIC,
+    ShortTargetAtrMult NUMERIC,
+    TrailActivationPct NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1775,6 +1806,10 @@ BEGIN
         s.is_auto_short_enabled AS IsAutoShortEnabled,
         s.short_entry_cutoff AS ShortEntryCutoff,
         s.short_square_off_time AS ShortSquareOffTime,
+        s.short_stop_loss_atr_mult AS ShortStopLossAtrMult,
+        s.short_trail_atr_mult AS ShortTrailAtrMult,
+        s.short_target_atr_mult AS ShortTargetAtrMult,
+        s.trail_activation_pct AS TrailActivationPct,
         s.updated_at AS UpdatedAt
     FROM auto_trade_settings s
     WHERE s.is_auto_trade_enabled = TRUE;
@@ -1922,6 +1957,10 @@ RETURNS TABLE (
     IsAutoShortEnabled BOOLEAN,
     ShortEntryCutoff VARCHAR,
     ShortSquareOffTime VARCHAR,
+    ShortStopLossAtrMult NUMERIC,
+    ShortTrailAtrMult NUMERIC,
+    ShortTargetAtrMult NUMERIC,
+    TrailActivationPct NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -1954,6 +1993,10 @@ BEGIN
         s.is_auto_short_enabled AS IsAutoShortEnabled,
         s.short_entry_cutoff AS ShortEntryCutoff,
         s.short_square_off_time AS ShortSquareOffTime,
+        s.short_stop_loss_atr_mult AS ShortStopLossAtrMult,
+        s.short_trail_atr_mult AS ShortTrailAtrMult,
+        s.short_target_atr_mult AS ShortTargetAtrMult,
+        s.trail_activation_pct AS TrailActivationPct,
         s.updated_at AS UpdatedAt
     FROM real_trade_settings s
     WHERE s.user_id = p_user_id;
@@ -1991,6 +2034,10 @@ RETURNS TABLE (
     IsAutoShortEnabled BOOLEAN,
     ShortEntryCutoff VARCHAR,
     ShortSquareOffTime VARCHAR,
+    ShortStopLossAtrMult NUMERIC,
+    ShortTrailAtrMult NUMERIC,
+    ShortTargetAtrMult NUMERIC,
+    TrailActivationPct NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -2023,6 +2070,10 @@ BEGIN
         s.is_auto_short_enabled AS IsAutoShortEnabled,
         s.short_entry_cutoff AS ShortEntryCutoff,
         s.short_square_off_time AS ShortSquareOffTime,
+        s.short_stop_loss_atr_mult AS ShortStopLossAtrMult,
+        s.short_trail_atr_mult AS ShortTrailAtrMult,
+        s.short_target_atr_mult AS ShortTargetAtrMult,
+        s.trail_activation_pct AS TrailActivationPct,
         s.updated_at AS UpdatedAt
     FROM real_trade_settings s
     WHERE s.is_real_trade_enabled = TRUE;
@@ -2035,6 +2086,8 @@ DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(INT, BOOLEAN, NUMERIC, NUM
 DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(VARCHAR, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR);
 DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(INT, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR, INT);
 DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(INT, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR, INT, VARCHAR, VARCHAR, NUMERIC, NUMERIC, NUMERIC);
+DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(INT, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR, INT, VARCHAR, VARCHAR, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, VARCHAR, VARCHAR);
+DROP FUNCTION IF EXISTS fn_upsert_real_trade_settings(INT, BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, NUMERIC, INT, INT, NUMERIC, NUMERIC, VARCHAR, INT, VARCHAR, VARCHAR, INT, VARCHAR, VARCHAR, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, VARCHAR, VARCHAR, NUMERIC, NUMERIC, NUMERIC);
 
 CREATE OR REPLACE FUNCTION fn_upsert_real_trade_settings(
     p_user_id INT,
@@ -2060,7 +2113,11 @@ CREATE OR REPLACE FUNCTION fn_upsert_real_trade_settings(
     p_target_atr_mult NUMERIC,
     p_is_auto_short_enabled BOOLEAN DEFAULT FALSE,
     p_short_entry_cutoff VARCHAR DEFAULT '15:00',
-    p_short_square_off_time VARCHAR DEFAULT '15:15'
+    p_short_square_off_time VARCHAR DEFAULT '15:15',
+    p_short_stop_loss_atr_mult NUMERIC DEFAULT 0.60,
+    p_short_trail_atr_mult NUMERIC DEFAULT 1.20,
+    p_short_target_atr_mult NUMERIC DEFAULT 1.20,
+    p_trail_activation_pct NUMERIC DEFAULT 0
 )
 RETURNS TABLE (
     Id INT,
@@ -2088,6 +2145,10 @@ RETURNS TABLE (
     IsAutoShortEnabled BOOLEAN,
     ShortEntryCutoff VARCHAR,
     ShortSquareOffTime VARCHAR,
+    ShortStopLossAtrMult NUMERIC,
+    ShortTrailAtrMult NUMERIC,
+    ShortTargetAtrMult NUMERIC,
+    TrailActivationPct NUMERIC,
     UpdatedAt TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -2100,7 +2161,8 @@ BEGIN
         max_trades_per_day, fixed_amount_per_trade, max_daily_loss_limit, product_type,
         min_conditions_match, trading_window_start, trading_window_end, entry_delay_minutes,
         exit_mode, close_check_time, stop_loss_atr_mult, trail_atr_mult, target_atr_mult,
-        is_auto_short_enabled, short_entry_cutoff, short_square_off_time, updated_at
+        is_auto_short_enabled, short_entry_cutoff, short_square_off_time,
+        short_stop_loss_atr_mult, short_trail_atr_mult, short_target_atr_mult, trail_activation_pct, updated_at
     )
     VALUES (
         p_user_id, p_is_real_trade_enabled, p_available_capital, p_profit_target_pct,
@@ -2108,7 +2170,9 @@ BEGIN
         p_max_trades_per_day, p_fixed_amount_per_trade, p_max_daily_loss_limit, p_product_type,
         p_min_conditions_match, p_trading_window_start, p_trading_window_end, p_entry_delay_minutes,
         p_exit_mode, p_close_check_time, p_stop_loss_atr_mult, p_trail_atr_mult, p_target_atr_mult,
-        COALESCE(p_is_auto_short_enabled, FALSE), COALESCE(p_short_entry_cutoff, '15:00'), COALESCE(p_short_square_off_time, '15:15'), NOW()
+        COALESCE(p_is_auto_short_enabled, FALSE), COALESCE(p_short_entry_cutoff, '15:00'), COALESCE(p_short_square_off_time, '15:15'),
+        COALESCE(p_short_stop_loss_atr_mult, 0.60), COALESCE(p_short_trail_atr_mult, 1.20), COALESCE(p_short_target_atr_mult, 1.20),
+        COALESCE(p_trail_activation_pct, 0), NOW()
     )
     ON CONFLICT (user_id) DO UPDATE SET
         is_real_trade_enabled = EXCLUDED.is_real_trade_enabled,
@@ -2134,6 +2198,10 @@ BEGIN
         is_auto_short_enabled = EXCLUDED.is_auto_short_enabled,
         short_entry_cutoff = EXCLUDED.short_entry_cutoff,
         short_square_off_time = EXCLUDED.short_square_off_time,
+        short_stop_loss_atr_mult = EXCLUDED.short_stop_loss_atr_mult,
+        short_trail_atr_mult = EXCLUDED.short_trail_atr_mult,
+        short_target_atr_mult = EXCLUDED.short_target_atr_mult,
+        trail_activation_pct = EXCLUDED.trail_activation_pct,
         updated_at = NOW()
     RETURNING
         real_trade_settings.id AS Id,
@@ -2161,6 +2229,10 @@ BEGIN
         real_trade_settings.is_auto_short_enabled AS IsAutoShortEnabled,
         real_trade_settings.short_entry_cutoff AS ShortEntryCutoff,
         real_trade_settings.short_square_off_time AS ShortSquareOffTime,
+        real_trade_settings.short_stop_loss_atr_mult AS ShortStopLossAtrMult,
+        real_trade_settings.short_trail_atr_mult AS ShortTrailAtrMult,
+        real_trade_settings.short_target_atr_mult AS ShortTargetAtrMult,
+        real_trade_settings.trail_activation_pct AS TrailActivationPct,
         real_trade_settings.updated_at AS UpdatedAt;
 END;
 $$;

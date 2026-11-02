@@ -59,12 +59,27 @@ public class RealTradeSettingsUpdateDto : IValidatableObject
     [Range(typeof(decimal), "0.5", "20.0", ErrorMessage = "Target ATR multiple must be between 0.5 and 20.")]
     public decimal TargetAtrMult { get; set; } = 3.0m;
 
+    // 0 = disabled (default entry + 1x ATR activation). Set to e.g. 1.5 to start protecting the gain once price
+    // is up 1.5% from entry instead.
+    [Range(typeof(decimal), "0", "10.0", ErrorMessage = "Trail Activation % must be between 0 and 10.")]
+    public decimal TrailActivationPct { get; set; } = 0m;
+
     // Auto Short Selling's ON/OFF is its own switch (ToggleAutoShortRequestDto), not part of this form.
     [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Entry Cut-off must be HH:mm.")]
     public string ShortEntryCutoff { get; set; } = "15:00";
 
     [RegularExpression(@"^([01]\d|2[0-3]):[0-5]\d$", ErrorMessage = "Short Square-off Time must be HH:mm.")]
     public string ShortSquareOffTime { get; set; } = "15:05";
+
+    // Shorts are intraday-only, so they get their own (smaller) ATR multiples than the swing SL/Trail/Target above.
+    [Range(typeof(decimal), "0.1", "5.0", ErrorMessage = "Short Stop Loss ATR multiple must be between 0.1 and 5.")]
+    public decimal ShortStopLossAtrMult { get; set; } = 0.6m;
+
+    [Range(typeof(decimal), "0.1", "10.0", ErrorMessage = "Short Trailing ATR multiple must be between 0.1 and 10.")]
+    public decimal ShortTrailAtrMult { get; set; } = 1.2m;
+
+    [Range(typeof(decimal), "0.1", "20.0", ErrorMessage = "Short Target ATR multiple must be between 0.1 and 20.")]
+    public decimal ShortTargetAtrMult { get; set; } = 1.2m;
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext) =>
         ShortSellingSettingsValidator.Validate(ShortEntryCutoff, ShortSquareOffTime);
