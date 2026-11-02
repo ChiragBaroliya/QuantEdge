@@ -680,7 +680,9 @@ public class BacktestService : IBacktestService
         await ReportProgressAsync(runId, 1, "Loading daily candles");
         DateTime fromUtc = BacktestEngine.DailyStamp(p.FromDate.AddDays(-480));
         DateTime toUtc = BacktestEngine.DailyStamp(p.ToDate.AddDays(1));
-        var dailyAll = await LoadCandlesAsync("1d", symbols.Concat(new[] { NiftySymbol, VixSymbol }).ToList(), fromUtc, toUtc);
+        var dailyLoaded = await LoadCandlesAsync("1d", symbols.Concat(new[] { NiftySymbol, VixSymbol }).ToList(), fromUtc, toUtc);
+        var dailyAll = dailyLoaded.ToDictionary(kv => kv.Key, kv => BacktestEngine.OneBarPerDay(kv.Value));
+        int duplicateDailyBars = dailyLoaded.Sum(kv => kv.Value.Count - dailyAll[kv.Key].Count);
         var nifty = dailyAll.GetValueOrDefault(NiftySymbol) ?? new List<MarketCandle>();
         var vixByDate = (dailyAll.GetValueOrDefault(VixSymbol) ?? new List<MarketCandle>())
             .GroupBy(c => BacktestEngine.IstDate(c.CandleTime)).ToDictionary(g => g.Key, g => g.Last().Close);
@@ -817,6 +819,8 @@ public class BacktestService : IBacktestService
             ExcludedEtfs = etfs
         };
         summary.Assumptions = NewRuleAssumptions(p, momentum, splits.Count);
+        if (duplicateDailyBars > 0)
+            summary.Assumptions.Add($"{duplicateDailyBars} extra daily candle(s) were ignored because a stock already had a candle on that date.");
         return (summary, main.Trades);
     }
 

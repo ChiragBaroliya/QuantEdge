@@ -111,6 +111,15 @@ public static class BacktestEngine
     /// </summary>
     public const decimal MinSessionSharePct = 25m;
 
+    /// <summary>
+    /// One daily bar per IST date, in time order. A second row on a date (a different time stamp on the same day) would count
+    /// that day twice in every lookback. The standard stamp (<see cref="DailyStamp"/>) wins; otherwise the latest bar does.
+    /// </summary>
+    public static List<MarketCandle> OneBarPerDay(IEnumerable<MarketCandle> bars) =>
+        bars.GroupBy(c => IstDate(c.CandleTime)).OrderBy(g => g.Key)
+            .Select(g => g.FirstOrDefault(c => c.CandleTime == DailyStamp(g.Key)) ?? g.OrderBy(c => c.CandleTime).Last())
+            .ToList();
+
     public static List<DateTime> TradingSessions(IReadOnlyCollection<IReadOnlyList<MarketCandle>> symbols, IReadOnlyList<MarketCandle> nifty)
     {
         var counts = new Dictionary<DateTime, int>();

@@ -220,6 +220,52 @@ public class BacktestStrategyRulesTests
         Assert.Equal(new[] { "BIG" }, list[BacktestEngine.IstDate(big[4].CandleTime)]);
     }
 
+    // ---------------- two daily bars on one date ----------------
+
+    private static List<MarketCandle> WithSecondBarOnLastDay(List<MarketCandle> bars, int minutesAfterStamp, decimal close)
+    {
+        var last = bars[^1];
+        bars.Add(new MarketCandle { Symbol = last.Symbol, Timeframe = "1d", CandleTime = last.CandleTime.AddMinutes(minutesAfterStamp), Open = close, High = close, Low = close, Close = close, Volume = 5 });
+        return bars;
+    }
+
+    [Fact]
+    public void StrengthRanks_TwoBarsOnOneDateDoNotBreakTheRanking()
+    {
+        var bars = BacktestEngine.OneBarPerDay(WithSecondBarOnLastDay(FlatDaily(MomentumDailyRules.ReturnLookback + 1), 330, 150m));
+        var day = BacktestEngine.IstDate(bars[^1].CandleTime);
+        var daily = new Dictionary<string, List<MarketCandle>> { ["INFY"] = bars };
+        var universe = new Dictionary<DateTime, HashSet<string>> { [day] = new() { "INFY" } };
+
+        var ranks = MomentumDailyBacktest.StrengthRanks(daily, universe);
+
+        Assert.Equal(0, ranks[day]["INFY"]);
+    }
+
+    [Fact]
+    public void OneBarPerDay_KeepsTheStandardDailyStampOverAnyOther()
+    {
+        var bars = BacktestEngine.OneBarPerDay(WithSecondBarOnLastDay(FlatDaily(3), 330, 150m));
+
+        Assert.Equal(3, bars.Count);
+        Assert.Equal(100m, bars[^1].Close);
+        Assert.Equal(BacktestEngine.DailyStamp(BacktestEngine.IstDate(bars[^1].CandleTime)), bars[^1].CandleTime);
+    }
+
+    [Fact]
+    public void OneBarPerDay_WithoutTheStandardStampKeepsTheLatestBar()
+    {
+        var day = new DateTime(2025, 1, 6);
+        var stamp = BacktestEngine.DailyStamp(day);
+        var bars = BacktestEngine.OneBarPerDay(new List<MarketCandle>
+        {
+            new() { CandleTime = stamp.AddMinutes(60), Close = 1m },
+            new() { CandleTime = stamp.AddMinutes(120), Close = 2m }
+        });
+
+        Assert.Equal(2m, Assert.Single(bars).Close);
+    }
+
     // ---------------- daily momentum: entry ----------------
 
     private static MomentumDailyRules.EntryFacts GoodFacts() => new(Close: 110m, PriorHigh: 105m, YearHigh: 111m, VolumeMultiple: 2m, StrengthRank: 90, NiftyAboveAverage: true);
