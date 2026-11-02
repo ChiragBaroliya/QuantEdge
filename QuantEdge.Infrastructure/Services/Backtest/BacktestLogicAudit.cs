@@ -41,7 +41,8 @@ public static class BacktestLogicAudit
 
             Check(isShort ? "Stop above the entry, target below it" : "Stop below the entry, target above it",
                 _ => true,
-                t => isShort ? t.StopLoss > t.EntryRaw && t.Target < t.EntryRaw : t.StopLoss < t.EntryRaw && t.Target > t.EntryRaw);
+                // A rule with no fixed target stores 0: only the stop applies.
+                t => isShort ? t.StopLoss > t.EntryRaw && (t.Target <= 0m || t.Target < t.EntryRaw) : t.StopLoss < t.EntryRaw && (t.Target <= 0m || t.Target > t.EntryRaw));
             Check("A target exit happened at or beyond the target",
                 t => t.ExitCategory == "Target",
                 t => isShort ? t.ExitRaw <= t.Target : t.ExitRaw >= t.Target);
@@ -72,6 +73,45 @@ public static class BacktestLogicAudit
                 Check($"The square-off happened at or after {shortSquareOffTime}, not earlier",
                     t => t.ExitCategory == "Square-off" && t.SessionsHeld == 0,
                     t => BacktestEngine.ToIst(t.ExitTime).TimeOfDay >= squareOff);
+            }
+        }
+        return checks;
+    }
+
+    /// <summary>The checks a new rule adds to <see cref="Run"/>: its portfolio limits and, for an intraday rule, flat by the close and no late entries.</summary>
+    public static List<BacktestLogicCheck> RunRuleLimits(IReadOnlyList<BacktestTrade> trades, int maxPositions, int maxPerDay, int maxPerSector,
+        string? intradayLastSignal)
+    {
+        var checks = new List<BacktestLogicCheck>();
+        var tooManyOpen = trades.Where(t => trades.Count(o => o.EntryTime <= t.EntryTime && o.ExitTime > t.EntryTime) > maxPositions).ToHashSet();
+        var tooManyInDay = trades.GroupBy(t => BacktestEngine.IstDate(t.EntryTime)).Where(g => g.Count() > maxPerDay).SelectMany(g => g).ToHashSet();
+        var tooManyInSector = maxPerSector <= 0 ? new HashSet<BacktestTrade>() : trades
+            .Where(t => t.Sector != null && trades.Count(o => o.Sector == t.Sector && o.EntryTime <= t.EntryTime && o.ExitTime > t.EntryTime) > maxPerSector)
+            .ToHashSet();
+        TimeSpan lastSignal = SwingTradeRules.ParseIstTime(intradayLastSignal, TimeSpan.Zero);
+
+        foreach (var side in trades.GroupBy(t => t.Side).OrderBy(g => g.Key))
+        {
+            var list = side.ToList();
+            void Check(string rule, Func<BacktestTrade, bool> applies, Func<BacktestTrade, bool> holds)
+            {
+                var relevant = list.Where(applies).ToList();
+                var broken = relevant.Where(t => !holds(t)).ToList();
+                checks.Add(new BacktestLogicCheck
+                {
+                    Side = side.Key, Rule = rule, Checked = relevant.Count, Failed = broken.Count,
+                    Examples = broken.Take(MaxExamples).Select(Describe).ToList()
+                });
+            }
+
+            Check($"No more than {maxPositions} positions open at once", _ => true, t => !tooManyOpen.Contains(t));
+            Check($"No more than {maxPerDay} new entries a day", _ => true, t => !tooManyInDay.Contains(t));
+            if (maxPerSector > 0)
+                Check($"No more than {maxPerSector} open positions in a sector", t => t.Sector != null, t => !tooManyInSector.Contains(t));
+            if (intradayLastSignal != null)
+            {
+                Check($"No signal after {intradayLastSignal}", _ => true, t => BacktestEngine.ToIst(t.SignalTime).TimeOfDay <= lastSignal);
+                Check("Every trade closed the same day", t => !t.EndOfData, t => t.SessionsHeld == 0);
             }
         }
         return checks;

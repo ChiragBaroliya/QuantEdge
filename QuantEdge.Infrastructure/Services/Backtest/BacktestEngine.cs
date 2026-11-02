@@ -93,8 +93,8 @@ public sealed class SymbolBacktestResult
 public static class BacktestEngine
 {
     public const int SplitExclusionSessions = 200;
-    private const string DriftSkipReason = "price moved ≥2% before the order (guard 12)";
-    private const string MissingBarSquareOffReason = "Auto Square-off (no bar stored at the square-off time - last close of the day used)";
+    public const string DriftSkipReason = "price moved ≥2% before the order (guard 12)";
+    public const string MissingBarSquareOffReason = "Auto Square-off (no bar stored at the square-off time - last close of the day used)";
     private static readonly TimeSpan Ist = TimeSpan.FromMinutes(330);
     private static readonly TimeSpan Bar15 = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan Bar60 = TimeSpan.FromMinutes(60);
@@ -103,6 +103,27 @@ public static class BacktestEngine
     public static DateTime IstDate(DateTime utc) => (utc + Ist).Date;
     /// <summary>Kite's stamp for a daily bar: 00:00 IST = 18:30 UTC the day before.</summary>
     public static DateTime DailyStamp(DateTime istDate) => DateTime.SpecifyKind(istDate.Date - Ist, DateTimeKind.Utc);
+
+    /// <summary>
+    /// The trading days in the stored daily candles. One stock's stray bar on a Saturday or a holiday isn't a session, or
+    /// "Max Duration" would close trades early. A date counts when at least <see cref="MinSessionSharePct"/>% of the symbols have
+    /// a bar, or on a weekday when NIFTY has one (so a period where few stocks have history still counts).
+    /// </summary>
+    public const decimal MinSessionSharePct = 25m;
+
+    public static List<DateTime> TradingSessions(IReadOnlyCollection<IReadOnlyList<MarketCandle>> symbols, IReadOnlyList<MarketCandle> nifty)
+    {
+        var counts = new Dictionary<DateTime, int>();
+        foreach (var bars in symbols)
+            foreach (var day in bars.Select(c => IstDate(c.CandleTime)).Distinct())
+                counts[day] = counts.GetValueOrDefault(day) + 1;
+        var niftyDays = nifty.Select(c => IstDate(c.CandleTime)).ToHashSet();
+        decimal needed = Math.Max(1m, symbols.Count * MinSessionSharePct / 100m);
+        return counts.Keys.Union(niftyDays)
+            .Where(d => counts.GetValueOrDefault(d) >= needed
+                || (niftyDays.Contains(d) && d.DayOfWeek != DayOfWeek.Saturday && d.DayOfWeek != DayOfWeek.Sunday))
+            .OrderBy(d => d).ToList();
+    }
 
     /// <summary>
     /// Overnight gaps of −35% / +60% or more: on the stocks this bot trades these are almost always a split or bonus that

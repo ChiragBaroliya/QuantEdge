@@ -117,6 +117,10 @@ public class BacktestService : IBacktestService
         p.Side = string.IsNullOrWhiteSpace(p.Side) ? BacktestSide.Buy : p.Side.Trim().ToUpperInvariant();
         if (p.Side != BacktestSide.Buy && p.Side != BacktestSide.Short && p.Side != BacktestSide.Both)
             throw new ArgumentException("Side must be BUY, SHORT or BOTH.");
+        p.Strategy = BacktestStrategy.Normalize(p.Strategy);
+        if (!BacktestStrategy.IsKnown(p.Strategy)) throw new ArgumentException("Strategy must be SCORE, MOMENTUM_DAILY or INTRADAY_ORB.");
+        if (p.Strategy == BacktestStrategy.MomentumDaily && p.Side != BacktestSide.Buy)
+            throw new ArgumentException("Daily momentum is a Buy-only rule.");
 
         p.GateMode = string.IsNullOrWhiteSpace(p.GateMode) ? strategy.MarketGateMode : p.GateMode.Trim().ToUpperInvariant();
         if (p.GateMode != SwingStrategySettings.GateModeNiftyFilter && p.GateMode != SwingStrategySettings.GateModeRegime)
@@ -153,10 +157,42 @@ public class BacktestService : IBacktestService
         p.ShortSquareOffTime = string.IsNullOrWhiteSpace(p.ShortSquareOffTime) ? real.ShortSquareOffTime : p.ShortSquareOffTime.Trim();
         var shortTimeErrors = ShortSellingSettingsValidator.Validate(p.ShortEntryCutoff, p.ShortSquareOffTime).ToList();
         if (BacktestSide.IncludesShort(p.Side) && shortTimeErrors.Count > 0) throw new ArgumentException(string.Join(" ", shortTimeErrors));
+        ApplyFixedRules(p);
         p.Label = string.IsNullOrWhiteSpace(p.Label)
-            ? $"{p.Side} · {StocksText(p.Symbols)} · {p.GateMode} · score ≥ {p.BuyScoreThreshold} · {p.FromDate:dd-MMM-yy} → {p.ToDate:dd-MMM-yy}"
+            ? p.Strategy == BacktestStrategy.Score
+                ? $"{p.Side} · {StocksText(p.Symbols)} · {p.GateMode} · score ≥ {p.BuyScoreThreshold} · {p.FromDate:dd-MMM-yy} → {p.ToDate:dd-MMM-yy}"
+                : $"{BacktestStrategy.NameOf(p.Strategy)} · {p.Side} · {StocksText(p.Symbols)} · {p.FromDate:dd-MMM-yy} → {p.ToDate:dd-MMM-yy}"
             : p.Label.Trim();
         return p;
+    }
+
+    /// <summary>A new rule's numbers replace the form's, so the stored params say what really ran and the numbers can't be tuned to the data.</summary>
+    public static void ApplyFixedRules(BacktestParams p)
+    {
+        if (p.Strategy == BacktestStrategy.MomentumDaily)
+        {
+            p.RuleSet = MomentumDailyRules.Numbers();
+            p.RiskPct = MomentumDailyRules.RiskPct;
+            p.AmountPerTrade = Math.Min(MomentumDailyRules.MaxPerTrade, p.Capital);
+            p.MaxPositions = MomentumDailyRules.MaxPositions;
+            p.MaxTradesPerDay = MomentumDailyRules.MaxEntriesPerDay;
+            p.MaxDurationDays = MomentumDailyRules.MaxSessions;
+        }
+        else if (p.Strategy == BacktestStrategy.IntradayOrb)
+        {
+            p.RuleSet = IntradayOrbRules.Numbers();
+            p.RiskPct = IntradayOrbRules.RiskPct;
+            p.AmountPerTrade = Math.Min(IntradayOrbRules.MaxPerTrade, p.Capital);
+            p.MaxPositions = IntradayOrbRules.MaxPositions;
+            p.MaxTradesPerDay = IntradayOrbRules.MaxEntriesPerDay;
+            p.MaxDurationDays = 0;
+        }
+        else
+        {
+            return;
+        }
+        p.SizingMode = "RISK";
+        p.DailyLossLimit = Math.Round(p.Capital * SwingTradeRules.DefaultDailyLossLimitFactor, 2);
     }
 
     /// <summary>The stock list for a run's label, so runs over different stocks can be told apart in the list.</summary>
@@ -305,6 +341,9 @@ public class BacktestService : IBacktestService
     private async Task<(BacktestSummary Summary, List<BacktestTrade> Trades)> ExecuteAsync(int runId, BacktestParams p, int threads,
         CancellationTokenSource cts)
     {
+        if (BacktestStrategy.Normalize(p.Strategy) != BacktestStrategy.Score)
+            return await ExecuteNewRuleAsync(runId, p, threads, cts);
+
         var token = cts.Token;
         bool regimeMode = p.GateMode == SwingStrategySettings.GateModeRegime;
 
@@ -343,8 +382,7 @@ public class BacktestService : IBacktestService
         var vixByDate = (dailyAll.GetValueOrDefault(VixSymbol) ?? new List<MarketCandle>())
             .GroupBy(c => BacktestEngine.IstDate(c.CandleTime)).ToDictionary(g => g.Key, g => g.Last().Close);
 
-        var sessions = dailyAll.Where(kv => kv.Key != VixSymbol).SelectMany(kv => kv.Value)
-            .Select(c => BacktestEngine.IstDate(c.CandleTime)).Distinct().OrderBy(d => d).ToList();
+        var sessions = SessionsOf(dailyAll, nifty);
         int SessionOf(DateTime day)
         {
             int idx = sessions.BinarySearch(day.Date);
@@ -397,57 +435,27 @@ public class BacktestService : IBacktestService
         };
 
         // --- Replay every symbol (dedicated low-priority threads so the live feed in this process keeps its CPU) ---
-        var queue = new ConcurrentQueue<string>(symbols);
         var signals = new ConcurrentBag<BacktestSignal>();
         var tapes = new ConcurrentDictionary<string, IntradayTape>();
         var splits = new ConcurrentBag<string>();
         var noData = new ConcurrentBag<string>();
         var intradayDates = new ConcurrentBag<(DateTime First, DateTime Last)>();
         long scans = 0;
-        int done = 0;
-        Exception? workerError = null;
 
-        var workers = Enumerable.Range(0, Math.Min(threads, symbols.Count)).Select(_ => Task.Factory.StartNew(() =>
+        await ReplayAsync(runId, symbols, threads, cts, () => Interlocked.Read(ref scans), symbol =>
         {
-            Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
-            while (!token.IsCancellationRequested && queue.TryDequeue(out var symbol))
-            {
-                try
-                {
-                    var daily = dailyAll.GetValueOrDefault(symbol) ?? new List<MarketCandle>();
-                    var m15 = LoadCandles("15m", symbol, BacktestEngine.DailyStamp(p.FromDate.AddDays(-10)), toUtc);
-                    var h60 = LoadCandles("60m", symbol, BacktestEngine.DailyStamp(p.FromDate.AddDays(-40)), toUtc);
-                    if (m15.Count == 0 || daily.Count < RealTradeSchedule.MinDailyCandles) { noData.Add(symbol); continue; }
-                    intradayDates.Add((BacktestEngine.IstDate(m15[0].CandleTime), BacktestEngine.IstDate(m15[^1].CandleTime)));
+            var daily = dailyAll.GetValueOrDefault(symbol) ?? new List<MarketCandle>();
+            var m15 = LoadCandles("15m", symbol, BacktestEngine.DailyStamp(p.FromDate.AddDays(-10)), toUtc);
+            var h60 = LoadCandles("60m", symbol, BacktestEngine.DailyStamp(p.FromDate.AddDays(-40)), toUtc);
+            if (m15.Count == 0 || daily.Count < RealTradeSchedule.MinDailyCandles) { noData.Add(symbol); return; }
+            intradayDates.Add((BacktestEngine.IstDate(m15[0].CandleTime), BacktestEngine.IstDate(m15[^1].CandleTime)));
 
-                    var r = BacktestEngine.GenerateSignals(symbol, daily, h60, m15, ctx);
-                    foreach (var s in r.Signals) signals.Add(s);
-                    if (r.Tape != null) tapes[symbol] = r.Tape;
-                    foreach (var d in r.SuspectedSplits.Where(d => d >= p.FromDate.AddDays(-400) && d <= p.ToDate)) splits.Add($"{symbol} {d:dd-MMM-yyyy}");
-                    Interlocked.Add(ref scans, r.Scans);
-                }
-                catch (Exception ex)
-                {
-                    workerError ??= new InvalidOperationException($"{symbol}: {ex.Message}", ex);
-                    cts.Cancel();
-                }
-                finally
-                {
-                    Interlocked.Increment(ref done);
-                }
-            }
-        }, token, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToList();
-
-        var all = Task.WhenAll(workers);
-        while (!all.IsCompleted)
-        {
-            await Task.WhenAny(all, Task.Delay(TimeSpan.FromSeconds(3)));
-            int pct = 5 + (int)(85.0 * Volatile.Read(ref done) / symbols.Count);
-            if (await ReportProgressAsync(runId, pct, $"Replaying stocks: {Volatile.Read(ref done)}/{symbols.Count} · {Interlocked.Read(ref scans):N0} scans")) cts.Cancel();
-        }
-        try { await all; } catch (OperationCanceledException) { }
-        if (workerError != null) throw workerError;
-        token.ThrowIfCancellationRequested();
+            var r = BacktestEngine.GenerateSignals(symbol, daily, h60, m15, ctx);
+            foreach (var s in r.Signals) signals.Add(s);
+            if (r.Tape != null) tapes[symbol] = r.Tape;
+            foreach (var d in r.SuspectedSplits.Where(d => d >= p.FromDate.AddDays(-400) && d <= p.ToDate)) splits.Add($"{symbol} {d:dd-MMM-yyyy}");
+            Interlocked.Add(ref scans, r.Scans);
+        });
 
         // --- Portfolio, sweep, metrics ----------------------------------------------------------
         await ReportProgressAsync(runId, 92, "Simulating the portfolio");
@@ -463,37 +471,12 @@ public class BacktestService : IBacktestService
             return s.Exit;
         }
 
-        var ps = new PortfolioSettings
-        {
-            Capital = p.Capital,
-            AmountPerTrade = p.AmountPerTrade,
-            RiskSizing = p.SizingMode == "RISK",
-            RiskPct = p.RiskPct,
-            MaxPositions = p.MaxPositions!.Value,
-            MaxTradesPerDay = p.MaxTradesPerDay!.Value,
-            DailyLossLimit = p.DailyLossLimit!.Value,
-            SlippagePct = p.SlippagePct,
-            Rates = chargeRates.Count > 0 ? chargeRates : ChargeRates.Defaults
-        };
+        var ps = PortfolioSettingsOf(p, chargeRates);
         string? SectorOf(string symbol) => sectors.GetValueOrDefault(symbol);
-        var closes = dailyAll.ToDictionary(kv => kv.Key, kv => kv.Value.Select(c => (Date: BacktestEngine.IstDate(c.CandleTime), c.Close)).ToList());
-        decimal? CloseOn(string symbol, DateTime day)
-        {
-            if (!closes.TryGetValue(symbol, out var list) || list.Count == 0) return null;
-            int lo = 0, hi = list.Count - 1, best = -1;
-            while (lo <= hi) { int mid = (lo + hi) / 2; if (list[mid].Date <= day) { best = mid; lo = mid + 1; } else hi = mid - 1; }
-            return best >= 0 ? list[best].Close : null;
-        }
+        var CloseOn = CloseLookup(dailyAll);
 
         var liveSignals = ordered.Where(s => s.IsLiveCandidate).ToList();
         var main = BacktestPortfolio.Run(liveSignals, ExitOf, ps, SectorOf);
-        var equity = BacktestPortfolio.EquityCurve(main.Trades, p.Capital, testSessions, CloseOn, out decimal exposure);
-        var kpis = BacktestPortfolio.Kpis(main.Trades, equity, p.Capital, p.FromDate, p.ToDate, exposure);
-
-        DateTime mid = p.FromDate.AddDays((p.ToDate - p.FromDate).TotalDays / 2);
-        var halves = BacktestPortfolio.Group(main.Trades, t => BacktestEngine.IstDate(t.EntryTime) < mid
-            ? $"1st half ({p.FromDate:MMM yy} – {mid:MMM yy})" : $"2nd half ({mid:MMM yy} – {p.ToDate:MMM yy})", sortByKey: true);
-        var (verdict, reason) = BacktestPortfolio.Verdict(kpis, halves);
 
         await ReportProgressAsync(runId, 96, "Threshold sweep");
         var testedSides = new[] { false, true }.Where(isShort => isShort ? ctx.TestShort : ctx.TestBuy).ToList();
@@ -514,16 +497,131 @@ public class BacktestService : IBacktestService
             });
         }
 
+        var firstLast = intradayDates.ToList();
+        var summary = BuildSummary(p, testSessions, CloseOn, main, liveSignals, testedSides, logicChecks: BacktestLogicAudit.Run(main.Trades, ctx.ShortEntryCutoff, ctx.ShortSquareOffTime),
+            byScore: BacktestPortfolio.ScoreBucket, minTrades: null);
+        summary.Direction = BacktestEngine.DirectionAccuracy(liveSignals, symbol => tapes.GetValueOrDefault(symbol));
+        summary.ThresholdSweep = sweep;
+        summary.FactorEdge = BacktestPortfolio.FactorEdge(main.Trades);
+        summary.Coverage = new BacktestCoverage
+        {
+            SymbolsRequested = symbols.Count,
+            SymbolsWithData = symbols.Count - noData.Count,
+            FirstIntradayDate = firstLast.Count > 0 ? firstLast.Min(x => x.First) : null,
+            LastIntradayDate = firstLast.Count > 0 ? firstLast.Max(x => x.Last) : null,
+            Sessions = testSessions.Count,
+            ScansEvaluated = scans,
+            SymbolsWithoutData = noData.OrderBy(s => s).ToList(),
+            SuspectedSplits = splits.OrderBy(s => s).ToList()
+        };
+        summary.Assumptions = Assumptions(p, regimeMode, splits.Count, regimeByDate.Count);
+        return (summary, main.Trades);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Shared by every rule
+    // ------------------------------------------------------------------------------------------
+
+    private static List<DateTime> SessionsOf(IReadOnlyDictionary<string, List<MarketCandle>> dailyAll, IReadOnlyList<MarketCandle> nifty) =>
+        BacktestEngine.TradingSessions(dailyAll.Where(kv => kv.Key != VixSymbol).Select(kv => (IReadOnlyList<MarketCandle>)kv.Value).ToList(), nifty);
+
+    /// <summary>Runs <paramref name="replay"/> for every symbol on dedicated low-priority threads, so the live feed in this process keeps its CPU.</summary>
+    private async Task ReplayAsync(int runId, IReadOnlyCollection<string> symbols, int threads, CancellationTokenSource cts, Func<long> scans, Action<string> replay)
+    {
+        var token = cts.Token;
+        var queue = new ConcurrentQueue<string>(symbols);
+        int done = 0;
+        Exception? workerError = null;
+
+        var workers = Enumerable.Range(0, Math.Min(threads, symbols.Count)).Select(_ => Task.Factory.StartNew(() =>
+        {
+            Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+            while (!token.IsCancellationRequested && queue.TryDequeue(out var symbol))
+            {
+                try
+                {
+                    replay(symbol);
+                }
+                catch (Exception ex)
+                {
+                    workerError ??= new InvalidOperationException($"{symbol}: {ex.Message}", ex);
+                    cts.Cancel();
+                }
+                finally
+                {
+                    Interlocked.Increment(ref done);
+                }
+            }
+        }, token, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToList();
+
+        var all = Task.WhenAll(workers);
+        while (!all.IsCompleted)
+        {
+            await Task.WhenAny(all, Task.Delay(TimeSpan.FromSeconds(3)));
+            int pct = 5 + (int)(85.0 * Volatile.Read(ref done) / symbols.Count);
+            if (await ReportProgressAsync(runId, pct, $"Replaying stocks: {Volatile.Read(ref done)}/{symbols.Count} · {scans():N0} scans")) cts.Cancel();
+        }
+        try { await all; } catch (OperationCanceledException) { }
+        if (workerError != null) throw workerError;
+        token.ThrowIfCancellationRequested();
+    }
+
+    private static PortfolioSettings PortfolioSettingsOf(BacktestParams p, IReadOnlyList<ChargeRates> chargeRates)
+    {
+        bool momentum = p.Strategy == BacktestStrategy.MomentumDaily;
+        return new PortfolioSettings
+        {
+            Capital = p.Capital,
+            AmountPerTrade = p.AmountPerTrade,
+            RiskSizing = p.SizingMode == "RISK",
+            RiskPct = p.RiskPct,
+            MaxPositions = p.MaxPositions!.Value,
+            MaxTradesPerDay = p.MaxTradesPerDay!.Value,
+            DailyLossLimit = p.DailyLossLimit!.Value,
+            SlippagePct = p.SlippagePct,
+            Rates = chargeRates.Count > 0 ? chargeRates : ChargeRates.Defaults,
+            MaxPerSector = momentum ? MomentumDailyRules.MaxPerSector : 0,
+            DrawdownHaltPct = momentum ? MomentumDailyRules.DrawdownHaltPct : 0m,
+            DrawdownResumePct = momentum ? MomentumDailyRules.DrawdownResumePct : 0m
+        };
+    }
+
+    private static Func<string, DateTime, decimal?> CloseLookup(IReadOnlyDictionary<string, List<MarketCandle>> dailyAll)
+    {
+        var closes = dailyAll.ToDictionary(kv => kv.Key, kv => kv.Value.Select(c => (Date: BacktestEngine.IstDate(c.CandleTime), c.Close)).ToList());
+        return (symbol, day) =>
+        {
+            if (!closes.TryGetValue(symbol, out var list) || list.Count == 0) return null;
+            int lo = 0, hi = list.Count - 1, best = -1;
+            while (lo <= hi) { int mid = (lo + hi) / 2; if (list[mid].Date <= day) { best = mid; lo = mid + 1; } else hi = mid - 1; }
+            return best >= 0 ? list[best].Close : null;
+        };
+    }
+
+    /// <summary>The report's shared part. A <paramref name="minTrades"/> asks for the new rules' stricter verdict; null keeps the score rule's.</summary>
+    private static BacktestSummary BuildSummary(BacktestParams p, IReadOnlyList<DateTime> testSessions, Func<string, DateTime, decimal?> closeOn, PortfolioResult main,
+        IReadOnlyList<BacktestSignal> liveSignals, IReadOnlyList<bool> testedSides, List<BacktestLogicCheck> logicChecks, Func<int, string> byScore, int? minTrades)
+    {
+        var equity = BacktestPortfolio.EquityCurve(main.Trades, p.Capital, testSessions, closeOn, out decimal exposure);
+        var kpis = BacktestPortfolio.Kpis(main.Trades, equity, p.Capital, p.FromDate, p.ToDate, exposure);
+        DateTime mid = p.FromDate.AddDays((p.ToDate - p.FromDate).TotalDays / 2);
+        string HalfOf(BacktestTrade t) => BacktestEngine.IstDate(t.EntryTime) < mid
+            ? $"1st half ({p.FromDate:MMM yy} – {mid:MMM yy})" : $"2nd half ({mid:MMM yy} – {p.ToDate:MMM yy})";
+        (string, string) VerdictOf(BacktestKpis k, List<BacktestGroupRow> halves, IReadOnlyList<BacktestTrade> trades, IEnumerable<BacktestLogicCheck> checks) =>
+            minTrades is int min ? BacktestPortfolio.RuleVerdict(k, halves, trades, checks.ToList(), min) : BacktestPortfolio.Verdict(k, halves);
+
+        var halves = BacktestPortfolio.Group(main.Trades, HalfOf, sortByKey: true);
+        var (verdict, reason) = VerdictOf(kpis, halves, main.Trades, logicChecks);
+
         // Each side's own answer, from the trades the shared portfolio took (the same cash and position limits as the live bot).
         var sideResults = testedSides.Select(isShort =>
         {
             string side = BacktestSide.Of(isShort);
             var ofSide = main.Trades.Where(t => t.Side == side).ToList();
-            var sideEquity = BacktestPortfolio.EquityCurve(ofSide, p.Capital, testSessions, CloseOn, out decimal sideExposure);
+            var sideEquity = BacktestPortfolio.EquityCurve(ofSide, p.Capital, testSessions, closeOn, out decimal sideExposure);
             var sideKpis = BacktestPortfolio.Kpis(ofSide, sideEquity, p.Capital, p.FromDate, p.ToDate, sideExposure);
-            var sideHalves = BacktestPortfolio.Group(ofSide, t => BacktestEngine.IstDate(t.EntryTime) < mid
-                ? $"1st half ({p.FromDate:MMM yy} – {mid:MMM yy})" : $"2nd half ({mid:MMM yy} – {p.ToDate:MMM yy})", sortByKey: true);
-            var (sideVerdict, sideReason) = BacktestPortfolio.Verdict(sideKpis, sideHalves);
+            var sideHalves = BacktestPortfolio.Group(ofSide, HalfOf, sortByKey: true);
+            var (sideVerdict, sideReason) = VerdictOf(sideKpis, sideHalves, ofSide, logicChecks.Where(c => c.Side == side));
             return new BacktestSideResult
             {
                 Side = side,
@@ -536,12 +634,10 @@ public class BacktestService : IBacktestService
             };
         }).ToList();
 
-        var firstLast = intradayDates.ToList();
-        var summary = new BacktestSummary
+        return new BacktestSummary
         {
             Sides = sideResults,
-            Direction = BacktestEngine.DirectionAccuracy(liveSignals, symbol => tapes.GetValueOrDefault(symbol)),
-            LogicChecks = BacktestLogicAudit.Run(main.Trades, ctx.ShortEntryCutoff, ctx.ShortSquareOffTime),
+            LogicChecks = logicChecks,
             Verdict = verdict,
             VerdictReason = reason,
             Kpis = kpis,
@@ -551,26 +647,209 @@ public class BacktestService : IBacktestService
             ByYear = BacktestPortfolio.Group(main.Trades, t => BacktestEngine.IstDate(t.EntryTime).Year.ToString(), sortByKey: true),
             ByMonth = BacktestPortfolio.Group(main.Trades, t => BacktestEngine.IstDate(t.EntryTime).ToString("yyyy-MM"), sortByKey: true),
             BySector = BacktestPortfolio.Group(main.Trades, t => t.Sector ?? "No sector"),
-            ByScore = BacktestPortfolio.Group(main.Trades, t => BacktestPortfolio.ScoreBucket(t.Score), sortByKey: true),
+            ByScore = BacktestPortfolio.Group(main.Trades, t => byScore(t.Score), sortByKey: true),
             ByHalf = halves,
-            ThresholdSweep = sweep,
-            FactorEdge = BacktestPortfolio.FactorEdge(main.Trades),
             LiveSignals = liveSignals.Count,
-            Skipped = main.Skipped.OrderByDescending(kv => kv.Value).ToDictionary(kv => kv.Key, kv => kv.Value),
-            Coverage = new BacktestCoverage
-            {
-                SymbolsRequested = symbols.Count,
-                SymbolsWithData = symbols.Count - noData.Count,
-                FirstIntradayDate = firstLast.Count > 0 ? firstLast.Min(x => x.First) : null,
-                LastIntradayDate = firstLast.Count > 0 ? firstLast.Max(x => x.Last) : null,
-                Sessions = testSessions.Count,
-                ScansEvaluated = scans,
-                SymbolsWithoutData = noData.OrderBy(s => s).ToList(),
-                SuspectedSplits = splits.OrderBy(s => s).ToList()
-            },
-            Assumptions = Assumptions(p, regimeMode, splits.Count, regimeByDate.Count)
+            Skipped = main.Skipped.OrderByDescending(kv => kv.Value).ToDictionary(kv => kv.Key, kv => kv.Value)
         };
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // The new rules (backtest only)
+    // ------------------------------------------------------------------------------------------
+
+    private async Task<(BacktestSummary Summary, List<BacktestTrade> Trades)> ExecuteNewRuleAsync(int runId, BacktestParams p, int threads, CancellationTokenSource cts)
+    {
+        var token = cts.Token;
+        ApplyFixedRules(p);
+        bool momentum = p.Strategy == BacktestStrategy.MomentumDaily;
+
+        // --- Universe: today's active stocks less ETFs; each day's top list comes from that day's turnover ---------------
+        var active = (await _stockRepository.GetActiveStocksAsync())
+            .Select(s => (Symbol: s.Symbol.Trim().ToUpperInvariant(), s.Name))
+            .Where(s => s.Symbol != NiftySymbol && s.Symbol != VixSymbol)
+            .DistinctBy(s => s.Symbol).ToList();
+        var names = active.ToDictionary(s => s.Symbol, s => s.Name);
+        var requested = p.Symbols.Count > 0 ? p.Symbols.Where(s => s != NiftySymbol && s != VixSymbol).ToList() : active.Select(s => s.Symbol).ToList();
+        var etfs = requested.Where(s => BacktestUniverse.IsEtfLike(s, names.GetValueOrDefault(s))).OrderBy(s => s).ToList();
+        var symbols = requested.Except(etfs).ToList();
+        if (symbols.Count == 0) throw new InvalidOperationException("No stocks to test - no active stocks in stock_master.");
+        var sectors = await LoadSectorsAsync();
+        var chargeRates = await _chargeRatesRepository.GetAllAsync();
+
+        await ReportProgressAsync(runId, 1, "Loading daily candles");
+        DateTime fromUtc = BacktestEngine.DailyStamp(p.FromDate.AddDays(-480));
+        DateTime toUtc = BacktestEngine.DailyStamp(p.ToDate.AddDays(1));
+        var dailyAll = await LoadCandlesAsync("1d", symbols.Concat(new[] { NiftySymbol, VixSymbol }).ToList(), fromUtc, toUtc);
+        var nifty = dailyAll.GetValueOrDefault(NiftySymbol) ?? new List<MarketCandle>();
+        var vixByDate = (dailyAll.GetValueOrDefault(VixSymbol) ?? new List<MarketCandle>())
+            .GroupBy(c => BacktestEngine.IstDate(c.CandleTime)).ToDictionary(g => g.Key, g => g.Last().Close);
+        var stockDaily = dailyAll.Where(kv => kv.Key != NiftySymbol && kv.Key != VixSymbol).ToDictionary(kv => kv.Key, kv => kv.Value);
+
+        var sessions = SessionsOf(dailyAll, nifty);
+        int SessionOf(DateTime day)
+        {
+            int idx = sessions.BinarySearch(day.Date);
+            return idx >= 0 ? idx : ~idx;
+        }
+        var testSessions = sessions.Where(d => d >= p.FromDate && d <= p.ToDate).ToList();
+        var noDaily = symbols.Where(s => !stockDaily.ContainsKey(s)).OrderBy(s => s).ToList();
+
+        await ReportProgressAsync(runId, 2, "Computing the market regime and the most-traded list for each day");
+        var regimeByDate = ComputeRegimes(nifty, stockDaily.Values.Cast<IReadOnlyList<MarketCandle>>().ToList(), vixByDate,
+            sessions.Where(d => d >= p.FromDate.AddDays(-14) && d <= p.ToDate).ToList(), token);
+        var regimeDates = regimeByDate.Keys.OrderBy(d => d).ToList();
+        string? RegimeFor(DateTime day)
+        {
+            int idx = regimeDates.BinarySearch(day.Date);
+            idx = (idx >= 0 ? idx : ~idx) - 1;                 // latest reading strictly before the day
+            return idx >= 0 ? regimeByDate[regimeDates[idx]].Regime : null;
+        }
+        var universe = BacktestUniverse.TopByTurnover(stockDaily, MomentumDailyRules.UniverseSize, MomentumDailyRules.TurnoverLookback);
+        var splitsBySymbol = stockDaily.ToDictionary(kv => kv.Key, kv => BacktestEngine.SuspectedSplits(kv.Value));
+        var splits = splitsBySymbol.SelectMany(kv => kv.Value.Where(d => d >= p.FromDate.AddDays(-400) && d <= p.ToDate).Select(d => $"{kv.Key} {d:dd-MMM-yyyy}"))
+            .OrderBy(s => s).ToList();
+        HashSet<int> SplitSessions(string symbol) => splitsBySymbol.GetValueOrDefault(symbol)?.Select(SessionOf).ToHashSet() ?? new HashSet<int>();
+
+        var signals = new ConcurrentBag<BacktestSignal>();
+        long scans = 0;
+        DateTime? firstDate, lastDate;
+        var noData = new ConcurrentBag<string>(noDaily);
+
+        if (momentum)
+        {
+            // --- Daily momentum ---------------------------------------------------------------------
+            var niftyCloses = nifty.Select(c => c.Close).ToList();
+            var niftyAverage = IndicatorCalculator.CalculateSma(niftyCloses, MomentumDailyRules.NiftyAverageDays);
+            var niftyAbove = new HashSet<DateTime>();
+            for (int i = MomentumDailyRules.NiftyAverageDays - 1; i < nifty.Count; i++)
+                if (niftyCloses[i] > niftyAverage[i]) niftyAbove.Add(BacktestEngine.IstDate(nifty[i].CandleTime));
+            var ranks = MomentumDailyBacktest.StrengthRanks(stockDaily, universe);
+            var ctx = new MomentumDailyBacktest.Context
+            {
+                FromDate = p.FromDate, ToDate = p.ToDate, SlippagePct = p.SlippagePct, SessionOf = SessionOf, RegimeFor = RegimeFor,
+                NiftyAboveAverage = niftyAbove.Contains,
+                StrengthRank = (symbol, day) => ranks.TryGetValue(day, out var ofDay) && ofDay.TryGetValue(symbol, out int rank) ? rank : null
+            };
+            await ReplayAsync(runId, stockDaily.Keys.ToList(), threads, cts, () => Interlocked.Read(ref scans), symbol =>
+            {
+                var bars = stockDaily[symbol];
+                var splitSessions = SplitSessions(symbol);
+                foreach (var s in MomentumDailyBacktest.GenerateSignals(symbol, bars, splitSessions, ctx))
+                {
+                    if (s.SkipReason == null)
+                    {
+                        s.Exit = MomentumDailyBacktest.SimulateExit(bars, s, splitSessions, SessionOf, out var skip);
+                        s.SkipReason = skip;
+                    }
+                    signals.Add(s);
+                }
+                Interlocked.Add(ref scans, bars.Count(b => BacktestEngine.IstDate(b.CandleTime) >= p.FromDate && BacktestEngine.IstDate(b.CandleTime) <= p.ToDate));
+            });
+            var days = stockDaily.Values.Where(v => v.Count > 0).ToList();
+            firstDate = days.Count > 0 ? days.Min(v => BacktestEngine.IstDate(v[0].CandleTime)) : null;
+            lastDate = days.Count > 0 ? days.Max(v => BacktestEngine.IstDate(v[^1].CandleTime)) : null;
+        }
+        else
+        {
+            // --- Intraday opening range breakout: the list on the previous session's close applies, because today's turnover isn't known yet ---
+            bool InUniverse(string symbol, DateTime day)
+            {
+                int session = sessions.BinarySearch(day.Date);
+                session = (session >= 0 ? session : ~session) - 1;
+                return session >= 0 && universe.TryGetValue(sessions[session], out var list) && list.Contains(symbol);
+            }
+            var nifty15 = await LoadCandlesAsync("15m", new List<string> { NiftySymbol }, BacktestEngine.DailyStamp(p.FromDate), toUtc);
+            var niftyAtBar = (nifty15.GetValueOrDefault(NiftySymbol) ?? new List<MarketCandle>()).ToDictionary(c => c.CandleTime, c => c.Close);
+            var niftyDays = nifty.Select(c => BacktestEngine.IstDate(c.CandleTime)).ToList();
+            var ctx = new IntradayOrbBacktest.Context
+            {
+                FromDate = p.FromDate, ToDate = p.ToDate, SlippagePct = p.SlippagePct, SessionOf = SessionOf, RegimeFor = RegimeFor,
+                TestBuy = BacktestSide.IncludesBuy(p.Side), TestShort = BacktestSide.IncludesShort(p.Side),
+                InUniverse = InUniverse,
+                NiftyAtBar = barStart => niftyAtBar.TryGetValue(barStart, out var close) ? close : null,
+                NiftyPrevClose = day =>
+                {
+                    int idx = niftyDays.BinarySearch(day);
+                    idx = (idx >= 0 ? idx : ~idx) - 1;
+                    return idx >= 0 ? nifty[idx].Close : null;
+                }
+            };
+            // Only stocks that are ever on the list need their 15m bars loaded.
+            var candidates = stockDaily.Keys.Where(s => testSessions.Any(d => InUniverse(s, d))).ToList();
+            var dates = new ConcurrentBag<(DateTime First, DateTime Last)>();
+            await ReplayAsync(runId, candidates, threads, cts, () => Interlocked.Read(ref scans), symbol =>
+            {
+                var m15 = LoadCandles("15m", symbol, BacktestEngine.DailyStamp(p.FromDate.AddDays(-40)), toUtc);
+                if (m15.Count == 0) { noData.Add(symbol); return; }
+                dates.Add((BacktestEngine.IstDate(m15[0].CandleTime), BacktestEngine.IstDate(m15[^1].CandleTime)));
+                foreach (var s in IntradayOrbBacktest.GenerateSignals(symbol, m15, stockDaily[symbol], SplitSessions(symbol), ctx)) signals.Add(s);
+                Interlocked.Add(ref scans, m15.Count);
+            });
+            firstDate = dates.IsEmpty ? null : dates.Min(x => x.First);
+            lastDate = dates.IsEmpty ? null : dates.Max(x => x.Last);
+        }
+
+        // --- Portfolio and report ---------------------------------------------------------------------
+        await ReportProgressAsync(runId, 92, "Simulating the portfolio");
+        var ordered = signals.OrderBy(s => s.EntryTimeUtc).ThenByDescending(s => s.Score).ThenBy(s => s.Symbol).ToList();
+        var ps = PortfolioSettingsOf(p, chargeRates);
+        string? SectorOf(string symbol) => sectors.GetValueOrDefault(symbol);
+        var main = BacktestPortfolio.Run(ordered, s => s.Exit, ps, SectorOf);
+
+        var testedSides = new[] { false, true }.Where(isShort => isShort ? BacktestSide.IncludesShort(p.Side) : BacktestSide.IncludesBuy(p.Side)).ToList();
+        var checks = BacktestLogicAudit.Run(main.Trades, IntradayOrbRules.ShortCutoffText, IntradayOrbRules.SquareOffText);
+        checks.AddRange(BacktestLogicAudit.RunRuleLimits(main.Trades, p.MaxPositions!.Value, p.MaxTradesPerDay!.Value, ps.MaxPerSector,
+            momentum ? null : IntradayOrbRules.LastSignalText));
+        var summary = BuildSummary(p, testSessions, CloseLookup(dailyAll), main, ordered, testedSides, checks,
+            momentum ? BacktestPortfolio.RankBucket : BacktestPortfolio.VolumeBucket, momentum ? MomentumDailyRules.MinTrades : IntradayOrbRules.MinTrades);
+        summary.Coverage = new BacktestCoverage
+        {
+            SymbolsRequested = symbols.Count,
+            SymbolsWithData = symbols.Count - noData.Distinct().Count(),
+            FirstIntradayDate = firstDate,
+            LastIntradayDate = lastDate,
+            Sessions = testSessions.Count,
+            ScansEvaluated = Interlocked.Read(ref scans),
+            SymbolsWithoutData = noData.Distinct().OrderBy(s => s).ToList(),
+            SuspectedSplits = splits,
+            DataLabel = momentum ? "daily" : "15m",
+            ExcludedEtfs = etfs
+        };
+        summary.Assumptions = NewRuleAssumptions(p, momentum, splits.Count);
         return (summary, main.Trades);
+    }
+
+    private static List<string> NewRuleAssumptions(BacktestParams p, bool momentum, int splits)
+    {
+        var list = new List<string>
+        {
+            $"Run by: {WorkerBuild()}.",
+            "This rule is for backtesting only: no live, Auto or Manual trading uses it. Its numbers are fixed in code; the form's score, gate, exit and sizing fields don't apply.",
+            $"Stocks: the top {MomentumDailyRules.UniverseSize} of today's active stocks by {MomentumDailyRules.TurnoverLookback}-day median daily turnover, worked out for each day from data up to then, without ETFs (recognised by name, listed under Data used). Stocks dropped from the list earlier are not tested (survivorship bias - real results are usually somewhat worse).",
+            $"Costs: Zerodha charges from charge_rates (same-day round trips at intraday rates) + {p.SlippagePct:0.##}% slippage on each side. R = net P&L ÷ (quantity × the distance from entry to stop)."
+        };
+        if (momentum)
+        {
+            list.Add($"Signal, at a daily close: NIFTY above its {MomentumDailyRules.NiftyAverageDays}-day average; top 20% of the list by {MomentumDailyRules.ReturnLookback}-session return; within {MomentumDailyRules.MaxBelowYearHighPct:0}% of the {MomentumDailyRules.YearHighLookback}-session high; close above the previous {MomentumDailyRules.BreakoutLookback} sessions' high; volume at least {MomentumDailyRules.MinVolumeMultiple} × the {MomentumDailyRules.VolumeLookback}-day average. A stock needs over {MomentumDailyRules.YearHighLookback} daily bars, so recent listings are left out.");
+            list.Add($"Entry: the next session's open; skipped if that is ≥{SwingTradeRules.MaxSignalDriftPct:0}% from the signal close. Strongest rank first.");
+            list.Add($"Exits: stop {MomentumDailyRules.StopAtrMult:0} × ATR (at most {SwingTradeRules.MaxStopLossPct:0}%), checked at the close; trail from entry + {MomentumDailyRules.TrailStartAtrMult:0} × ATR, {MomentumDailyRules.TrailAtrMult:0} × ATR below the highest close, never below the stop; out if not above the entry after {MomentumDailyRules.NoProgressSessions} sessions; out after {MomentumDailyRules.MaxSessions} sessions. All of these sell at the next open. Emergency stop {MomentumDailyRules.EmergencyAtrMult:0} × ATR (at most {SwingTradeRules.MaxEmergencyStopPct:0}%) acts inside the day. No fixed target (shown as 0).");
+            list.Add($"Limits: {MomentumDailyRules.RiskPct}% risk per trade, at most ₹{MomentumDailyRules.MaxPerTrade:N0} a trade, {MomentumDailyRules.MaxPositions} positions, {MomentumDailyRules.MaxPerSector} per sector (stocks with no sector aren't limited), {MomentumDailyRules.MaxEntriesPerDay} new entries a day.");
+            list.Add($"Drawdown halt: no new entries once equity is {MomentumDailyRules.DrawdownHaltPct:0}% below its peak, until it is within {MomentumDailyRules.DrawdownResumePct:0}% of the peak or 30 calendar days pass (the peak then resets, because a halt with nothing open can't recover by itself). Equity here counts realised results only.");
+            list.Add("Not modelled: earnings dates (no earnings data is stored), order rejections, partial fills, circuit limits and liquidity.");
+        }
+        else
+        {
+            list.Add($"Signal: the first 15m close beyond the 09:15-09:45 range, up to {IntradayOrbRules.LastSignalText}, with opening-range volume at least {IntradayOrbRules.MinVolumeMultiple} × its average over the previous {IntradayOrbRules.VolumeLookback} sessions. Long needs NIFTY above yesterday's close and the stock's previous close above its {IntradayOrbRules.StockAverageDays}-day average; short needs both below.");
+            list.Add($"Entry: the next 15m open. Skipped if the stop is under {IntradayOrbRules.MinStopPct}% or over {IntradayOrbRules.MaxStopPct}% away.");
+            list.Add($"Exits: stop at the far side of the range and target {IntradayOrbRules.TargetR:0}R, both live; square-off at the {IntradayOrbRules.SquareOffText} bar's open (or the day's last close if that bar isn't stored). A bar touching both the stop and the target counts as a stop.");
+            list.Add($"Limits: {IntradayOrbRules.RiskPct}% risk per trade, at most ₹{IntradayOrbRules.MaxPerTrade:N0} a trade, {IntradayOrbRules.MaxPositions} positions, {IntradayOrbRules.MaxEntriesPerDay} new entries a day, one trade per stock per day.");
+            list.Add("Not modelled: stocks that can't be shorted that day, MIS margin (the full position value is blocked), order rejections, partial fills, circuit limits and liquidity. 15m bars make fills less precise than live ones.");
+        }
+        list.Add(splits > 0
+            ? $"{splits} suspected unadjusted split/bonus gap(s): signals in the {(momentum ? MomentumDailyBacktest.SplitExclusionSessions : IntradayOrbBacktest.SplitExclusionSessions)} sessions after one and trades held across one are excluded."
+            : "No unadjusted split/bonus gaps found in the data.");
+        return list;
     }
 
     /// <summary>Which machine and code version replayed a run, so a result can be traced to a deployment.</summary>

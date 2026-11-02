@@ -15,6 +15,14 @@ public sealed class PortfolioSettings
     public decimal DailyLossLimit { get; init; } = 10_000m;
     public decimal SlippagePct { get; init; } = 0.10m;
     public IReadOnlyList<ChargeRates> Rates { get; init; } = ChargeRates.Defaults;
+    /// <summary>Most open positions in one sector; 0 = no limit. Stocks with no sector aren't limited.</summary>
+    public int MaxPerSector { get; init; }
+    /// <summary>No new entries once equity is this % below its peak; 0 = off.</summary>
+    public decimal DrawdownHaltPct { get; init; }
+    /// <summary>Entries resume when equity is back within this % of the peak...</summary>
+    public decimal DrawdownResumePct { get; init; }
+    /// <summary>...or after this many calendar days, with the peak reset to today's equity. A halt with nothing open can't recover by itself.</summary>
+    public int DrawdownCoolOffDays { get; init; } = 30;
 }
 
 public sealed class PortfolioResult
@@ -49,6 +57,30 @@ public static class BacktestPortfolio
         var realizedByDay = new Dictionary<DateTime, decimal>();
         var entriesByDay = new Dictionary<DateTime, int>();
         decimal slip = ps.SlippagePct / 100m;
+
+        decimal peakEquity = ps.Capital;
+        DateTime? haltedSince = null;
+
+        bool DrawdownHalted(DateTime day)
+        {
+            if (ps.DrawdownHaltPct <= 0m) return false;
+            decimal equity = cash + open.Sum(o => o.Cost);
+            peakEquity = Math.Max(peakEquity, equity);
+            if (haltedSince == null)
+            {
+                if (equity <= peakEquity * (1m - ps.DrawdownHaltPct / 100m)) haltedSince = day;
+            }
+            else if (equity >= peakEquity * (1m - ps.DrawdownResumePct / 100m))
+            {
+                haltedSince = null;
+            }
+            else if ((day - haltedSince.Value).TotalDays >= ps.DrawdownCoolOffDays)
+            {
+                haltedSince = null;
+                peakEquity = equity;
+            }
+            return haltedSince != null;
+        }
 
         void Skip(string reason) => result.Skipped[reason] = result.Skipped.GetValueOrDefault(reason) + 1;
 
@@ -100,7 +132,7 @@ public static class BacktestPortfolio
                     RMultiple = Math.Round(net / (o.Qty * riskPerShare), 3),
                     MfePct = o.Exit.MfePct,
                     MaePct = o.Exit.MaePct,
-                    Factors = BacktestEngine.FactorsText(o.Signal.FactorPoints, isShort),
+                    Factors = o.Signal.FactorsText ?? BacktestEngine.FactorsText(o.Signal.FactorPoints, isShort),
                     SubType = o.Signal.SubType,
                     Rsi15m = o.Signal.Rsi15m,
                     Rsi60m = o.Signal.Rsi60m,
@@ -123,6 +155,9 @@ public static class BacktestPortfolio
             if (entriesByDay.GetValueOrDefault(day) >= ps.MaxTradesPerDay) { Skip("daily trade cap (guard 6)"); continue; }
             if (realizedByDay.GetValueOrDefault(day) <= -ps.DailyLossLimit) { Skip("daily loss limit (guard 7)"); continue; }
             if (open.Count >= Math.Min(ps.MaxPositions, s.PolicyMaxPositions)) { Skip("max open positions (guard 8 / regime policy)"); continue; }
+            if (ps.MaxPerSector > 0 && sectorOf(s.Symbol) is string sector
+                && open.Count(o => sectorOf(o.Signal.Symbol) == sector) >= ps.MaxPerSector) { Skip("max positions in the sector"); continue; }
+            if (DrawdownHalted(day)) { Skip("account too far below its peak"); continue; }
             if (cash < ps.AmountPerTrade) { Skip("not enough cash (guard 11)"); continue; }
 
             var exit = exitOf(s);
@@ -276,11 +311,11 @@ public static class BacktestPortfolio
         }).ToList();
     }
 
-    /// <summary>The plan's go-live rule: at least 30 trades, expectancy ≥ +0.2R after costs, and positive in both halves.</summary>
-    public static (string Verdict, string Reason) Verdict(BacktestKpis k, IReadOnlyList<BacktestGroupRow> halves)
+    /// <summary>The plan's go-live rule: enough trades (30 unless a rule asks for more), expectancy ≥ +0.2R after costs, and positive in both halves.</summary>
+    public static (string Verdict, string Reason) Verdict(BacktestKpis k, IReadOnlyList<BacktestGroupRow> halves, int minTrades = 30)
     {
-        if (k.Trades < 30)
-            return ("NOT_PROVEN", $"Only {k.Trades} trades - at least 30 are needed before the result means anything. Widen the date range or the stock list.");
+        if (k.Trades < minTrades)
+            return ("NOT_PROVEN", $"Only {k.Trades} trades - at least {minTrades} are needed before the result means anything. Widen the date range or the stock list.");
         if (k.ExpectancyR <= 0m)
             return ("FAIL", $"Expectancy {k.ExpectancyR:+0.00;-0.00}R per trade after charges and slippage: these rules lost money over {k.Trades} trades.");
         bool bothHalves = halves.Count == 2 && halves.All(h => h.ExpectancyR > 0m);
@@ -290,4 +325,33 @@ public static class BacktestPortfolio
             ? $"Expectancy {k.ExpectancyR:+0.00}R per trade is positive but below the +0.2R bar - too thin to survive real-world costs and mistakes."
             : $"Expectancy {k.ExpectancyR:+0.00}R overall, but one half of the period lost money - the edge isn't stable.");
     }
+
+    /// <summary>
+    /// The new rules' stricter bar on top of <see cref="Verdict"/>: a PASS must also have clean rule checks and must not
+    /// depend on one stock or one day, so it stays positive without the best stock and without the worst entry day.
+    /// </summary>
+    public static (string Verdict, string Reason) RuleVerdict(BacktestKpis k, IReadOnlyList<BacktestGroupRow> halves,
+        IReadOnlyList<BacktestTrade> trades, IReadOnlyList<BacktestLogicCheck> checks, int minTrades)
+    {
+        var (verdict, reason) = Verdict(k, halves, minTrades);
+        if (verdict != "PASS") return (verdict, reason);
+        int broken = checks.Count(c => c.Failed > 0);
+        if (broken > 0) return ("NOT_PROVEN", $"Expectancy {k.ExpectancyR:+0.00}R, but {broken} rule check(s) failed - the logic or the data is wrong, so the number can't be trusted.");
+
+        string bestStock = trades.GroupBy(t => t.Symbol).OrderByDescending(g => g.Sum(t => t.NetPnl)).First().Key;
+        DateTime worstDay = trades.GroupBy(t => BacktestEngine.IstDate(t.EntryTime)).OrderBy(g => g.Sum(t => t.NetPnl)).First().Key;
+        var rest = trades.Where(t => t.Symbol != bestStock && BacktestEngine.IstDate(t.EntryTime) != worstDay).ToList();
+        decimal restR = rest.Count > 0 ? Math.Round(rest.Average(t => t.RMultiple), 3) : 0m;
+        return restR > 0m
+            ? (verdict, $"{reason} Without the best stock ({bestStock}) and the worst day ({worstDay:dd-MMM-yy}) it is still {restR:+0.00}R.")
+            : ("NOT_PROVEN", $"Expectancy {k.ExpectancyR:+0.00}R, but {restR:+0.00;-0.00}R without the best stock ({bestStock}) and the worst day ({worstDay:dd-MMM-yy}) - the result depends on them.");
+    }
+
+    /// <summary>The 6-month strength rank a momentum trade entered with.</summary>
+    public static string RankBucket(int rank) =>
+        rank >= 95 ? "95-99" : rank >= 90 ? "90-94" : rank >= 85 ? "85-89" : "80-84";
+
+    /// <summary>The opening-range volume, against its usual level, that an intraday trade entered with (stored in Score as multiple × 10).</summary>
+    public static string VolumeBucket(int multipleX10) =>
+        multipleX10 >= 50 ? "5x or more" : multipleX10 >= 30 ? "3-5x" : "2-3x";
 }

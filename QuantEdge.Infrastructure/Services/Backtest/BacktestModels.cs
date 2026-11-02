@@ -15,6 +15,26 @@ public static class BacktestSide
     public static string Of(bool isShort) => isShort ? Short : Buy;
 }
 
+/// <summary>Which rule a run tests. Runs stored before there was a choice have no strategy and mean SCORE.</summary>
+public static class BacktestStrategy
+{
+    /// <summary>The live 11-condition score (SwingDecisionEngine / SwingShortDecisionEngine).</summary>
+    public const string Score = "SCORE";
+    /// <summary>Daily-bar momentum breakout, BUY only (<see cref="MomentumDailyRules"/>). Backtest only - no live trading uses it.</summary>
+    public const string MomentumDaily = "MOMENTUM_DAILY";
+    /// <summary>Same-day opening range breakout (<see cref="IntradayOrbRules"/>). Backtest only - no live trading uses it.</summary>
+    public const string IntradayOrb = "INTRADAY_ORB";
+
+    public static string Normalize(string? strategy) => string.IsNullOrWhiteSpace(strategy) ? Score : strategy.Trim().ToUpperInvariant();
+    public static bool IsKnown(string strategy) => strategy is Score or MomentumDaily or IntradayOrb;
+    public static string NameOf(string strategy) => strategy switch
+    {
+        MomentumDaily => "Daily momentum",
+        IntradayOrb => "Intraday ORB",
+        _ => "Score"
+    };
+}
+
 /// <summary>
 /// One backtest's inputs (Plan Phase 7). Blank fields are filled from the live settings when the run is queued
 /// (swing_strategy_settings, real_trade_settings, regime_policy), and the fully resolved copy is stored with the run,
@@ -30,6 +50,10 @@ public class BacktestParams
     public List<string> Symbols { get; set; } = new();
     /// <summary>BUY, SHORT or BOTH (<see cref="BacktestSide"/>). Blank = BUY.</summary>
     public string? Side { get; set; }
+    /// <summary>SCORE, MOMENTUM_DAILY or INTRADAY_ORB (<see cref="BacktestStrategy"/>). Blank = SCORE.</summary>
+    public string? Strategy { get; set; }
+    /// <summary>The fixed rule numbers a new-rule run used, stored for traceability. Not settable from the form, so they can't be tuned to the data.</summary>
+    public Dictionary<string, decimal>? RuleSet { get; set; }
 
     // Strategy (swing_strategy_settings)
     /// <summary>NIFTY_FILTER or REGIME.</summary>
@@ -101,6 +125,8 @@ public sealed class BacktestSignal
     public decimal? PolicyMaxExposurePct { get; init; }
     /// <summary>Points per scoring factor, 6 bits each in <see cref="BacktestEngine.FactorCodes"/> order (kept small: a run can hold 100k+ signals).</summary>
     public long FactorPoints { get; init; }
+    /// <summary>A new rule's own facts for the trade ("RET6M:34,VOLX:2.1"), used instead of <see cref="FactorPoints"/> when set.</summary>
+    public string? FactorsText { get; init; }
     /// <summary>Which BREAKOUT_GROUP/BREAKDOWN_GROUP sub-condition(s) fired - "NONE" otherwise (<see cref="SwingEvaluationResult.BreakoutSubType"/>/<see cref="SwingEvaluationResult.BreakdownSubType"/>).</summary>
     public string SubType { get; init; } = "NONE";
     // Indicator snapshot at the scan that produced this signal, for rule-level analysis of winners vs losers.
@@ -304,4 +330,8 @@ public sealed class BacktestCoverage
     public List<string> SymbolsWithoutData { get; set; } = new();
     /// <summary>"SYMBOL dd-MMM-yyyy" for overnight gaps that look like an unadjusted split / bonus (signals around them excluded).</summary>
     public List<string> SuspectedSplits { get; set; } = new();
+    /// <summary>Which candles the first/last dates describe. Blank on older runs, which mean 15m.</summary>
+    public string? DataLabel { get; set; }
+    /// <summary>Symbols a new-rule run left out as ETFs, listed so the name match can be checked.</summary>
+    public List<string> ExcludedEtfs { get; set; } = new();
 }

@@ -111,6 +111,14 @@
                 <div class="bt-field"><label for="btFrom">From</label><input type="date" id="btFrom" required></div>
                 <div class="bt-field"><label for="btTo">To</label><input type="date" id="btTo" required></div>
                 <div class="bt-field">
+                    <label for="btStrategy">Rule to test</label>
+                    <select id="btStrategy">
+                        <option value="SCORE">Score (current live logic)</option>
+                        <option value="MOMENTUM_DAILY">Daily momentum (new)</option>
+                        <option value="INTRADAY_ORB">Intraday opening range (new)</option>
+                    </select>
+                </div>
+                <div class="bt-field">
                     <label for="btSide">Logic to test</label>
                     <select id="btSide">
                         <option value="BOTH">Buy and Short Selling</option>
@@ -118,7 +126,7 @@
                         <option value="SHORT">Short Selling only</option>
                     </select>
                 </div>
-                <div class="bt-field">
+                <div class="bt-field" data-score-only>
                     <label for="btGate">Market gate</label>
                     <select id="btGate">
                         <option value="">Current setting</option>
@@ -126,30 +134,31 @@
                         <option value="REGIME">Market regime</option>
                     </select>
                 </div>
-                <div class="bt-field"><label for="btBuy">BUY score threshold</label><input type="number" id="btBuy" min="40" max="100" placeholder="current"><small>NIFTY-filter mode</small></div>
-                <div class="bt-field"><label for="btMin">Min conditions met</label><input type="number" id="btMin" min="1" max="11" placeholder="current"><small>live rule: BUY or ≥ this many of 11</small></div>
+                <div class="bt-field" data-score-only><label for="btBuy">BUY score threshold</label><input type="number" id="btBuy" min="40" max="100" placeholder="current"><small>NIFTY-filter mode</small></div>
+                <div class="bt-field" data-score-only><label for="btMin">Min conditions met</label><input type="number" id="btMin" min="1" max="11" placeholder="current"><small>live rule: BUY or ≥ this many of 11</small></div>
                 <div class="bt-field"><label for="btCapital">Capital (₹)</label><input type="number" id="btCapital" min="1000" step="1000" value="100000"></div>
-                <div class="bt-field"><label for="btAmount">Max per trade (₹)</label><input type="number" id="btAmount" min="100" step="100" value="10000"></div>
-                <div class="bt-field">
+                <div class="bt-field" data-score-only><label for="btAmount">Max per trade (₹)</label><input type="number" id="btAmount" min="100" step="100" value="10000"></div>
+                <div class="bt-field" data-score-only>
                     <label for="btSizing">Position size</label>
                     <select id="btSizing"><option value="RISK">Risk-based (≤ max per trade)</option><option value="FIXED">Fixed amount</option></select>
                 </div>
-                <div class="bt-field"><label for="btRisk">Risk per trade (%)</label><input type="number" id="btRisk" min="0.1" max="5" step="0.1" value="1"></div>
-                <div class="bt-field"><label for="btMaxPos">Max open positions</label><input type="number" id="btMaxPos" min="1" max="50" value="10"></div>
+                <div class="bt-field" data-score-only><label for="btRisk">Risk per trade (%)</label><input type="number" id="btRisk" min="0.1" max="5" step="0.1" value="1"></div>
+                <div class="bt-field" data-score-only><label for="btMaxPos">Max open positions</label><input type="number" id="btMaxPos" min="1" max="50" value="10"></div>
                 <div class="bt-field"><label for="btSlip">Slippage per side (%)</label><input type="number" id="btSlip" min="0" max="2" step="0.01" value="0.10"></div>
             </div>
+            <p class="bt-note" id="btStrategyNote" hidden></p>
             <details class="bt-details">
                 <summary>Advanced: exits, limits, stock list</summary>
                 <div class="bt-form">
-                    <div class="bt-field"><label for="btExit">Exit mode</label><select id="btExit"><option value="">Current</option><option value="SWING_CLOSE">Swing close</option><option value="INTRADAY">Intraday</option></select></div>
-                    <div class="bt-field"><label for="btSl">Stop loss (× ATR)</label><input type="number" id="btSl" min="0.5" max="5" step="0.1" placeholder="current"></div>
-                    <div class="bt-field"><label for="btTgt">Target (× ATR)</label><input type="number" id="btTgt" min="0.5" max="10" step="0.1" placeholder="current"></div>
-                    <div class="bt-field"><label for="btTrail">Trail (× ATR)</label><input type="number" id="btTrail" min="0.5" max="10" step="0.1" placeholder="current"></div>
-                    <div class="bt-field"><label for="btDays">Max days held</label><input type="number" id="btDays" min="0" max="120" placeholder="current"></div>
-                    <div class="bt-field"><label for="btTradesDay">Max trades per day</label><input type="number" id="btTradesDay" min="1" max="50" placeholder="current"></div>
-                    <div class="bt-field"><label for="btLoss">Daily loss limit (₹)</label><input type="number" id="btLoss" min="0" placeholder="10% of capital"></div>
-                    <div class="bt-field"><label for="btShortCutoff">No new short after</label><input type="time" id="btShortCutoff"><small>blank = current setting</small></div>
-                    <div class="bt-field"><label for="btShortSquareOff">Short square-off</label><input type="time" id="btShortSquareOff"><small>blank = current setting</small></div>
+                    <div class="bt-field" data-score-only><label for="btExit">Exit mode</label><select id="btExit"><option value="">Current</option><option value="SWING_CLOSE">Swing close</option><option value="INTRADAY">Intraday</option></select></div>
+                    <div class="bt-field" data-score-only><label for="btSl">Stop loss (× ATR)</label><input type="number" id="btSl" min="0.5" max="5" step="0.1" placeholder="current"></div>
+                    <div class="bt-field" data-score-only><label for="btTgt">Target (× ATR)</label><input type="number" id="btTgt" min="0.5" max="10" step="0.1" placeholder="current"></div>
+                    <div class="bt-field" data-score-only><label for="btTrail">Trail (× ATR)</label><input type="number" id="btTrail" min="0.5" max="10" step="0.1" placeholder="current"></div>
+                    <div class="bt-field" data-score-only><label for="btDays">Max days held</label><input type="number" id="btDays" min="0" max="120" placeholder="current"></div>
+                    <div class="bt-field" data-score-only><label for="btTradesDay">Max trades per day</label><input type="number" id="btTradesDay" min="1" max="50" placeholder="current"></div>
+                    <div class="bt-field" data-score-only><label for="btLoss">Daily loss limit (₹)</label><input type="number" id="btLoss" min="0" placeholder="10% of capital"></div>
+                    <div class="bt-field" data-score-only><label for="btShortCutoff">No new short after</label><input type="time" id="btShortCutoff"><small>blank = current setting</small></div>
+                    <div class="bt-field" data-score-only><label for="btShortSquareOff">Short square-off</label><input type="time" id="btShortSquareOff"><small>blank = current setting</small></div>
                     <div class="bt-field bt-wide"><label for="btSymbols">Only these stocks (comma separated, blank = all active)</label><input type="text" id="btSymbols" placeholder="e.g. RELIANCE, TCS, INFY"></div>
                     <div class="bt-field bt-wide"><label for="btLabel">Label</label><input type="text" id="btLabel" maxlength="200" placeholder="optional, e.g. Regime · score 75"></div>
                 </div>

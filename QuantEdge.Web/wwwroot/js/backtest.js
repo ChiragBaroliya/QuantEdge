@@ -38,6 +38,18 @@
     // Runs stored before shorts could be tested have no side on their trades or rows: they were all BUY.
     const sideOf = x => SIDE[(x && x.side) || "BUY"];
     const ACTIVE = new Set(["QUEUED", "RUNNING", "CANCEL_REQUESTED"]);
+    // Each new rule's fixed numbers live in code (MomentumDailyRules, IntradayOrbRules), so the form can't tune them.
+    const STRATEGY = {
+        MOMENTUM_DAILY: {
+            name: "Daily momentum", sides: ["BUY"],
+            note: "Backtest only, Buy only, with fixed rules: top 200 stocks by turnover, NIFTY above its 200-day average, top 20% by 6-month return, within 5% of the 52-week high, daily close above the 50-day high on 1.5 × volume. Enters at the next open. Stop 2 × ATR, trail 3 × ATR after +2 × ATR, no fixed target, up to 60 days. 0.5% risk, ₹20,000 max, 5 positions."
+        },
+        INTRADAY_ORB: {
+            name: "Intraday opening range", sides: ["BUY", "SHORT", "BOTH"],
+            note: "Backtest only, same-day trades with fixed rules: top 200 stocks by turnover, first 15m close beyond the 09:15-09:45 range by 12:30, opening volume 2 × usual, NIFTY and the stock's trend agreeing. Stop at the far side of the range, target 2R, square-off at 15:15. 0.5% risk, ₹20,000 max, 3 positions."
+        }
+    };
+    const strategyOf = p => (p && p.strategy) || "SCORE";
 
     let runs = [], viewingId = null, pollTimer = null, equityChart = null;
 
@@ -49,7 +61,21 @@
         el("btTo").value = isoDate(to);
         el("btFrom").value = isoDate(from);
         el("btForm").addEventListener("submit", submit);
+        el("btStrategy").addEventListener("change", applyStrategy);
+        applyStrategy();
     })();
+
+    // A new rule's fixed numbers replace the form's, so the fields that don't apply are hidden.
+    function applyStrategy() {
+        const rule = STRATEGY[el("btStrategy").value];
+        document.querySelectorAll("[data-score-only]").forEach(field => { field.hidden = !!rule; });
+        const note = el("btStrategyNote");
+        note.hidden = !rule;
+        note.textContent = rule ? rule.note : "";
+        const side = el("btSide");
+        Array.from(side.options).forEach(o => { o.disabled = !!rule && !rule.sides.includes(o.value); });
+        if (side.selectedOptions[0].disabled) side.value = rule.sides[0];
+    }
 
     function val(id, number = true) {
         const v = el(id).value.trim();
@@ -60,7 +86,7 @@
     async function submit(e) {
         e.preventDefault();
         const body = {
-            fromDate: el("btFrom").value, toDate: el("btTo").value, side: val("btSide", false),
+            fromDate: el("btFrom").value, toDate: el("btTo").value, side: val("btSide", false), strategy: val("btStrategy", false),
             shortEntryCutoff: val("btShortCutoff", false), shortSquareOffTime: val("btShortSquareOff", false),
             gateMode: val("btGate", false), buyScoreThreshold: val("btBuy"), minConditionsMatch: val("btMin"),
             capital: val("btCapital"), amountPerTrade: val("btAmount"), sizingMode: val("btSizing", false), riskPct: val("btRisk"),
@@ -224,6 +250,8 @@
         const s = run.summary || {}, k = s.kpis || {}, p = run.params || {}, c = s.coverage || {};
         const kpi = (label, value, note, css = "") => `<div class="bt-kpi"><span>${label}</span><b class="${css}">${value}</b>${note ? `<small>${note}</small>` : ""}</div>`;
         const threshold = p.gateMode === "REGIME" ? null : p.buyScoreThreshold;
+        const rule = STRATEGY[strategyOf(p)];
+        const momentum = strategyOf(p) === "MOMENTUM_DAILY";
         const sides = s.sides || [];
         const direction = s.direction || [];
         const checks = s.logicChecks || [];
@@ -239,7 +267,7 @@
                 <b><span class="bt-badge bt-${x.verdict}">${esc(VERDICT[x.verdict] || x.verdict)}</span></b>
                 <small>${esc(x.verdictReason)}</small>
                 <small>${x.kpis.trades} trades from ${x.signals} signals · win rate ${num(x.kpis.winRatePct)}% · expectancy ${r(x.kpis.expectancyR)} · net ${signedMoney(x.kpis.netPnl)}</small>
-                <small>${sameDay ? `Price went the signal's way by the close ${num(sameDay.rightPct)}% of the time (avg ${num(sameDay.avgMovePct, 2)}%)` : "No signals to measure direction"}</small>
+                ${rule ? "" : `<small>${sameDay ? `Price went the signal's way by the close ${num(sameDay.rightPct)}% of the time (avg ${num(sameDay.avgMovePct, 2)}%)` : "No signals to measure direction"}</small>`}
                 <small class="${broken ? "bt-neg" : ""}">${!ofSide.length ? "No trades to check rules on" : broken ? `${broken} of ${ofSide.length} rule checks FAILED` : `All ${ofSide.length} rule checks passed`}</small>
             </div>`;
         }).join("");
@@ -266,9 +294,9 @@
             <div class="bt-head">
                 <div>
                     <h2>Run #${run.id} - ${esc(run.label || "")}</h2>
-                    <p><b>${(p.symbols || []).length ? `Stocks: ${esc(p.symbols.join(", "))}` : "All active stocks"}</b> · ${esc(SIDE[p.side || "BUY"])} · ${esc(p.gateMode === "REGIME" ? "Market regime gate" : `NIFTY filter · signal ≥ ${p.buyScoreThreshold} or ≥ ${p.minConditionsMatch}/11 conditions`)}
+                    <p><b>${(p.symbols || []).length ? `Stocks: ${esc(p.symbols.join(", "))}` : "All active stocks"}</b> · ${esc(SIDE[p.side || "BUY"])} · ${esc(rule ? rule.name : p.gateMode === "REGIME" ? "Market regime gate" : `NIFTY filter · signal ≥ ${p.buyScoreThreshold} or ≥ ${p.minConditionsMatch}/11 conditions`)}
                        · ${ymd(p.fromDate)} → ${ymd(p.toDate)} · capital ${money(p.capital)} · ${p.sizingMode === "RISK" ? `risk ${p.riskPct}% (max ${money(p.amountPerTrade)})` : `${money(p.amountPerTrade)} per trade`}
-                       · max ${p.maxPositions} open · slippage ${p.slippagePct}% / side · exits ${esc(p.exitMode)} (SL ${p.stopLossAtrMult}×, target ${p.targetAtrMult}×, trail ${p.trailAtrMult}× ATR, ${p.maxDurationDays} days)</p>
+                       · max ${p.maxPositions} open · slippage ${p.slippagePct}% / side${rule ? "" : ` · exits ${esc(p.exitMode)} (SL ${p.stopLossAtrMult}×, target ${p.targetAtrMult}×, trail ${p.trailAtrMult}× ATR, ${p.maxDurationDays} days)`}</p>
                 </div>
                 <a class="btn-trigger" data-auth-download href="${api(`runs/${run.id}/trades.csv`)}">Download trades (CSV)</a>
             </div>
@@ -280,15 +308,15 @@
             <div class="bt-grid2">${sideCards}</div>
         </section>` : ""}
 
-        ${checks.length || direction.length ? `<section class="bt-card bt-grid2">
+        ${checks.length || direction.length ? `<section class="bt-card ${rule ? "" : "bt-grid2"}">
             <div>
                 <h3 class="bt-sub">Rule checks <small>${failedChecks.length ? `${failedChecks.length} failed - the logic or the data is wrong, whatever the profit says` : "every simulated trade obeyed these rules"}</small></h3>
                 ${table([{ label: "Side" }, { label: "Rule" }, { label: "Trades", num: 1 }, { label: "Broken", num: 1 }, { label: "" }], checkRows, "No trades to check.")}
             </div>
-            <div>
+            ${rule ? "" : `<div>
                 <h3 class="bt-sub">Direction <small>first signal per stock per day, before costs and regardless of stop or target. Costs are about 0.3–0.4% a round trip, so a small average move isn't enough</small></h3>
                 ${table([{ label: "Side" }, { label: "After" }, { label: "Signals", num: 1 }, { label: "Went its way", num: 1 }, { label: "Avg move", num: 1 }], directionRows, "No signals.")}
-            </div>
+            </div>`}
         </section>` : ""}
 
         <section class="bt-card">
@@ -315,7 +343,7 @@
             ${groupCard("By year", "", "Year", s.byYear)}
         </section>
 
-        <section class="bt-card bt-grid2">
+        ${rule ? "" : `<section class="bt-card bt-grid2">
             <div>
                 <h3 class="bt-sub">Threshold sweep <small>same data, score ≥ T only (hard filters + gate) - is the threshold robust or lucky?</small></h3>
                 ${table([{ label: "Rule" }, { label: "Trades", num: 1 }, { label: "Win rate", num: 1 }, { label: "Expectancy", num: 1 }, { label: "PF", num: 1 }, { label: "Net P&amp;L", num: 1 }, { label: "Max DD", num: 1 }], sweepRows, "No sweep rows.")}
@@ -324,12 +352,13 @@
                 <h3 class="bt-sub">Factor edge <small>trades that earned a factor's points vs trades that didn't</small></h3>
                 ${table([{ label: "Factor" }, { label: "With", num: 1 }, { label: "Exp.", num: 1 }, { label: "Without", num: 1 }, { label: "Exp.", num: 1 }, { label: "" }], factorRows)}
             </div>
-        </section>
+        </section>`}
 
         <section class="bt-card bt-grid2">
             ${groupCard("By market regime", "regime in force on the entry day", "Regime", s.byRegime)}
             ${groupCard("By exit", "how trades ended", "Exit", s.byExit)}
-            ${groupCard("By score", "entry score bucket", "Score", s.byScore)}
+            ${rule ? groupCard(momentum ? "By 6-month strength" : "By opening volume", momentum ? "rank among the top 200 stocks" : "opening range volume against its usual level", momentum ? "Rank" : "Volume", s.byScore)
+                   : groupCard("By score", "entry score bucket", "Score", s.byScore)}
             ${groupCard("By sector", "", "Sector", s.bySector)}
         </section>
 
@@ -339,8 +368,9 @@
                 ${skipped.length ? `<ul class="bt-list">${skipped.map(([k2, v]) => `<li>${esc(k2)}: <b>${v.toLocaleString("en-IN")}</b></li>`).join("")}</ul>` : `<div class="bt-empty">None.</div>`}
                 <h3 class="bt-sub" style="margin-top:14px">Data used</h3>
                 <ul class="bt-list">
-                    <li>${c.symbolsWithData} of ${c.symbolsRequested} stocks had 15m data · ${c.sessions} trading days · ${Number(c.scansEvaluated || 0).toLocaleString("en-IN")} scans</li>
-                    <li>15m data from ${ymd(c.firstIntradayDate)} to ${ymd(c.lastIntradayDate)}</li>
+                    <li>${c.symbolsWithData} of ${c.symbolsRequested} stocks had ${esc(c.dataLabel || "15m")} data · ${c.sessions} trading days · ${Number(c.scansEvaluated || 0).toLocaleString("en-IN")} ${rule ? "bars" : "scans"}</li>
+                    <li>${esc(c.dataLabel || "15m")} data from ${ymd(c.firstIntradayDate)} to ${ymd(c.lastIntradayDate)}</li>
+                    ${(c.excludedEtfs || []).length ? `<li>Left out as ETFs: ${esc(c.excludedEtfs.join(", "))}</li>` : ""}
                     ${(c.symbolsWithoutData || []).length ? `<li>No data: ${esc(c.symbolsWithoutData.join(", "))}</li>` : ""}
                     ${(c.suspectedSplits || []).length ? `<li>Suspected unadjusted splits/bonuses (excluded around them): ${esc(c.suspectedSplits.join(", "))}</li>` : ""}
                 </ul>
