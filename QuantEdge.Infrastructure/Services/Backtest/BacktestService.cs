@@ -377,7 +377,8 @@ public class BacktestService : IBacktestService
         await ReportProgressAsync(runId, 1, "Loading daily candles");
         DateTime fromUtc = BacktestEngine.DailyStamp(p.FromDate.AddDays(-480));
         DateTime toUtc = BacktestEngine.DailyStamp(p.ToDate.AddDays(1));
-        var dailyAll = await LoadCandlesAsync("1d", symbols.Concat(new[] { NiftySymbol, VixSymbol }).ToList(), fromUtc, toUtc);
+        var dailyLoaded = await LoadCandlesAsync("1d", symbols.Concat(new[] { NiftySymbol, VixSymbol }).ToList(), fromUtc, toUtc);
+        var dailyAll = dailyLoaded.ToDictionary(kv => kv.Key, kv => BacktestEngine.OneBarPerDay(kv.Value));
         var nifty = dailyAll.GetValueOrDefault(NiftySymbol) ?? new List<MarketCandle>();
         var vixByDate = (dailyAll.GetValueOrDefault(VixSymbol) ?? new List<MarketCandle>())
             .GroupBy(c => BacktestEngine.IstDate(c.CandleTime)).ToDictionary(g => g.Key, g => g.Last().Close);
@@ -440,6 +441,7 @@ public class BacktestService : IBacktestService
         var splits = new ConcurrentBag<string>();
         var noData = new ConcurrentBag<string>();
         var intradayDates = new ConcurrentBag<(DateTime First, DateTime Last)>();
+        var dataChecks = new ConcurrentBag<IntradayDataCheck>();
         long scans = 0;
 
         await ReplayAsync(runId, symbols, threads, cts, () => Interlocked.Read(ref scans), symbol =>
@@ -449,6 +451,7 @@ public class BacktestService : IBacktestService
             var h60 = LoadCandles("60m", symbol, BacktestEngine.DailyStamp(p.FromDate.AddDays(-40)), toUtc);
             if (m15.Count == 0 || daily.Count < RealTradeSchedule.MinDailyCandles) { noData.Add(symbol); return; }
             intradayDates.Add((BacktestEngine.IstDate(m15[0].CandleTime), BacktestEngine.IstDate(m15[^1].CandleTime)));
+            dataChecks.Add(BacktestDataCheck.Check15m(m15, daily, p.FromDate, p.ToDate));
 
             var r = BacktestEngine.GenerateSignals(symbol, daily, h60, m15, ctx);
             foreach (var s in r.Signals) signals.Add(s);
@@ -515,6 +518,8 @@ public class BacktestService : IBacktestService
             SuspectedSplits = splits.OrderBy(s => s).ToList()
         };
         summary.Assumptions = Assumptions(p, regimeMode, splits.Count, regimeByDate.Count);
+        AddDailyRepairNote(summary, dailyLoaded, dailyAll);
+        BacktestDataCheck.Apply(summary, dataChecks.ToList());
         return (summary, main.Trades);
     }
 
@@ -564,6 +569,15 @@ public class BacktestService : IBacktestService
         try { await all; } catch (OperationCanceledException) { }
         if (workerError != null) throw workerError;
         token.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>Says in the report how many stored daily rows the replay re-dated or ignored (<see cref="BacktestEngine.OneBarPerDay"/>).</summary>
+    private static void AddDailyRepairNote(BacktestSummary summary, IReadOnlyDictionary<string, List<MarketCandle>> loaded, IReadOnlyDictionary<string, List<MarketCandle>> used)
+    {
+        int ignored = loaded.Sum(kv => kv.Value.Count - used[kv.Key].Count);
+        int reDated = loaded.Values.SelectMany(v => v).Count(c => BacktestEngine.DailyBarTradingDay(c.CandleTime) != BacktestEngine.IstDate(c.CandleTime));
+        if (ignored > 0 || reDated > 0)
+            summary.Assumptions.Add($"Daily candles: {reDated:N0} stored with the previous evening's time were read as the correct trading day, and {ignored:N0} extra row(s) for a day that already had a candle were ignored. The stored rows were not changed.");
     }
 
     private static PortfolioSettings PortfolioSettingsOf(BacktestParams p, IReadOnlyList<ChargeRates> chargeRates)
@@ -682,7 +696,6 @@ public class BacktestService : IBacktestService
         DateTime toUtc = BacktestEngine.DailyStamp(p.ToDate.AddDays(1));
         var dailyLoaded = await LoadCandlesAsync("1d", symbols.Concat(new[] { NiftySymbol, VixSymbol }).ToList(), fromUtc, toUtc);
         var dailyAll = dailyLoaded.ToDictionary(kv => kv.Key, kv => BacktestEngine.OneBarPerDay(kv.Value));
-        int duplicateDailyBars = dailyLoaded.Sum(kv => kv.Value.Count - dailyAll[kv.Key].Count);
         var nifty = dailyAll.GetValueOrDefault(NiftySymbol) ?? new List<MarketCandle>();
         var vixByDate = (dailyAll.GetValueOrDefault(VixSymbol) ?? new List<MarketCandle>())
             .GroupBy(c => BacktestEngine.IstDate(c.CandleTime)).ToDictionary(g => g.Key, g => g.Last().Close);
@@ -717,6 +730,7 @@ public class BacktestService : IBacktestService
         long scans = 0;
         DateTime? firstDate, lastDate;
         var noData = new ConcurrentBag<string>(noDaily);
+        var dataChecks = new ConcurrentBag<IntradayDataCheck>();
 
         if (momentum)
         {
@@ -785,6 +799,7 @@ public class BacktestService : IBacktestService
                 var m15 = LoadCandles("15m", symbol, BacktestEngine.DailyStamp(p.FromDate.AddDays(-40)), toUtc);
                 if (m15.Count == 0) { noData.Add(symbol); return; }
                 dates.Add((BacktestEngine.IstDate(m15[0].CandleTime), BacktestEngine.IstDate(m15[^1].CandleTime)));
+                dataChecks.Add(BacktestDataCheck.Check15m(m15, stockDaily[symbol], p.FromDate, p.ToDate));
                 foreach (var s in IntradayOrbBacktest.GenerateSignals(symbol, m15, stockDaily[symbol], SplitSessions(symbol), ctx)) signals.Add(s);
                 Interlocked.Add(ref scans, m15.Count);
             });
@@ -819,8 +834,8 @@ public class BacktestService : IBacktestService
             ExcludedEtfs = etfs
         };
         summary.Assumptions = NewRuleAssumptions(p, momentum, splits.Count);
-        if (duplicateDailyBars > 0)
-            summary.Assumptions.Add($"{duplicateDailyBars} extra daily candle(s) were ignored because a stock already had a candle on that date.");
+        AddDailyRepairNote(summary, dailyLoaded, dailyAll);
+        if (!momentum) BacktestDataCheck.Apply(summary, dataChecks.ToList());
         return (summary, main.Trades);
     }
 

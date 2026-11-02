@@ -252,18 +252,130 @@ public class BacktestStrategyRulesTests
         Assert.Equal(BacktestEngine.DailyStamp(BacktestEngine.IstDate(bars[^1].CandleTime)), bars[^1].CandleTime);
     }
 
-    [Fact]
-    public void OneBarPerDay_WithoutTheStandardStampKeepsTheLatestBar()
+    private static DateTime IstStamp(DateTime day, int hour, int minute) => BacktestEngine.DailyStamp(day).AddHours(hour).AddMinutes(minute);
+
+    [Theory]
+    [InlineData(20, 30)]    // loaded in European summer time
+    [InlineData(19, 30)]    // loaded in European winter time
+    public void OneBarPerDay_AnEveningStampBelongsToTheNextTradingDay(int hour, int minute)
     {
-        var day = new DateTime(2025, 1, 6);
-        var stamp = BacktestEngine.DailyStamp(day);
+        var sunday = new DateTime(2025, 8, 10);
+        var monday = new DateTime(2025, 8, 11);
+
+        var bar = Assert.Single(BacktestEngine.OneBarPerDay(new List<MarketCandle> { new() { CandleTime = IstStamp(sunday, hour, minute), Close = 5m } }));
+
+        Assert.Equal(monday, BacktestEngine.IstDate(bar.CandleTime));
+        Assert.Equal(BacktestEngine.DailyStamp(monday), bar.CandleTime);
+        Assert.Equal(5m, bar.Close);
+    }
+
+    [Fact]
+    public void OneBarPerDay_TheEveningAndMorningRowsOfADayAreOneDayAndTheEveningRowWins()
+    {
+        // Real pattern in the table: "03-Aug 20:30" and "04-Aug 05:30" are both 04-Aug's candle.
         var bars = BacktestEngine.OneBarPerDay(new List<MarketCandle>
         {
-            new() { CandleTime = stamp.AddMinutes(60), Close = 1m },
-            new() { CandleTime = stamp.AddMinutes(120), Close = 2m }
+            new() { CandleTime = IstStamp(new DateTime(2026, 8, 3), 20, 30), Close = 24614.9m },
+            new() { CandleTime = IstStamp(new DateTime(2026, 8, 4), 5, 30), Close = 24614.8m },
+            new() { CandleTime = IstStamp(new DateTime(2026, 8, 4), 20, 30), Close = 24624.65m },
+            new() { CandleTime = IstStamp(new DateTime(2026, 8, 5), 5, 30), Close = 24624.6m }
         });
 
-        Assert.Equal(2m, Assert.Single(bars).Close);
+        Assert.Equal(new[] { new DateTime(2026, 8, 4), new DateTime(2026, 8, 5) }, bars.Select(b => BacktestEngine.IstDate(b.CandleTime)));
+        Assert.Equal(new[] { 24614.9m, 24624.65m }, bars.Select(b => b.Close));
+    }
+
+    [Fact]
+    public void OneBarPerDay_DoesNotChangeTheStoredRow()
+    {
+        var stored = new MarketCandle { CandleTime = IstStamp(new DateTime(2025, 8, 10), 20, 30), Close = 5m };
+
+        BacktestEngine.OneBarPerDay(new[] { stored });
+
+        Assert.Equal(IstStamp(new DateTime(2025, 8, 10), 20, 30), stored.CandleTime);
+    }
+
+    [Fact]
+    public void Replay_AnEveningStampedCandleIsNotVisibleOnItsOwnTradingDay()
+    {
+        // The Monday candle stored as "Sunday 20:30" used to count as an earlier day, so a replay of Monday could read its final values.
+        var monday = new DateTime(2025, 8, 11);
+        var bars = BacktestEngine.OneBarPerDay(new List<MarketCandle>
+        {
+            new() { CandleTime = IstStamp(new DateTime(2025, 8, 8), 0, 0), Close = 1m },
+            new() { CandleTime = IstStamp(new DateTime(2025, 8, 10), 20, 30), Close = 2m }
+        });
+
+        Assert.Equal(new[] { 1m }, bars.Where(b => BacktestEngine.IstDate(b.CandleTime) < monday).Select(b => b.Close));
+    }
+
+    // ---------------- the 15m data check ----------------
+
+    private static List<MarketCandle> FullDay(DateTime day, decimal open = 100m, int bars = 25)
+    {
+        var list = new List<MarketCandle>();
+        for (int i = 0; i < bars; i++) list.Add(Bar15(day, i, i == 0 ? open : 100m, 101m, 99m, 100m));
+        return list;
+    }
+
+    private static readonly List<MarketCandle> OneDaily = new() { DailyBar(OrbDay, 100m, 101m, 99m, 100m) };
+
+    [Fact]
+    public void DataCheck_AFullDayMatchingTheDailyOpenIsFine() =>
+        Assert.Equal(new IntradayDataCheck(1, 0, 0), BacktestDataCheck.Check15m(FullDay(OrbDay), OneDaily, OrbDay, OrbDay));
+
+    [Fact]
+    public void DataCheck_AfternoonBarsStoredAsMorningAreBad()
+    {
+        // 11 bars ending 11:45, and a "09:15" open that isn't the day's open.
+        var check = BacktestDataCheck.Check15m(FullDay(OrbDay, open: 103m, bars: 11), OneDaily, OrbDay, OrbDay);
+
+        Assert.Equal(new IntradayDataCheck(1, 1, 1), check);
+    }
+
+    [Fact]
+    public void DataCheck_FullLengthButWrongOpenIsBad() =>
+        Assert.Equal(1, BacktestDataCheck.Check15m(FullDay(OrbDay, open: 101m), OneDaily, OrbDay, OrbDay).BadDays);
+
+    [Fact]
+    public void DataCheck_OnlyTheCloseBarMissingIsCountedButNotBad() =>
+        Assert.Equal(new IntradayDataCheck(1, 0, 1), BacktestDataCheck.Check15m(FullDay(OrbDay, bars: 24), OneDaily, OrbDay, OrbDay));
+
+    [Fact]
+    public void DataCheck_DaysOutsideTheTestAreIgnored() =>
+        Assert.Equal(0, BacktestDataCheck.Check15m(FullDay(OrbDay, bars: 5), OneDaily, OrbDay.AddDays(1), OrbDay.AddDays(2)).Days);
+
+    private static BacktestSummary SummaryWithVerdict(string verdict) => new()
+    {
+        Verdict = verdict, VerdictReason = "original",
+        Sides = new List<BacktestSideResult> { new() { Verdict = verdict, VerdictReason = "original" } }
+    };
+
+    [Theory]
+    [InlineData("FAIL")]
+    [InlineData("PASS")]
+    public void DataCheck_TooManyBadDaysMakesAnyVerdictNotProven(string verdict)
+    {
+        var summary = SummaryWithVerdict(verdict);
+
+        BacktestDataCheck.Apply(summary, new[] { new IntradayDataCheck(100, 40, 40) });
+
+        Assert.Equal("NOT_PROVEN", summary.Verdict);
+        Assert.Equal("NOT_PROVEN", summary.Sides[0].Verdict);
+        Assert.Contains("40", summary.DataWarning);
+        Assert.Equal(40, summary.Coverage.StockDaysBad);
+    }
+
+    [Fact]
+    public void DataCheck_ASmallShareOfBadDaysLeavesTheVerdictAlone()
+    {
+        var summary = SummaryWithVerdict("FAIL");
+
+        BacktestDataCheck.Apply(summary, new[] { new IntradayDataCheck(1000, 5, 0) });
+
+        Assert.Equal("FAIL", summary.Verdict);
+        Assert.Null(summary.DataWarning);
+        Assert.Equal(1000, summary.Coverage.StockDaysChecked);
     }
 
     // ---------------- daily momentum: entry ----------------

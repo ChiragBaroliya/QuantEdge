@@ -317,6 +317,8 @@ public sealed class BacktestSummary
     public Dictionary<string, int> Skipped { get; set; } = new();
     public BacktestCoverage Coverage { get; set; } = new();
     public List<string> Assumptions { get; set; } = new();
+    /// <summary>Set when too much of the data is bad for the verdict to mean anything (<see cref="BacktestDataCheck"/>).</summary>
+    public string? DataWarning { get; set; }
 }
 
 public sealed class BacktestCoverage
@@ -334,4 +336,9 @@ public sealed class BacktestCoverage
     public string? DataLabel { get; set; }
     /// <summary>Symbols a new-rule run left out as ETFs, listed so the name match can be checked.</summary>
     public List<string> ExcludedEtfs { get; set; } = new();
+    /// <summary>The 15m data check (<see cref="BacktestDataCheck"/>). All 0 on older runs and on rules that use only daily bars.</summary>
+    public int StockDaysChecked { get; set; }
+    public int StockDaysBad { get; set; }
+    public int StockDaysNoCloseBar { get; set; }
+    public int SymbolsWithBadDays { get; set; }
 }

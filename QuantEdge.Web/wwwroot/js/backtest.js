@@ -301,6 +301,7 @@
                 <a class="btn-trigger" data-auth-download href="${api(`runs/${run.id}/trades.csv`)}">Download trades (CSV)</a>
             </div>
             <div class="bt-verdict ${s.verdict}"><b>${esc(VERDICT[s.verdict] || s.verdict)}</b>${esc(s.verdictReason || "")}</div>
+            ${s.dataWarning ? `<div class="bt-note bt-neg" style="margin-top:8px"><b>Bad data:</b> the numbers below use wrong candles, so don't judge the rule on them.</div>` : ""}
         </section>
 
         ${sides.length ? `<section class="bt-card">
@@ -370,6 +371,7 @@
                 <ul class="bt-list">
                     <li>${c.symbolsWithData} of ${c.symbolsRequested} stocks had ${esc(c.dataLabel || "15m")} data · ${c.sessions} trading days · ${Number(c.scansEvaluated || 0).toLocaleString("en-IN")} ${rule ? "bars" : "scans"}</li>
                     <li>${esc(c.dataLabel || "15m")} data from ${ymd(c.firstIntradayDate)} to ${ymd(c.lastIntradayDate)}</li>
+                    ${c.stockDaysChecked ? `<li>15m data check: ${Number(c.stockDaysBad).toLocaleString("en-IN")} of ${Number(c.stockDaysChecked).toLocaleString("en-IN")} stock-days wrong or incomplete (${c.symbolsWithBadDays} stocks) · ${Number(c.stockDaysNoCloseBar).toLocaleString("en-IN")} without a 15:15 bar</li>` : ""}
                     ${(c.excludedEtfs || []).length ? `<li>Left out as ETFs: ${esc(c.excludedEtfs.join(", "))}</li>` : ""}
                     ${(c.symbolsWithoutData || []).length ? `<li>No data: ${esc(c.symbolsWithoutData.join(", "))}</li>` : ""}
                     ${(c.suspectedSplits || []).length ? `<li>Suspected unadjusted splits/bonuses (excluded around them): ${esc(c.suspectedSplits.join(", "))}</li>` : ""}

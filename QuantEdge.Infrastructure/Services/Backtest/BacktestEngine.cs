@@ -112,12 +112,31 @@ public static class BacktestEngine
     public const decimal MinSessionSharePct = 25m;
 
     /// <summary>
-    /// One daily bar per IST date, in time order. A second row on a date (a different time stamp on the same day) would count
-    /// that day twice in every lookback. The standard stamp (<see cref="DailyStamp"/>) wins; otherwise the latest bar does.
+    /// The trading day a stored daily candle belongs to. Standard rows are stamped 00:00 IST. History loaded on a server outside
+    /// India before the 10-Aug-2026 fix is stamped 19:30 or 20:30 IST the evening before, so a Monday candle reads as Sunday.
+    /// </summary>
+    public static DateTime DailyBarTradingDay(DateTime candleUtc)
+    {
+        DateTime ist = ToIst(candleUtc);
+        return ist.TimeOfDay >= TimeSpan.FromHours(18) ? ist.Date.AddDays(1) : ist.Date;
+    }
+
+    /// <summary>
+    /// One daily bar per trading day, in time order, each stamped with <see cref="DailyStamp"/> of its true day, so a replay can't
+    /// see a day's final candle early or count a day twice. The standard row wins; next the evening row, which came from Kite,
+    /// over a morning row (05:30 IST), which a later job wrote for the same day. The stored rows are not changed.
     /// </summary>
     public static List<MarketCandle> OneBarPerDay(IEnumerable<MarketCandle> bars) =>
-        bars.GroupBy(c => IstDate(c.CandleTime)).OrderBy(g => g.Key)
-            .Select(g => g.FirstOrDefault(c => c.CandleTime == DailyStamp(g.Key)) ?? g.OrderBy(c => c.CandleTime).Last())
+        bars.GroupBy(c => DailyBarTradingDay(c.CandleTime)).OrderBy(g => g.Key)
+            .Select(g =>
+            {
+                var c = g.FirstOrDefault(x => x.CandleTime == DailyStamp(g.Key)) ?? g.OrderBy(x => x.CandleTime).First();
+                return new MarketCandle
+                {
+                    Id = c.Id, Symbol = c.Symbol, Timeframe = c.Timeframe, Open = c.Open, High = c.High, Low = c.Low, Close = c.Close,
+                    Volume = c.Volume, CandleTime = DailyStamp(g.Key), CreatedAt = c.CreatedAt
+                };
+            })
             .ToList();
 
     public static List<DateTime> TradingSessions(IReadOnlyCollection<IReadOnlyList<MarketCandle>> symbols, IReadOnlyList<MarketCandle> nifty)
